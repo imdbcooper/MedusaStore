@@ -1,0 +1,80 @@
+services:
+  # ── PostgreSQL ───────────────────────────────────────────
+  medusa-db:
+    image: postgres:15-alpine
+    container_name: medusa-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - medusa-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - medusa_net
+
+  # ── Redis ────────────────────────────────────────────────
+  medusa-redis:
+    image: redis:alpine
+    container_name: medusa-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - medusa_net
+
+  # ── Medusa Backend ───────────────────────────────────────
+  medusa-backend:
+    image: node:20-bookworm
+    container_name: medusa-backend
+    working_dir: /app
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    volumes:
+      - ./medusa-agency-boilerplate:/app
+    ports:
+      - "${MEDUSA_BACKEND_PORT:-9000}:9000"
+    command: sh -lc 'rm -rf /app/node_modules/.vite && npm run dev'
+    depends_on:
+      medusa-db:
+        condition: service_healthy
+      medusa-redis:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - NODE_ENV=${NODE_ENV:-development}
+      - HOME=/tmp/medusa-home
+      - NPM_CONFIG_CACHE=/tmp/npm-cache
+      - JWT_SECRET=${JWT_SECRET}
+      - COOKIE_SECRET=${COOKIE_SECRET}
+      - STORE_CORS=${STORE_CORS}
+      - ADMIN_CORS=${ADMIN_CORS}
+      - AUTH_CORS=${AUTH_CORS}
+    networks:
+      - medusa_net
+
+# ── Сеть ─────────────────────────────────────────────────
+networks:
+  medusa_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.40.0.0/16
+
+# ── Тома ─────────────────────────────────────────────────
+volumes:
+  medusa-db-data:

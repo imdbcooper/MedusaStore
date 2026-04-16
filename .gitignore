@@ -1,0 +1,8 @@
+
+# Docker Compose secrets
+.env
+.logs/
+
+# Local restore artifacts
+restore.log
+medusa-dump.sql

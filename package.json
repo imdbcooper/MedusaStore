@@ -1,0 +1,26 @@
+{
+  "name": "medusa-master-repo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Root orchestration layer for the medusa agency master repo.",
+  "packageManager": "npm@11.6.2",
+  "scripts": {
+    "preflight": "bash ./scripts/preflight.sh",
+    "env:sync": "bash ./scripts/env-sync.sh",
+    "permissions:fix": "bash ./scripts/fix-medusa-permissions.sh",
+    "infra:check": "docker compose config -q",
+    "infra:up": "docker compose up -d medusa-db medusa-redis",
+    "infra:down": "docker compose down",
+    "bootstrap": "bash ./scripts/bootstrap.sh",
+    "backend:dev": "bash ./scripts/backend-dev.sh",
+    "backend:build": "bash ./scripts/backend-build.sh",
+    "backend:container:up": "docker compose up -d medusa-backend",
+    "backend:container:down": "docker compose stop medusa-backend",
+    "backend:logs": "docker compose logs -f medusa-backend",
+    "storefront:dev": "bash ./scripts/storefront-dev.sh",
+    "storefront:build": "bash ./scripts/storefront-build.sh",
+    "smoke:backend": "bash ./scripts/smoke-backend.sh",
+    "smoke:storefront": "bash ./scripts/smoke-storefront.sh",
+    "dev": "bash ./scripts/dev.sh"
+  }
+}
