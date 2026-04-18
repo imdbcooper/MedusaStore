@@ -1,5 +1,6 @@
 import { Heading } from "@medusajs/ui"
 
+import { storefrontConfig } from "@lib/storefront-config"
 import ItemsPreviewTemplate from "@modules/cart/templates/preview"
 import DiscountCode from "@modules/checkout/components/discount-code"
 import CartTotals from "@modules/common/components/cart-totals"
@@ -14,7 +15,7 @@ const CheckoutSummary = ({ cart }: { cart: any }) => {
           level="h2"
           className="flex flex-row text-3xl-regular items-baseline"
         >
-          In your Cart
+          {storefrontConfig.copy.checkout.inYourCart}
         </Heading>
         <Divider className="my-6" />
         <CartTotals totals={cart} />

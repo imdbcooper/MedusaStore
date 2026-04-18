@@ -1,7 +1,8 @@
 import { Disclosure } from "@headlessui/react"
 import { Badge, Button, clx } from "@medusajs/ui"
 import { useEffect } from "react"
-
+ 
+ import { storefrontConfig } from "@lib/storefront-config"
 import useToggleState from "@lib/hooks/use-toggle-state"
 import { useFormStatus } from "react-dom"
 
@@ -22,14 +23,15 @@ const AccountInfo = ({
   isSuccess,
   isError,
   clearState,
-  errorMessage = "An error occurred, please try again",
+  errorMessage = storefrontConfig.copy.account.updateError,
   children,
   'data-testid': dataTestid
 }: AccountInfoProps) => {
   const { state, close, toggle } = useToggleState()
 
   const { pending } = useFormStatus()
-
+  const commonCopy = storefrontConfig.copy.common
+ 
   const handleToggle = () => {
     clearState()
     setTimeout(() => toggle(), 100)
@@ -63,7 +65,7 @@ const AccountInfo = ({
             data-testid="edit-button"
             data-active={state}
           >
-            {state ? "Cancel" : "Edit"}
+            {state ? commonCopy.cancel : commonCopy.edit}
           </Button>
         </div>
       </div>
@@ -82,7 +84,7 @@ const AccountInfo = ({
           data-testid="success-message"
         >
           <Badge className="p-2 my-4" color="green">
-            <span>{label} updated succesfully</span>
+            <span>{label} сохранено</span>
           </Badge>
         </Disclosure.Panel>
       </Disclosure>
@@ -126,7 +128,7 @@ const AccountInfo = ({
                 type="submit"
                 data-testid="save-button"
               >
-                Save changes
+                {commonCopy.saveChanges}
               </Button>
             </div>
           </div>

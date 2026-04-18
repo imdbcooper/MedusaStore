@@ -77,15 +77,26 @@ log_info "Running Medusa database migrations on a fresh-or-existing database..."
 )
 
 log_info "Running application seed to create storefront-required defaults..."
-bootstrap_output="$((
-  cd "$ROOT_DIR/medusa-agency-boilerplate"
-  set -a
-  # shellcheck disable=SC1091
-  source ./.env
-  set +a
-  npm run seed --silent
-) 2>&1)"
+set +e
+bootstrap_output="$(
+  (
+    cd "$ROOT_DIR/medusa-agency-boilerplate"
+    set -a
+    # shellcheck disable=SC1091
+    source ./.env
+    set +a
+    npm run seed --silent
+  ) 2>&1
+)"
+seed_status=$?
+set -e
 printf '%s\n' "$bootstrap_output"
+
+if [[ "$seed_status" -ne 0 ]]; then
+  log_error "Bootstrap seed failed on the current database state."
+  log_error "Bootstrap does not update storefront env when seed short-circuits or finds conflicting baseline entities."
+  exit "$seed_status"
+fi
 
 publishable_key="$(extract_publishable_key "$bootstrap_output" || true)"
 

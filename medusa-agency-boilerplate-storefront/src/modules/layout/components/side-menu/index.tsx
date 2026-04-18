@@ -1,6 +1,9 @@
 "use client"
 
+import { Locale } from "@lib/data/locales"
+import { storefrontConfig } from "@lib/storefront-config"
 import { Popover, PopoverPanel, Transition } from "@headlessui/react"
+import { HttpTypes } from "@medusajs/types"
 import { ArrowRightMini, XMark } from "@medusajs/icons"
 import { Text, clx, useToggleState } from "@medusajs/ui"
 import { Fragment } from "react"
@@ -8,15 +11,29 @@ import { Fragment } from "react"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import CountrySelect from "../country-select"
 import LanguageSelect from "../language-select"
-import { HttpTypes } from "@medusajs/types"
-import { Locale } from "@lib/data/locales"
 
-const SideMenuItems = {
-  Home: "/",
-  Store: "/store",
-  Account: "/account",
-  Cart: "/cart",
-}
+const getSideMenuItems = (navigationCopy: typeof storefrontConfig.copy.navigation) => [
+  {
+    label: navigationCopy.home,
+    href: "/",
+    testId: "home-link",
+  },
+  {
+    label: navigationCopy.catalog,
+    href: "/store",
+    testId: "store-link",
+  },
+  {
+    label: navigationCopy.account,
+    href: "/account",
+    testId: "account-link",
+  },
+  {
+    label: navigationCopy.cart,
+    href: "/cart",
+    testId: "cart-link",
+  },
+]
 
 type SideMenuProps = {
   regions: HttpTypes.StoreRegion[] | null
@@ -27,6 +44,8 @@ type SideMenuProps = {
 const SideMenu = ({ regions, locales, currentLocale }: SideMenuProps) => {
   const countryToggleState = useToggleState()
   const languageToggleState = useToggleState()
+  const navigationCopy = storefrontConfig.copy.navigation
+  const commonCopy = storefrontConfig.copy.common
 
   return (
     <div className="h-full">
@@ -39,7 +58,7 @@ const SideMenu = ({ regions, locales, currentLocale }: SideMenuProps) => {
                   data-testid="nav-menu-button"
                   className="relative h-full flex items-center transition-all ease-out duration-200 focus:outline-none hover:text-ui-fg-base"
                 >
-                  Menu
+                  {navigationCopy.menu}
                 </Popover.Button>
               </div>
 
@@ -72,16 +91,16 @@ const SideMenu = ({ regions, locales, currentLocale }: SideMenuProps) => {
                       </button>
                     </div>
                     <ul className="flex flex-col gap-6 items-start justify-start">
-                      {Object.entries(SideMenuItems).map(([name, href]) => {
+                      {getSideMenuItems(navigationCopy).map((item) => {
                         return (
-                          <li key={name}>
+                          <li key={item.href}>
                             <LocalizedClientLink
-                              href={href}
+                              href={item.href}
                               className="text-3xl leading-10 hover:text-ui-fg-disabled"
                               onClick={close}
-                              data-testid={`${name.toLowerCase()}-link`}
+                              data-testid={item.testId}
                             >
-                              {name}
+                              {item.label}
                             </LocalizedClientLink>
                           </li>
                         )
@@ -126,8 +145,8 @@ const SideMenu = ({ regions, locales, currentLocale }: SideMenuProps) => {
                         />
                       </div>
                       <Text className="flex justify-between txt-compact-small">
-                        © {new Date().getFullYear()} Medusa Store. All rights
-                        reserved.
+                        © {new Date().getFullYear()} {storefrontConfig.storeName}.{" "}
+                        {commonCopy.allRightsReserved}
                       </Text>
                     </div>
                   </div>

@@ -1,6 +1,7 @@
 "use client"
 
 import { setAddresses } from "@lib/data/cart"
+import { storefrontConfig } from "@lib/storefront-config"
 import compareAddresses from "@lib/util/compare-addresses"
 import { CheckCircleSolid } from "@medusajs/icons"
 import { HttpTypes } from "@medusajs/types"
@@ -38,6 +39,8 @@ const Addresses = ({
   }
 
   const [message, formAction] = useActionState(setAddresses, null)
+  const checkoutCopy = storefrontConfig.copy.checkout
+  const commonCopy = storefrontConfig.copy.common
 
   return (
     <div className="bg-white">
@@ -46,7 +49,7 @@ const Addresses = ({
           level="h2"
           className="flex flex-row text-3xl-regular gap-x-2 items-baseline"
         >
-          Shipping Address
+          {checkoutCopy.shippingAddress}
           {!isOpen && <CheckCircleSolid />}
         </Heading>
         {!isOpen && cart?.shipping_address && (
@@ -56,7 +59,7 @@ const Addresses = ({
               className="text-ui-fg-interactive hover:text-ui-fg-interactive-hover"
               data-testid="edit-address-button"
             >
-              Edit
+              {commonCopy.edit}
             </button>
           </Text>
         )}
@@ -77,14 +80,14 @@ const Addresses = ({
                   level="h2"
                   className="text-3xl-regular gap-x-4 pb-6 pt-8"
                 >
-                  Billing address
+                  {checkoutCopy.billingAddress}
                 </Heading>
 
                 <BillingAddress cart={cart} />
               </div>
             )}
             <SubmitButton className="mt-6" data-testid="submit-address-button">
-              Continue to delivery
+              {checkoutCopy.continueToDelivery}
             </SubmitButton>
             <ErrorMessage error={message} data-testid="address-error-message" />
           </div>
@@ -100,19 +103,16 @@ const Addresses = ({
                     data-testid="shipping-address-summary"
                   >
                     <Text className="txt-medium-plus text-ui-fg-base mb-1">
-                      Shipping Address
+                      {checkoutCopy.shippingAddress}
                     </Text>
                     <Text className="txt-medium text-ui-fg-subtle">
-                      {cart.shipping_address.first_name}{" "}
-                      {cart.shipping_address.last_name}
+                      {cart.shipping_address.first_name} {cart.shipping_address.last_name}
                     </Text>
                     <Text className="txt-medium text-ui-fg-subtle">
-                      {cart.shipping_address.address_1}{" "}
-                      {cart.shipping_address.address_2}
+                      {cart.shipping_address.address_1} {cart.shipping_address.address_2}
                     </Text>
                     <Text className="txt-medium text-ui-fg-subtle">
-                      {cart.shipping_address.postal_code},{" "}
-                      {cart.shipping_address.city}
+                      {cart.shipping_address.postal_code}, {cart.shipping_address.city}
                     </Text>
                     <Text className="txt-medium text-ui-fg-subtle">
                       {cart.shipping_address.country_code?.toUpperCase()}
@@ -124,7 +124,7 @@ const Addresses = ({
                     data-testid="shipping-contact-summary"
                   >
                     <Text className="txt-medium-plus text-ui-fg-base mb-1">
-                      Contact
+                      {commonCopy.contact}
                     </Text>
                     <Text className="txt-medium text-ui-fg-subtle">
                       {cart.shipping_address.phone}
@@ -139,26 +139,23 @@ const Addresses = ({
                     data-testid="billing-address-summary"
                   >
                     <Text className="txt-medium-plus text-ui-fg-base mb-1">
-                      Billing Address
+                      {checkoutCopy.billingAddress}
                     </Text>
 
                     {sameAsBilling ? (
                       <Text className="txt-medium text-ui-fg-subtle">
-                        Billing and delivery address are the same.
+                        {checkoutCopy.sameAsShipping}
                       </Text>
                     ) : (
                       <>
                         <Text className="txt-medium text-ui-fg-subtle">
-                          {cart.billing_address?.first_name}{" "}
-                          {cart.billing_address?.last_name}
+                          {cart.billing_address?.first_name} {cart.billing_address?.last_name}
                         </Text>
                         <Text className="txt-medium text-ui-fg-subtle">
-                          {cart.billing_address?.address_1}{" "}
-                          {cart.billing_address?.address_2}
+                          {cart.billing_address?.address_1} {cart.billing_address?.address_2}
                         </Text>
                         <Text className="txt-medium text-ui-fg-subtle">
-                          {cart.billing_address?.postal_code},{" "}
-                          {cart.billing_address?.city}
+                          {cart.billing_address?.postal_code}, {cart.billing_address?.city}
                         </Text>
                         <Text className="txt-medium text-ui-fg-subtle">
                           {cart.billing_address?.country_code?.toUpperCase()}

@@ -1,6 +1,6 @@
 # Master Repo Plan v2
 
-> Статус документа: рабочий план, составленный по состоянию на `2026-04-16`
+> Статус документа: рабочий план, синхронизированный с проверенным состоянием репозитория по состоянию на `2026-04-17`
 >
 > Назначение: заменить прежний оптимистичный план на проверенную дорожную карту, которая ведет проект к состоянию тиражируемого репозитория-шаблона для интернет-магазинов.
 
@@ -60,6 +60,17 @@
 - общий код можно улучшать один раз и переносить во все новые проекты;
 - базовые сборки, проверки и сценарии запуска повторяемы на чистом окружении.
 
+### 2.4. Market Scope Policy
+
+Рынок по умолчанию для этого master repo: **Россия**.
+
+Это означает:
+- все core-решения первой версии по умолчанию выбираются для типового интернет-магазина в РФ;
+- пригодность для российского рынка важнее, чем наличие у Medusa более подробно задокументированного или более удобного first-party примера;
+- для payment track текущим направлением v1 считается **YooKassa-first path**;
+- для shipping track целевым следующим направлением v1 считается **ApiShip-first path**, пока не доказано обратное;
+- нецелевые для РФ решения можно изучать как reference pattern для архитектуры Medusa, но нельзя выбирать как `default v1 choice`, если пользователь явно не сменил рынок проекта.
+
 ---
 
 ## 3. Источниковая база и проверенные факты
@@ -67,18 +78,23 @@
 ### 3.1. Что проверено в текущем репозитории
 
 Подтверждено локальными файлами:
-- текущий `medusa-config.ts` содержит только базовые projectConfig-настройки и не регистрирует собственные модули или провайдеры: `medusa-agency-boilerplate/medusa-config.ts:1-17`.
+- текущий `medusa-config.ts` уже содержит Notification Module с local/sendgrid provider path и opt-in Payment Module registration для текущего YooKassa-first slice: `medusa-agency-boilerplate/medusa-config.ts:1-68`.
 - `docker-compose.yml` поднимает PostgreSQL, Redis и backend, но не поднимает storefront: `docker-compose.yml:1-77`.
-- стартовые данные все еще ориентированы на `Europe`, `EUR`, европейский склад и англоязычные shipping options: `medusa-agency-boilerplate/src/scripts/seed.ts:66-320`.
-- storefront использует `MEDUSA_BACKEND_URL=http://localhost:9000` и `NEXT_PUBLIC_DEFAULT_REGION=us`: `medusa-agency-boilerplate-storefront/.env.local:1-27`.
+- bootstrap baseline уже переведен на `ru`/`rub`, создает publishable API key, sales channel и минимальный shipping skeleton: `medusa-agency-boilerplate/src/scripts/seed.ts:51-365`.
+- storefront template env уже использует `NEXT_PUBLIC_DEFAULT_REGION=ru`, а runtime backend URL синхронизируется из root env: `medusa-agency-boilerplate-storefront/.env.local.example:1-18`, `scripts/env-sync.sh:99-107`.
+- root env sync теперь также протаскивает YooKassa guardrails `YOOKASSA_STOREFRONT_RETURN_ORIGINS`, `YOOKASSA_WEBHOOK_URL` и `YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS` в backend env, чтобы канонический path `cp .env.example .env` → `npm run bootstrap` не расходился с текущим return/webhook hardening-кодом: `scripts/env-sync.sh:92-98`, `medusa-agency-boilerplate/src/api/store/payment/yookassa/return/route.ts:49-120`, `medusa-agency-boilerplate/src/api/yookassa/webhook/shared.ts:91-130`.
 - storefront по-прежнему содержит starter-branding Medusa: `medusa-agency-boilerplate-storefront/src/modules/home/components/hero/index.tsx:1-36`.
-- storefront строит выбор региона через `/store/regions` и `x-publishable-api-key`, а fallback-регион сейчас `us`: `medusa-agency-boilerplate-storefront/src/middleware.ts:4-159`.
+- storefront строит выбор региона через `/store/regions` и `x-publishable-api-key`, а fallback-регион уже переведен на `ru`: `medusa-agency-boilerplate-storefront/src/middleware.ts:4-168`, `medusa-agency-boilerplate-storefront/src/lib/data/regions.ts:34-57`.
+- notification slice v1 уже присутствует в коде: в `medusa-config.ts` зарегистрирован Notification Module с local/sendgrid provider path, есть admin smoke route и отдельный workflow для smoke-пути: `medusa-agency-boilerplate/medusa-config.ts:1-43`, `medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts:1-53`, `medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts:1-59`, `medusa-agency-boilerplate/src/scripts/create-secret-admin-api-key.ts:1-67`.
+- payment slice v1 уже присутствует в коде как opt-in YooKassa-first path: есть custom payment provider module, store routes для `return` / `status` / `webhook`, и storefront-aware payment handling для этого сценария: `medusa-agency-boilerplate/src/modules/yookassa.ts:1-462`, `medusa-agency-boilerplate/src/api/store/payment/yookassa/return/route.ts:1-30`, `medusa-agency-boilerplate/src/api/store/payment/yookassa/status/route.ts:1-95`, `medusa-agency-boilerplate/src/api/store/payment/yookassa/webhook/route.ts:1-102`, `medusa-agency-boilerplate-storefront/src/lib/data/payment.ts:1-136`, `medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx:1-274`.
 
 Подтверждено запуском и проверками:
 - `docker compose config -q` проходит;
-- сборка backend сейчас может падать из-за прав на `.medusa`;
+- root `permissions:fix` чинит права на `.medusa` и `node_modules/.vite`, а backend build подтвержден как рабочий путь;
 - сборка storefront зависит от корректного `MEDUSA_BACKEND_URL` и publishable API key;
-- на текущей рабочей машине `localhost:9000` занят сторонним сервисом, что показало необходимость явной стратегии портов и preflight-проверок.
+- канонический root startup path читается как `bootstrap → preflight → dev`;
+- [scripts/preflight.sh](../scripts/preflight.sh) допускает reuse только для compose-owned PostgreSQL, Redis и backend там, где это явно предусмотрено;
+- [scripts/dev.sh](../scripts/dev.sh) нужно трактовать как root orchestration поверх clean-start или compose-owned состояния, а не как универсальный wrapper над произвольным локальным runtime.
 
 ### 3.2. Что подтверждено официальными материалами Medusa
 
@@ -137,10 +153,26 @@
 Следствие:
 модель кастомизации будет такой:
 - общий storefront core;
+- отдельный content layer для маркетинговых страниц и editorial-контента;
 - общий design-token layer;
 - слой клиентской конфигурации;
 - набор управляемых секций;
 - точечные client overrides там, где это оправдано.
+
+### 4.2.1. Подход к content layer и Payload CMS
+
+Решение:
+Payload CMS рассматривается как **отдельный headless content service рядом с Medusa**, а не как часть Medusa backend и не как замена storefront.
+
+Что это значит:
+- `Medusa` остается источником правды для каталога, цен, корзины, checkout, заказов и operational commerce flows;
+- `Payload CMS` отвечает за marketing pages, news/posts, global site settings, навигацию, SEO и управляемые маркетинговые блоки;
+- `Next storefront` остается единым frontend-приложением и читает commerce-данные из Medusa, а content-данные из Payload.
+
+Следствие:
+- контентная интеграция не должна дублировать товарную правду в Payload;
+- связи между marketing blocks и commerce-сущностями должны храниться как ссылки на Medusa IDs / handles / slugs;
+- реализация Payload откладывается до момента, когда storefront core уже стабилен и готов к интеграции отдельного content layer.
 
 ### 4.3. Подход к данным клиента
 
@@ -161,11 +193,19 @@
 3. включение в шаблон только после подтверждения устойчивости.
 
 Ни один community package не попадает в базовый шаблон без проверки:
+- пригодности для типового магазина в РФ;
 - совместимости с Medusa `2.13.x`;
 - активности поддержки;
 - наличия тестового контура;
 - сценариев webhook/refund/status update;
 - понятного плана поддержки внутри проекта.
+
+Дополнительное правило отбора:
+- `official` или `first-party` статус не делает провайдера кандидатом v1 автоматически;
+- если решение не подходит для российского рынка, оно не может считаться default path для этого репозитория;
+- Stripe и другие нецелевые для РФ payment providers допустимо использовать как reference implementation паттерна Medusa, но не как шаблонный payment choice по умолчанию;
+- для текущего payment track не переоткрываем выбор в сторону нецелевых для РФ провайдеров, пока пользователь явно не меняет market scope;
+- для следующего shipping track по умолчанию исследуется **ApiShip-first** направление как наиболее соответствующее цели шаблона для РФ-магазинов.
 
 ---
 
@@ -177,8 +217,8 @@
 - стабильный storefront на базе Next.js Starter;
 - единая локальная инфраструктура;
 - RU baseline;
-- один подтвержденный путь оплаты;
-- один подтвержденный путь доставки;
+- один подтвержденный путь оплаты для типового магазина в РФ;
+- один подтвержденный путь доставки для типового магазина в РФ;
 - один подтвержденный путь уведомлений;
 - шаблонная конфигурация клиента;
 - механизм быстрого старта нового проекта;
@@ -195,32 +235,36 @@
 
 ---
 
-## 6. Подтвержденные текущие блокеры
+## 6. Подтвержденные открытые блокеры и ограничения
 
-### 6.1. Блокеры среды и сборки
+### 6.1. Оставшиеся ограничения среды и hardening
 
-- сборка backend не является стабильной из-за прав на `.medusa`;
-- storefront чувствителен к конфликтам по `MEDUSA_BACKEND_URL` и publishable key;
-- проект не содержит root-level сценария, который надежно запускает все части;
-- проект не содержит автоматической preflight-проверки занятых портов.
+- `docker-compose.yml` все еще не включает storefront в единый локальный контейнерный контур;
+- storefront по-прежнему чувствителен к корректности `MEDUSA_BACKEND_URL`, publishable API key и состоянию baseline region;
+- root startup contract нужно читать буквально как `bootstrap → preflight → dev`, а не как произвольный runtime-reuse сценарий;
+- [scripts/preflight.sh](../scripts/preflight.sh) не является generic checker для любого уже запущенного локального состояния: reuse разрешен только для compose-owned PostgreSQL, Redis и backend;
+- уже занятые локальными процессами `9000` и `8000` могут быть ожидаемым failure-mode для root preflight/dev вне канонического clean-start path.
 
-### 6.2. Блокеры шаблона
+### 6.2. Открытые блокеры шаблонного ядра
 
-- seed и демо-данные не соответствуют целевому шаблону для РФ;
-- storefront визуально и смыслово остается starter-проектом Medusa;
-- в проекте нет оформленного слоя клиентской конфигурации;
-- нет подтвержденного общего слоя интеграций под российский рынок.
+- payment path v1 еще не утвержден как runtime-confirmed шаблонное решение, хотя текущий практический путь уже зафиксирован как YooKassa-first;
+- shipping path v1 еще не утвержден как шаблонное решение; целевой следующий кандидат по market scope — ApiShip-first;
+- общий end-to-end integration layer еще не собран полностью;
+- storefront все еще визуально и смыслово остается starter-проектом Medusa;
+- в проекте пока нет завершенного client configuration layer;
+- отдельный content layer на базе Payload CMS еще не реализован.
 
-### 6.3. Блокеры операционной готовности
+### 6.3. Открытые блокеры template release
 
-- нет шаблонного процесса создания нового клиентского проекта;
-- нет набора обязательных smoke-проверок;
-- нет staging/prod-ready контура;
-- нет четких ворот готовности между этапами.
+- нет завершенного процесса инициализации нового клиента из шаблона;
+- нет полного набора release-grade smoke checks, CI и staging-path;
+- нет подтвержденного clean template release без локальных и демо-следов;
+- template еще не упакован как repeatable distribution для тиражирования.
 
-Обновление по Gate A bootstrap track:
-- root-level clean-clone bootstrap path теперь должен идти через `cp .env.example .env` → `npm run bootstrap` → `npm run preflight` → `npm run dev`;
-- канонический bootstrap должен опираться на Medusa migrations + application-level seed, а не на [medusa-dump.sql](medusa-dump.sql), пока seed покрывает storefront-required baseline.
+Обновление по ранним фазам:
+- clean-state bootstrap path `cp .env.example .env` → `npm run bootstrap` → `npm run preflight` → `npm run dev` уже подтвержден;
+- канонический bootstrap уже опирается на Medusa migrations + application-level seed, а не на [medusa-dump.sql](medusa-dump.sql), для verified clean-state path;
+- Gate A и Gate B не считаются открытыми, если речь идет о проверенном clean local onboarding и template-ready RU baseline.
 
 ---
 
@@ -291,9 +335,10 @@ Commerce-flow не должен переписываться для типово
 3. проверить и выбрать реальные интеграционные пути;
 4. собрать один рабочий end-to-end commerce flow;
 5. превратить storefront в общий configurable core;
-6. добавить клиентский слой кастомизации;
-7. упаковать это в шаблон и автоматизацию;
-8. довести до staging/prod readiness.
+6. добавить content layer для marketing/editorial scenarios там, где он входит в scope;
+7. добавить клиентский слой кастомизации;
+8. упаковать это в шаблон и автоматизацию;
+9. довести до staging/prod readiness.
 
 Пока не закрыты пункты 1-4, любые разговоры о “готовом мастер-репо” преждевременны.
 
@@ -307,24 +352,26 @@ Commerce-flow не должен переписываться для типово
 
 Сделать проект воспроизводимым: чтобы backend, storefront, БД и Redis поднимались и собирались предсказуемо на чистой машине.
 
-### Промежуточный статус на 2026-04-16
+### Статус на 2026-04-17
 
-Уже реализовано и проверено:
+Фаза подтверждена для clean-state onboarding path.
+
+Реализовано и проверено:
 - добавлен root-level orchestration через [package.json](../package.json) и `scripts/`;
 - добавлен [env_contract.md](./env_contract.md);
 - добавлен repair-скрипт для прав на `.medusa` и `node_modules/.vite`;
-- локальный root `.env` на текущей машине выровнен на `9001`;
 - root `backend:build` проходит;
 - root `storefront:build` проходит при живом backend;
 - root `dev` подтвержден в рабочей схеме:
+  - каноническая последовательность `bootstrap → preflight → dev`
   - backend через `docker compose`
   - storefront локально
-  - root `preflight` перед стартом.
+  - reuse допускается только для compose-owned runtime там, где это явно предусмотрено в [scripts/preflight.sh](../scripts/preflight.sh).
 
-Что еще остается внутри Фазы 1:
-- довести env-контракт до полностью бесспорного командного стандарта;
-- провести отдельный честный прогон сценария "новый разработчик поднимает проект по короткой инструкции";
-- после этого заново сверить Gate A.
+Остаточные notes, которые не переоткрывают фазу:
+- storefront все еще не включен в docker compose-контур;
+- root scripts не следует описывать как wrapper для любого уже поднятого локального состояния;
+- конфликт локальных процессов на `9000` и `8000` вне канонического clean-start path остается ожидаемым operational failure-mode.
 
 ### Задачи
 
@@ -386,6 +433,10 @@ Commerce-flow не должен переписываться для типово
 
 Заменить стартовую демо-модель Medusa на минимальный, но честный baseline будущего шаблона.
 
+### Статус на 2026-04-17
+
+Фаза подтверждена как завершенная для verified clean bootstrap path.
+
 ### Задачи
 
 - убрать зависимость от демо-данных и европейского seed;
@@ -434,6 +485,20 @@ Commerce-flow не должен переписываться для типово
 
 Не “подключить все подряд”, а выбрать и подтвердить безопасный, поддерживаемый путь интеграций под шаблон.
 
+### Статус на 2026-04-17
+
+Фаза активна.
+
+Уже подтверждено:
+- notification slice v1 больше не находится на уровне выбора направления;
+- в коде уже есть Notification Module, local provider для dev, SendGrid path для production, provider-agnostic workflow, admin smoke route и opt-in helper для on-demand secret admin API key;
+- confirmed clean onboarding и Phase 2 baseline после этого не были сломаны.
+
+Текущий следующий трек:
+- controlled validation/hardening для текущего YooKassa-first payment path v1;
+- после него shipping path v1 с ApiShip-first направлением по умолчанию;
+- только затем переход к полному общему integration layer Фазы 4.
+
 ### Задачи
 
 - сформировать интеграционную матрицу по трем направлениям:
@@ -441,6 +506,7 @@ Commerce-flow не должен переписываться для типово
   - оплата;
   - доставка.
 - для каждого направления определить:
+  - пригодность для типового магазина в РФ как первичный фильтр;
   - first-party path;
   - custom provider path;
   - community package path, если он существует и проходит проверку;
@@ -453,8 +519,11 @@ Commerce-flow не должен переписываться для типово
   - выбрать dev-provider и production path.
 - для платежей:
   - использовать официально подтвержденный паттерн Payment Module Provider как основу архитектуры;
-  - подтвердить путь для нужного рынка через POC.
+  - не подменять market-fit критерием `лучше документирован у Medusa`;
+  - продолжать текущий YooKassa-first path и подтвердить его для нужного рынка через POC/runtime validation.
 - для доставки:
+  - использовать пригодность для РФ как главный критерий отбора;
+  - по умолчанию идти в ApiShip-first исследование и validation track;
   - зафиксировать, будет ли это custom module/provider, адаптер к внешнему API или проверенный внешний пакет;
   - отдельно подтвердить получение тарифов, выбор ПВЗ, создание отправления, webhook/status update.
 - для каждого кандидата выполнить техническую верификацию:
@@ -476,12 +545,14 @@ Commerce-flow не должен переписываться для типово
 ### Definition of Done
 
 - по каждому из трех направлений выбран ровно один путь первой версии;
+- выбранные payment и shipping пути пригодны для типового магазина в РФ, а не только технически совместимы с Medusa;
 - ни один неутвержденный пакет не попал в ядро шаблона;
 - есть понятный production-owner path для поддержки выбранных интеграций.
 
 ### Контрольные риски
 
 - не путать “найден npm пакет” с “утверждено для master repo”;
+- не путать “лучше задокументировано в официальной Medusa docs” с “подходит для рынка этого шаблона”;
 - не принимать бизнес-важную интеграцию без sandbox-проверки.
 
 ---
@@ -607,6 +678,90 @@ Commerce-flow не должен переписываться для типово
 
 ---
 
+### Фаза 5.5. Payload CMS v1 как content layer маркетинговых страниц
+
+### Цель
+
+Добавить в шаблон отдельный content layer для marketing pages, news и editorial-контента, не ломая единый commerce-core storefront.
+
+### Ключевое проектное решение
+
+Payload внедряется только после того, как storefront уже приведен к состоянию общего storefront core.
+
+Мы не делаем:
+- payload как часть Medusa backend;
+- payload как источник правды для товаров, цен, остатков и checkout;
+- payload как тяжелый no-code page builder в первой версии.
+
+Мы делаем:
+- отдельное приложение `payload-cms`;
+- ограниченный и типизированный набор marketing blocks;
+- preview / drafts / revalidation flow;
+- storefront integration через content-provider boundary.
+
+### Задачи
+
+- завести отдельное приложение `payload-cms` в репозитории как first-class content service;
+- определить минимальный набор content-моделей v1:
+  - `pages`;
+  - `posts` / `news`;
+  - `siteSettings`;
+  - `navigation`;
+  - `footer`;
+  - `seoDefaults`.
+- определить минимальный набор reusable marketing blocks v1:
+  - `heroBanner`;
+  - `promoBanner`;
+  - `richText`;
+  - `imageText`;
+  - `productCarousel`;
+  - `featuredCollection`;
+  - `categoryTiles`;
+  - `benefits`;
+  - `faq`;
+  - `ctaSection`.
+- определить content-to-commerce contract:
+  - ссылки на Medusa products / collections / categories хранятся в Payload как IDs / handles / slugs;
+  - storefront по этим ссылкам подтягивает актуальные commerce-данные из Medusa;
+  - товарные данные не копируются в Payload как отдельный источник правды.
+- реализовать storefront content integration:
+  - маршруты marketing pages и informational pages получают данные из Payload;
+  - storefront умеет рендерить blocks через единый block renderer;
+  - commerce pages продолжают жить на Medusa data layer.
+- реализовать editorial workflow v1:
+  - drafts;
+  - preview;
+  - publish flow;
+  - webhook / revalidation path после публикации.
+- определить fallback strategy:
+  - шаблон должен уметь запускаться без Payload в базовом commerce-режиме;
+  - Payload включается как first-class, но не hard dependency для минимального technical bootstrap.
+
+### Артефакты
+
+- `payload-cms` app;
+- content schema contract;
+- block registry для storefront;
+- preview and revalidation flow;
+- документ “что живет в Payload, а что остается в Medusa”.
+
+### Definition of Done
+
+- storefront умеет рендерить marketing page из Payload по `slug`;
+- опубликованный контент попадает на фронт через подтвержденный publish/revalidate path;
+- marketing blocks работают без копирования товарной правды в Payload;
+- Payload не ломает базовый commerce-only запуск шаблона;
+- есть минимально достаточный редакторский контур для маркетинговых страниц и новостей.
+
+### Контрольные риски
+
+- не превратить первую версию Payload в бесконечный CMS-конструктор;
+- не смешать content truth и commerce truth;
+- не сделать storefront критически зависимым от Payload там, где нужен базовый commerce-only режим;
+- не уходить в реализацию Payload раньше, чем storefront core станет устойчивым.
+
+---
+
 ### Фаза 6. Путь к индивидуальному дизайну и управляемой кастомизации фронта
 
 ### Цель
@@ -674,7 +829,7 @@ Commerce-flow не должен переписываться для типово
 - можно собрать как минимум два разных клиентских оформления на одном storefront core;
 - при этом cart/checkout/account/order logic не дублируются;
 - замена бренда и секций не требует ручной правки десятков shared-компонентов;
-- типовой клиентский дизайн можно внедрять поверх core, а не через новый storefront “с нуля”.
+- типовой клиентский дизайн можно внедрять поверх core и content layer, а не через новый storefront “с нуля”.
 
 ### Контрольные риски
 
@@ -804,6 +959,7 @@ Commerce-flow не должен переписываться для типово
 - account area;
 - order area;
 - provider integration UI contracts;
+- storefront block renderer and content-provider boundary;
 - shared accessibility and SEO baseline.
 
 ### 10.2. Что должно быть клиентским
@@ -814,6 +970,8 @@ Commerce-flow не должен переписываться для типово
 - главная страница и ее композиция;
 - marketing sections;
 - promo blocks;
+- editorial content;
+- landing pages and news pages;
 - часть визуальных паттернов карточек и листингов;
 - контент и изображения;
 - информационные страницы.
@@ -859,6 +1017,7 @@ Commerce-flow не должен переписываться для типово
 
 - не поддерживаем несколько полноценных front templates;
 - не создаем theme marketplace внутри проекта;
+- не строим тяжелый визуальный CMS-конструктор поверх Payload в первой версии;
 - не допускаем uncontrolled forking storefront core под каждого клиента.
 
 ### 10.5. Когда можно вернуться к идее нескольких шаблонов фронта
@@ -899,13 +1058,21 @@ Commerce-flow не должен переписываться для типово
 - не работает один общий end-to-end commerce flow;
 - интеграции не живут за конфигурируемым слоем.
 
-### Gate E — после Фазы 6
+### Gate E — после Фазы 5.5
+
+Нельзя считать content layer готовым, пока:
+- нет подтвержденного publish/revalidate path;
+- storefront не умеет рендерить marketing pages из Payload;
+- Payload дублирует товарную правду вместо ссылок на Medusa entities.
+
+### Gate F — после Фазы 6
 
 Нельзя считать проект шаблоном, пока:
 - storefront нельзя уверенно брендировать без форка commerce-core;
+- storefront и content layer нельзя уверенно брендировать без хаотичного переписывания shared-компонентов;
 - нет проверенного пути клиентской кастомизации.
 
-### Gate F — перед релизом шаблона
+### Gate G — перед релизом шаблона
 
 Нельзя выпускать template release, пока:
 - не пройдены CI и staging checks;
@@ -923,12 +1090,14 @@ Commerce-flow не должен переписываться для типово
 - Фаза 3;
 - Фаза 4;
 - Фаза 5;
+- минимально достаточная часть Фазы 5.5, если в scope клиента входят marketing pages / news;
 - минимально достаточная часть Фазы 6;
 - минимально достаточная часть Фазы 7;
 - базовые проверки из Фазы 8.
 
 ### Можно отложить до следующей волны
 
+- Payload как расширенный content platform beyond pages/news/blocks v1;
 - расширенный theme layer;
 - сложный section builder;
 - отдельные премиальные storefront patterns;

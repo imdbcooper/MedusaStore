@@ -33,3 +33,31 @@ export const listCartPaymentMethods = async (regionId: string) => {
       return null
     })
 }
+
+export async function getYooKassaPaymentStatus({
+  cartId,
+  paymentId,
+}: {
+  cartId: string
+  paymentId: string
+}) {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return sdk.client.fetch<{
+    ok: boolean
+    payment_status: string
+    session_status: string
+    can_place_order: boolean
+    confirmation_url: string | null
+  }>(`/store/payment/yookassa`, {
+    method: "GET",
+    query: {
+      cart_id: cartId,
+      payment_id: paymentId,
+    },
+    headers,
+    cache: "no-store",
+  })
+}

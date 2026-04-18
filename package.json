@@ -20,6 +20,7 @@
     "storefront:dev": "bash ./scripts/storefront-dev.sh",
     "storefront:build": "bash ./scripts/storefront-build.sh",
     "smoke:backend": "bash ./scripts/smoke-backend.sh",
+    "smoke:notification": "bash ./scripts/notification-smoke.sh",
     "smoke:storefront": "bash ./scripts/smoke-storefront.sh",
     "dev": "bash ./scripts/dev.sh"
   }

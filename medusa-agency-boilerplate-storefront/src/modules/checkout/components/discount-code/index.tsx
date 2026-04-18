@@ -66,12 +66,8 @@ const DiscountCode: React.FC<DiscountCodeProps> = ({ cart }) => {
               className="txt-medium text-ui-fg-interactive hover:text-ui-fg-interactive-hover"
               data-testid="add-discount-button"
             >
-              Add Promotion Code(s)
+              Добавить промокод
             </button>
-
-            {/* <Tooltip content="You can add multiple promotion codes">
-              <InformationCircleSolid color="var(--fg-muted)" />
-            </Tooltip> */}
           </Label>
 
           {isOpen && (
@@ -89,7 +85,7 @@ const DiscountCode: React.FC<DiscountCodeProps> = ({ cart }) => {
                   variant="secondary"
                   data-testid="discount-apply-button"
                 >
-                  Apply
+                  Применить
                 </SubmitButton>
               </div>
 
@@ -105,7 +101,7 @@ const DiscountCode: React.FC<DiscountCodeProps> = ({ cart }) => {
           <div className="w-full flex items-center">
             <div className="flex flex-col w-full">
               <Heading className="txt-medium mb-2">
-                Promotion(s) applied:
+                Применённые промокоды:
               </Heading>
 
               {promotions.map((promotion) => {
@@ -128,23 +124,16 @@ const DiscountCode: React.FC<DiscountCodeProps> = ({ cart }) => {
                           promotion.application_method.currency_code !==
                             undefined && (
                             <>
-                              {promotion.application_method.type ===
-                              "percentage"
+                              {promotion.application_method.type === "percentage"
                                 ? `${promotion.application_method.value}%`
                                 : convertToLocale({
                                     amount: +promotion.application_method.value,
                                     currency_code:
-                                      promotion.application_method
-                                        .currency_code,
+                                      promotion.application_method.currency_code,
                                   })}
                             </>
                           )}
                         )
-                        {/* {promotion.is_automatic && (
-                          <Tooltip content="This promotion is automatically applied">
-                            <InformationCircleSolid className="inline text-zinc-400" />
-                          </Tooltip>
-                        )} */}
                       </span>
                     </Text>
                     {!promotion.is_automatic && (
@@ -161,7 +150,7 @@ const DiscountCode: React.FC<DiscountCodeProps> = ({ cart }) => {
                       >
                         <Trash size={14} />
                         <span className="sr-only">
-                          Remove discount code from order
+                          Удалить промокод из заказа
                         </span>
                       </button>
                     )}

@@ -1,9 +1,11 @@
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
+
 import { listProducts } from "@lib/data/products"
 import { getRegion, listRegions } from "@lib/data/regions"
-import ProductTemplate from "@modules/products/templates"
+import { getMetadataTitle } from "@lib/storefront-config"
 import { HttpTypes } from "@medusajs/types"
+import ProductTemplate from "@modules/products/templates"
 
 type Props = {
   params: Promise<{ countryCode: string; handle: string }>
@@ -56,17 +58,21 @@ function getImagesForVariant(
   product: HttpTypes.StoreProduct,
   selectedVariantId?: string
 ) {
+  const productImages = product.images ?? []
+
   if (!selectedVariantId || !product.variants) {
-    return product.images
+    return productImages
   }
 
-  const variant = product.variants!.find((v) => v.id === selectedVariantId)
-  if (!variant || !variant.images.length) {
-    return product.images
+  const variant = product.variants.find((v) => v.id === selectedVariantId)
+  const variantImages = variant?.images ?? []
+
+  if (!variant || !variantImages.length) {
+    return productImages
   }
 
-  const imageIdsMap = new Map(variant.images.map((i) => [i.id, true]))
-  return product.images!.filter((i) => imageIdsMap.has(i.id))
+  const imageIdsMap = new Map(variantImages.map((i) => [i.id, true]))
+  return productImages.filter((i) => imageIdsMap.has(i.id))
 }
 
 export async function generateMetadata(props: Props): Promise<Metadata> {
@@ -87,11 +93,13 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
     notFound()
   }
 
+  const pageTitle = getMetadataTitle(product.title)
+
   return {
-    title: `${product.title} | Medusa Store`,
+    title: pageTitle,
     description: `${product.title}`,
     openGraph: {
-      title: `${product.title} | Medusa Store`,
+      title: pageTitle,
       description: `${product.title}`,
       images: product.thumbnail ? [product.thumbnail] : [],
     },

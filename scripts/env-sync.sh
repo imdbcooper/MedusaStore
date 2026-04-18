@@ -84,13 +84,26 @@ upsert_env_value "$backend_env" "ADMIN_CORS" "http://localhost:5173,${MEDUSA_BAC
 upsert_env_value "$backend_env" "AUTH_CORS" "http://localhost:5173,${MEDUSA_BACKEND_URL},http://localhost:${STOREFRONT_PORT},https://docs.medusajs.com"
 upsert_env_value "$backend_env" "JWT_SECRET" "$JWT_SECRET"
 upsert_env_value "$backend_env" "COOKIE_SECRET" "$COOKIE_SECRET"
+upsert_env_value "$backend_env" "NOTIFICATION_EMAIL_PROVIDER" "${NOTIFICATION_EMAIL_PROVIDER:-local}"
+upsert_env_value "$backend_env" "NOTIFICATION_EMAIL_FROM" "${NOTIFICATION_EMAIL_FROM:-notifications@example.com}"
+upsert_env_value "$backend_env" "SENDGRID_API_KEY" "${SENDGRID_API_KEY:-}"
+upsert_env_value "$backend_env" "APISHIP_TOKEN" "${APISHIP_TOKEN:-}"
+upsert_env_value "$backend_env" "APISHIP_TEST_MODE" "${APISHIP_TEST_MODE:-true}"
+upsert_env_value "$backend_env" "YOOKASSA_SHOP_ID" "${YOOKASSA_SHOP_ID:-}"
+upsert_env_value "$backend_env" "YOOKASSA_SECRET_KEY" "${YOOKASSA_SECRET_KEY:-}"
+upsert_env_value "$backend_env" "YOOKASSA_RETURN_URL" "${YOOKASSA_RETURN_URL:-}"
+upsert_env_value "$backend_env" "YOOKASSA_STOREFRONT_RETURN_ORIGINS" "${YOOKASSA_STOREFRONT_RETURN_ORIGINS:-http://localhost:${STOREFRONT_PORT}}"
+upsert_env_value "$backend_env" "YOOKASSA_WEBHOOK_URL" "${YOOKASSA_WEBHOOK_URL:-}"
+upsert_env_value "$backend_env" "YOOKASSA_WEBHOOK_SECRET" "${YOOKASSA_WEBHOOK_SECRET:-}"
+upsert_env_value "$backend_env" "YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS" "${YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS:-false}"
 
 ensure_storefront_env_exists
 
 log_info "Syncing storefront env with root orchestration values..."
 upsert_env_value "$storefront_env" "MEDUSA_BACKEND_URL" "$MEDUSA_BACKEND_URL"
 upsert_env_value "$storefront_env" "NEXT_PUBLIC_BASE_URL" "$NEXT_PUBLIC_BASE_URL"
-upsert_env_value "$storefront_env" "NEXT_PUBLIC_DEFAULT_REGION" "gb"
+upsert_env_value "$storefront_env" "NEXT_PUBLIC_DEFAULT_REGION" "ru"
+upsert_env_value "$storefront_env" "NEXT_PUBLIC_YOOKASSA_ENABLED" "$([[ -n "${YOOKASSA_SHOP_ID:-}" && -n "${YOOKASSA_SECRET_KEY:-}" && -n "${YOOKASSA_RETURN_URL:-}" ]] && echo true || echo false)"
 
 if ! env_file_has_value "$storefront_env" "NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY"; then
   upsert_env_value "$storefront_env" "NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY" "REPLACE_WITH_ROOT_BOOTSTRAP"

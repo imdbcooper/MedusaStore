@@ -6,6 +6,7 @@ import {
   PopoverPanel,
   Transition,
 } from "@headlessui/react"
+import { storefrontConfig } from "@lib/storefront-config"
 import { convertToLocale } from "@lib/util/money"
 import { HttpTypes } from "@medusajs/types"
 import { Button } from "@medusajs/ui"
@@ -22,7 +23,7 @@ const CartDropdown = ({
 }: {
   cart?: HttpTypes.StoreCart | null
 }) => {
-  const [activeTimer, setActiveTimer] = useState<NodeJS.Timer | undefined>(
+  const [activeTimer, setActiveTimer] = useState<NodeJS.Timeout | undefined>(
     undefined
   )
   const [cartDropdownOpen, setCartDropdownOpen] = useState(false)
@@ -37,6 +38,10 @@ const CartDropdown = ({
 
   const subtotal = cartState?.subtotal ?? 0
   const itemRef = useRef<number>(totalItems || 0)
+  const pathname = usePathname()
+  const navigationCopy = storefrontConfig.copy.navigation
+  const cartCopy = storefrontConfig.copy.cart
+  const commonCopy = storefrontConfig.copy.common
 
   const timedOpen = () => {
     open()
@@ -54,7 +59,6 @@ const CartDropdown = ({
     open()
   }
 
-  // Clean up the timer when the component unmounts
   useEffect(() => {
     return () => {
       if (activeTimer) {
@@ -63,9 +67,6 @@ const CartDropdown = ({
     }
   }, [activeTimer])
 
-  const pathname = usePathname()
-
-  // open cart dropdown when modifying the cart items, but only if we're not on the cart page
   useEffect(() => {
     if (itemRef.current !== totalItems && !pathname.includes("/cart")) {
       timedOpen()
@@ -85,7 +86,7 @@ const CartDropdown = ({
             className="hover:text-ui-fg-base"
             href="/cart"
             data-testid="nav-cart-link"
-          >{`Cart (${totalItems})`}</LocalizedClientLink>
+          >{`${navigationCopy.cart} (${totalItems})`}</LocalizedClientLink>
         </PopoverButton>
         <Transition
           show={cartDropdownOpen}
@@ -103,7 +104,7 @@ const CartDropdown = ({
             data-testid="nav-cart-dropdown"
           >
             <div className="p-4 flex items-center justify-center">
-              <h3 className="text-large-semi">Cart</h3>
+              <h3 className="text-large-semi">{navigationCopy.cart}</h3>
             </div>
             {cartState && cartState.items?.length ? (
               <>
@@ -151,7 +152,7 @@ const CartDropdown = ({
                                   data-testid="cart-item-quantity"
                                   data-value={item.quantity}
                                 >
-                                  Quantity: {item.quantity}
+                                  {cartCopy.quantity}: {item.quantity}
                                 </span>
                               </div>
                               <div className="flex justify-end">
@@ -168,7 +169,7 @@ const CartDropdown = ({
                             className="mt-1"
                             data-testid="cart-item-remove-button"
                           >
-                            Remove
+                            {cartCopy.remove}
                           </DeleteButton>
                         </div>
                       </div>
@@ -177,8 +178,10 @@ const CartDropdown = ({
                 <div className="p-4 flex flex-col gap-y-4 text-small-regular">
                   <div className="flex items-center justify-between">
                     <span className="text-ui-fg-base font-semibold">
-                      Subtotal{" "}
-                      <span className="font-normal">(excl. taxes)</span>
+                      {commonCopy.subtotal}{" "}
+                      <span className="font-normal">
+                        ({commonCopy.subtotalExcludingTaxes})
+                      </span>
                     </span>
                     <span
                       className="text-large-semi"
@@ -197,7 +200,7 @@ const CartDropdown = ({
                       size="large"
                       data-testid="go-to-cart-button"
                     >
-                      Go to cart
+                      {cartCopy.goToCart}
                     </Button>
                   </LocalizedClientLink>
                 </div>
@@ -208,12 +211,12 @@ const CartDropdown = ({
                   <div className="bg-gray-900 text-small-regular flex items-center justify-center w-6 h-6 rounded-full text-white">
                     <span>0</span>
                   </div>
-                  <span>Your shopping bag is empty.</span>
+                  <span>{cartCopy.emptyDropdown}</span>
                   <div>
                     <LocalizedClientLink href="/store">
                       <>
-                        <span className="sr-only">Go to all products page</span>
-                        <Button onClick={close}>Explore products</Button>
+                        <span className="sr-only">{cartCopy.goToAllProducts}</span>
+                        <Button onClick={close}>{cartCopy.exploreProducts}</Button>
                       </>
                     </LocalizedClientLink>
                   </div>

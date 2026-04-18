@@ -1,5 +1,5 @@
 import React from "react"
-import { CreditCard } from "@medusajs/icons"
+import { ArrowUpRightOnBox, CreditCard } from "@medusajs/icons"
 
 import Ideal from "@modules/common/icons/ideal"
 import Bancontact from "@modules/common/icons/bancontact"
@@ -10,12 +10,16 @@ export const paymentInfoMap: Record<
   string,
   { title: string; icon: React.JSX.Element }
 > = {
+  pp_yookassa_yookassa: {
+    title: "YooKassa",
+    icon: <ArrowUpRightOnBox />,
+  },
   pp_stripe_stripe: {
-    title: "Credit card",
+    title: "Банковская карта",
     icon: <CreditCard />,
   },
   "pp_medusa-payments_default": {
-    title: "Credit card",
+    title: "Банковская карта",
     icon: <CreditCard />,
   },
   "pp_stripe-ideal_stripe": {
@@ -31,7 +35,7 @@ export const paymentInfoMap: Record<
     icon: <PayPal />,
   },
   pp_system_default: {
-    title: "Manual Payment",
+    title: "Ручная оплата",
     icon: <CreditCard />,
   },
   // Add more payment providers here
@@ -47,8 +51,13 @@ export const isStripeLike = (providerId?: string) => {
 export const isPaypal = (providerId?: string) => {
   return providerId?.startsWith("pp_paypal")
 }
+
 export const isManual = (providerId?: string) => {
   return providerId?.startsWith("pp_system_default")
+}
+
+export const isYooKassa = (providerId?: string) => {
+  return providerId === "pp_yookassa_yookassa"
 }
 
 // Add currencies that don't need to be divided by 100

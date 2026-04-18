@@ -1,8 +1,9 @@
 "use client"
 
 import { RadioGroup } from "@headlessui/react"
-import { isStripeLike, paymentInfoMap } from "@lib/constants"
+import { isStripeLike, isYooKassa, paymentInfoMap } from "@lib/constants"
 import { initiatePaymentSession } from "@lib/data/cart"
+import { storefrontConfig } from "@lib/storefront-config"
 import { CheckCircleSolid, CreditCard } from "@medusajs/icons"
 import { Button, Container, Heading, Text, clx } from "@medusajs/ui"
 import ErrorMessage from "@modules/checkout/components/error-message"
@@ -82,6 +83,17 @@ const Payment = ({
       if (!checkActiveSession) {
         await initiatePaymentSession(cart, {
           provider_id: selectedPaymentMethod,
+          data: isYooKassa(selectedPaymentMethod)
+            ? {
+                cart_id: cart.id,
+                country_code:
+                  cart?.shipping_address?.country_code?.toLowerCase() || "ru",
+                storefront_origin:
+                  typeof window === "undefined"
+                    ? undefined
+                    : window.location.origin,
+              }
+            : undefined,
         })
       }
 
@@ -104,6 +116,9 @@ const Payment = ({
     setError(null)
   }, [isOpen])
 
+  const checkoutCopy = storefrontConfig.copy.checkout
+  const commonCopy = storefrontConfig.copy.common
+
   return (
     <div className="bg-white">
       <div className="flex flex-row items-center justify-between mb-6">
@@ -117,7 +132,7 @@ const Payment = ({
             }
           )}
         >
-          Payment
+          {checkoutCopy.payment}
           {!isOpen && paymentReady && <CheckCircleSolid />}
         </Heading>
         {!isOpen && paymentReady && (
@@ -127,7 +142,7 @@ const Payment = ({
               className="text-ui-fg-interactive hover:text-ui-fg-interactive-hover"
               data-testid="edit-payment-button"
             >
-              Edit
+              {commonCopy.edit}
             </button>
           </Text>
         )}
@@ -167,13 +182,13 @@ const Payment = ({
           {paidByGiftcard && (
             <div className="flex flex-col w-1/3">
               <Text className="txt-medium-plus text-ui-fg-base mb-1">
-                Payment method
+                {checkoutCopy.paymentMethod}
               </Text>
               <Text
                 className="txt-medium text-ui-fg-subtle"
                 data-testid="payment-method-summary"
               >
-                Gift card
+                {checkoutCopy.giftCard}
               </Text>
             </div>
           )}
@@ -195,8 +210,8 @@ const Payment = ({
             data-testid="submit-payment-button"
           >
             {!activeSession && isStripeLike(selectedPaymentMethod)
-              ? " Enter card details"
-              : "Continue to review"}
+              ? checkoutCopy.enterCardDetails
+              : checkoutCopy.continueToReview}
           </Button>
         </div>
 
@@ -205,7 +220,7 @@ const Payment = ({
             <div className="flex items-start gap-x-1 w-full">
               <div className="flex flex-col w-1/3">
                 <Text className="txt-medium-plus text-ui-fg-base mb-1">
-                  Payment method
+                  {checkoutCopy.paymentMethod}
                 </Text>
                 <Text
                   className="txt-medium text-ui-fg-subtle"
@@ -217,7 +232,7 @@ const Payment = ({
               </div>
               <div className="flex flex-col w-1/3">
                 <Text className="txt-medium-plus text-ui-fg-base mb-1">
-                  Payment details
+                  {checkoutCopy.paymentDetails}
                 </Text>
                 <div
                   className="flex gap-2 txt-medium text-ui-fg-subtle items-center"
@@ -231,7 +246,9 @@ const Payment = ({
                   <Text>
                     {isStripeLike(selectedPaymentMethod) && cardBrand
                       ? cardBrand
-                      : "Another step will appear"}
+                      : isYooKassa(selectedPaymentMethod)
+                        ? checkoutCopy.yookassaHostedRedirect
+                        : checkoutCopy.additionalStep}
                   </Text>
                 </div>
               </div>
@@ -239,13 +256,13 @@ const Payment = ({
           ) : paidByGiftcard ? (
             <div className="flex flex-col w-1/3">
               <Text className="txt-medium-plus text-ui-fg-base mb-1">
-                Payment method
+                {checkoutCopy.paymentMethod}
               </Text>
               <Text
                 className="txt-medium text-ui-fg-subtle"
                 data-testid="payment-method-summary"
               >
-                Gift card
+                {checkoutCopy.giftCard}
               </Text>
             </div>
           ) : null}

@@ -1,7 +1,13 @@
 "use client"
 
-import { isManual, isStripeLike } from "@lib/constants"
+import { isManual, isStripeLike, isYooKassa } from "@lib/constants"
 import { placeOrder } from "@lib/data/cart"
+import { getYooKassaPaymentStatus } from "@lib/data/payment"
+import { storefrontConfig } from "@lib/storefront-config"
+import {
+  getYooKassaConfirmationUrl,
+  getYooKassaPaymentId,
+} from "@lib/util/yookassa"
 import { HttpTypes } from "@medusajs/types"
 import { Button } from "@medusajs/ui"
 import { useElements, useStripe } from "@stripe/react-stripe-js"
@@ -25,8 +31,17 @@ const PaymentButton: React.FC<PaymentButtonProps> = ({
     (cart.shipping_methods?.length ?? 0) < 1
 
   const paymentSession = cart.payment_collection?.payment_sessions?.[0]
+  const checkoutCopy = storefrontConfig.copy.checkout
 
   switch (true) {
+    case isYooKassa(paymentSession?.provider_id):
+      return (
+        <YooKassaPaymentButton
+          notReady={notReady}
+          cart={cart}
+          data-testid={dataTestId}
+        />
+      )
     case isStripeLike(paymentSession?.provider_id):
       return (
         <StripePaymentButton
@@ -40,8 +55,94 @@ const PaymentButton: React.FC<PaymentButtonProps> = ({
         <ManualTestPaymentButton notReady={notReady} data-testid={dataTestId} />
       )
     default:
-      return <Button disabled>Select a payment method</Button>
+      return <Button disabled>{checkoutCopy.selectPaymentMethod}</Button>
   }
+}
+
+const YooKassaPaymentButton = ({
+  cart,
+  notReady,
+  "data-testid": dataTestId,
+}: {
+  cart: HttpTypes.StoreCart
+  notReady: boolean
+  "data-testid"?: string
+}) => {
+  const [submitting, setSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const checkoutCopy = storefrontConfig.copy.checkout
+
+  const handlePayment = async () => {
+    setSubmitting(true)
+    setErrorMessage(null)
+
+    try {
+      const paymentId = getYooKassaPaymentId(cart)
+
+      if (!paymentId) {
+        throw new Error("YooKassa payment session is missing payment id.")
+      }
+
+      const status = await getYooKassaPaymentStatus({
+        cartId: cart.id,
+        paymentId,
+      })
+
+      console.info("[YooKassa checkout] Evaluated hosted payment state", {
+        cartId: cart.id,
+        paymentId,
+        sessionStatus: status.session_status,
+        paymentStatus: status.payment_status,
+        canPlaceOrder: status.can_place_order,
+        confirmationUrl: status.confirmation_url,
+      })
+
+      if (status.can_place_order) {
+        await placeOrder()
+        return
+      }
+
+      const confirmationUrl =
+        status.confirmation_url || getYooKassaConfirmationUrl(cart)
+
+      if (!confirmationUrl) {
+        throw new Error("YooKassa confirmation URL is missing.")
+      }
+
+      console.info("[YooKassa checkout] Redirecting to hosted confirmation", {
+        cartId: cart.id,
+        paymentId,
+        confirmationUrl,
+      })
+
+      window.location.assign(confirmationUrl)
+    } catch (err: any) {
+      console.error("[YooKassa checkout] Failed to continue checkout", {
+        cartId: cart.id,
+        message: err?.message,
+      })
+      setErrorMessage(err.message)
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <Button
+        disabled={notReady}
+        onClick={handlePayment}
+        size="large"
+        isLoading={submitting}
+        data-testid={dataTestId}
+      >
+        {checkoutCopy.confirmAndGoToYooKassa}
+      </Button>
+      <ErrorMessage
+        error={errorMessage}
+        data-testid="yookassa-payment-error-message"
+      />
+    </>
+  )
 }
 
 const StripePaymentButton = ({
@@ -55,6 +156,7 @@ const StripePaymentButton = ({
 }) => {
   const [submitting, setSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const checkoutCopy = storefrontConfig.copy.checkout
 
   const onPaymentCompleted = async () => {
     await placeOrder()
@@ -141,7 +243,7 @@ const StripePaymentButton = ({
         isLoading={submitting}
         data-testid={dataTestId}
       >
-        Place order
+        {checkoutCopy.placeOrder}
       </Button>
       <ErrorMessage
         error={errorMessage}
@@ -154,6 +256,7 @@ const StripePaymentButton = ({
 const ManualTestPaymentButton = ({ notReady }: { notReady: boolean }) => {
   const [submitting, setSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const checkoutCopy = storefrontConfig.copy.checkout
 
   const onPaymentCompleted = async () => {
     await placeOrder()
@@ -180,7 +283,7 @@ const ManualTestPaymentButton = ({ notReady }: { notReady: boolean }) => {
         size="large"
         data-testid="submit-order-button"
       >
-        Place order
+        {checkoutCopy.placeOrder}
       </Button>
       <ErrorMessage
         error={errorMessage}

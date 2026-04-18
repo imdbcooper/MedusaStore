@@ -2,6 +2,7 @@
 
 import { Button } from "@medusajs/ui"
 
+import { storefrontConfig } from "@lib/storefront-config"
 import OrderCard from "../order-card"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import { HttpTypes } from "@medusajs/types"
@@ -27,15 +28,11 @@ const OrderOverview = ({ orders }: { orders: HttpTypes.StoreOrder[] }) => {
       className="w-full flex flex-col items-center gap-y-4"
       data-testid="no-orders-container"
     >
-      <h2 className="text-large-semi">Nothing to see here</h2>
-      <p className="text-base-regular">
-        You don&apos;t have any orders yet, let us change that {":)"}
-      </p>
+      <h2 className="text-large-semi">Пока нечего показывать</h2>
+      <p className="text-base-regular">У вас ещё нет заказов.</p>
       <div className="mt-4">
         <LocalizedClientLink href="/" passHref>
-          <Button data-testid="continue-shopping-button">
-            Continue shopping
-          </Button>
+          <Button data-testid="continue-shopping-button">Перейти в каталог</Button>
         </LocalizedClientLink>
       </div>
     </div>

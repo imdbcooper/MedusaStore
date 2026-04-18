@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 
 import { getCategoryByHandle, listCategories } from "@lib/data/categories"
 import { listRegions } from "@lib/data/regions"
+import { getMetadataTitle } from "@lib/storefront-config"
 import { StoreRegion } from "@medusajs/types"
 import CategoryTemplate from "@modules/categories/templates"
 import { SortOptions } from "@modules/store/components/refinement-list/sort-products"
@@ -44,15 +45,14 @@ export async function generateStaticParams() {
 
 export async function generateMetadata(props: Props): Promise<Metadata> {
   const params = await props.params
+
   try {
     const productCategory = await getCategoryByHandle(params.category)
-
-    const title = productCategory.name + " | Medusa Store"
-
-    const description = productCategory.description ?? `${title} category.`
+    const description =
+      productCategory.description ?? `${productCategory.name} category.`
 
     return {
-      title: `${title} | Medusa Store`,
+      title: getMetadataTitle(productCategory.name),
       description,
       alternates: {
         canonical: `${params.category.join("/")}`,

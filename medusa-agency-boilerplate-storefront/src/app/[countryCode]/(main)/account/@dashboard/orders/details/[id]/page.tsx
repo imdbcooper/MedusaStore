@@ -1,4 +1,5 @@
 import { retrieveOrder } from "@lib/data/orders"
+import { getMetadataTitle, storefrontConfig } from "@lib/storefront-config"
 import OrderDetailsTemplate from "@modules/order/templates/order-details-template"
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
@@ -16,8 +17,10 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
   }
 
   return {
-    title: `Order #${order.display_id}`,
-    description: `View your order`,
+    title: getMetadataTitle(
+      `${storefrontConfig.copy.account.orders} #${order.display_id}`
+    ),
+    description: storefrontConfig.copy.order.details,
   }
 }
 

@@ -2,6 +2,7 @@
 
 import { Button, Heading } from "@medusajs/ui"
 
+import { storefrontConfig } from "@lib/storefront-config"
 import CartTotals from "@modules/common/components/cart-totals"
 import Divider from "@modules/common/components/divider"
 import DiscountCode from "@modules/checkout/components/discount-code"
@@ -26,11 +27,12 @@ function getCheckoutStep(cart: HttpTypes.StoreCart) {
 
 const Summary = ({ cart }: SummaryProps) => {
   const step = getCheckoutStep(cart)
+  const cartCopy = storefrontConfig.copy.cart
 
   return (
     <div className="flex flex-col gap-y-4">
       <Heading level="h2" className="text-[2rem] leading-[2.75rem]">
-        Summary
+        {cartCopy.summary}
       </Heading>
       <DiscountCode cart={cart} />
       <Divider />
@@ -39,7 +41,7 @@ const Summary = ({ cart }: SummaryProps) => {
         href={"/checkout?step=" + step}
         data-testid="checkout-button"
       >
-        <Button className="w-full h-10">Go to checkout</Button>
+        <Button className="w-full h-10">{cartCopy.goToCheckout}</Button>
       </LocalizedClientLink>
     </div>
   )

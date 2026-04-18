@@ -1,11 +1,18 @@
 "use client"
 
+import { storefrontConfig } from "@lib/storefront-config"
 import { Heading, Text, clx } from "@medusajs/ui"
-
-import PaymentButton from "../payment-button"
 import { useSearchParams } from "next/navigation"
 
-const Review = ({ cart }: { cart: any }) => {
+import PaymentButton from "../payment-button"
+
+const Review = ({
+  cart,
+  yookassaStatus,
+}: {
+  cart: any
+  yookassaStatus?: string | null
+}) => {
   const searchParams = useSearchParams()
 
   const isOpen = searchParams.get("step") === "review"
@@ -17,6 +24,8 @@ const Review = ({ cart }: { cart: any }) => {
     cart.shipping_address &&
     cart.shipping_methods.length > 0 &&
     (cart.payment_collection || paidByGiftcard)
+
+  const checkoutCopy = storefrontConfig.copy.checkout
 
   return (
     <div className="bg-white">
@@ -30,18 +39,23 @@ const Review = ({ cart }: { cart: any }) => {
             }
           )}
         >
-          Review
+          {checkoutCopy.review}
         </Heading>
       </div>
       {isOpen && previousStepsCompleted && (
         <>
+          {yookassaStatus === "return" && (
+            <div className="mb-6 rounded-rounded border border-ui-border-base bg-ui-bg-subtle px-4 py-3">
+              <Text className="txt-small text-ui-fg-subtle">
+                {checkoutCopy.yookassaReturnBanner}
+              </Text>
+            </div>
+          )}
           <div className="flex items-start gap-x-1 w-full mb-6">
             <div className="w-full">
               <Text className="txt-medium-plus text-ui-fg-base mb-1">
-                By clicking the Place Order button, you confirm that you have
-                read, understand and accept our Terms of Use, Terms of Sale and
-                Returns Policy and acknowledge that you have read Medusa
-                Store&apos;s Privacy Policy.
+                {checkoutCopy.reviewTermsPrefix} {storefrontConfig.storeName}
+                {checkoutCopy.reviewTermsStoreSuffix}
               </Text>
             </div>
           </div>

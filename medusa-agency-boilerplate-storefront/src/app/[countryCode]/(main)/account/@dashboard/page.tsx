@@ -4,10 +4,11 @@ import Overview from "@modules/account/components/overview"
 import { notFound } from "next/navigation"
 import { retrieveCustomer } from "@lib/data/customer"
 import { listOrders } from "@lib/data/orders"
+import { getMetadataTitle, storefrontConfig } from "@lib/storefront-config"
 
 export const metadata: Metadata = {
-  title: "Account",
-  description: "Overview of your account activity.",
+  title: getMetadataTitle(storefrontConfig.copy.account.title),
+  description: storefrontConfig.copy.account.dashboardDescription,
 }
 
 export default async function OverviewTemplate() {

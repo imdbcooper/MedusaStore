@@ -1,9 +1,5 @@
-import { CreateInventoryLevelInput, ExecArgs } from "@medusajs/framework/types";
-import {
-  ContainerRegistrationKeys,
-  Modules,
-  ProductStatus,
-} from "@medusajs/framework/utils";
+import { ExecArgs } from "@medusajs/framework/types";
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
 import {
   createWorkflow,
   transform,
@@ -11,9 +7,6 @@ import {
 } from "@medusajs/framework/workflows-sdk";
 import {
   createApiKeysWorkflow,
-  createInventoryLevelsWorkflow,
-  createProductCategoriesWorkflow,
-  createProductsWorkflow,
   createRegionsWorkflow,
   createSalesChannelsWorkflow,
   createShippingOptionsWorkflow,
@@ -22,10 +15,64 @@ import {
   createTaxRegionsWorkflow,
   linkSalesChannelsToApiKeyWorkflow,
   linkSalesChannelsToStockLocationWorkflow,
+  updateRegionsWorkflow,
   updateStoresStep,
   updateStoresWorkflow,
 } from "@medusajs/medusa/core-flows";
 import { ApiKey } from "../../.medusa/types/query-entry-points";
+
+type RegionRecord = {
+  id: string;
+  name?: string | null;
+  currency_code?: string | null;
+  countries?: { iso_2?: string | null }[] | null;
+  payment_providers?: { id?: string | null }[] | null;
+};
+
+type TaxRegionRecord = {
+  id: string;
+  country_code?: string | null;
+};
+
+type StockLocationRecord = {
+  id: string;
+  name?: string | null;
+};
+
+type FulfillmentSetRecord = {
+  id: string;
+  name?: string | null;
+  service_zones?: { id: string }[] | null;
+};
+
+type ShippingOptionRecord = {
+  id: string;
+  name?: string | null;
+  provider_id?: string | null;
+};
+
+type ShippingProfileRecord = {
+  id: string;
+  name?: string | null;
+  type?: string | null;
+};
+
+const DEFAULT_COUNTRY_CODE = "ru";
+const DEFAULT_REGION_NAME = "Russia";
+const DEFAULT_CURRENCY_CODE = "rub";
+const DEFAULT_SALES_CHANNEL_NAME = "Default Sales Channel";
+const DEFAULT_STOCK_LOCATION_NAME = "Template RU Warehouse";
+const DEFAULT_FULFILLMENT_SET_NAME = "Template RU Fulfillment";
+const DEFAULT_SHIPPING_PROFILE_NAME = "Default Shipping Profile";
+const DEFAULT_SHIPPING_OPTION_NAME = "Template Standard Shipping";
+const APISHIP_SHIPPING_OPTION_NAME = "ApiShip Courier to Address";
+const DEFAULT_PUBLISHABLE_KEY_TITLE = "Webshop";
+const DEFAULT_PAYMENT_PROVIDER_ID = "pp_system_default";
+const YOOKASSA_PAYMENT_PROVIDER_ID = "pp_yookassa_yookassa";
+const MANUAL_FULFILLMENT_PROVIDER_ID = "manual_manual";
+const APISHIP_FULFILLMENT_PROVIDER_ID = "apiship_apiship";
+const BASELINE_HARDENING_HINT =
+  "Resolve the conflicting baseline entities on this database or rerun bootstrap on a clean clone.";
 
 const updateStoreCurrencies = createWorkflow(
   "update-store-currencies",
@@ -37,14 +84,12 @@ const updateStoreCurrencies = createWorkflow(
       return {
         selector: { id: data.input.store_id },
         update: {
-          supported_currencies: data.input.supported_currencies.map(
-            (currency) => {
-              return {
-                currency_code: currency.currency_code,
-                is_default: currency.is_default ?? false,
-              };
-            }
-          ),
+          supported_currencies: data.input.supported_currencies.map((currency) => {
+            return {
+              currency_code: currency.currency_code,
+              is_default: currency.is_default ?? false,
+            };
+          }),
         },
       };
     });
@@ -55,6 +100,69 @@ const updateStoreCurrencies = createWorkflow(
   }
 );
 
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+};
+
+const isExistingLinkError = (error: unknown) => {
+  const message = getErrorMessage(error);
+
+  return /(already exists|already linked|duplicate|unique constraint)/i.test(
+    message
+  );
+};
+
+const ensureUniqueMatch = <T>(matches: T[], description: string) => {
+  if (matches.length > 1) {
+    throw new Error(
+      `Bootstrap found multiple ${description}. ${BASELINE_HARDENING_HINT}`
+    );
+  }
+
+  return matches[0] ?? null;
+};
+
+const countryMatches = (countryCode?: string | null) =>
+  countryCode?.toLowerCase() === DEFAULT_COUNTRY_CODE;
+
+const regionMatchesBaseline = (candidate: RegionRecord) => {
+  return (
+    candidate.countries?.some((country) => countryMatches(country.iso_2)) ||
+    candidate.name === DEFAULT_REGION_NAME
+  );
+};
+
+const findReusableShippingOption = (
+  existingShippingOptions: ShippingOptionRecord[],
+  name: string,
+  expectedProviderId: string
+) => {
+  const nameMatches = existingShippingOptions.filter(
+    (candidate) => candidate.name === name
+  );
+
+  const reusableOption = ensureUniqueMatch(
+    nameMatches,
+    `shipping options named "${name}"`
+  );
+
+  if (!reusableOption) {
+    return null;
+  }
+
+  if (reusableOption.provider_id !== expectedProviderId) {
+    throw new Error(
+      `Bootstrap found shipping option "${name}" bound to provider "${reusableOption.provider_id ?? "unknown"}" instead of "${expectedProviderId}". ${BASELINE_HARDENING_HINT}`
+    );
+  }
+
+  return reusableOption;
+};
+
 export default async function seedDemoData({ container }: ExecArgs) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER);
   const link = container.resolve(ContainerRegistrationKeys.LINK);
@@ -63,28 +171,75 @@ export default async function seedDemoData({ container }: ExecArgs) {
   const salesChannelModuleService = container.resolve(Modules.SALES_CHANNEL);
   const storeModuleService = container.resolve(Modules.STORE);
 
-  const countries = ["gb", "de", "dk", "se", "fr", "es", "it"];
+  const ensureDirectLink = async (
+    description: string,
+    input: Record<string, Record<string, string>>
+  ) => {
+    try {
+      await link.create(input);
+    } catch (error) {
+      if (isExistingLinkError(error)) {
+        logger.info(`Reusing existing ${description} link.`);
+        return;
+      }
 
-  logger.info("Seeding store data...");
+      throw new Error(
+        `Bootstrap failed while ensuring ${description} link: ${getErrorMessage(error)}`
+      );
+    }
+  };
+
+  const ensureWorkflowLink = async (
+    description: string,
+    callback: () => Promise<unknown>
+  ) => {
+    try {
+      await callback();
+    } catch (error) {
+      if (isExistingLinkError(error)) {
+        logger.info(`Reusing existing ${description} link.`);
+        return;
+      }
+
+      throw new Error(
+        `Bootstrap failed while ensuring ${description} link: ${getErrorMessage(error)}`
+      );
+    }
+  };
+
+  logger.info("Seeding template-ready store data...");
   const [store] = await storeModuleService.listStores();
-  let defaultSalesChannel = await salesChannelModuleService.listSalesChannels({
-    name: "Default Sales Channel",
+
+  if (!store) {
+    throw new Error("No Medusa store found to bootstrap.");
+  }
+
+  const defaultSalesChannels = await salesChannelModuleService.listSalesChannels({
+    name: DEFAULT_SALES_CHANNEL_NAME,
   });
 
-  if (!defaultSalesChannel.length) {
-    // create the default sales channel
+  let defaultSalesChannel = ensureUniqueMatch(
+    defaultSalesChannels,
+    `sales channels named "${DEFAULT_SALES_CHANNEL_NAME}"`
+  );
+
+  if (!defaultSalesChannel) {
     const { result: salesChannelResult } = await createSalesChannelsWorkflow(
       container
     ).run({
       input: {
         salesChannelsData: [
           {
-            name: "Default Sales Channel",
+            name: DEFAULT_SALES_CHANNEL_NAME,
           },
         ],
       },
     });
-    defaultSalesChannel = salesChannelResult;
+
+    defaultSalesChannel = salesChannelResult[0];
+    logger.info(`Created sales channel "${DEFAULT_SALES_CHANNEL_NAME}".`);
+  } else {
+    logger.info(`Reusing sales channel "${DEFAULT_SALES_CHANNEL_NAME}".`);
   }
 
   await updateStoreCurrencies(container).run({
@@ -92,11 +247,8 @@ export default async function seedDemoData({ container }: ExecArgs) {
       store_id: store.id,
       supported_currencies: [
         {
-          currency_code: "eur",
+          currency_code: DEFAULT_CURRENCY_CODE,
           is_default: true,
-        },
-        {
-          currency_code: "usd",
         },
       ],
     },
@@ -106,53 +258,141 @@ export default async function seedDemoData({ container }: ExecArgs) {
     input: {
       selector: { id: store.id },
       update: {
-        default_sales_channel_id: defaultSalesChannel[0].id,
+        default_sales_channel_id: defaultSalesChannel.id,
       },
     },
   });
+  logger.info("Finished seeding store data.");
+
   logger.info("Seeding region data...");
-  const { result: regionResult } = await createRegionsWorkflow(container).run({
+  const { data: existingRegions } = await query.graph({
+    entity: "region",
+    fields: [
+      "id",
+      "name",
+      "currency_code",
+      "countries.iso_2",
+      "payment_providers.id",
+    ],
+  });
+
+  let region = ensureUniqueMatch(
+    ((existingRegions as RegionRecord[] | undefined) ?? []).filter(
+      regionMatchesBaseline
+    ),
+    `regions matching country "${DEFAULT_COUNTRY_CODE}" or name "${DEFAULT_REGION_NAME}"`
+  );
+
+  if (!region) {
+    const { result: regionResult } = await createRegionsWorkflow(container).run({
+      input: {
+        regions: [
+          {
+            name: DEFAULT_REGION_NAME,
+            currency_code: DEFAULT_CURRENCY_CODE,
+            countries: [DEFAULT_COUNTRY_CODE],
+            payment_providers: [DEFAULT_PAYMENT_PROVIDER_ID],
+          },
+        ],
+      },
+    });
+
+    region = regionResult[0] as RegionRecord;
+    logger.info(`Created region "${DEFAULT_REGION_NAME}".`);
+  } else {
+    logger.info(`Reusing region "${region.name ?? DEFAULT_REGION_NAME}".`);
+  }
+
+  const regionPaymentProviders = new Set<string>(
+    ((region.payment_providers ?? []).map((provider) => provider.id).filter(Boolean) ?? []) as string[]
+  );
+  regionPaymentProviders.add(DEFAULT_PAYMENT_PROVIDER_ID);
+
+  if (
+    process.env.YOOKASSA_SHOP_ID?.trim() &&
+    process.env.YOOKASSA_SECRET_KEY?.trim() &&
+    process.env.YOOKASSA_RETURN_URL?.trim()
+  ) {
+    regionPaymentProviders.add(YOOKASSA_PAYMENT_PROVIDER_ID);
+  }
+
+  await updateRegionsWorkflow(container).run({
     input: {
-      regions: [
-        {
-          name: "Europe",
-          currency_code: "eur",
-          countries,
-          payment_providers: ["pp_system_default"],
-        },
-      ],
+      selector: { id: region.id },
+      update: {
+        payment_providers: Array.from(regionPaymentProviders),
+      },
     },
   });
-  const region = regionResult[0];
   logger.info("Finished seeding regions.");
 
   logger.info("Seeding tax regions...");
-  await createTaxRegionsWorkflow(container).run({
-    input: countries.map((country_code) => ({
-      country_code,
-      provider_id: "tp_system",
-    })),
+  const { data: existingTaxRegions } = await query.graph({
+    entity: "tax_region",
+    fields: ["id", "country_code"],
   });
+
+  const matchingTaxRegions = ((existingTaxRegions as TaxRegionRecord[] | undefined) ?? []).filter(
+    (candidate) => countryMatches(candidate.country_code)
+  );
+
+  const taxRegion = ensureUniqueMatch(
+    matchingTaxRegions,
+    `tax regions for country "${DEFAULT_COUNTRY_CODE}"`
+  );
+
+  if (!taxRegion) {
+    await createTaxRegionsWorkflow(container).run({
+      input: [
+        {
+          country_code: DEFAULT_COUNTRY_CODE,
+          provider_id: "tp_system",
+        },
+      ],
+    });
+    logger.info(`Created tax region for country "${DEFAULT_COUNTRY_CODE}".`);
+  } else {
+    logger.info(`Reusing tax region for country "${DEFAULT_COUNTRY_CODE}".`);
+  }
   logger.info("Finished seeding tax regions.");
 
   logger.info("Seeding stock location data...");
-  const { result: stockLocationResult } = await createStockLocationsWorkflow(
-    container
-  ).run({
-    input: {
-      locations: [
-        {
-          name: "European Warehouse",
-          address: {
-            city: "Copenhagen",
-            country_code: "DK",
-            address_1: "",
-          },
-        },
-      ],
-    },
+  const { data: existingStockLocations } = await query.graph({
+    entity: "stock_location",
+    fields: ["id", "name"],
   });
-  const stockLocation = stockLocationResult[0];
+
+  let stockLocation = ensureUniqueMatch(
+    ((existingStockLocations as StockLocationRecord[] | undefined) ?? []).filter(
+      (candidate) => candidate.name === DEFAULT_STOCK_LOCATION_NAME
+    ),
+    `stock locations named "${DEFAULT_STOCK_LOCATION_NAME}"`
+  );
+
+  if (!stockLocation) {
+    const { result: stockLocationResult } = await createStockLocationsWorkflow(
+      container
+    ).run({
+      input: {
+        locations: [
+          {
+            name: DEFAULT_STOCK_LOCATION_NAME,
+            address: {
+              city: "Moscow",
+              country_code: DEFAULT_COUNTRY_CODE.toUpperCase(),
+              address_1: "Складская ул., д. 1",
+              postal_code: "101000",
+            },
+          },
+        ],
+      },
+    });
+
+    stockLocation = stockLocationResult[0] as StockLocationRecord;
+    logger.info(`Created stock location "${DEFAULT_STOCK_LOCATION_NAME}".`);
+  } else {
+    logger.info(`Reusing stock location "${DEFAULT_STOCK_LOCATION_NAME}".`);
+  }
 
   await updateStoresWorkflow(container).run({
     input: {
@@ -163,77 +403,104 @@ export default async function seedDemoData({ container }: ExecArgs) {
     },
   });
 
-  await link.create({
+  await ensureDirectLink("stock location to manual fulfillment provider", {
     [Modules.STOCK_LOCATION]: {
       stock_location_id: stockLocation.id,
     },
     [Modules.FULFILLMENT]: {
-      fulfillment_provider_id: "manual_manual",
+      fulfillment_provider_id: MANUAL_FULFILLMENT_PROVIDER_ID,
     },
   });
 
+  if (process.env.APISHIP_TOKEN?.trim()) {
+    await ensureDirectLink("stock location to ApiShip fulfillment provider", {
+      [Modules.STOCK_LOCATION]: {
+        stock_location_id: stockLocation.id,
+      },
+      [Modules.FULFILLMENT]: {
+        fulfillment_provider_id: APISHIP_FULFILLMENT_PROVIDER_ID,
+      },
+    });
+  }
+
   logger.info("Seeding fulfillment data...");
-  const shippingProfiles = await fulfillmentModuleService.listShippingProfiles({
+  const shippingProfiles = (await fulfillmentModuleService.listShippingProfiles({
     type: "default",
-  });
-  let shippingProfile = shippingProfiles.length ? shippingProfiles[0] : null;
+  })) as ShippingProfileRecord[];
+
+  const namedShippingProfiles = shippingProfiles.filter(
+    (candidate) => candidate.name === DEFAULT_SHIPPING_PROFILE_NAME
+  );
+
+  let shippingProfile = ensureUniqueMatch(
+    namedShippingProfiles,
+    `shipping profiles named "${DEFAULT_SHIPPING_PROFILE_NAME}"`
+  );
 
   if (!shippingProfile) {
-    const { result: shippingProfileResult } =
-      await createShippingProfilesWorkflow(container).run({
-        input: {
-          data: [
+    if (shippingProfiles.length === 1) {
+      shippingProfile = shippingProfiles[0];
+      logger.info(
+        `Reusing existing default shipping profile "${shippingProfile.name ?? shippingProfile.id}".`
+      );
+    } else if (shippingProfiles.length === 0) {
+      const { result: shippingProfileResult } =
+        await createShippingProfilesWorkflow(container).run({
+          input: {
+            data: [
+              {
+                name: DEFAULT_SHIPPING_PROFILE_NAME,
+                type: "default",
+              },
+            ],
+          },
+        });
+
+      shippingProfile = shippingProfileResult[0] as ShippingProfileRecord;
+      logger.info(`Created shipping profile "${DEFAULT_SHIPPING_PROFILE_NAME}".`);
+    } else {
+      throw new Error(
+        `Bootstrap found multiple default shipping profiles without a baseline match. ${BASELINE_HARDENING_HINT}`
+      );
+    }
+  } else {
+    logger.info(`Reusing shipping profile "${shippingProfile.name}".`);
+  }
+
+  const { data: existingFulfillmentSets } = await query.graph({
+    entity: "fulfillment_set",
+    fields: ["id", "name", "service_zones.id"],
+  });
+
+  let fulfillmentSet = ensureUniqueMatch(
+    ((existingFulfillmentSets as FulfillmentSetRecord[] | undefined) ?? []).filter(
+      (candidate) => candidate.name === DEFAULT_FULFILLMENT_SET_NAME
+    ),
+    `fulfillment sets named "${DEFAULT_FULFILLMENT_SET_NAME}"`
+  );
+
+  if (!fulfillmentSet) {
+    fulfillmentSet = (await fulfillmentModuleService.createFulfillmentSets({
+      name: DEFAULT_FULFILLMENT_SET_NAME,
+      type: "shipping",
+      service_zones: [
+        {
+          name: DEFAULT_REGION_NAME,
+          geo_zones: [
             {
-              name: "Default Shipping Profile",
-              type: "default",
+              country_code: DEFAULT_COUNTRY_CODE,
+              type: "country",
             },
           ],
         },
-      });
-    shippingProfile = shippingProfileResult[0];
+      ],
+    })) as FulfillmentSetRecord;
+    logger.info(`Created fulfillment set "${DEFAULT_FULFILLMENT_SET_NAME}".`);
+  } else {
+    logger.info(`Reusing fulfillment set "${DEFAULT_FULFILLMENT_SET_NAME}".`);
   }
 
-  const fulfillmentSet = await fulfillmentModuleService.createFulfillmentSets({
-    name: "European Warehouse delivery",
-    type: "shipping",
-    service_zones: [
-      {
-        name: "Europe",
-        geo_zones: [
-          {
-            country_code: "gb",
-            type: "country",
-          },
-          {
-            country_code: "de",
-            type: "country",
-          },
-          {
-            country_code: "dk",
-            type: "country",
-          },
-          {
-            country_code: "se",
-            type: "country",
-          },
-          {
-            country_code: "fr",
-            type: "country",
-          },
-          {
-            country_code: "es",
-            type: "country",
-          },
-          {
-            country_code: "it",
-            type: "country",
-          },
-        ],
-      },
-    ],
-  });
-
-  await link.create({
+  await ensureDirectLink("stock location to fulfillment set", {
     [Modules.STOCK_LOCATION]: {
       stock_location_id: stockLocation.id,
     },
@@ -242,682 +509,183 @@ export default async function seedDemoData({ container }: ExecArgs) {
     },
   });
 
-  await createShippingOptionsWorkflow(container).run({
-    input: [
-      {
-        name: "Standard Shipping",
-        price_type: "flat",
-        provider_id: "manual_manual",
-        service_zone_id: fulfillmentSet.service_zones[0].id,
+  const serviceZoneId = fulfillmentSet.service_zones?.[0]?.id;
+
+  if (!serviceZoneId) {
+    throw new Error(
+      `Template fulfillment set "${DEFAULT_FULFILLMENT_SET_NAME}" is missing a service zone. ${BASELINE_HARDENING_HINT}`
+    );
+  }
+
+  const { data: existingShippingOptions } = await query.graph({
+    entity: "shipping_option",
+    fields: ["id", "name", "provider_id"],
+  });
+
+  const shippingOptions =
+    (existingShippingOptions as ShippingOptionRecord[] | undefined) ?? [];
+  const reusableDefaultShippingOption = findReusableShippingOption(
+    shippingOptions,
+    DEFAULT_SHIPPING_OPTION_NAME,
+    MANUAL_FULFILLMENT_PROVIDER_ID
+  );
+  const reusableApiShipShippingOption = findReusableShippingOption(
+    shippingOptions,
+    APISHIP_SHIPPING_OPTION_NAME,
+    APISHIP_FULFILLMENT_PROVIDER_ID
+  );
+
+  const shippingOptionsToCreate: any[] = [];
+
+  if (!reusableDefaultShippingOption) {
+    shippingOptionsToCreate.push({
+      name: DEFAULT_SHIPPING_OPTION_NAME,
+      price_type: "flat",
+      provider_id: MANUAL_FULFILLMENT_PROVIDER_ID,
+      service_zone_id: serviceZoneId,
+      shipping_profile_id: shippingProfile.id,
+      type: {
+        label: "Default",
+        description: "Template-ready shipping option.",
+        code: "default",
+      },
+      prices: [
+        {
+          region_id: region.id,
+          amount: 0,
+        },
+      ],
+      rules: [
+        {
+          attribute: "enabled_in_store",
+          value: "true",
+          operator: "eq" as const,
+        },
+        {
+          attribute: "is_return",
+          value: "false",
+          operator: "eq" as const,
+        },
+      ],
+    });
+  } else {
+    logger.info(`Reusing shipping option "${DEFAULT_SHIPPING_OPTION_NAME}".`);
+  }
+
+  if (process.env.APISHIP_TOKEN?.trim()) {
+    if (!reusableApiShipShippingOption) {
+      shippingOptionsToCreate.push({
+        name: APISHIP_SHIPPING_OPTION_NAME,
+        price_type: "calculated",
+        provider_id: APISHIP_FULFILLMENT_PROVIDER_ID,
+        service_zone_id: serviceZoneId,
         shipping_profile_id: shippingProfile.id,
         type: {
-          label: "Standard",
-          description: "Ship in 2-3 days.",
-          code: "standard",
+          label: "Courier",
+          description:
+            "ApiShip courier delivery to recipient address. Checkout v1 applies the cheapest returned tariff.",
+          code: "apiship-courier",
         },
-        prices: [
-          {
-            currency_code: "usd",
-            amount: 10,
-          },
-          {
-            currency_code: "eur",
-            amount: 10,
-          },
-          {
-            region_id: region.id,
-            amount: 10,
-          },
-        ],
+        data: {
+          id: "apiship_courier_to_address",
+          deliveryType: 1,
+          pickupType: 1,
+        },
         rules: [
           {
             attribute: "enabled_in_store",
             value: "true",
-            operator: "eq",
+            operator: "eq" as const,
           },
           {
             attribute: "is_return",
             value: "false",
-            operator: "eq",
+            operator: "eq" as const,
           },
         ],
+      });
+    } else {
+      logger.info(`Reusing shipping option "${APISHIP_SHIPPING_OPTION_NAME}".`);
+    }
+  }
+
+  if (shippingOptionsToCreate.length) {
+    await createShippingOptionsWorkflow(container).run({
+      input: shippingOptionsToCreate,
+    });
+    logger.info(`Created ${shippingOptionsToCreate.length} missing shipping option(s).`);
+  }
+
+  await ensureWorkflowLink("sales channel to stock location", async () => {
+    await linkSalesChannelsToStockLocationWorkflow(container).run({
+      input: {
+        id: stockLocation.id,
+        add: [defaultSalesChannel.id],
       },
-      {
-        name: "Express Shipping",
-        price_type: "flat",
-        provider_id: "manual_manual",
-        service_zone_id: fulfillmentSet.service_zones[0].id,
-        shipping_profile_id: shippingProfile.id,
-        type: {
-          label: "Express",
-          description: "Ship in 24 hours.",
-          code: "express",
-        },
-        prices: [
-          {
-            currency_code: "usd",
-            amount: 10,
-          },
-          {
-            currency_code: "eur",
-            amount: 10,
-          },
-          {
-            region_id: region.id,
-            amount: 10,
-          },
-        ],
-        rules: [
-          {
-            attribute: "enabled_in_store",
-            value: "true",
-            operator: "eq",
-          },
-          {
-            attribute: "is_return",
-            value: "false",
-            operator: "eq",
-          },
-        ],
-      },
-    ],
+    });
   });
   logger.info("Finished seeding fulfillment data.");
-
-  await linkSalesChannelsToStockLocationWorkflow(container).run({
-    input: {
-      id: stockLocation.id,
-      add: [defaultSalesChannel[0].id],
-    },
-  });
   logger.info("Finished seeding stock location data.");
 
   logger.info("Seeding publishable API key data...");
-  let publishableApiKey: ApiKey | null = null;
-  const { data } = await query.graph({
+  const { data: apiKeysData } = await query.graph({
     entity: "api_key",
-    fields: ["id", "token"],
+    fields: ["id", "title", "token"],
     filters: {
       type: "publishable",
     },
   });
 
-  publishableApiKey = data?.[0];
+  const publishableApiKeys = (apiKeysData as ApiKey[] | undefined) ?? [];
+  const titledPublishableKeys = publishableApiKeys.filter(
+    (candidate) => candidate.title === DEFAULT_PUBLISHABLE_KEY_TITLE
+  );
+
+  let publishableApiKey = ensureUniqueMatch(
+    titledPublishableKeys,
+    `publishable API keys titled "${DEFAULT_PUBLISHABLE_KEY_TITLE}"`
+  );
 
   if (!publishableApiKey) {
-    const {
-      result: [publishableApiKeyResult],
-    } = await createApiKeysWorkflow(container).run({
-      input: {
-        api_keys: [
-          {
-            title: "Webshop",
-            type: "publishable",
-            created_by: "",
-          },
-        ],
-      },
-    });
+    if (publishableApiKeys.length === 0) {
+      const {
+        result: [publishableApiKeyResult],
+      } = await createApiKeysWorkflow(container).run({
+        input: {
+          api_keys: [
+            {
+              title: DEFAULT_PUBLISHABLE_KEY_TITLE,
+              type: "publishable",
+              created_by: "",
+            },
+          ],
+        },
+      });
 
-    publishableApiKey = publishableApiKeyResult as ApiKey;
+      publishableApiKey = publishableApiKeyResult as ApiKey;
+      logger.info(`Created publishable API key "${DEFAULT_PUBLISHABLE_KEY_TITLE}".`);
+    } else if (publishableApiKeys.length === 1) {
+      publishableApiKey = publishableApiKeys[0];
+      logger.warn(
+        `Reusing existing publishable API key "${publishableApiKey.title}" because it is the only publishable key on this database.`
+      );
+    } else {
+      throw new Error(
+        `Bootstrap found multiple publishable API keys without a baseline title match. ${BASELINE_HARDENING_HINT}`
+      );
+    }
+  } else {
+    logger.info(`Reusing publishable API key "${publishableApiKey.title}".`);
   }
 
-  await linkSalesChannelsToApiKeyWorkflow(container).run({
-    input: {
-      id: publishableApiKey.id,
-      add: [defaultSalesChannel[0].id],
-    },
+  await ensureWorkflowLink("sales channel to publishable API key", async () => {
+    await linkSalesChannelsToApiKeyWorkflow(container).run({
+      input: {
+        id: publishableApiKey.id,
+        add: [defaultSalesChannel.id],
+      },
+    });
   });
   logger.info(`ROOT_BOOTSTRAP_PUBLISHABLE_KEY=${publishableApiKey.token}`);
   logger.info("Finished seeding publishable API key data.");
-
-  logger.info("Seeding product data...");
-
-  const { result: categoryResult } = await createProductCategoriesWorkflow(
-    container
-  ).run({
-    input: {
-      product_categories: [
-        {
-          name: "Shirts",
-          is_active: true,
-        },
-        {
-          name: "Sweatshirts",
-          is_active: true,
-        },
-        {
-          name: "Pants",
-          is_active: true,
-        },
-        {
-          name: "Merch",
-          is_active: true,
-        },
-      ],
-    },
-  });
-
-  await createProductsWorkflow(container).run({
-    input: {
-      products: [
-        {
-          title: "Medusa T-Shirt",
-          category_ids: [
-            categoryResult.find((cat) => cat.name === "Shirts")!.id,
-          ],
-          description:
-            "Reimagine the feeling of a classic T-shirt. With our cotton T-shirts, everyday essentials no longer have to be ordinary.",
-          handle: "t-shirt",
-          weight: 400,
-          status: ProductStatus.PUBLISHED,
-          shipping_profile_id: shippingProfile.id,
-          images: [
-            {
-              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/tee-black-front.png",
-            },
-            {
-              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/tee-black-back.png",
-            },
-            {
-              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/tee-white-front.png",
-            },
-            {
-              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/tee-white-back.png",
-            },
-          ],
-          options: [
-            {
-              title: "Size",
-              values: ["S", "M", "L", "XL"],
-            },
-            {
-              title: "Color",
-              values: ["Black", "White"],
-            },
-          ],
-          variants: [
-            {
-              title: "S / Black",
-              sku: "SHIRT-S-BLACK",
-              options: {
-                Size: "S",
-                Color: "Black",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "S / White",
-              sku: "SHIRT-S-WHITE",
-              options: {
-                Size: "S",
-                Color: "White",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "M / Black",
-              sku: "SHIRT-M-BLACK",
-              options: {
-                Size: "M",
-                Color: "Black",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "M / White",
-              sku: "SHIRT-M-WHITE",
-              options: {
-                Size: "M",
-                Color: "White",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "L / Black",
-              sku: "SHIRT-L-BLACK",
-              options: {
-                Size: "L",
-                Color: "Black",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "L / White",
-              sku: "SHIRT-L-WHITE",
-              options: {
-                Size: "L",
-                Color: "White",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "XL / Black",
-              sku: "SHIRT-XL-BLACK",
-              options: {
-                Size: "XL",
-                Color: "Black",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "XL / White",
-              sku: "SHIRT-XL-WHITE",
-              options: {
-                Size: "XL",
-                Color: "White",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-          ],
-          sales_channels: [
-            {
-              id: defaultSalesChannel[0].id,
-            },
-          ],
-        },
-        {
-          title: "Medusa Sweatshirt",
-          category_ids: [
-            categoryResult.find((cat) => cat.name === "Sweatshirts")!.id,
-          ],
-          description:
-            "Reimagine the feeling of a classic sweatshirt. With our cotton sweatshirt, everyday essentials no longer have to be ordinary.",
-          handle: "sweatshirt",
-          weight: 400,
-          status: ProductStatus.PUBLISHED,
-          shipping_profile_id: shippingProfile.id,
-          images: [
-            {
-              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/sweatshirt-vintage-front.png",
-            },
-            {
-              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/sweatshirt-vintage-back.png",
-            },
-          ],
-          options: [
-            {
-              title: "Size",
-              values: ["S", "M", "L", "XL"],
-            },
-          ],
-          variants: [
-            {
-              title: "S",
-              sku: "SWEATSHIRT-S",
-              options: {
-                Size: "S",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "M",
-              sku: "SWEATSHIRT-M",
-              options: {
-                Size: "M",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "L",
-              sku: "SWEATSHIRT-L",
-              options: {
-                Size: "L",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "XL",
-              sku: "SWEATSHIRT-XL",
-              options: {
-                Size: "XL",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-          ],
-          sales_channels: [
-            {
-              id: defaultSalesChannel[0].id,
-            },
-          ],
-        },
-        {
-          title: "Medusa Sweatpants",
-          category_ids: [
-            categoryResult.find((cat) => cat.name === "Pants")!.id,
-          ],
-          description:
-            "Reimagine the feeling of classic sweatpants. With our cotton sweatpants, everyday essentials no longer have to be ordinary.",
-          handle: "sweatpants",
-          weight: 400,
-          status: ProductStatus.PUBLISHED,
-          shipping_profile_id: shippingProfile.id,
-          images: [
-            {
-              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/sweatpants-gray-front.png",
-            },
-            {
-              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/sweatpants-gray-back.png",
-            },
-          ],
-          options: [
-            {
-              title: "Size",
-              values: ["S", "M", "L", "XL"],
-            },
-          ],
-          variants: [
-            {
-              title: "S",
-              sku: "SWEATPANTS-S",
-              options: {
-                Size: "S",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "M",
-              sku: "SWEATPANTS-M",
-              options: {
-                Size: "M",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "L",
-              sku: "SWEATPANTS-L",
-              options: {
-                Size: "L",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "XL",
-              sku: "SWEATPANTS-XL",
-              options: {
-                Size: "XL",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-          ],
-          sales_channels: [
-            {
-              id: defaultSalesChannel[0].id,
-            },
-          ],
-        },
-        {
-          title: "Medusa Shorts",
-          category_ids: [
-            categoryResult.find((cat) => cat.name === "Merch")!.id,
-          ],
-          description:
-            "Reimagine the feeling of classic shorts. With our cotton shorts, everyday essentials no longer have to be ordinary.",
-          handle: "shorts",
-          weight: 400,
-          status: ProductStatus.PUBLISHED,
-          shipping_profile_id: shippingProfile.id,
-          images: [
-            {
-              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/shorts-vintage-front.png",
-            },
-            {
-              url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/shorts-vintage-back.png",
-            },
-          ],
-          options: [
-            {
-              title: "Size",
-              values: ["S", "M", "L", "XL"],
-            },
-          ],
-          variants: [
-            {
-              title: "S",
-              sku: "SHORTS-S",
-              options: {
-                Size: "S",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "M",
-              sku: "SHORTS-M",
-              options: {
-                Size: "M",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "L",
-              sku: "SHORTS-L",
-              options: {
-                Size: "L",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-            {
-              title: "XL",
-              sku: "SHORTS-XL",
-              options: {
-                Size: "XL",
-              },
-              prices: [
-                {
-                  amount: 10,
-                  currency_code: "eur",
-                },
-                {
-                  amount: 15,
-                  currency_code: "usd",
-                },
-              ],
-            },
-          ],
-          sales_channels: [
-            {
-              id: defaultSalesChannel[0].id,
-            },
-          ],
-        },
-      ],
-    },
-  });
-  logger.info("Finished seeding product data.");
-
-  logger.info("Seeding inventory levels.");
-
-  const { data: inventoryItems } = await query.graph({
-    entity: "inventory_item",
-    fields: ["id"],
-  });
-
-  const inventoryLevels: CreateInventoryLevelInput[] = [];
-  for (const inventoryItem of inventoryItems) {
-    const inventoryLevel = {
-      location_id: stockLocation.id,
-      stocked_quantity: 1000000,
-      inventory_item_id: inventoryItem.id,
-    };
-    inventoryLevels.push(inventoryLevel);
-  }
-
-  await createInventoryLevelsWorkflow(container).run({
-    input: {
-      inventory_levels: inventoryLevels,
-    },
-  });
-
-  logger.info("Finished seeding inventory levels data.");
 }

@@ -4,6 +4,7 @@ import { clx } from "@medusajs/ui"
 import { ArrowRightOnRectangle } from "@medusajs/icons"
 import { useParams, usePathname } from "next/navigation"
 
+import { storefrontConfig } from "@lib/storefront-config"
 import ChevronDown from "@modules/common/icons/chevron-down"
 import User from "@modules/common/icons/user"
 import MapPin from "@modules/common/icons/map-pin"
@@ -19,6 +20,7 @@ const AccountNav = ({
 }) => {
   const route = usePathname()
   const { countryCode } = useParams() as { countryCode: string }
+  const accountCopy = storefrontConfig.copy.account
 
   const handleLogout = async () => {
     await signout(countryCode)
@@ -35,13 +37,14 @@ const AccountNav = ({
           >
             <>
               <ChevronDown className="transform rotate-90" />
-              <span>Account</span>
+              <span>{accountCopy.title}</span>
             </>
           </LocalizedClientLink>
         ) : (
           <>
             <div className="text-xl-semi mb-4 px-8">
-              Hello {customer?.first_name}
+              {accountCopy.hello}
+              {customer?.first_name ? `, ${customer.first_name}` : ""}
             </div>
             <div className="text-base-regular">
               <ul>
@@ -54,7 +57,7 @@ const AccountNav = ({
                     <>
                       <div className="flex items-center gap-x-2">
                         <User size={20} />
-                        <span>Profile</span>
+                        <span>{accountCopy.profile}</span>
                       </div>
                       <ChevronDown className="transform -rotate-90" />
                     </>
@@ -69,7 +72,7 @@ const AccountNav = ({
                     <>
                       <div className="flex items-center gap-x-2">
                         <MapPin size={20} />
-                        <span>Addresses</span>
+                        <span>{accountCopy.addresses}</span>
                       </div>
                       <ChevronDown className="transform -rotate-90" />
                     </>
@@ -83,7 +86,7 @@ const AccountNav = ({
                   >
                     <div className="flex items-center gap-x-2">
                       <Package size={20} />
-                      <span>Orders</span>
+                      <span>{accountCopy.orders}</span>
                     </div>
                     <ChevronDown className="transform -rotate-90" />
                   </LocalizedClientLink>
@@ -97,7 +100,7 @@ const AccountNav = ({
                   >
                     <div className="flex items-center gap-x-2">
                       <ArrowRightOnRectangle />
-                      <span>Log out</span>
+                      <span>{accountCopy.logOut}</span>
                     </div>
                     <ChevronDown className="transform -rotate-90" />
                   </button>
@@ -110,7 +113,7 @@ const AccountNav = ({
       <div className="hidden small:block" data-testid="account-nav">
         <div>
           <div className="pb-4">
-            <h3 className="text-base-semi">Account</h3>
+            <h3 className="text-base-semi">{accountCopy.title}</h3>
           </div>
           <div className="text-base-regular">
             <ul className="flex mb-0 justify-start items-start flex-col gap-y-4">
@@ -120,7 +123,7 @@ const AccountNav = ({
                   route={route!}
                   data-testid="overview-link"
                 >
-                  Overview
+                  {accountCopy.overview}
                 </AccountNavLink>
               </li>
               <li>
@@ -129,7 +132,7 @@ const AccountNav = ({
                   route={route!}
                   data-testid="profile-link"
                 >
-                  Profile
+                  {accountCopy.profile}
                 </AccountNavLink>
               </li>
               <li>
@@ -138,7 +141,7 @@ const AccountNav = ({
                   route={route!}
                   data-testid="addresses-link"
                 >
-                  Addresses
+                  {accountCopy.addresses}
                 </AccountNavLink>
               </li>
               <li>
@@ -147,7 +150,7 @@ const AccountNav = ({
                   route={route!}
                   data-testid="orders-link"
                 >
-                  Orders
+                  {accountCopy.orders}
                 </AccountNavLink>
               </li>
               <li className="text-grey-700">
@@ -156,7 +159,7 @@ const AccountNav = ({
                   onClick={handleLogout}
                   data-testid="logout-button"
                 >
-                  Log out
+                  {accountCopy.logOut}
                 </button>
               </li>
             </ul>
