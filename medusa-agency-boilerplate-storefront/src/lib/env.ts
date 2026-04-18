@@ -13,6 +13,9 @@ export const DEFAULT_REGION =
 export const YOOKASSA_ENABLED =
   process.env.NEXT_PUBLIC_YOOKASSA_ENABLED === "true"
 
+export const VK_ID_ENABLED =
+  process.env.NEXT_PUBLIC_VK_ID_ENABLED === "true"
+
 export const STRIPE_COMPAT_ENABLED = Boolean(
   process.env.NEXT_PUBLIC_STRIPE_KEY ||
     process.env.NEXT_PUBLIC_MEDUSA_PAYMENTS_PUBLISHABLE_KEY

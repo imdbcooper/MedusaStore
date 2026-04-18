@@ -1,6 +1,6 @@
 "use server"
 
-import { sdk } from "@lib/config"
+import { sdk, MEDUSA_BACKEND_URL, STOREFRONT_BASE_URL } from "@lib/config"
 import medusaError from "@lib/util/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
@@ -258,4 +258,97 @@ export const updateCustomerAddress = async (
     .catch((err) => {
       return { success: false, error: err.toString() }
     })
+}
+
+function hasAuthorizationHeader(
+  headers: Awaited<ReturnType<typeof getAuthHeaders>>
+): headers is { authorization: string } {
+  return typeof (headers as { authorization?: string }).authorization === "string"
+}
+
+function buildVkIdProfileUrl(countryCode: string, result?: string, reason?: string) {
+  const url = new URL(`/${countryCode}/account/profile`, STOREFRONT_BASE_URL)
+
+  if (result) {
+    url.searchParams.set("vk_id_result", result)
+  }
+
+  if (reason) {
+    url.searchParams.set("vk_id_reason", reason)
+  }
+
+  return url.toString()
+}
+
+async function parseVkIdResponse(response: Response) {
+  const text = await response.text()
+
+  if (!text) {
+    return {}
+  }
+
+  try {
+    return JSON.parse(text) as Record<string, unknown>
+  } catch {
+    return { message: text }
+  }
+}
+
+export async function startVkIdLink(countryCode: string) {
+  const authHeaders = await getAuthHeaders()
+
+  if (!hasAuthorizationHeader(authHeaders)) {
+    redirect(buildVkIdProfileUrl(countryCode, "failed", "customer_auth_required"))
+  }
+
+  const response = await fetch(`${MEDUSA_BACKEND_URL}/store/customers/me/vk-id/start`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: authHeaders.authorization,
+    },
+    body: JSON.stringify({
+      return_url: buildVkIdProfileUrl(countryCode),
+      link_source: "storefront.account.profile",
+    }),
+    cache: "no-store",
+  })
+
+  const payload = await parseVkIdResponse(response)
+
+  if (!response.ok || typeof payload.authorize_url !== "string") {
+    const reason =
+      (typeof payload.code === "string" && payload.code) || "vk_id_start_failed"
+
+    redirect(buildVkIdProfileUrl(countryCode, "failed", reason))
+  }
+
+  redirect(payload.authorize_url)
+}
+
+export async function unlinkVkId(countryCode: string) {
+  const authHeaders = await getAuthHeaders()
+
+  if (!hasAuthorizationHeader(authHeaders)) {
+    redirect(buildVkIdProfileUrl(countryCode, "failed", "customer_auth_required"))
+  }
+
+  const response = await fetch(`${MEDUSA_BACKEND_URL}/store/customers/me/vk-id/unlink`, {
+    method: "POST",
+    headers: {
+      authorization: authHeaders.authorization,
+    },
+    cache: "no-store",
+  })
+
+  const payload = await parseVkIdResponse(response)
+
+  if (!response.ok) {
+    const reason =
+      (typeof payload.code === "string" && payload.code) || "vk_id_unlink_failed"
+
+    redirect(buildVkIdProfileUrl(countryCode, "failed", reason))
+  }
+
+  redirect(buildVkIdProfileUrl(countryCode, "unlinked"))
 }

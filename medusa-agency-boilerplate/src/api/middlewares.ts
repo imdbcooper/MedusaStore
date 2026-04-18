@@ -8,8 +8,10 @@ import {
 import { AdminNotificationSmokeSchema } from "./admin/notifications/smoke/route"
 import { AdminVkNotificationSmokeSchema } from "./admin/notifications/smoke/vk/route"
 import { StoreApiShipRatesSchema } from "./store/apiship/rates/route"
+import { StoreVkIdStartLinkSchema } from "./store/customers/me/vk-id/start/route"
 import { StoreYooKassaPaymentStatusSchema } from "./store/payment/yookassa/route"
 import { StoreYooKassaReturnSchema } from "./store/payment/yookassa/return/route"
+import { StoreVkIdCallbackSchema } from "./store/vk-id/callback/route"
 
 export default defineMiddlewares({
   routes: [
@@ -28,6 +30,24 @@ export default defineMiddlewares({
         authenticate("user", ["session", "bearer", "api-key"]),
         validateAndTransformBody(AdminVkNotificationSmokeSchema),
       ],
+    },
+    {
+      matcher: "/store/customers/me/vk-id",
+      methods: ["GET"],
+      middlewares: [authenticate("customer", ["session", "bearer"])],
+    },
+    {
+      matcher: "/store/customers/me/vk-id/start",
+      methods: ["POST"],
+      middlewares: [
+        authenticate("customer", ["session", "bearer"]),
+        validateAndTransformBody(StoreVkIdStartLinkSchema),
+      ],
+    },
+    {
+      matcher: "/store/customers/me/vk-id/unlink",
+      methods: ["POST"],
+      middlewares: [authenticate("customer", ["session", "bearer"])],
     },
     {
       matcher: "/store/apiship/rates",
@@ -54,6 +74,16 @@ export default defineMiddlewares({
       methods: ["GET"],
       middlewares: [
         validateAndTransformQuery(StoreYooKassaReturnSchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/store/vk-id/callback",
+      methods: ["GET"],
+      middlewares: [
+        validateAndTransformQuery(StoreVkIdCallbackSchema, {
           defaults: [],
           isList: false,
         }),

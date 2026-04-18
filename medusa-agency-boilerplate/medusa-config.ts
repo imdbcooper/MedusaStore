@@ -11,6 +11,7 @@ import {
   getNotificationVkProviderDefinition,
   getNotificationVkRuntime,
 } from "./src/modules/notification-vk"
+import { getVkIdRuntime } from "./src/modules/vk-id"
 import { isYooKassaConfigured } from "./src/modules/yookassa"
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd())
@@ -19,6 +20,7 @@ const notificationEmailRuntime = getNotificationEmailRuntime()
 const emailNotificationProvider = getNotificationEmailProviderDefinition()
 const notificationVkRuntime = getNotificationVkRuntime()
 const vkNotificationProvider = getNotificationVkProviderDefinition()
+const vkIdRuntime = getVkIdRuntime()
 
 if (
   notificationEmailRuntime.requestedProviderId === "unisender" &&
@@ -35,6 +37,12 @@ if (
 ) {
   console.warn(
     "[notifications] NOTIFICATION_VK_PROVIDER=community requested without VK_COMMUNITY_ACCESS_TOKEN and/or VK_COMMUNITY_GROUP_ID; VK provider remains disabled."
+  )
+}
+
+if (vkIdRuntime.requestedEnabled && !vkIdRuntime.configured) {
+  console.warn(
+    "[vk-id] VK_ID_ENABLED=true requested without VK_ID_CLIENT_ID and/or VK_ID_REDIRECT_URI; VK ID routes remain disabled."
   )
 }
 

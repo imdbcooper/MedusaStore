@@ -3,6 +3,7 @@ import {
   MEDUSA_BACKEND_URL,
   STOREFRONT_BASE_URL,
   STRIPE_COMPAT_ENABLED,
+  VK_ID_ENABLED,
   YOOKASSA_ENABLED,
 } from "@lib/env"
 import { getLocaleHeader } from "@lib/util/get-locale-header"
@@ -13,6 +14,7 @@ export {
   MEDUSA_BACKEND_URL,
   STOREFRONT_BASE_URL,
   STRIPE_COMPAT_ENABLED,
+  VK_ID_ENABLED,
   YOOKASSA_ENABLED,
 }
 
