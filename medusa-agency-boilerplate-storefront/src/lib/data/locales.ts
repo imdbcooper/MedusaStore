@@ -1,6 +1,6 @@
 "use server"
 
-import { sdk } from "@lib/config"
+import { DEFAULT_REGION, sdk } from "@lib/config"
 import { getCacheOptions } from "./cookies"
 
 export type Locale = {
@@ -8,9 +8,17 @@ export type Locale = {
   name: string
 }
 
+const fallbackLocales: Locale[] = [
+  {
+    code: `${DEFAULT_REGION.toLowerCase()}-${DEFAULT_REGION.toUpperCase()}`,
+    name: "Русский",
+  },
+]
+
 /**
  * Fetches available locales from the backend.
- * Returns null if the endpoint returns 404 (locales not configured).
+ * Returns fallback locale data when locales are not configured,
+ * so optional locale support never breaks storefront runtime.
  */
 export const listLocales = async (): Promise<Locale[] | null> => {
   const next = {
@@ -23,6 +31,12 @@ export const listLocales = async (): Promise<Locale[] | null> => {
       next,
       cache: "force-cache",
     })
-    .then(({ locales }) => locales)
-    .catch(() => null)
+    .then(({ locales }) => {
+      if (!locales?.length) {
+        return fallbackLocales
+      }
+
+      return locales
+    })
+    .catch(() => fallbackLocales)
 }

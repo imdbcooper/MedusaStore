@@ -1,6 +1,6 @@
 "use server"
 
-import { sdk } from "@lib/config"
+import { DEFAULT_REGION, sdk } from "@lib/config"
 import medusaError from "@lib/util/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { getCacheOptions } from "./cookies"
@@ -37,30 +37,39 @@ export const retrieveRegion = async (id: string) => {
 
 const regionMap = new Map<string, HttpTypes.StoreRegion>()
 
-export const getRegion = async (countryCode: string) => {
+export const getRegion = async (countryCode?: string | null) => {
   try {
-    if (regionMap.has(countryCode)) {
-      return regionMap.get(countryCode)
+    const normalizedCountryCode = countryCode?.toLowerCase() || DEFAULT_REGION
+
+    if (regionMap.has(normalizedCountryCode)) {
+      return regionMap.get(normalizedCountryCode)
     }
 
     const regions = await listRegions()
 
-    if (!regions) {
+    if (!regions?.length) {
       return null
     }
 
+    regionMap.clear()
+
     regions.forEach((region) => {
-      region.countries?.forEach((c) => {
-        regionMap.set(c?.iso_2 ?? "", region)
+      region.countries?.forEach((country) => {
+        const iso2 = country?.iso_2?.toLowerCase()
+
+        if (iso2) {
+          regionMap.set(iso2, region)
+        }
       })
     })
 
-    const region = countryCode
-      ? regionMap.get(countryCode)
-      : regionMap.get("ru")
-
-    return region
-  } catch (e: any) {
+    return (
+      regionMap.get(normalizedCountryCode) ||
+      regionMap.get(DEFAULT_REGION) ||
+      regionMap.values().next().value ||
+      null
+    )
+  } catch {
     return null
   }
 }

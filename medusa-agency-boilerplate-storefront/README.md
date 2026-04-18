@@ -1,125 +1,111 @@
-<p align="center">
-  <a href="https://www.medusajs.com">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://user-images.githubusercontent.com/59018053/229103275-b5e482bb-4601-46e6-8142-244f531cebdb.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://user-images.githubusercontent.com/59018053/229103726-e5b529a3-9b3f-4970-8a1f-c6af37f087bf.svg">
-    <img alt="Medusa logo" src="https://user-images.githubusercontent.com/59018053/229103726-e5b529a3-9b3f-4970-8a1f-c6af37f087bf.svg">
-    </picture>
-  </a>
-</p>
+# Storefront Core Baseline v1
 
-<h1 align="center">
-  Medusa Next.js Starter Template
-</h1>
+[`medusa-agency-boilerplate-storefront/`](medusa-agency-boilerplate-storefront/) is the Next.js storefront baseline for the Medusa template backend in [`medusa-agency-boilerplate/`](medusa-agency-boilerplate/).
 
-<p align="center">
-Combine Medusa's modules for your commerce backend with the newest Next.js 15 features for a performant storefront.</p>
+## Scope
 
-<p align="center">
-  <a href="https://github.com/medusajs/medusa/blob/master/CONTRIBUTING.md">
-    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat" alt="PRs welcome!" />
-  </a>
-  <a href="https://discord.gg/xpCwq3Kfn8">
-    <img src="https://img.shields.io/badge/chat-on%20discord-7289DA.svg" alt="Discord Chat" />
-  </a>
-  <a href="https://twitter.com/intent/follow?screen_name=medusajs">
-    <img src="https://img.shields.io/twitter/follow/medusajs.svg?label=Follow%20@medusajs" alt="Follow @medusajs" />
-  </a>
-</p>
+This storefront baseline covers the core commerce entrypoints:
 
-### Prerequisites
+- home
+- catalog
+- category
+- collection
+- product
+- cart
+- checkout
+- account
+- confirmed order
 
-To use the [Next.js Starter Template](https://medusajs.com/nextjs-commerce/), you should have a Medusa server running locally on port 9000.
-For a quick setup, run:
+The goal of this workstream is baseline consistency for runtime, shopper-facing copy, and provider-aware checkout presentation. It does not introduce new backend APIs or new feature tracks.
 
-```shell
-npx create-medusa-app@latest
+## Runtime contract
+
+Local baseline assumptions:
+
+- backend: [`http://localhost:9000`](http://localhost:9000)
+- storefront: [`http://localhost:8000`](http://localhost:8000)
+- default region: [`ru`](medusa-agency-boilerplate-storefront/.env.local.example)
+- optional locales must not break runtime
+- [`NEXT_PUBLIC_YOOKASSA_ENABLED`](medusa-agency-boilerplate-storefront/.env.local.example) stays opt-in
+- Stripe-compatible variables remain optional compatibility inputs only
+
+Copy the example environment file:
+
+```bash
+cp .env.local.example .env.local
 ```
 
-Check out [create-medusa-app docs](https://docs.medusajs.com/learn/installation) for more details and troubleshooting.
+Required storefront variables:
 
-# Overview
-
-The Medusa Next.js Starter is built with:
-
-- [Next.js](https://nextjs.org/)
-- [Tailwind CSS](https://tailwindcss.com/)
-- [Typescript](https://www.typescriptlang.org/)
-- [Medusa](https://medusajs.com/)
-
-Features include:
-
-- Full ecommerce support:
-  - Product Detail Page
-  - Product Overview Page
-  - Product Collections
-  - Cart
-  - Checkout with Stripe
-  - User Accounts
-  - Order Details
-- Full Next.js 15 support:
-  - App Router
-  - Next fetching/caching
-  - Server Components
-  - Server Actions
-  - Streaming
-  - Static Pre-Rendering
-
-# Quickstart
-
-### Setting up the environment variables
-
-Navigate into your projects directory and get your environment variables ready:
-
-```shell
-cd nextjs-starter-medusa/
-mv .env.template .env.local
+```env
+MEDUSA_BACKEND_URL=http://localhost:9000
+NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=REPLACE_WITH_ROOT_BOOTSTRAP
+NEXT_PUBLIC_BASE_URL=http://localhost:8000
+NEXT_PUBLIC_DEFAULT_REGION=ru
 ```
 
-### Install dependencies
+Optional compatibility variables:
 
-Use Yarn to install all dependencies.
-
-```shell
-yarn
+```env
+NEXT_PUBLIC_YOOKASSA_ENABLED=false
+NEXT_PUBLIC_STRIPE_KEY=
+NEXT_PUBLIC_MEDUSA_PAYMENTS_PUBLISHABLE_KEY=
+NEXT_PUBLIC_MEDUSA_PAYMENTS_ACCOUNT_ID=
 ```
 
-### Start developing
+## Install and run
 
-You are now ready to start up your project.
+Install dependencies:
 
-```shell
-yarn dev
+```bash
+npm install
 ```
 
-### Open the code and start customizing
+Start local development:
 
-Your site is now running at http://localhost:8000!
-
-# Payment integrations
-
-By default this starter supports the following payment integrations
-
-- [Stripe](https://stripe.com/)
-
-To enable the integrations you need to add the following to your `.env.local` file:
-
-```shell
-NEXT_PUBLIC_STRIPE_KEY=<your-stripe-public-key>
+```bash
+npm run dev
 ```
 
-You'll also need to setup the integrations in your Medusa server. See the [Medusa documentation](https://docs.medusajs.com) for more information on how to configure [Stripe](https://docs.medusajs.com/resources/commerce-modules/payment/payment-provider/stripe#main).
+Build production bundle:
 
-# Resources
+```bash
+npm run build
+```
 
-## Learn more about Medusa
+## Checkout baseline
 
-- [Website](https://www.medusajs.com/)
-- [GitHub](https://github.com/medusajs)
-- [Documentation](https://docs.medusajs.com/)
+Storefront presentation assumes:
 
-## Learn more about Next.js
+- YooKassa-first hosted checkout flow when that provider is enabled in backend and selected in checkout
+- manual payment fallback remains available
+- Stripe-compatible card presentation is supported only when compatible publishable variables are provided
+- ApiShip storefront presentation shows the cheapest available quote for the selected shipping option
 
-- [Website](https://nextjs.org/)
-- [GitHub](https://github.com/vercel/next.js)
-- [Documentation](https://nextjs.org/docs)
+The storefront does not redefine backend payment or shipping logic.
+
+## Validation
+
+Recommended baseline verification for this storefront:
+
+```bash
+npm run lint
+npm run build
+```
+
+If TypeScript is run directly in this package, existing deprecation warnings from [`tsconfig.json`](medusa-agency-boilerplate-storefront/tsconfig.json) may appear. Those warnings are outside this storefront baseline workstream unless they block lint or build.
+
+## Non-goals
+
+This storefront baseline intentionally does not include:
+
+- VK ID
+- MTS Exolve
+- Payload CMS
+- marketing layer
+- client-specific branding system
+- theme engine
+- translation-management layer
+- new backend APIs
+- multi-quote shipping UX
+- future provider-specific extensions such as `providerConnectId` or `extraParams`

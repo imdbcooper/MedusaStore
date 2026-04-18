@@ -1,7 +1,12 @@
 "use client"
 
 import { RadioGroup } from "@headlessui/react"
-import { isStripeLike, isYooKassa, paymentInfoMap } from "@lib/constants"
+import {
+  isManual,
+  isStripeLike,
+  isYooKassa,
+  paymentInfoMap,
+} from "@lib/constants"
 import { initiatePaymentSession } from "@lib/data/cart"
 import { storefrontConfig } from "@lib/storefront-config"
 import { CheckCircleSolid, CreditCard } from "@medusajs/icons"
@@ -42,6 +47,7 @@ const Payment = ({
   const setPaymentMethod = async (method: string) => {
     setError(null)
     setSelectedPaymentMethod(method)
+
     if (isStripeLike(method)) {
       await initiatePaymentSession(cart, {
         provider_id: method,
@@ -73,6 +79,7 @@ const Payment = ({
 
   const handleSubmit = async () => {
     setIsLoading(true)
+
     try {
       const shouldInputCard =
         isStripeLike(selectedPaymentMethod) && !activeSession
@@ -118,6 +125,22 @@ const Payment = ({
 
   const checkoutCopy = storefrontConfig.copy.checkout
   const commonCopy = storefrontConfig.copy.common
+
+  const getPaymentDetailsSummary = () => {
+    if (isStripeLike(selectedPaymentMethod) && cardBrand) {
+      return cardBrand
+    }
+
+    if (isYooKassa(selectedPaymentMethod)) {
+      return checkoutCopy.yookassaHostedRedirect
+    }
+
+    if (isManual(selectedPaymentMethod)) {
+      return checkoutCopy.manualPaymentDetails
+    }
+
+    return checkoutCopy.additionalStep
+  }
 
   return (
     <div className="bg-white">
@@ -243,13 +266,7 @@ const Payment = ({
                       <CreditCard />
                     )}
                   </Container>
-                  <Text>
-                    {isStripeLike(selectedPaymentMethod) && cardBrand
-                      ? cardBrand
-                      : isYooKassa(selectedPaymentMethod)
-                        ? checkoutCopy.yookassaHostedRedirect
-                        : checkoutCopy.additionalStep}
-                  </Text>
+                  <Text>{getPaymentDetailsSummary()}</Text>
                 </div>
               </div>
             </div>

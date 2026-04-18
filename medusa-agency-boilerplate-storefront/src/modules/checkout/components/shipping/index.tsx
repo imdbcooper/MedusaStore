@@ -13,7 +13,7 @@ import ErrorMessage from "@modules/checkout/components/error-message"
 import Divider from "@modules/common/components/divider"
 import MedusaRadio from "@modules/common/components/radio"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 const PICKUP_OPTION_ON = "__PICKUP_ON"
 const PICKUP_OPTION_OFF = "__PICKUP_OFF"
@@ -87,9 +87,11 @@ const Shipping: React.FC<ShippingProps> = ({
 
   const isOpen = searchParams.get("step") === "delivery"
 
-  const _shippingMethods = availableShippingMethods ?? []
-
-  const _pickupMethods: HttpTypes.StoreCartShippingOption[] = []
+  const shippingMethods = useMemo(
+    () => availableShippingMethods ?? [],
+    [availableShippingMethods]
+  )
+  const pickupMethods = useMemo<HttpTypes.StoreCartShippingOption[]>(() => [], [])
 
   const hasPickupOptions = false
   const checkoutCopy = storefrontConfig.copy.checkout
@@ -98,36 +100,41 @@ const Shipping: React.FC<ShippingProps> = ({
   useEffect(() => {
     setIsLoadingPrices(true)
 
-    if (_shippingMethods?.length) {
-      const pricePromises = _shippingMethods
-        .filter((sm) => sm.price_type === "calculated")
-        .map((sm) => calculatePriceForShippingOption(sm.id, cart.id))
-
-      const apishipPromises = _shippingMethods
-        .filter(
-          (sm) =>
-            sm.price_type === "calculated" &&
-            sm.provider_id === "apiship_apiship"
+    if (shippingMethods.length) {
+      const pricePromises = shippingMethods
+        .filter((shippingMethod) => shippingMethod.price_type === "calculated")
+        .map((shippingMethod) =>
+          calculatePriceForShippingOption(shippingMethod.id, cart.id)
         )
-        .map(async (sm) => ({
-          optionId: sm.id,
-          quotes: await listApiShipCourierRates(cart.id, sm.id),
+
+      const apishipPromises = shippingMethods
+        .filter(
+          (shippingMethod) =>
+            shippingMethod.price_type === "calculated" &&
+            shippingMethod.provider_id === "apiship_apiship"
+        )
+        .map(async (shippingMethod) => ({
+          optionId: shippingMethod.id,
+          quotes: await listApiShipCourierRates(cart.id, shippingMethod.id),
         }))
 
-      Promise.allSettled(pricePromises).then((res) => {
+      Promise.allSettled(pricePromises).then((results) => {
         const pricesMap: Record<string, number> = {}
-        res
-          .filter((r) => r.status === "fulfilled")
-          .forEach((p) => (pricesMap[p.value?.id || ""] = p.value?.amount!))
+
+        results
+          .filter((result) => result.status === "fulfilled")
+          .forEach((result) => {
+            pricesMap[result.value?.id || ""] = result.value?.amount!
+          })
 
         setCalculatedPricesMap(pricesMap)
         setIsLoadingPrices(false)
       })
 
-      Promise.allSettled(apishipPromises).then((res) => {
+      Promise.allSettled(apishipPromises).then((results) => {
         const quotesMap: Record<string, ApiShipQuote[]> = {}
 
-        res
+        results
           .filter((result) => result.status === "fulfilled")
           .forEach((result) => {
             quotesMap[result.value.optionId] = result.value.quotes ?? []
@@ -135,12 +142,14 @@ const Shipping: React.FC<ShippingProps> = ({
 
         setApishipQuotesMap(quotesMap)
       })
+    } else {
+      setIsLoadingPrices(false)
     }
 
-    if (_pickupMethods?.find((m) => m.id === shippingMethodId)) {
+    if (pickupMethods.find((method) => method.id === shippingMethodId)) {
       setShowPickupOptions(PICKUP_OPTION_ON)
     }
-  }, [availableShippingMethods])
+  }, [availableShippingMethods, cart.id, shippingMethodId, shippingMethods, pickupMethods])
 
   const handleEdit = () => {
     router.push(pathname + "?step=delivery", { scroll: false })
@@ -173,7 +182,6 @@ const Shipping: React.FC<ShippingProps> = ({
     await setShippingMethod({ cartId: cart.id, shippingMethodId: id, data })
       .catch((err) => {
         setShippingMethodId(currentId)
-
         setError(err.message)
       })
       .finally(() => {
@@ -184,6 +192,42 @@ const Shipping: React.FC<ShippingProps> = ({
   useEffect(() => {
     setError(null)
   }, [isOpen])
+
+  const getOptionPriceLabel = (option: HttpTypes.StoreCartShippingOption) => {
+    if (option.price_type === "flat") {
+      return convertToLocale({
+        amount: option.amount!,
+        currency_code: cart?.currency_code,
+      })
+    }
+
+    if (typeof calculatedPricesMap[option.id] === "number") {
+      return convertToLocale({
+        amount: calculatedPricesMap[option.id],
+        currency_code: cart?.currency_code,
+      })
+    }
+
+    if (isLoadingPrices) {
+      return <Loader />
+    }
+
+    return checkoutCopy.shippingRateUnavailable
+  }
+
+  const getApiShipHint = (optionId: string) => {
+    const quote = apishipQuotesMap[optionId]?.[0]
+
+    if (!quote) {
+      return null
+    }
+
+    const deliveryWindow = quote.estimated_days_min
+      ? ` · ${quote.estimated_days_min}-${quote.estimated_days_max ?? quote.estimated_days_min} дн.`
+      : ""
+
+    return `${quote.provider_label}${deliveryWindow} · ${checkoutCopy.apishipCheapestTariff}`
+  }
 
   return (
     <div className="bg-white">
@@ -235,7 +279,7 @@ const Shipping: React.FC<ShippingProps> = ({
                   <RadioGroup
                     value={showPickupOptions}
                     onChange={() => {
-                      const id = _pickupMethods.find(
+                      const id = pickupMethods.find(
                         (option) => !option.insufficient_inventory
                       )?.id
 
@@ -269,12 +313,12 @@ const Shipping: React.FC<ShippingProps> = ({
                 )}
                 <RadioGroup
                   value={shippingMethodId}
-                  onChange={(v) => {
-                    if (v) {
-                      const apishipQuote = apishipQuotesMap[v]?.[0]
+                  onChange={(value) => {
+                    if (value) {
+                      const apishipQuote = apishipQuotesMap[value]?.[0]
 
                       return handleSetShippingMethod(
-                        v,
+                        value,
                         "shipping",
                         apishipQuote
                           ? {
@@ -291,11 +335,16 @@ const Shipping: React.FC<ShippingProps> = ({
                     }
                   }}
                 >
-                  {_shippingMethods?.map((option) => {
+                  {shippingMethods.map((option) => {
                     const isDisabled =
                       option.price_type === "calculated" &&
                       !isLoadingPrices &&
                       typeof calculatedPricesMap[option.id] !== "number"
+
+                    const apishipHint =
+                      option.provider_id === "apiship_apiship"
+                        ? getApiShipHint(option.id)
+                        : null
 
                     return (
                       <Radio
@@ -318,31 +367,12 @@ const Shipping: React.FC<ShippingProps> = ({
                           <span className="text-base-regular">{option.name}</span>
                         </div>
                         <span className="justify-self-end text-ui-fg-base text-right">
-                          {option.price_type === "flat" ? (
-                            convertToLocale({
-                              amount: option.amount!,
-                              currency_code: cart?.currency_code,
-                            })
-                          ) : calculatedPricesMap[option.id] ? (
-                            convertToLocale({
-                              amount: calculatedPricesMap[option.id],
-                              currency_code: cart?.currency_code,
-                            })
-                          ) : isLoadingPrices ? (
-                            <Loader />
-                          ) : (
-                            "-"
+                          {getOptionPriceLabel(option)}
+                          {apishipHint && (
+                            <div className="text-ui-fg-muted text-xs mt-1">
+                              {apishipHint}
+                            </div>
                           )}
-                          {option.provider_id === "apiship_apiship" &&
-                            (apishipQuotesMap[option.id]?.length ?? 0) > 0 && (
-                              <div className="text-ui-fg-muted text-xs mt-1">
-                                {apishipQuotesMap[option.id]![0].provider_label}
-                                {apishipQuotesMap[option.id]![0].estimated_days_min
-                                  ? ` · ${apishipQuotesMap[option.id]![0].estimated_days_min}-${apishipQuotesMap[option.id]![0].estimated_days_max ?? apishipQuotesMap[option.id]![0].estimated_days_min} дн.`
-                                  : ""}
-                                {" · выбран самый дешёвый тариф ApiShip"}
-                              </div>
-                            )}
                         </span>
                       </Radio>
                     )
@@ -366,13 +396,13 @@ const Shipping: React.FC<ShippingProps> = ({
                 <div className="pb-8 md:pt-0 pt-2">
                   <RadioGroup
                     value={shippingMethodId}
-                    onChange={(v) => {
-                      if (v) {
-                        return handleSetShippingMethod(v, "pickup")
+                    onChange={(value) => {
+                      if (value) {
+                        return handleSetShippingMethod(value, "pickup")
                       }
                     }}
                   >
-                    {_pickupMethods?.map((option) => {
+                    {pickupMethods.map((option) => {
                       return (
                         <Radio
                           key={option.id}
