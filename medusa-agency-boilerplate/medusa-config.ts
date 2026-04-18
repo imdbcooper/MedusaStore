@@ -8,6 +8,10 @@ import {
   getNotificationEmailRuntime,
 } from "./src/modules/notification-email"
 import {
+  getNotificationSmsProviderDefinition,
+  getNotificationSmsRuntime,
+} from "./src/modules/notification-sms"
+import {
   getNotificationVkProviderDefinition,
   getNotificationVkRuntime,
 } from "./src/modules/notification-vk"
@@ -18,6 +22,8 @@ loadEnv(process.env.NODE_ENV || "development", process.cwd())
 
 const notificationEmailRuntime = getNotificationEmailRuntime()
 const emailNotificationProvider = getNotificationEmailProviderDefinition()
+const notificationSmsRuntime = getNotificationSmsRuntime()
+const smsNotificationProvider = getNotificationSmsProviderDefinition()
 const notificationVkRuntime = getNotificationVkRuntime()
 const vkNotificationProvider = getNotificationVkProviderDefinition()
 const vkIdRuntime = getVkIdRuntime()
@@ -28,6 +34,15 @@ if (
 ) {
   console.warn(
     "[notifications] NOTIFICATION_EMAIL_PROVIDER=unisender requested without UNISENDER_API_KEY; falling back to local provider."
+  )
+}
+
+if (
+  notificationSmsRuntime.requestedProviderId === "exolve" &&
+  !notificationSmsRuntime.exolveConfigured
+) {
+  console.warn(
+    "[notifications] NOTIFICATION_SMS_PROVIDER=exolve requested without MTS_EXOLVE_API_KEY and/or MTS_EXOLVE_SENDER; SMS provider remains disabled."
   )
 }
 
@@ -98,6 +113,7 @@ module.exports = defineConfig({
       options: {
         providers: [
           emailNotificationProvider,
+          ...(smsNotificationProvider ? [smsNotificationProvider] : []),
           ...(vkNotificationProvider ? [vkNotificationProvider] : []),
         ],
       },
