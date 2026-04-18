@@ -141,7 +141,7 @@ root-level скрипты используют этот файл как исто
 - `NOTIFICATION_EMAIL_FROM` задает sender для runtime, smoke workflow и `order.placed` lifecycle workflow, но не делает внешний provider обязательным.
 - Ни один markdown-документ этого репозитория не должен содержать фактическое значение `SENDGRID_API_KEY` или другого notification secret.
 
-#### Approved future communication stack, which is not yet materialized in env
+#### Approved future communication stack and designed next email migration workstream
 
 На уровне roadmap уже зафиксированы такие будущие направления:
 - `UniSender` — целевой email provider для service и marketing email;
@@ -151,11 +151,24 @@ root-level скрипты используют этот файл как исто
 - отдельный `marketing layer` — orchestration, consent, segmentation, frequency cap, suppression и delivery journal.
 
 Guardrails для этого будущего env-contract:
-- текущие `NOTIFICATION_EMAIL_PROVIDER` / `SENDGRID_API_KEY` остаются source of truth только для уже существующего runtime, пока migration на `UniSender` не началась в коде;
-- новые provider-specific env keys для `UniSender`, `VK`, `VK ID` и `Exolve` пока не считаются каноническими и не должны добавляться в шаблоны как baseline requirement до старта implementation workstream;
+- базовый cross-runtime selector по-прежнему проходит через `NOTIFICATION_EMAIL_PROVIDER`, а backend-only opt-in secret для текущего email transport path теперь материализован как `UNISENDER_API_KEY`;
+- новые provider-specific env keys для `VK`, `VK ID` и `Exolve` пока не считаются каноническими и не должны добавляться в шаблоны как baseline requirement до старта соответствующих implementation workstream'ов;
 - при их появлении они должны остаться strictly opt-in и не ломать clean onboarding без внешних communication secrets;
 - storefront не должен получать приватные provider secrets ни для `UniSender`, ни для `VK`, ни для `Exolve`;
 - `Payload` не должен становиться местом хранения provider secrets, consent truth или delivery journal; его зона ответственности — content, а не transport credentials.
+
+#### Implemented `UniSender email migration v1` env/runtime contract
+
+Фактически реализованный contract для текущего communication-stack шага теперь такой:
+- migration boundary действительно остался внутри email transport runtime: provider resolution заменён в [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:119) и [`getNotificationEmailProviderDefinition()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:143), а lifecycle workflows, subscribers и smoke route не переписывались по поведению;
+- `NOTIFICATION_EMAIL_PROVIDER` и `NOTIFICATION_EMAIL_FROM` сохранены как базовый cross-runtime contract;
+- `local` остаётся baseline-default и baseline-safe fallback path для clean onboarding, local dev и misconfiguration scenarios;
+- `unisender` реализован как opt-in requested provider value для production email path в `v1`, а runtime по-прежнему отдельно фиксирует requested и resolved provider semantics;
+- backend-only opt-in secret contract теперь минимально материализован через `UNISENDER_API_KEY` и optional `UNISENDER_BASE_URL`; эти ключи добавлены в [`.env.example`](../.env.example) и [`medusa-agency-boilerplate/.env.template`](../medusa-agency-boilerplate/.env.template) как optional, а не baseline-mandatory;
+- runtime fallback expectation реализован так: при `NOTIFICATION_EMAIL_PROVIDER=unisender` без `UNISENDER_API_KEY` runtime controlled-resolve'ится в `local`, а [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts:17) пишет явный warning про fallback;
+- provider registration для `unisender` идёт через custom provider [`notification-unisender.ts`](../medusa-agency-boilerplate/src/modules/notification-unisender.ts:1), который отправляет transactional email через UniSender HTTP API `/ru/transactional/api/v1/email/send.json`, используя `api_key`, `from` и optional `base_url`;
+- smoke и lifecycle workflows, включая [`sendNotificationSmokeWorkflow`](../medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts:60), сохраняют provider-agnostic поведение и продолжают писать `provider_requested` / `provider_resolved` diagnostics;
+- rollback expectation не изменился: оператор может вернуть `NOTIFICATION_EMAIL_PROVIDER=local` без schema rollback, storefront changes или lifecycle rewiring.
 
 #### Canonical order lifecycle notifications: current contract and shipped-slice extension
 
@@ -181,16 +194,18 @@ Guardrails для этого будущего env-contract:
 10. observability contract зеркалит placed slice: итоговый info log из subscriber и step-level warn/info logs из workflow включают `status`, `reason`, `order_id`, `display_id`, `fulfillment_id`, `recipient`, `recipient_normalized`, `notification_id`, `dedupe_key`, `duplicate_of_notification_id`, `provider_requested`, `provider_resolved`, `dedupe_strategy`, `dedupe_race_window`, `no_notification`;
 11. `payment failed notification v1` теперь реализован как отдельный slice: webhook path в [handleYooKassaWebhook()](../medusa-agency-boilerplate/src/api/yookassa/webhook/shared.ts:15) после `process-payment-workflow` публикует внутренний event `payment_session.failed.customer.notification_requested` только для terminal failed `payment_status=canceled`; subscriber [`paymentFailedNotificationHandler()`](../medusa-agency-boilerplate/src/subscribers/payment-failed-notification.ts:15) запускает workflow [`sendPaymentFailedNotificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-payment-failed-notification.ts:508), template/identity отделены через [`DEFAULT_PAYMENT_FAILED_NOTIFICATION_TEMPLATE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:44) = `payment-failed-v1`, [`DEFAULT_PAYMENT_FAILED_NOTIFICATION_TRIGGER_TYPE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:46) = `payment_session.failed.customer.notification_requested`, а dedupe boundary зафиксирована как `resource_type=payment_session` и `resource_id=payment_session.id`;
 12. canonical recipient rule для failed-payment slice остается строгой: используется только `cart.email`, без fallback chain; controlled skip paths включают `payment_session_not_found`, `non_terminal_payment_state`, `payment_already_completed`, `payment_collection_not_found`, `cart_link_not_found`, `cart_not_found`, `missing_cart_email`, `duplicate_notification`, а observability contract расширен полями `payment_session_id`, `payment_collection_id`, `cart_id`, `order_id`, `payment_id`, `provider_id`, `payment_status`, `payment_session_status`, `recipient`, `recipient_normalized`, `notification_id`, duplicate metadata, `provider_requested`, `provider_resolved`, `dedupe_strategy`, `dedupe_race_window`, `source`;
-13. non-goals для текущего lifecycle scope не изменились: здесь по-прежнему не проектируются `order canceled`, `order.fulfillment_created`, multi-recipient routing, tracking URL rendering, storefront account links, SMS/push channels, новый storage-level lock или новые обязательные env keys;
-14. targeted validation для shipped slice уже закрыта через harness [send-order-shipped-notification.unit.spec.ts](../medusa-agency-boilerplate/src/workflows/__tests__/send-order-shipped-notification.unit.spec.ts), а для failed-payment slice добавлен harness [send-payment-failed-notification.unit.spec.ts](../medusa-agency-boilerplate/src/workflows/__tests__/send-payment-failed-notification.unit.spec.ts): подтверждены single send на одном terminal failed attempt, controlled skip для non-terminal states, controlled skip при отсутствии `cart.email`, duplicate suppression при повторной обработке того же `payment_session.id` и отсутствие ложного dedupe между двумя разными failed attempts одного cart.
+13. `order canceled notification v1` теперь зафиксирован как следующий designed slice: subscriber должен слушать официальный Medusa event `order.canceled` с payload `{ id }`, workflow читает order в минимальной форме `{ id, display_id, email, canceled_at }`, canonical recipient = только `order.email`, template = `order-canceled-v1`, trigger type = `order.canceled.customer.notification_requested`, а dedupe boundary остается order-level: `resource_type=order` и `resource_id=order.id`;
+14. controlled skip/non-send contract для canceled slice такой: ранний subscriber skip при отсутствии `id`, workflow skip paths = `order_not_found`, `order_not_canceled`, `missing_order_email`, `duplicate_notification`; sent-path допускается только после подтвержденного `canceled_at`, canonical recipient и dedupe miss; отдельная ветка `no_notification` здесь не проектируется;
+15. observability contract для canceled slice зеркалит placed/shipped и не смешивается с refund/dispute телеметрией: итоговый info log из subscriber и step-level warn/info logs из workflow должны включать `status`, `reason`, `order_id`, `display_id`, `canceled_at`, `recipient`, `recipient_normalized`, `notification_id`, `dedupe_key`, `duplicate_of_notification_id`, `provider_requested`, `provider_resolved`, `dedupe_strategy`, `dedupe_race_window`; targeted validation должна подтверждать single send, missing recipient skip, `order_not_canceled`, duplicate reprocessing того же `order.id` и отсутствие ложного dedupe между двумя разными canceled orders одного recipient;
+16. non-goals для текущего lifecycle scope теперь формулируются явно: здесь не проектируются refunds, returns/exchanges, payment disputes/chargebacks, multi-recipient routing, tracking URL rendering, storefront account links, SMS/push channels, новый storage-level lock или новые обязательные env keys.
 
 Guardrails этого контракта:
-- path `subscriber → workflow → Notification Module` остается source of truth и для уже реализованного `order.placed`, и для спроектированного `order shipped notification v1`;
+- path `subscriber → workflow → Notification Module` остается source of truth для уже реализованных `order.placed`, `shipment.created`, internal failed-payment trigger и для спроектированного `order.canceled` slice;
 - dedupe не выносится в отдельный ledger или новый storage layer: source of truth для duplicate suppression остается existing notification storage;
 - duplicate suppression трактуется только как controlled skip с diagnostics и trace fields, а не как второй notification с отдельным status-flow;
-- race window в query-before-create dedupe признается и документируется как accepted limitation текущего уровня hardening и для shipped slice тоже;
+- race window в query-before-create dedupe признается и документируется как accepted limitation текущего уровня hardening для placed, shipped, failed-payment и designed canceled slice тоже;
 - smoke path через [`sendNotificationSmokeWorkflow`](../medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts:60) и route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts:26) остается отдельным baseline/regression anchor и не подменяет order lifecycle runtime;
-- для shipped slice не должно появиться новых обязательных env keys: baseline по-прежнему держится на `NOTIFICATION_EMAIL_PROVIDER`, `NOTIFICATION_EMAIL_FROM` и opt-in `SENDGRID_API_KEY`.
+- для этих lifecycle slices не должно появиться новых обязательных env keys: baseline по-прежнему держится на `NOTIFICATION_EMAIL_PROVIDER`, `NOTIFICATION_EMAIL_FROM` и opt-in `UNISENDER_API_KEY`.
 
 #### Canonical authenticated smoke path
 

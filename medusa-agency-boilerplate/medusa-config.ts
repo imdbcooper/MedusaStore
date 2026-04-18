@@ -15,11 +15,11 @@ const notificationEmailRuntime = getNotificationEmailRuntime()
 const emailNotificationProvider = getNotificationEmailProviderDefinition()
 
 if (
-  notificationEmailRuntime.requestedProviderId === "sendgrid" &&
-  !notificationEmailRuntime.sendgridConfigured
+  notificationEmailRuntime.requestedProviderId === "unisender" &&
+  !notificationEmailRuntime.unisenderConfigured
 ) {
   console.warn(
-    "[notifications] NOTIFICATION_EMAIL_PROVIDER=sendgrid requested without SENDGRID_API_KEY; falling back to local provider."
+    "[notifications] NOTIFICATION_EMAIL_PROVIDER=unisender requested without UNISENDER_API_KEY; falling back to local provider."
   )
 }
 

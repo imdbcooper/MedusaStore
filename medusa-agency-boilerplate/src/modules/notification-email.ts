@@ -1,11 +1,12 @@
-export type NotificationEmailProviderId = "local" | "sendgrid"
+export type NotificationEmailProviderId = "local" | "unisender"
 
 export type NotificationEmailRuntime = {
   requestedProviderId: NotificationEmailProviderId
   providerId: NotificationEmailProviderId
   from: string
-  sendgridConfigured: boolean
-  sendgridApiKey?: string
+  unisenderConfigured: boolean
+  unisenderApiKey?: string
+  unisenderBaseUrl?: string
 }
 
 export type NotificationSmokeRequestInput = {
@@ -50,6 +51,7 @@ export const DEFAULT_ORDER_CANCELED_NOTIFICATION_TEMPLATE =
 export const DEFAULT_ORDER_CANCELED_NOTIFICATION_TRIGGER_TYPE =
   "order.canceled.customer.notification_requested"
 export const DEFAULT_LOCAL_MEDUSA_BACKEND_URL = "http://localhost:9000"
+export const DEFAULT_UNISENDER_BASE_URL = "https://go1.unisender.ru"
 export const NOTIFICATION_DEDUPE_AUTHORITY = "notification_storage" as const
 export const NOTIFICATION_DEDUPE_STRATEGY = "query_before_create" as const
 export const NOTIFICATION_DEDUPE_RACE_WINDOW =
@@ -66,7 +68,7 @@ export const NOTIFICATION_DEDUPE_CANONICAL_FIELDS = [
 function normalizeNotificationEmailProvider(
   value?: string | null
 ): NotificationEmailProviderId {
-  return value?.trim().toLowerCase() === "sendgrid" ? "sendgrid" : "local"
+  return value?.trim().toLowerCase() === "unisender" ? "unisender" : "local"
 }
 
 function normalizeBaseUrl(value?: string | null) {
@@ -75,8 +77,18 @@ function normalizeBaseUrl(value?: string | null) {
   )
 }
 
+function normalizeUniSenderBaseUrl(value?: string | null) {
+  const normalized = value?.trim()
+
+  if (!normalized) {
+    return undefined
+  }
+
+  return normalized.replace(/\/+$/, "") || undefined
+}
+
 function shellEscape(value: string) {
-  return `'${value.replace(/'/g, `'"'"'`)}'`
+  return `'${value.replace(/'/g, `"'"'`)}'`
 }
 
 function sanitizeNotificationDedupeValue(value: string) {
@@ -110,30 +122,36 @@ export function getNotificationEmailRuntime(): NotificationEmailRuntime {
   )
   const from =
     process.env.NOTIFICATION_EMAIL_FROM?.trim() || DEFAULT_NOTIFICATION_EMAIL_FROM
-  const sendgridApiKey = process.env.SENDGRID_API_KEY?.trim() || undefined
-  const sendgridConfigured = requestedProviderId === "sendgrid" && !!sendgridApiKey
-  const providerId = sendgridConfigured ? "sendgrid" : "local"
+  const unisenderApiKey = process.env.UNISENDER_API_KEY?.trim() || undefined
+  const unisenderBaseUrl =
+    normalizeUniSenderBaseUrl(process.env.UNISENDER_BASE_URL) ||
+    DEFAULT_UNISENDER_BASE_URL
+  const unisenderConfigured =
+    requestedProviderId === "unisender" && !!unisenderApiKey
+  const providerId = unisenderConfigured ? "unisender" : "local"
 
   return {
     requestedProviderId,
     providerId,
     from,
-    sendgridConfigured,
-    sendgridApiKey,
+    unisenderConfigured,
+    unisenderApiKey,
+    unisenderBaseUrl,
   }
 }
 
 export function getNotificationEmailProviderDefinition() {
   const runtime = getNotificationEmailRuntime()
 
-  if (runtime.providerId === "sendgrid") {
+  if (runtime.providerId === "unisender") {
     return {
-      resolve: "@medusajs/medusa/notification-sendgrid",
-      id: "sendgrid",
+      resolve: "./src/modules/notification-unisender",
+      id: "unisender",
       options: {
         channels: ["email"],
-        api_key: runtime.sendgridApiKey,
+        api_key: runtime.unisenderApiKey,
         from: runtime.from,
+        base_url: runtime.unisenderBaseUrl,
       },
     }
   }

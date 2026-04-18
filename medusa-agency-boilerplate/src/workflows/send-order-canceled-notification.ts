@@ -54,8 +54,8 @@ type SendOrderCanceledNotificationResult = {
   recipient_normalized: string | null
   template: string
   trigger_type: string
-  provider_requested: "local" | "sendgrid"
-  provider_resolved: "local" | "sendgrid"
+  provider_requested: ReturnType<typeof getNotificationEmailRuntime>["requestedProviderId"]
+  provider_resolved: ReturnType<typeof getNotificationEmailRuntime>["providerId"]
   dedupe_key: string | null
   dedupe_authority: typeof NOTIFICATION_DEDUPE_AUTHORITY
   dedupe_strategy: typeof NOTIFICATION_DEDUPE_STRATEGY
