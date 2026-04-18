@@ -16,6 +16,15 @@ export type NotificationSmokeRequestInput = {
   backendUrl?: string
 }
 
+export type NotificationDedupeKeyInput = {
+  triggerType: string
+  resourceType: string
+  resourceId: string
+  channel: string
+  template: string
+  recipient: string
+}
+
 export const DEFAULT_NOTIFICATION_EMAIL_PROVIDER: NotificationEmailProviderId =
   "local"
 export const DEFAULT_NOTIFICATION_EMAIL_FROM = "notifications@example.com"
@@ -29,6 +38,18 @@ export const DEFAULT_ORDER_PLACED_NOTIFICATION_TEMPLATE =
 export const DEFAULT_ORDER_PLACED_NOTIFICATION_TRIGGER_TYPE =
   "order.placed.customer.notification_requested"
 export const DEFAULT_LOCAL_MEDUSA_BACKEND_URL = "http://localhost:9000"
+export const NOTIFICATION_DEDUPE_AUTHORITY = "notification_storage" as const
+export const NOTIFICATION_DEDUPE_STRATEGY = "query_before_create" as const
+export const NOTIFICATION_DEDUPE_RACE_WINDOW =
+  "best_effort_query_before_create_race_window_remains" as const
+export const NOTIFICATION_DEDUPE_CANONICAL_FIELDS = [
+  "trigger_type",
+  "resource_type",
+  "resource_id",
+  "channel",
+  "template",
+  "normalized_recipient",
+] as const
 
 function normalizeNotificationEmailProvider(
   value?: string | null
@@ -44,6 +65,31 @@ function normalizeBaseUrl(value?: string | null) {
 
 function shellEscape(value: string) {
   return `'${value.replace(/'/g, `'"'"'`)}'`
+}
+
+function sanitizeNotificationDedupeValue(value: string) {
+  return value.trim().replace(/\s+/g, " ")
+}
+
+export function normalizeNotificationRecipient(value?: string | null) {
+  const normalized = value?.trim().toLowerCase() || ""
+
+  return normalized || null
+}
+
+export function buildNotificationDedupeKey(
+  input: NotificationDedupeKeyInput
+) {
+  const recipient = normalizeNotificationRecipient(input.recipient)
+
+  return [
+    `trigger_type=${sanitizeNotificationDedupeValue(input.triggerType)}`,
+    `resource_type=${sanitizeNotificationDedupeValue(input.resourceType)}`,
+    `resource_id=${sanitizeNotificationDedupeValue(input.resourceId)}`,
+    `channel=${sanitizeNotificationDedupeValue(input.channel).toLowerCase()}`,
+    `template=${sanitizeNotificationDedupeValue(input.template)}`,
+    `normalized_recipient=${recipient ?? ""}`,
+  ].join("|")
 }
 
 export function getNotificationEmailRuntime(): NotificationEmailRuntime {

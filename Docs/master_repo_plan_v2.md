@@ -493,10 +493,12 @@ Commerce-flow не должен переписываться для типово
 - notification slice v1 больше не находится на уровне выбора направления;
 - в коде уже есть Notification Module, local provider для dev, SendGrid path для production, provider-agnostic workflow, admin smoke route и opt-in helper для on-demand secret admin API key;
 - `order lifecycle notifications v1` уже реализован как первый production-like customer-facing slice: subscriber [`orderPlacedNotificationHandler()`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:5) слушает `order.placed`, workflow [`sendOrderPlacedNotificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:147) работает по path `subscriber → workflow → Notification Module`, а canonical recipient в `v1` остается `order.email` без fallback chain;
+- `order lifecycle notifications hardening v1.1` синхронизирован как действующий operational contract: dedupe authority = existing notification storage, strategy = query-before-create, canonical dedupe identity = `trigger_type + resource_type + resource_id + channel + template + normalized recipient`, duplicate suppression = controlled skip с diagnostics без второго notification, race window = accepted limitation;
 - confirmed clean onboarding и Phase 2 baseline после этого не были сломаны.
 
 Текущий следующий трек:
-- validation для `order lifecycle notifications v1` и фиксация verification result без смешения со smoke baseline;
+- validation для `order lifecycle notifications v1` и hardening v1.1 с фиксацией verification result без смешения со smoke baseline;
+- затем отдельный commit;
 - после него дальнейшие order lifecycle flows `payment failed`, `order canceled`, `order.shipped`;
 - только затем переход к полному общему integration layer Фазы 4.
 

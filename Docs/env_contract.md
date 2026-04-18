@@ -145,13 +145,18 @@ root-level скрипты используют этот файл как исто
 
 Подтвержденный production-like contract для первого customer-facing notification slice теперь такой:
 1. subscriber [`orderPlacedNotificationHandler()`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:5) слушает trigger `order.placed` через config [`config`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:31);
-2. workflow [`sendOrderPlacedNotificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:147) читает order только в минимальной форме `{ id, display_id, email }` через query [`graph()`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:50);
+2. workflow [`sendOrderPlacedNotificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:147) читает order только в минимальной форме `{ id, display_id, email }` через query [`graph()`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:117);
 3. canonical recipient rule в `v1` — только `order.email`, без fallback chain на customer, shipping address или другие поля;
-4. при отсутствии order или email workflow делает controlled skip с reason `order_not_found` или `missing_order_email`, а не пытается отправку на fallback recipient;
-5. Notification Module получает template [`DEFAULT_ORDER_PLACED_NOTIFICATION_TEMPLATE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:27) = `order-placed-v1` и trigger type [`DEFAULT_ORDER_PLACED_NOTIFICATION_TRIGGER_TYPE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:29) = `order.placed.customer.notification_requested`.
+4. hardening v1.1 фиксирует anti-duplicate contract для `order.placed`: dedupe authority = existing notification storage, strategy = query-before-create, а canonical match set = `trigger_type + resource_type + resource_id + channel + template + normalized recipient`;
+5. normalized recipient вычисляется через [`normalizeNotificationRecipient()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:121) и входит в canonical dedupe identity;
+6. при отсутствии order или email workflow делает controlled skip с reason `order_not_found` или `missing_order_email`, а при duplicate match делает controlled skip с reason `duplicate_notification`, а не создает второй notification;
+7. Notification Module получает template [`DEFAULT_ORDER_PLACED_NOTIFICATION_TEMPLATE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:13) = `order-placed-v1` и trigger type [`DEFAULT_ORDER_PLACED_NOTIFICATION_TRIGGER_TYPE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:14) = `order.placed.customer.notification_requested`.
 
 Guardrails этого контракта:
-- path `subscriber → workflow → Notification Module` считается source of truth для `order lifecycle notifications v1`;
+- path `subscriber → workflow → Notification Module` считается source of truth для `order lifecycle notifications v1` и hardening v1.1;
+- dedupe не выносится в отдельный ledger или новый storage layer: source of truth для duplicate suppression остается existing notification storage;
+- duplicate suppression трактуется только как controlled skip с diagnostics и trace fields, а не как второй notification с отдельным status-flow;
+- race window в query-before-create dedupe признается и документируется как accepted limitation текущего уровня hardening;
 - smoke path через [`sendNotificationSmokeWorkflow`](../medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts:60) и route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts:26) остается отдельным baseline/regression anchor и не подменяет order lifecycle runtime;
 - для этого lifecycle slice не добавлялись новые обязательные env keys: baseline по-прежнему держится на `NOTIFICATION_EMAIL_PROVIDER`, `NOTIFICATION_EMAIL_FROM` и opt-in `SENDGRID_API_KEY`.
 
@@ -186,7 +191,7 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - Runtime helper [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:49) обязан вычислять те же `requested provider` и `resolved provider`.
 - Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts:26) обязан отражать этот contract в блоке `provider` ответа.
 
-Именно эта связка теперь считается source of truth для notification hardening v1.
+Именно эта связка теперь считается source of truth для notification hardening v1, а anti-duplicate semantics для `order.placed` дополнительно закреплены в hardening v1.1 через existing notification storage, normalized recipient matching и controlled skip diagnostics.
 
 #### Payments
 
@@ -315,7 +320,7 @@ Guardrail:
 
 ### Канонический authenticated notification smoke path
 
-После закрытия notification hardening v1 для локальной проверки notifications каноническим считается только такой порядок:
+После закрытия notification hardening v1 и синхронизации `order lifecycle notifications hardening v1.1` для локальной проверки notifications каноническим считается только такой порядок:
 1. оставить `NOTIFICATION_EMAIL_PROVIDER=local` как baseline-default или явно понимать, что `sendgrid` без `SENDGRID_API_KEY` все равно будет разрешен в `local` fallback;
 2. создать fresh secret admin API key через helper [`createSecretAdminApiKey()`](../medusa-agency-boilerplate/src/scripts/create-secret-admin-api-key.ts:22);
 3. использовать полученный fresh `sk_*` key в Basic auth формате `Authorization: Basic <base64(secret_api_key:)>`;
@@ -349,8 +354,9 @@ Guardrails этого пути:
 - текущая v1 семантика checkout честно ограничена до cheapest-only, а true multi-quote UX и `providerConnectId` / `extraParams` support остаются deferred;
 - полная runtime-цепочка `shipping → hosted YooKassa payment → automatic return → review → order placement → confirmed order page` теперь подтверждена end-to-end;
 - practical return contract после hosted payment теперь такой: storefront должен вернуться в review state с сохранённым cart context, не вызывать `placeOrder()` до hosted authorization и только затем завершать order placement;
-- `order lifecycle notifications v1` уже реализован как первый production-like slice от события `order.placed` с canonical recipient `order.email` и controlled skip semantics;
-- следующий рекомендуемый workstream после docs sync — **validation order lifecycle notifications v1**, а не повторная checkout validation.
+- `order lifecycle notifications v1` уже реализован как первый production-like slice от события `order.placed`, а hardening v1.1 фиксирует anti-duplicate contract через existing notification storage, normalized recipient matching, controlled duplicate suppression и accepted race window;
+- smoke baseline остается отдельным regression anchor и не смешивается с lifecycle anti-duplicate contract;
+- следующий рекомендуемый workstream после docs sync — **validation order lifecycle notifications v1** и затем commit, а не повторная checkout validation.
 
 ---
 

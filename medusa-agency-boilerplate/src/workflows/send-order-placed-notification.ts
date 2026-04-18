@@ -9,7 +9,13 @@ import {
 import {
   DEFAULT_ORDER_PLACED_NOTIFICATION_TEMPLATE,
   DEFAULT_ORDER_PLACED_NOTIFICATION_TRIGGER_TYPE,
+  NOTIFICATION_DEDUPE_AUTHORITY,
+  NOTIFICATION_DEDUPE_CANONICAL_FIELDS,
+  NOTIFICATION_DEDUPE_RACE_WINDOW,
+  NOTIFICATION_DEDUPE_STRATEGY,
+  buildNotificationDedupeKey,
   getNotificationEmailRuntime,
+  normalizeNotificationRecipient,
 } from "../modules/notification-email"
 
 type SendOrderPlacedNotificationInput = {
@@ -22,21 +28,79 @@ type OrderNotificationOrder = {
   email: string | null
 }
 
+type ExistingNotificationRecord = {
+  id: string
+  to: string
+  status: NotificationDTO["status"]
+  created_at: Date | string
+}
+
 type SendOrderPlacedNotificationResult = {
   status: "sent" | "skipped"
-  reason: "missing_order_email" | "order_not_found" | null
+  reason:
+    | "missing_order_email"
+    | "order_not_found"
+    | "duplicate_notification"
+    | null
   order_id: string
   display_id: number | string | null
   recipient: string | null
+  recipient_normalized: string | null
   template: string
   trigger_type: string
   provider_requested: "local" | "sendgrid"
   provider_resolved: "local" | "sendgrid"
+  dedupe_key: string | null
+  dedupe_authority: typeof NOTIFICATION_DEDUPE_AUTHORITY
+  dedupe_strategy: typeof NOTIFICATION_DEDUPE_STRATEGY
+  dedupe_race_window: typeof NOTIFICATION_DEDUPE_RACE_WINDOW
+  dedupe_canonical_fields: readonly string[]
+  duplicate_of_notification_id: string | null
+  duplicate_of_notification_status: NotificationDTO["status"] | null
+  duplicate_of_notification_created_at: string | null
   notification?: NotificationDTO
 }
 
 type SendOrderPlacedNotificationOutput = {
   result: SendOrderPlacedNotificationResult
+}
+
+function toNotificationTimestamp(value?: Date | string | null): string | null {
+  if (!value) {
+    return null
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString()
+  }
+
+  const parsed = new Date(value)
+
+  if (Number.isNaN(parsed.getTime())) {
+    return value
+  }
+
+  return parsed.toISOString()
+}
+
+function selectDuplicateNotification(
+  notifications: ExistingNotificationRecord[],
+  normalizedRecipient: string
+): ExistingNotificationRecord | undefined {
+  return notifications
+    .filter((notification) => {
+      return normalizeNotificationRecipient(notification.to) === normalizedRecipient
+    })
+    .sort((left, right) => {
+      const leftTimestamp = toNotificationTimestamp(left.created_at) || ""
+      const rightTimestamp = toNotificationTimestamp(right.created_at) || ""
+
+      if (leftTimestamp === rightTimestamp) {
+        return left.id.localeCompare(right.id)
+      }
+
+      return leftTimestamp.localeCompare(rightTimestamp)
+    })[0]
 }
 
 const sendOrderPlacedNotificationStep = createStep(
@@ -46,6 +110,9 @@ const sendOrderPlacedNotificationStep = createStep(
     const query = container.resolve(ContainerRegistrationKeys.QUERY)
     const notificationModuleService = container.resolve(Modules.NOTIFICATION)
     const notificationRuntime = getNotificationEmailRuntime()
+    const template = DEFAULT_ORDER_PLACED_NOTIFICATION_TEMPLATE
+    const triggerType = DEFAULT_ORDER_PLACED_NOTIFICATION_TRIGGER_TYPE
+    const dedupeCanonicalFields = [...NOTIFICATION_DEDUPE_CANONICAL_FIELDS]
 
     const { data: orders } = await query.graph({
       entity: "order",
@@ -56,12 +123,10 @@ const sendOrderPlacedNotificationStep = createStep(
     })
 
     const order = orders[0] as OrderNotificationOrder | undefined
-    const template = DEFAULT_ORDER_PLACED_NOTIFICATION_TEMPLATE
-    const triggerType = DEFAULT_ORDER_PLACED_NOTIFICATION_TRIGGER_TYPE
 
     if (!order) {
       logger.warn(
-        `[order-placed-notification] skip: order ${input.orderId} was not found`
+        `[order-placed-notification] skip reason=order_not_found order_id=${input.orderId} provider_requested=${notificationRuntime.requestedProviderId} provider_resolved=${notificationRuntime.providerId}`
       )
 
       return new StepResponse<SendOrderPlacedNotificationResult>({
@@ -70,18 +135,27 @@ const sendOrderPlacedNotificationStep = createStep(
         order_id: input.orderId,
         display_id: null,
         recipient: null,
+        recipient_normalized: null,
         template,
         trigger_type: triggerType,
         provider_requested: notificationRuntime.requestedProviderId,
         provider_resolved: notificationRuntime.providerId,
+        dedupe_key: null,
+        dedupe_authority: NOTIFICATION_DEDUPE_AUTHORITY,
+        dedupe_strategy: NOTIFICATION_DEDUPE_STRATEGY,
+        dedupe_race_window: NOTIFICATION_DEDUPE_RACE_WINDOW,
+        dedupe_canonical_fields: dedupeCanonicalFields,
+        duplicate_of_notification_id: null,
+        duplicate_of_notification_status: null,
+        duplicate_of_notification_created_at: null,
       })
     }
 
-    const recipient = order.email?.trim() || ""
+    const normalizedRecipient = normalizeNotificationRecipient(order.email)
 
-    if (!recipient) {
+    if (!normalizedRecipient) {
       logger.warn(
-        `[order-placed-notification] skip: order ${order.id} has no email`
+        `[order-placed-notification] skip reason=missing_order_email order_id=${order.id} provider_requested=${notificationRuntime.requestedProviderId} provider_resolved=${notificationRuntime.providerId}`
       )
 
       return new StepResponse<SendOrderPlacedNotificationResult>({
@@ -90,15 +164,84 @@ const sendOrderPlacedNotificationStep = createStep(
         order_id: order.id,
         display_id: order.display_id ?? null,
         recipient: null,
+        recipient_normalized: null,
         template,
         trigger_type: triggerType,
         provider_requested: notificationRuntime.requestedProviderId,
         provider_resolved: notificationRuntime.providerId,
+        dedupe_key: null,
+        dedupe_authority: NOTIFICATION_DEDUPE_AUTHORITY,
+        dedupe_strategy: NOTIFICATION_DEDUPE_STRATEGY,
+        dedupe_race_window: NOTIFICATION_DEDUPE_RACE_WINDOW,
+        dedupe_canonical_fields: dedupeCanonicalFields,
+        duplicate_of_notification_id: null,
+        duplicate_of_notification_status: null,
+        duplicate_of_notification_created_at: null,
+      })
+    }
+
+    const dedupeKey = buildNotificationDedupeKey({
+      triggerType,
+      resourceType: "order",
+      resourceId: order.id,
+      channel: "email",
+      template,
+      recipient: normalizedRecipient,
+    })
+
+    const { data: existingNotifications } = await query.graph({
+      entity: "notification",
+      fields: [
+        "id",
+        "to",
+        "status",
+        "created_at",
+      ],
+      filters: {
+        trigger_type: triggerType,
+        resource_type: "order",
+        resource_id: order.id,
+        channel: "email",
+        template,
+      },
+    })
+
+    const duplicateOf = selectDuplicateNotification(
+      (existingNotifications || []) as ExistingNotificationRecord[],
+      normalizedRecipient
+    )
+
+    if (duplicateOf) {
+      const duplicateCreatedAt = toNotificationTimestamp(duplicateOf.created_at)
+
+      logger.info(
+        `[order-placed-notification] duplicate suppressed reason=duplicate_notification order_id=${order.id} recipient=${normalizedRecipient} dedupe_key=${dedupeKey} duplicate_of_notification_id=${duplicateOf.id} duplicate_of_notification_status=${duplicateOf.status} duplicate_of_notification_created_at=${duplicateCreatedAt ?? "n/a"} provider_requested=${notificationRuntime.requestedProviderId} provider_resolved=${notificationRuntime.providerId} dedupe_race_window=${NOTIFICATION_DEDUPE_RACE_WINDOW}`
+      )
+
+      return new StepResponse<SendOrderPlacedNotificationResult>({
+        status: "skipped",
+        reason: "duplicate_notification",
+        order_id: order.id,
+        display_id: order.display_id ?? null,
+        recipient: normalizedRecipient,
+        recipient_normalized: normalizedRecipient,
+        template,
+        trigger_type: triggerType,
+        provider_requested: notificationRuntime.requestedProviderId,
+        provider_resolved: notificationRuntime.providerId,
+        dedupe_key: dedupeKey,
+        dedupe_authority: NOTIFICATION_DEDUPE_AUTHORITY,
+        dedupe_strategy: NOTIFICATION_DEDUPE_STRATEGY,
+        dedupe_race_window: NOTIFICATION_DEDUPE_RACE_WINDOW,
+        dedupe_canonical_fields: dedupeCanonicalFields,
+        duplicate_of_notification_id: duplicateOf.id,
+        duplicate_of_notification_status: duplicateOf.status,
+        duplicate_of_notification_created_at: duplicateCreatedAt,
       })
     }
 
     const payload: CreateNotificationDTO = {
-      to: recipient,
+      to: normalizedRecipient,
       from: notificationRuntime.from,
       channel: "email",
       template,
@@ -112,21 +255,30 @@ const sendOrderPlacedNotificationStep = createStep(
         order: {
           id: order.id,
           display_id: order.display_id,
-          email: recipient,
+          email: normalizedRecipient,
         },
         order_id: order.id,
         order_display_id: order.display_id,
-        recipient,
+        recipient: normalizedRecipient,
+        recipient_normalized: normalizedRecipient,
         trigger_type: triggerType,
         provider_requested: notificationRuntime.requestedProviderId,
         provider_resolved: notificationRuntime.providerId,
+        dedupe_key: dedupeKey,
+        dedupe_authority: NOTIFICATION_DEDUPE_AUTHORITY,
+        dedupe_strategy: NOTIFICATION_DEDUPE_STRATEGY,
+        dedupe_race_window: NOTIFICATION_DEDUPE_RACE_WINDOW,
+        dedupe_canonical_fields: dedupeCanonicalFields,
+        duplicate_of_notification_id: null,
+        duplicate_of_notification_status: null,
+        duplicate_of_notification_created_at: null,
       },
     }
 
     const notification = await notificationModuleService.createNotifications(payload)
 
     logger.info(
-      `[order-placed-notification] sent notification for order ${order.id} to ${recipient}`
+      `[order-placed-notification] sent notification order_id=${order.id} recipient=${normalizedRecipient} notification_id=${notification.id} dedupe_key=${dedupeKey} provider_requested=${notificationRuntime.requestedProviderId} provider_resolved=${notificationRuntime.providerId} dedupe_race_window=${NOTIFICATION_DEDUPE_RACE_WINDOW}`
     )
 
     return new StepResponse<SendOrderPlacedNotificationResult>({
@@ -134,11 +286,20 @@ const sendOrderPlacedNotificationStep = createStep(
       reason: null,
       order_id: order.id,
       display_id: order.display_id ?? null,
-      recipient,
+      recipient: normalizedRecipient,
+      recipient_normalized: normalizedRecipient,
       template,
       trigger_type: triggerType,
       provider_requested: notificationRuntime.requestedProviderId,
       provider_resolved: notificationRuntime.providerId,
+      dedupe_key: dedupeKey,
+      dedupe_authority: NOTIFICATION_DEDUPE_AUTHORITY,
+      dedupe_strategy: NOTIFICATION_DEDUPE_STRATEGY,
+      dedupe_race_window: NOTIFICATION_DEDUPE_RACE_WINDOW,
+      dedupe_canonical_fields: dedupeCanonicalFields,
+      duplicate_of_notification_id: null,
+      duplicate_of_notification_status: null,
+      duplicate_of_notification_created_at: null,
       notification,
     })
   }
