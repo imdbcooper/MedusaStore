@@ -6,7 +6,11 @@ import {
 } from "@medusajs/framework/utils"
 import { processPaymentWorkflowId } from "@medusajs/medusa/core-flows"
 import {
+  DEFAULT_PAYMENT_FAILED_NOTIFICATION_TRIGGER_TYPE,
+} from "../../../modules/notification-email"
+import {
   YOOKASSA_PROVIDER_KEY,
+  mapYooKassaStatusToSessionStatus,
   type YooKassaPaymentSessionData,
 } from "../../../modules/yookassa"
 
@@ -75,15 +79,39 @@ export async function handleYooKassaWebhook(
     ) => Promise<unknown>
   }
 
+  const paymentStatus = getString(paymentObject.status)
+  const paymentAction = mapYooKassaWebhookAction(paymentStatus)
+
   await workflowEngine.run(processPaymentWorkflowId, {
     input: {
-      action: mapYooKassaWebhookAction(getString(paymentObject.status)),
+      action: paymentAction,
       data: {
         session_id: session.id,
         amount: Number(getBody(paymentObject.amount).value ?? 0),
       },
     },
   })
+
+  if (isTerminalFailedPaymentStatus(paymentStatus)) {
+    const eventBus = req.scope.resolve(Modules.EVENT_BUS) as {
+      emit: (payload: {
+        name: string
+        data: Record<string, unknown>
+      }) => Promise<void>
+    }
+
+    await eventBus.emit({
+      name: DEFAULT_PAYMENT_FAILED_NOTIFICATION_TRIGGER_TYPE,
+      data: {
+        payment_session_id: session.id,
+        payment_id: paymentId,
+        provider_id: session.provider_id,
+        payment_status: paymentStatus,
+        payment_session_status: mapYooKassaStatusToSessionStatus(paymentStatus),
+        source: "yookassa_webhook",
+      },
+    })
+  }
 
   return res.status(200).json({ ok: true })
 }
@@ -161,6 +189,10 @@ function mapYooKassaWebhookAction(status: string) {
     default:
       return "pending"
   }
+}
+
+function isTerminalFailedPaymentStatus(status: string) {
+  return mapYooKassaStatusToSessionStatus(status) === "canceled"
 }
 
 function getString(value: unknown) {

@@ -41,6 +41,10 @@ export const DEFAULT_ORDER_SHIPPED_NOTIFICATION_TEMPLATE =
   "order-shipped-v1"
 export const DEFAULT_ORDER_SHIPPED_NOTIFICATION_TRIGGER_TYPE =
   "shipment.created.customer.notification_requested"
+export const DEFAULT_PAYMENT_FAILED_NOTIFICATION_TEMPLATE =
+  "payment-failed-v1"
+export const DEFAULT_PAYMENT_FAILED_NOTIFICATION_TRIGGER_TYPE =
+  "payment_session.failed.customer.notification_requested"
 export const DEFAULT_LOCAL_MEDUSA_BACKEND_URL = "http://localhost:9000"
 export const NOTIFICATION_DEDUPE_AUTHORITY = "notification_storage" as const
 export const NOTIFICATION_DEDUPE_STRATEGY = "query_before_create" as const
