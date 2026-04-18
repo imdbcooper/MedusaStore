@@ -1,33 +1,42 @@
 import { Suspense } from "react"
 
+import { getNavigation, getSiteSettings } from "@lib/data/content/globals"
 import { getLocale } from "@lib/data/locale-actions"
 import { listLocales } from "@lib/data/locales"
 import { listRegions } from "@lib/data/regions"
 import { storefrontConfig } from "@lib/storefront-config"
+import { ContentLinkRow } from "@lib/content/types"
 import { StoreRegion } from "@medusajs/types"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
+import ContentLinkItem from "@modules/content/components/content-link"
 import CartButton from "@modules/layout/components/cart-button"
 import SideMenu from "@modules/layout/components/side-menu"
 
 export default async function Nav() {
-  const [regions, locales, currentLocale] = await Promise.all([
-    listRegions().then((regions: StoreRegion[]) => regions),
-    listLocales(),
-    getLocale(),
-  ])
+  const [regions, locales, currentLocale, siteSettings, navigation] =
+    await Promise.all([
+      listRegions().then((regions: StoreRegion[]) => regions),
+      listLocales(),
+      getLocale(),
+      getSiteSettings(),
+      getNavigation(),
+    ])
 
   const navigationCopy = storefrontConfig.copy.navigation
+  const brandName = siteSettings?.siteName || storefrontConfig.storeName
+  const contentItems = (navigation?.items || []).filter(Boolean) as ContentLinkRow[]
 
   return (
     <div className="sticky top-0 inset-x-0 z-50 group">
       <header className="relative h-16 mx-auto border-b duration-200 bg-white border-ui-border-base">
-        <nav className="content-container txt-xsmall-plus text-ui-fg-subtle flex items-center justify-between w-full h-full text-small-regular">
+        <nav className="content-container txt-xsmall-plus text-ui-fg-subtle flex items-center justify-between w-full h-full text-small-regular gap-x-6">
           <div className="flex-1 basis-0 h-full flex items-center">
             <div className="h-full">
               <SideMenu
                 regions={regions}
                 locales={locales}
                 currentLocale={currentLocale}
+                contentItems={contentItems}
               />
             </div>
           </div>
@@ -38,12 +47,19 @@ export default async function Nav() {
               className="txt-compact-xlarge-plus hover:text-ui-fg-base uppercase"
               data-testid="nav-store-link"
             >
-              {storefrontConfig.storeName}
+              {brandName}
             </LocalizedClientLink>
           </div>
 
           <div className="flex items-center gap-x-6 h-full flex-1 basis-0 justify-end">
             <div className="hidden small:flex items-center gap-x-6 h-full">
+              {contentItems.slice(0, 3).map((item, index) => (
+                <ContentLinkItem
+                  key={String(item.id || index)}
+                  item={item}
+                  className="hover:text-ui-fg-base"
+                />
+              ))}
               <LocalizedClientLink
                 className="hover:text-ui-fg-base"
                 href="/account"

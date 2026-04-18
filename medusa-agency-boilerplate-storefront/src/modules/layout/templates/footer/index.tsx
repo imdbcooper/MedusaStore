@@ -1,20 +1,34 @@
 import { listCategories } from "@lib/data/categories"
 import { listCollections } from "@lib/data/collections"
+import { getFooter, getSiteSettings } from "@lib/data/content/globals"
 import { storefrontConfig } from "@lib/storefront-config"
 import { Text, clx } from "@medusajs/ui"
 
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
+import ContentLinkItem from "@modules/content/components/content-link"
 import MedusaCTA from "@modules/layout/components/medusa-cta"
 
 export default async function Footer() {
-  const { collections } = await listCollections({
-    fields: "*products",
-  })
-  const productCategories = await listCategories()
+  const [{ collections }, productCategories, payloadFooter, siteSettings] =
+    await Promise.all([
+      listCollections({
+        fields: "*products",
+      }),
+      listCategories(),
+      getFooter(),
+      getSiteSettings(),
+    ])
 
   const footerCopy = storefrontConfig.copy.footer
   const navigationCopy = storefrontConfig.copy.navigation
   const commonCopy = storefrontConfig.copy.common
+
+  const brandName = siteSettings?.siteName || storefrontConfig.storeName
+  const tagline = siteSettings?.tagline || storefrontConfig.tagline
+  const contactEmail = payloadFooter?.contactEmail || storefrontConfig.contact.email
+  const contactPhone = payloadFooter?.contactPhone || storefrontConfig.contact.phone
+  const footerColumns = payloadFooter?.columns || []
+  const socialLinks = payloadFooter?.socialLinks || []
 
   return (
     <footer className="border-t border-ui-border-base w-full">
@@ -25,30 +39,37 @@ export default async function Footer() {
               href="/"
               className="txt-compact-xlarge-plus text-ui-fg-subtle hover:text-ui-fg-base uppercase"
             >
-              {storefrontConfig.storeName}
+              {brandName}
             </LocalizedClientLink>
-            <Text className="text-ui-fg-subtle txt-small">
-              {storefrontConfig.tagline}
-            </Text>
+            <Text className="text-ui-fg-subtle txt-small">{tagline}</Text>
             <div className="flex flex-col gap-y-1 text-ui-fg-subtle txt-small">
-              <a
-                href={`mailto:${storefrontConfig.contact.email}`}
-                className="hover:text-ui-fg-base"
-              >
-                {storefrontConfig.contact.email}
+              <a href={`mailto:${contactEmail}`} className="hover:text-ui-fg-base">
+                {contactEmail}
               </a>
               <a
-                href={`tel:${storefrontConfig.contact.phone.replace(
-                  /[^\d+]/g,
-                  ""
-                )}`}
+                href={`tel:${contactPhone.replace(/[^\d+]/g, "")}`}
                 className="hover:text-ui-fg-base"
               >
-                {storefrontConfig.contact.phone}
+                {contactPhone}
               </a>
             </div>
           </div>
-          <div className="text-small-regular gap-10 md:gap-x-16 grid grid-cols-2 sm:grid-cols-4">
+          <div className="text-small-regular gap-10 md:gap-x-16 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5">
+            {footerColumns.map((column, index) => (
+              <div className="flex flex-col gap-y-2" key={String(column.id || index)}>
+                <span className="txt-small-plus txt-ui-fg-base">{column.title}</span>
+                <ul className="grid grid-cols-1 gap-y-2 text-ui-fg-subtle txt-small">
+                  {(column.links || []).map((item, itemIndex) => (
+                    <li key={String(item.id || itemIndex)}>
+                      <ContentLinkItem
+                        item={item}
+                        className="hover:text-ui-fg-base"
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
             {productCategories && productCategories?.length > 0 && (
               <div className="flex flex-col gap-y-2">
                 <span className="txt-small-plus txt-ui-fg-base">
@@ -166,25 +187,34 @@ export default async function Footer() {
             <div className="flex flex-col gap-y-2">
               <span className="txt-small-plus txt-ui-fg-base">{footerCopy.social}</span>
               <ul className="grid grid-cols-1 gap-y-2 text-ui-fg-subtle txt-small">
-                {storefrontConfig.socialLinks.map((link) => (
-                  <li key={link.label}>
-                    <a
-                      href={link.href}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="hover:text-ui-fg-base"
-                    >
-                      {link.label}
-                    </a>
-                  </li>
-                ))}
+                {socialLinks.length > 0
+                  ? socialLinks.map((link, index) => (
+                      <li key={String(link.id || index)}>
+                        <ContentLinkItem
+                          item={link}
+                          className="hover:text-ui-fg-base"
+                        />
+                      </li>
+                    ))
+                  : storefrontConfig.socialLinks.map((link) => (
+                      <li key={link.label}>
+                        <a
+                          href={link.href}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="hover:text-ui-fg-base"
+                        >
+                          {link.label}
+                        </a>
+                      </li>
+                    ))}
               </ul>
             </div>
           </div>
         </div>
         <div className="flex w-full mb-16 justify-between text-ui-fg-muted gap-4 flex-col small:flex-row">
           <Text className="txt-compact-small">
-            © {new Date().getFullYear()} {storefrontConfig.storeName}.{" "}
+            © {new Date().getFullYear()} {brandName}.{" "}
             {commonCopy.allRightsReserved}
           </Text>
           <MedusaCTA />

@@ -1,0 +1,41 @@
+import type { GlobalConfig } from 'payload'
+import { seoFields } from '../fields/seo.ts'
+import { triggerStorefrontRevalidation } from '../lib/revalidate.ts'
+
+export const SiteSettings: GlobalConfig = {
+  slug: 'siteSettings',
+  access: {
+    read: () => true,
+  },
+  versions: {
+    drafts: true,
+  },
+  hooks: {
+    afterChange: [
+      async () => {
+        await triggerStorefrontRevalidation({
+          collection: 'globals',
+          slug: 'siteSettings',
+          operation: 'update',
+        })
+      },
+    ],
+  },
+  fields: [
+    {
+      name: 'siteName',
+      type: 'text',
+      required: true,
+    },
+    {
+      name: 'tagline',
+      type: 'text',
+    },
+    {
+      name: 'logo',
+      type: 'upload',
+      relationTo: 'media',
+    },
+    ...seoFields,
+  ],
+}

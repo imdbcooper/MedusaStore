@@ -1,6 +1,7 @@
 "use client"
 
 import { Locale } from "@lib/data/locales"
+import { ContentLinkRow } from "@lib/content/types"
 import { storefrontConfig } from "@lib/storefront-config"
 import { Popover, PopoverPanel, Transition } from "@headlessui/react"
 import { HttpTypes } from "@medusajs/types"
@@ -9,10 +10,13 @@ import { Text, clx, useToggleState } from "@medusajs/ui"
 import { Fragment } from "react"
 
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
+import ContentLinkItem from "@modules/content/components/content-link"
 import CountrySelect from "../country-select"
 import LanguageSelect from "../language-select"
 
-const getSideMenuItems = (navigationCopy: typeof storefrontConfig.copy.navigation) => [
+const getSideMenuItems = (
+  navigationCopy: typeof storefrontConfig.copy.navigation
+) => [
   {
     label: navigationCopy.home,
     href: "/",
@@ -39,9 +43,15 @@ type SideMenuProps = {
   regions: HttpTypes.StoreRegion[] | null
   locales: Locale[] | null
   currentLocale: string | null
+  contentItems?: ContentLinkRow[]
 }
 
-const SideMenu = ({ regions, locales, currentLocale }: SideMenuProps) => {
+const SideMenu = ({
+  regions,
+  locales,
+  currentLocale,
+  contentItems = [],
+}: SideMenuProps) => {
   const countryToggleState = useToggleState()
   const languageToggleState = useToggleState()
   const navigationCopy = storefrontConfig.copy.navigation
@@ -90,22 +100,38 @@ const SideMenu = ({ regions, locales, currentLocale }: SideMenuProps) => {
                         <XMark />
                       </button>
                     </div>
-                    <ul className="flex flex-col gap-6 items-start justify-start">
-                      {getSideMenuItems(navigationCopy).map((item) => {
-                        return (
-                          <li key={item.href}>
-                            <LocalizedClientLink
-                              href={item.href}
-                              className="text-3xl leading-10 hover:text-ui-fg-disabled"
-                              onClick={close}
-                              data-testid={item.testId}
-                            >
-                              {item.label}
-                            </LocalizedClientLink>
-                          </li>
-                        )
-                      })}
-                    </ul>
+                    <div className="flex flex-col gap-8">
+                      <ul className="flex flex-col gap-6 items-start justify-start">
+                        {getSideMenuItems(navigationCopy).map((item) => {
+                          return (
+                            <li key={item.href}>
+                              <LocalizedClientLink
+                                href={item.href}
+                                className="text-3xl leading-10 hover:text-ui-fg-disabled"
+                                onClick={close}
+                                data-testid={item.testId}
+                              >
+                                {item.label}
+                              </LocalizedClientLink>
+                            </li>
+                          )
+                        })}
+                      </ul>
+
+                      {contentItems.length > 0 && (
+                        <ul className="flex flex-col gap-4 items-start justify-start border-t border-white/10 pt-6">
+                          {contentItems.map((item, index) => (
+                            <li key={String(item.id || index)}>
+                              <ContentLinkItem
+                                item={item}
+                                onClick={close}
+                                className="text-lg leading-7 hover:text-ui-fg-disabled"
+                              />
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                     <div className="flex flex-col gap-y-6">
                       {!!locales?.length && (
                         <div

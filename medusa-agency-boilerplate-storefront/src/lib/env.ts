@@ -20,3 +20,17 @@ export const STRIPE_COMPAT_ENABLED = Boolean(
   process.env.NEXT_PUBLIC_STRIPE_KEY ||
     process.env.NEXT_PUBLIC_MEDUSA_PAYMENTS_PUBLISHABLE_KEY
 )
+
+export const PAYLOAD_ENABLED = process.env.PAYLOAD_ENABLED === "true"
+
+export const PAYLOAD_CMS_URL =
+  process.env.PAYLOAD_CMS_URL?.replace(/\/$/, "") || ""
+
+export const PAYLOAD_CONTENT_PREVIEW_TOKEN =
+  process.env.PAYLOAD_CONTENT_PREVIEW_TOKEN || ""
+
+export const PAYLOAD_PREVIEW_SECRET =
+  process.env.PAYLOAD_PREVIEW_SECRET || process.env.PAYLOAD_SECRET || ""
+
+export const PAYLOAD_REVALIDATE_SECRET =
+  process.env.PAYLOAD_REVALIDATE_SECRET || ""

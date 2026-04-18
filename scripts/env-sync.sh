@@ -117,6 +117,11 @@ upsert_env_value "$storefront_env" "NEXT_PUBLIC_BASE_URL" "$NEXT_PUBLIC_BASE_URL
 upsert_env_value "$storefront_env" "NEXT_PUBLIC_DEFAULT_REGION" "ru"
 upsert_env_value "$storefront_env" "NEXT_PUBLIC_YOOKASSA_ENABLED" "$([[ -n "${YOOKASSA_SHOP_ID:-}" && -n "${YOOKASSA_SECRET_KEY:-}" && -n "${YOOKASSA_RETURN_URL:-}" ]] && echo true || echo false)"
 upsert_env_value "$storefront_env" "NEXT_PUBLIC_VK_ID_ENABLED" "$([[ "${VK_ID_ENABLED:-false}" == "true" && -n "${VK_ID_CLIENT_ID:-}" && -n "${VK_ID_REDIRECT_URI:-}" ]] && echo true || echo false)"
+upsert_env_value "$storefront_env" "PAYLOAD_ENABLED" "${PAYLOAD_ENABLED:-false}"
+upsert_env_value "$storefront_env" "PAYLOAD_CMS_URL" "${PAYLOAD_CMS_URL:-http://localhost:${PAYLOAD_PORT:-3100}}"
+upsert_env_value "$storefront_env" "PAYLOAD_CONTENT_PREVIEW_TOKEN" "${PAYLOAD_CONTENT_PREVIEW_TOKEN:-}"
+upsert_env_value "$storefront_env" "PAYLOAD_PREVIEW_SECRET" "${PAYLOAD_PREVIEW_SECRET:-}"
+upsert_env_value "$storefront_env" "PAYLOAD_REVALIDATE_SECRET" "${PAYLOAD_REVALIDATE_SECRET:-}"
 
 if ! env_file_has_value "$storefront_env" "NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY"; then
   upsert_env_value "$storefront_env" "NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY" "REPLACE_WITH_ROOT_BOOTSTRAP"

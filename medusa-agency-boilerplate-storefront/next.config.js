@@ -7,6 +7,27 @@ checkEnvVariables()
  */
 const S3_HOSTNAME = process.env.MEDUSA_CLOUD_S3_HOSTNAME
 const S3_PATHNAME = process.env.MEDUSA_CLOUD_S3_PATHNAME
+const PAYLOAD_CMS_URL = process.env.PAYLOAD_CMS_URL
+
+const payloadRemotePatterns = (() => {
+  if (!PAYLOAD_CMS_URL) {
+    return []
+  }
+
+  try {
+    const parsed = new URL(PAYLOAD_CMS_URL)
+
+    return [
+      {
+        protocol: parsed.protocol.replace(":", ""),
+        hostname: parsed.hostname,
+        ...(parsed.port ? { port: parsed.port } : {}),
+      },
+    ]
+  } catch {
+    return []
+  }
+})()
 
 /**
  * @type {import('next').NextConfig}
@@ -51,6 +72,7 @@ const nextConfig = {
             },
           ]
         : []),
+      ...payloadRemotePatterns,
     ],
   },
 }
