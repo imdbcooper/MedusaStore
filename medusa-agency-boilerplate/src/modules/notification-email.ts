@@ -24,6 +24,10 @@ export const DEFAULT_NOTIFICATION_SMOKE_MESSAGE =
   "Notification v1 smoke trigger completed."
 export const DEFAULT_NOTIFICATION_SMOKE_TRIGGER_TYPE =
   "admin.notification_smoke.requested"
+export const DEFAULT_ORDER_PLACED_NOTIFICATION_TEMPLATE =
+  "order-placed-v1"
+export const DEFAULT_ORDER_PLACED_NOTIFICATION_TRIGGER_TYPE =
+  "order.placed.customer.notification_requested"
 export const DEFAULT_LOCAL_MEDUSA_BACKEND_URL = "http://localhost:9000"
 
 function normalizeNotificationEmailProvider(

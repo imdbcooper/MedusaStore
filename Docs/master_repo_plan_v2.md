@@ -492,11 +492,12 @@ Commerce-flow не должен переписываться для типово
 Уже подтверждено:
 - notification slice v1 больше не находится на уровне выбора направления;
 - в коде уже есть Notification Module, local provider для dev, SendGrid path для production, provider-agnostic workflow, admin smoke route и opt-in helper для on-demand secret admin API key;
+- `order lifecycle notifications v1` уже реализован как первый production-like customer-facing slice: subscriber [`orderPlacedNotificationHandler()`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:5) слушает `order.placed`, workflow [`sendOrderPlacedNotificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:147) работает по path `subscriber → workflow → Notification Module`, а canonical recipient в `v1` остается `order.email` без fallback chain;
 - confirmed clean onboarding и Phase 2 baseline после этого не были сломаны.
 
 Текущий следующий трек:
-- controlled validation/hardening для текущего YooKassa-first payment path v1;
-- после него shipping path v1 с ApiShip-first направлением по умолчанию;
+- validation для `order lifecycle notifications v1` и фиксация verification result без смешения со smoke baseline;
+- после него дальнейшие order lifecycle flows `payment failed`, `order canceled`, `order.shipped`;
 - только затем переход к полному общему integration layer Фазы 4.
 
 ### Задачи
@@ -565,10 +566,10 @@ Commerce-flow не должен переписываться для типово
 
 ### Задачи
 
-- внедрить выбранный notification path:
+- расширить уже выбранный notification path после закрытого v1 slice:
   - dev mode;
   - production provider;
-  - order lifecycle notifications;
+  - следующие order lifecycle notifications после `order.placed`;
   - error handling;
   - retry strategy.
 - внедрить выбранный payment path:

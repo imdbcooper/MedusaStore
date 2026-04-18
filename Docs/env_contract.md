@@ -132,14 +132,28 @@ root-level скрипты используют этот файл как исто
 
 #### Notifications
 
-- `NOTIFICATION_EMAIL_PROVIDER` нормализуется через [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:45) в два значения: `requestedProviderId` и `providerId`.
+- `NOTIFICATION_EMAIL_PROVIDER` нормализуется через [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:49) в два значения: `requestedProviderId` и `providerId`.
 - `NOTIFICATION_EMAIL_PROVIDER=local` — подтвержденный baseline-default.
 - Если requested provider равен `sendgrid`, но `SENDGRID_API_KEY` пустой, runtime остается baseline-safe:
   - Medusa startup, build и runtime не ломаются;
   - в [medusa-config.ts](../medusa-agency-boilerplate/medusa-config.ts:17) фиксируется warn про fallback;
-  - итоговый provider definition остается local через [`getNotificationEmailProviderDefinition()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:64).
-- `NOTIFICATION_EMAIL_FROM` задает sender для runtime и smoke workflow, но не делает внешний provider обязательным.
+  - итоговый provider definition остается local через [`getNotificationEmailProviderDefinition()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:68).
+- `NOTIFICATION_EMAIL_FROM` задает sender для runtime, smoke workflow и `order.placed` lifecycle workflow, но не делает внешний provider обязательным.
 - Ни один markdown-документ этого репозитория не должен содержать фактическое значение `SENDGRID_API_KEY` или другого notification secret.
+
+#### Canonical order lifecycle notifications v1 contract
+
+Подтвержденный production-like contract для первого customer-facing notification slice теперь такой:
+1. subscriber [`orderPlacedNotificationHandler()`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:5) слушает trigger `order.placed` через config [`config`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:31);
+2. workflow [`sendOrderPlacedNotificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:147) читает order только в минимальной форме `{ id, display_id, email }` через query [`graph()`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:50);
+3. canonical recipient rule в `v1` — только `order.email`, без fallback chain на customer, shipping address или другие поля;
+4. при отсутствии order или email workflow делает controlled skip с reason `order_not_found` или `missing_order_email`, а не пытается отправку на fallback recipient;
+5. Notification Module получает template [`DEFAULT_ORDER_PLACED_NOTIFICATION_TEMPLATE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:27) = `order-placed-v1` и trigger type [`DEFAULT_ORDER_PLACED_NOTIFICATION_TRIGGER_TYPE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:29) = `order.placed.customer.notification_requested`.
+
+Guardrails этого контракта:
+- path `subscriber → workflow → Notification Module` считается source of truth для `order lifecycle notifications v1`;
+- smoke path через [`sendNotificationSmokeWorkflow`](../medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts:60) и route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts:26) остается отдельным baseline/regression anchor и не подменяет order lifecycle runtime;
+- для этого lifecycle slice не добавлялись новые обязательные env keys: baseline по-прежнему держится на `NOTIFICATION_EMAIL_PROVIDER`, `NOTIFICATION_EMAIL_FROM` и opt-in `SENDGRID_API_KEY`.
 
 #### Canonical authenticated smoke path
 
@@ -169,7 +183,7 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 ##### Что считается согласованным contract
 
 - Workflow [`sendNotificationSmokeWorkflow`](../medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts:60) обязан записывать в notification data `provider_requested` и `provider_resolved`.
-- Runtime helper [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:45) обязан вычислять те же `requested provider` и `resolved provider`.
+- Runtime helper [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:49) обязан вычислять те же `requested provider` и `resolved provider`.
 - Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts:26) обязан отражать этот contract в блоке `provider` ответа.
 
 Именно эта связка теперь считается source of truth для notification hardening v1.
@@ -335,7 +349,8 @@ Guardrails этого пути:
 - текущая v1 семантика checkout честно ограничена до cheapest-only, а true multi-quote UX и `providerConnectId` / `extraParams` support остаются deferred;
 - полная runtime-цепочка `shipping → hosted YooKassa payment → automatic return → review → order placement → confirmed order page` теперь подтверждена end-to-end;
 - practical return contract после hosted payment теперь такой: storefront должен вернуться в review state с сохранённым cart context, не вызывать `placeOrder()` до hosted authorization и только затем завершать order placement;
-- следующий рекомендуемый workstream после закрытого checkout path — **order lifecycle notifications v1** от события `order.placed`, а не повторная checkout validation.
+- `order lifecycle notifications v1` уже реализован как первый production-like slice от события `order.placed` с canonical recipient `order.email` и controlled skip semantics;
+- следующий рекомендуемый workstream после docs sync — **validation order lifecycle notifications v1**, а не повторная checkout validation.
 
 ---
 
