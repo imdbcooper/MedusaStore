@@ -171,7 +171,7 @@ Payload CMS как будущий content layer уже считается **за
 
 ### Текущая цель
 
-**Текущий подшаг: source-of-truth sync по уже реализованному `order lifecycle notifications v1`.**
+**Текущий подшаг: implementation `order shipped notification v1` как следующего lifecycle slice поверх уже закрытого `order.placed` path.**
 
 **Notification hardening v1**, **order lifecycle notifications hardening v1.1**, **bootstrap idempotency hardening v1**, **YooKassa runtime/E2E**, **ApiShip `cheapest_only_v1`**, **checkout end-to-end validation v1**, **storefront core baseline**, **RU copy baseline**, **post-review cleanup**, **template-readiness regression formalization v1** и **order lifecycle notifications v1** уже подтверждены и не являются активными implementation-треками.
 
@@ -185,7 +185,7 @@ Payload CMS как будущий content layer уже считается **за
 - **ApiShip `cheapest_only_v1`:** PASS `2026-04-18` — production token получен, provider активирован, rates из ApiShip/Yandex возвращаются, blocker закрыт targeted code fixes в [`route.ts`](../medusa-agency-boilerplate/src/api/store/apiship/rates/route.ts) и [`seed.ts`](../medusa-agency-boilerplate/src/scripts/seed.ts);
 - **checkout end-to-end validation v1:** PASS — подтвержден полный flow `shipping → hosted YooKassa payment → automatic return → review → order placement → confirmed order page`; blocker вокруг `payment_collection` снят, а targeted fixes в [`payment-button/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx) и [`cookies.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts) закрепили корректный hosted authorization и cross-site return.
 
-Рекомендуемый следующий workstream: **validation для order lifecycle notifications v1** — подтвердить runtime path `order.placed` на уже реализованной цепочке `subscriber → workflow → Notification Module`, отдельно проверить anti-duplicate contract hardening v1.1, сохранить authenticated smoke как отдельный regression anchor и затем зафиксировать validation result отдельным commit. Обоснование в [plan_analysis.md](./plan_analysis.md).
+Рекомендуемый следующий workstream после завершения текущего implementation шага: **targeted validation `order shipped notification v1`** — подтвердить single send на одном `shipment.created`, controlled skip при `no_notification=true`, controlled skip при отсутствии `order.email`, duplicate suppression при повторной обработке того же `fulfillment.id` и отсутствие ложного dedupe между двумя разными shipment'ами одного заказа. Authenticated smoke остается отдельным regression anchor. Обоснование в [plan_analysis.md](./plan_analysis.md).
 
 Что это значит для выбора решений:
 
@@ -267,15 +267,19 @@ Payload-related рабочая поверхность пока **не актив
 - targeted fix в [`payment-button/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx) предотвращает преждевременный `placeOrder()` до hosted authorization;
 - targeted fix в [`cookies.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts) меняет cart cookie policy с `sameSite: "strict"` на `sameSite: "lax"`, чтобы cross-site return не терял checkout state.
 
-### 4.2. Следующий implementation workstream — validation order lifecycle notifications v1
+### 4.2. Текущий implementation workstream — `order shipped notification v1`
 
-Следующий конкретный шаг должен опираться на уже реализованный `order.placed` path, а не снова открывать provider-selection треки:
+Новый shipped slice теперь реализован поверх уже подтвержденного [`orderPlacedNotificationHandler()`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:5) → [`sendOrderPlacedNotificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:308) path и сохраняет тот же production-like contract `subscriber → workflow → Notification Module`:
 
-- подтвердить runtime-цепочку `subscriber → workflow → Notification Module` для первого production-like customer-facing notification slice;
-- валидировать минимальный query shape `{ id, display_id, email }` и зафиксированный trigger `order.placed`;
-- проверить canonical recipient rule `order.email` без fallback chain и controlled skip при отсутствии email;
-- отдельно подтвердить anti-duplicate contract hardening v1.1: dedupe authority = existing notification storage, strategy = query-before-create, canonical match set = `trigger_type + resource_type + resource_id + channel + template + normalized recipient`, duplicate path = controlled skip без второго notification;
-- удержать [send-notification-smoke.ts](../medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts) и [route.ts](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts) как отдельный baseline/regression anchor, а не как часть order lifecycle runtime path.
+- добавлен subscriber [`orderShippedNotificationHandler()`](../medusa-agency-boilerplate/src/subscribers/order-shipped-notification.ts:9), который слушает именно `shipment.created`;
+- event payload принимается в минимальной форме `{ id, no_notification }`, где `id` трактуется как `fulfillment_id`, а отсутствие `id` обрабатывается как controlled skip/diagnostic path на subscriber boundary;
+- добавлен workflow [`sendOrderShippedNotificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-order-shipped-notification.ts:346), который читает fulfillment только в форме `{ id, order.id, order.display_id, order.email }`;
+- canonical recipient rule остается строгим: только `order.email`, без fallback chain;
+- shipped identity выделена отдельно: template `order-shipped-v1`, trigger type `shipment.created.customer.notification_requested`, log prefix `order-shipped-notification`, resource identity = `fulfillment.id`;
+- anti-duplicate contract hardening v1.1 переиспользован без нового ledger: dedupe authority = existing notification storage, strategy = query-before-create, canonical match set = `trigger_type + resource_type + resource_id + channel + template + normalized recipient`, при этом resource boundary для shipped path = `fulfillment.id`, а не `order.id`;
+- реализованы expected skip paths `missing shipment id`, `no_notification_requested`, `fulfillment_not_found`, `order_not_found`, `missing_order_email`, `duplicate_notification`;
+- diagnosability сохранена: subscriber completion log и workflow step logs включают `status`, `reason`, `order_id`, `display_id`, `fulfillment_id`, `recipient`, `recipient_normalized`, `notification_id`, `dedupe_key`, duplicate metadata, provider resolution и `no_notification`;
+- [send-notification-smoke.ts](../medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts) и [route.ts](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts) по-прежнему остаются отдельным baseline/regression anchor, а не частью shipped runtime path.
 
 ### 4.3. Удерживать закрытые delivery results как входные инварианты, а не как открытые задачи
 
@@ -292,17 +296,19 @@ Payload-related рабочая поверхность пока **не актив
 
 ### 4.4. Что остается вне scope нового шага
 
-На этом шаге не нужно раздувать следующий workstream в целую новую фазу:
+На этом implementation шаге не нужно раздувать `order shipped notification v1` в целую новую фазу:
 
-- `payment failed`, `order canceled` и `order.shipped` notifications остаются следующими подшагами, а не частью первого `order.placed` slice;
+- `payment failed` и `order canceled` notifications не входят в этот slice;
+- `order.fulfillment_created` не становится customer-facing shipped notification по умолчанию, пока отдельно не пересмотрена событийная семантика;
+- tracking links, carrier-specific copy, storefront account deep-links, line-item breakdown и multi-recipient routing не входят в минимальный shipped blueprint `v1`;
 - refund/cancel path по payment не становится частью этого workstream автоматически;
 - полноценный multi-quote checkout UX остается отдельным scope;
 - `providerConnectId` / `extraParams` support остается **deferred** до отдельного бизнес-решения.
 
 Практический смысл:
 
-- checkout proof points уже закрыты;
-- следующий шаг должен использовать подтвержденный order placement как вход, а не снова спорить о платежном или логистическом направлении.
+- checkout proof points и `order.placed` baseline уже закрыты;
+- текущий шаг проектирует только следующий lifecycle slice, а не переоткрывает платежное или логистическое направление и не расширяет scope на другие post-order events.
 
 ---
 
@@ -347,14 +353,16 @@ checkout path уже закрыт, а текущий шаг — это не но
 - для template readiness теперь должен существовать один канонический regression-pack/source-of-truth с командами, expected results и failure signals в [Docs/template_readiness_regression.md](./template_readiness_regression.md);
 - remaining risks текущего этапа ограничены и явно известны:
   - validation для уже реализованного `order.placed` path и его anti-duplicate contract hardening v1.1 ещё не зафиксирована как отдельный verification result;
-  - `payment failed`, `order canceled` и `order.shipped` flows остаются следующими подшагами, а не закрытым контуром;
+  - `order shipped notification v1` уже реализован в backend-коде, но ещё не провалидирован отдельным targeted runtime verification result;
+  - `payment failed` и `order canceled` flows остаются следующими подшагами за пределами текущего shipped design scope;
   - `providerConnectId` / `extraParams` support и true multi-quote checkout остаются deferred;
-  - race window в query-before-create dedupe для `order.placed` осознанно принят как accepted limitation и пока не закрыт отдельным storage-level lock;
+  - race window в query-before-create dedupe для `order.placed` и спроектированного `shipment.created` path осознанно принят как accepted limitation и пока не закрыт отдельным storage-level lock;
   - ApiShip `cheapest_only_v1` подтверждён runtime-проверкой `2026-04-18`, но это не полноценный multi-quote UX;
 - повторный `npm run bootstrap` поверх уже заполненной БД подтвержден runtime validation как idempotent path и больше не является открытым hardening concern;
 - checkout end-to-end validation v1 закрыт: полный flow `shipping → hosted YooKassa payment → automatic return → review → order placement → confirmed order page` подтверждён runtime/E2E, а blockers сняты targeted fixes в [`payment-button/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx) и [`cookies.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts);
 - order lifecycle notifications v1 уже реализован как первый production-like customer-facing slice, а hardening v1.1 синхронизирован как действующий operational contract: subscriber [`orderPlacedNotificationHandler()`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:5) слушает `order.placed`, workflow [`sendOrderPlacedNotificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:308) делает query по минимальной форме `{ id, display_id, email }`, dedupe authority остается existing notification storage, canonical dedupe identity использует `trigger_type + resource_type + resource_id + channel + template + normalized recipient`, а duplicate suppression выполняется как controlled skip с diagnostics без второго notification;
-- следующий шаг — **validation order lifecycle notifications v1** с hardening v1.1 и затем отдельный commit, а smoke path остается отдельным regression anchor через [send-notification-smoke.ts](../medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts) и [route.ts](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts);
+- `order shipped notification v1` уже реализован как следующий lifecycle slice: event = `shipment.created`, payload baseline = `{ id, no_notification }`, query baseline = `{ fulfillment.id, order.id, order.display_id, order.email }`, template = `order-shipped-v1`, trigger type = `shipment.created.customer.notification_requested`, canonical recipient = `order.email`, canonical dedupe resource identity = `fulfillment.id`;
+- следующий step — **выполнить targeted validation `order shipped notification v1`** для single-send, skip-path и duplicate-suppression contract; smoke path остается отдельным regression anchor через [send-notification-smoke.ts](../medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts) и [route.ts](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts);
 - Payload уже встроен в канонический план как post-storefront-core content layer, но не является текущей активной реализацией.
 
 ---

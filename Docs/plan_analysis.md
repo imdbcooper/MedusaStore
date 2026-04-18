@@ -211,8 +211,9 @@
 Что требуется дальше по факту:
 - не переписывать код без нового evidence о code bug;
 - удерживать как source of truth, что notification hardening v1 уже закрыт, `order lifecycle notifications hardening v1.1` уже реализован, bootstrap idempotency hardening v1 **подтвержден runtime validation**, ApiShip `cheapest_only_v1` подтверждён runtime-проверкой, checkout end-to-end validation v1 закрыт, `order lifecycle notifications v1` уже реализован, а regression-pack уже формализован;
-- провести **validation order lifecycle notifications v1** на уже реализованной цепочке `subscriber → workflow → Notification Module`;
-- отдельно зафиксировать anti-duplicate operational contract и failure signals для path `order.placed` без большого CI-redesign;
+- считать текущий planning-шаг закрытым только после фиксации blueprint для `order shipped notification v1` в source-of-truth docs;
+- для этого shipped blueprint удерживать следующие design decisions: trigger = `shipment.created`, event payload baseline = `{ id, no_notification }`, query baseline = `{ fulfillment.id, order.id, order.display_id, order.email }`, canonical recipient = `order.email`, template = `order-shipped-v1`, trigger type = `shipment.created.customer.notification_requested`, resource identity для dedupe = `fulfillment.id`;
+- переиспользовать anti-duplicate operational contract hardening v1.1 и для shipped slice: dedupe authority = existing notification storage, strategy = query-before-create, canonical match set = `trigger_type + resource_type + resource_id + channel + template + normalized recipient`, duplicate path = controlled skip с diagnostics, race window = accepted limitation;
 - удерживать как отдельный baseline/regression anchor [send-notification-smoke.ts](../medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts) и [route.ts](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts), а не смешивать их с order lifecycle runtime path;
 - добавлять helper artifacts только там, где они реально уменьшают ручной шум и не подменяют route contract новым pseudo-framework;
 - не подменять cheapest-only semantics заявлением, будто в checkout уже есть полноценный multi-quote UX;
@@ -221,7 +222,8 @@
 Что пока не подтверждено:
 - production-ready commerce контур как полностью завершенный end-to-end + post-order lifecycle;
 - validation первого customer-facing уведомления `order.placed` на реальном order placement path как отдельный verification result;
-- `payment failed`, `order canceled` и `order.shipped` как закрытые notification flows;
+- targeted runtime validation для уже реализованного `order shipped notification v1`;
+- `payment failed` и `order canceled` как закрытые notification flows;
 - полноценный multi-quote checkout UX для shipping;
 - `providerConnectId` / `extraParams` support без отдельного бизнес-решения;
 - полный общий интеграционный слой для всех направлений Фазы 3.
@@ -232,7 +234,7 @@
 - для канонического authenticated notification smoke допустим один lightweight helper path через root command `npm run smoke:notification`.
 
 Простыми словами:
-вопрос `какой notification path берем` уже закрыт для первой версии и доведен до hardening v1, вопрос `какой payment path берем` уже получил и подтвердил практический ответ в виде YooKassa-first path, вопрос `какой shipping path берем` тоже получил практический ответ в виде ApiShip-first rate-selection slice, а checkout path уже подтвержден до confirmed order page. Bootstrap idempotency hardening v1 подтвержден runtime validation. Поэтому следующий шаг — не новый checkout pass и не повторное обсуждение провайдеров, а первый post-order workstream: customer-facing уведомление `order.placed` на уже подтверждённом order creation path.
+вопрос `какой notification path берем` уже закрыт для первой версии и доведен до hardening v1, вопрос `какой payment path берем` уже получил и подтвердил практический ответ в виде YooKassa-first path, вопрос `какой shipping path берем` тоже получил практический ответ в виде ApiShip-first rate-selection slice, а checkout path уже подтвержден до confirmed order page. Bootstrap idempotency hardening v1 подтвержден runtime validation. Следующий шаг — не новый checkout pass и не повторное обсуждение провайдеров, а targeted validation post-order shipped path: customer-facing уведомление `shipment.created` на уже реализованном order lifecycle contract.
 
 ### Важный policy-risk, который уже проявился
 

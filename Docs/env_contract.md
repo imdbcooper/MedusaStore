@@ -141,24 +141,38 @@ root-level скрипты используют этот файл как исто
 - `NOTIFICATION_EMAIL_FROM` задает sender для runtime, smoke workflow и `order.placed` lifecycle workflow, но не делает внешний provider обязательным.
 - Ни один markdown-документ этого репозитория не должен содержать фактическое значение `SENDGRID_API_KEY` или другого notification secret.
 
-#### Canonical order lifecycle notifications v1 contract
+#### Canonical order lifecycle notifications: current contract and shipped-slice extension
 
-Подтвержденный production-like contract для первого customer-facing notification slice теперь такой:
+Подтвержденный production-like contract для уже реализованного первого customer-facing notification slice такой:
 1. subscriber [`orderPlacedNotificationHandler()`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:5) слушает trigger `order.placed` через config [`config`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:33);
 2. workflow [`sendOrderPlacedNotificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:308) читает order только в минимальной форме `{ id, display_id, email }` через query [`graph()`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:117);
 3. canonical recipient rule в `v1` — только `order.email`, без fallback chain на customer, shipping address или другие поля;
 4. hardening v1.1 фиксирует anti-duplicate contract для `order.placed`: dedupe authority = existing notification storage, strategy = query-before-create, а canonical match set = `trigger_type + resource_type + resource_id + channel + template + normalized recipient`;
-5. normalized recipient вычисляется через [`normalizeNotificationRecipient()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:74) и входит в canonical dedupe identity;
+5. normalized recipient вычисляется через [`normalizeNotificationRecipient()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:79) и входит в canonical dedupe identity;
 6. при отсутствии order или email workflow делает controlled skip с reason `order_not_found` или `missing_order_email`, а при duplicate match делает controlled skip с reason `duplicate_notification`, а не создает второй notification;
-7. Notification Module получает template [`DEFAULT_ORDER_PLACED_NOTIFICATION_TEMPLATE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:13) = `order-placed-v1` и trigger type [`DEFAULT_ORDER_PLACED_NOTIFICATION_TRIGGER_TYPE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:14) = `order.placed.customer.notification_requested`.
+7. Notification Module получает template [`DEFAULT_ORDER_PLACED_NOTIFICATION_TEMPLATE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:36) = `order-placed-v1` и trigger type [`DEFAULT_ORDER_PLACED_NOTIFICATION_TRIGGER_TYPE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:38) = `order.placed.customer.notification_requested`.
+
+Реализованный lifecycle slice `order shipped notification v1` теперь такой:
+1. subscriber [`orderShippedNotificationHandler()`](../medusa-agency-boilerplate/src/subscribers/order-shipped-notification.ts:9) слушает именно event `shipment.created`, а не `order.fulfillment_created`, потому что в рамках этого slice customer-facing `shipped` трактуется как факт создания shipment, а не факт подготовки fulfillment;
+2. event payload contract для `v1` опирается на Medusa event shape `{ id, no_notification }`, где `id` = `fulfillment_id`; subscriber trim-ит и валидирует `id`, а при пустом значении делает ранний warn и skip без запуска workflow;
+3. workflow [`sendOrderShippedNotificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-order-shipped-notification.ts:346) читает fulfillment в минимальной форме `{ id, order.id, order.display_id, order.email }`; tracking links, carrier copy, line-item detail и storefront deep-linking не входят в минимальный query shape `v1`;
+4. canonical recipient rule для shipped slice остается таким же строгим, как у placed slice: только `fulfillment.order.email`, без fallback chain на `customer.email`, shipping address fields или admin recipients;
+5. если event приходит с `no_notification=true`, workflow делает controlled skip с причиной `no_notification_requested`; это suppression-ветка самого Medusa event contract, а не duplicate path;
+6. template and identity для shipped slice отделены от placed slice: template [`DEFAULT_ORDER_SHIPPED_NOTIFICATION_TEMPLATE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:40) = `order-shipped-v1`, trigger type [`DEFAULT_ORDER_SHIPPED_NOTIFICATION_TRIGGER_TYPE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:42) = `shipment.created.customer.notification_requested`, log prefix = `order-shipped-notification`;
+7. anti-duplicate strategy переиспользует уже подтвержденный подход из hardening v1.1: dedupe authority = existing notification storage, strategy = query-before-create, canonical match set остается `trigger_type + resource_type + resource_id + channel + template + normalized recipient`, normalized recipient по-прежнему вычисляется через [`normalizeNotificationRecipient()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:79);
+8. для shipped slice canonical resource identity = `resource_type=fulfillment` и `resource_id=fulfillment.id`, а не `order.id`, чтобы частичные или повторные shipment'ы одного и того же заказа не подавляли друг друга как ложные дубликаты;
+9. реализованные skip paths для `v1`: missing shipment id на subscriber boundary, `no_notification_requested`, `fulfillment_not_found`, `order_not_found`, `missing_order_email`, `duplicate_notification`; sent-path допускается только после успешного query и dedupe miss;
+10. observability contract зеркалит placed slice: итоговый info log из subscriber и step-level warn/info logs из workflow включают `status`, `reason`, `order_id`, `display_id`, `fulfillment_id`, `recipient`, `recipient_normalized`, `notification_id`, `dedupe_key`, `duplicate_of_notification_id`, `provider_requested`, `provider_resolved`, `dedupe_strategy`, `dedupe_race_window`, `no_notification`;
+11. non-goals для `v1` не изменились: здесь не проектируются `payment failed`, `order canceled`, `order.fulfillment_created` notifications, multi-recipient routing, tracking URL rendering, storefront account links, SMS/push channels, новый storage-level lock или новые обязательные env keys;
+12. targeted validation после реализации всё ещё требуется отдельно: подтвердить single send на одном `shipment.created`, controlled skip при `no_notification=true`, controlled skip при отсутствии `order.email`, duplicate suppression при повторной обработке того же `fulfillment.id`, и отсутствие ложного dedupe между двумя разными shipment'ами одного order.
 
 Guardrails этого контракта:
-- path `subscriber → workflow → Notification Module` считается source of truth для `order lifecycle notifications v1` и hardening v1.1;
+- path `subscriber → workflow → Notification Module` остается source of truth и для уже реализованного `order.placed`, и для спроектированного `order shipped notification v1`;
 - dedupe не выносится в отдельный ledger или новый storage layer: source of truth для duplicate suppression остается existing notification storage;
 - duplicate suppression трактуется только как controlled skip с diagnostics и trace fields, а не как второй notification с отдельным status-flow;
-- race window в query-before-create dedupe признается и документируется как accepted limitation текущего уровня hardening;
+- race window в query-before-create dedupe признается и документируется как accepted limitation текущего уровня hardening и для shipped slice тоже;
 - smoke path через [`sendNotificationSmokeWorkflow`](../medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts:60) и route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts:26) остается отдельным baseline/regression anchor и не подменяет order lifecycle runtime;
-- для этого lifecycle slice не добавлялись новые обязательные env keys: baseline по-прежнему держится на `NOTIFICATION_EMAIL_PROVIDER`, `NOTIFICATION_EMAIL_FROM` и opt-in `SENDGRID_API_KEY`.
+- для shipped slice не должно появиться новых обязательных env keys: baseline по-прежнему держится на `NOTIFICATION_EMAIL_PROVIDER`, `NOTIFICATION_EMAIL_FROM` и opt-in `SENDGRID_API_KEY`.
 
 #### Canonical authenticated smoke path
 

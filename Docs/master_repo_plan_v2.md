@@ -497,9 +497,9 @@ Commerce-flow не должен переписываться для типово
 - confirmed clean onboarding и Phase 2 baseline после этого не были сломаны.
 
 Текущий следующий трек:
-- validation для `order lifecycle notifications v1` и hardening v1.1 с фиксацией verification result без смешения со smoke baseline;
-- затем отдельный commit;
-- после него дальнейшие order lifecycle flows `payment failed`, `order canceled`, `order.shipped`;
+- implementation `order shipped notification v1` как следующего lifecycle slice после уже закрытого `order.placed` baseline уже выполнен;
+- затем targeted runtime validation shipped slice без смешения со smoke baseline;
+- после него дальнейшие order lifecycle flows `payment failed`, `order canceled`;
 - только затем переход к полному общему integration layer Фазы 4.
 
 ### Задачи

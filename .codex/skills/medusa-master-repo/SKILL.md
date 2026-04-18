@@ -116,7 +116,8 @@ Before making claims, remember these points were already verified:
 - `docker-compose.yml` currently covers PostgreSQL, Redis, and backend, but not the storefront.
 - Backend generated directories `.medusa` and `node_modules/.vite` may inherit bad ownership from older container runs; `npm run permissions:fix` repairs them.
 - The next default workstream is no longer inside template-readiness formalization, and it is not `notification hardening v1`, `bootstrap idempotency hardening v1`, `choose a payment path`, `choose a shipping provider`, or `checkout end-to-end validation v1`.
-- The current default next workstream is `validation order lifecycle notifications v1` on top of the confirmed `order.placed` path.
+- The current implementation workstream is `order shipped notification v1` on top of the confirmed `order.placed` path and the same Notification Module baseline.
+- The recommended next step after implementation is to run targeted validation for that shipped slice on event `shipment.created`.
 - Bootstrap idempotency hardening v1 is **confirmed via runtime validation** (`2026-04-17`) and no longer an open concern.
 - The canonical template-readiness regression source of truth is [`Docs/template_readiness_regression.md`](../../../Docs/template_readiness_regression.md).
 - The canonical local authenticated notification smoke path is `fresh secret admin API key` → `Basic auth` → `POST /admin/notifications/smoke`, with an allowed lightweight helper via [`npm run smoke:notification`](../../../package.json:23).
@@ -243,8 +244,8 @@ Default orientation after the current status update:
 - treat `providerConnectId` / `extraParams` support and true multi-quote checkout as deferred until the user explicitly expands scope;
 - treat `bootstrap idempotency hardening v1` as confirmed via runtime validation and closed;
 - treat [`Docs/template_readiness_regression.md`](../../../Docs/template_readiness_regression.md) as the canonical regression-pack/source-of-truth for local template-readiness checks;
-- determine the next workstream by sequencing as `validation order lifecycle notifications v1` after the closed ApiShip, checkout, and regression-formalization tracks;
-- treat runtime validation of the first post-order notification from `order.placed`, including anti-duplicate hardening v1.1, as the mandatory next path on top of the already confirmed ApiShip + YooKassa + checkout slices;
+- determine the next workstream by sequencing as targeted validation of `order shipped notification v1` after the implementation of that shipped slice;
+- treat runtime validation of the customer-facing post-order notifications contract from `order.placed` and `shipment.created`, including anti-duplicate hardening v1.1 semantics, as the mandatory next path on top of the already confirmed ApiShip + YooKassa + checkout slices;
 - treat Stripe and similar official Medusa providers as reference patterns only unless the user explicitly changes the project market;
 - mention the storefront redirect-loop only as a closed regression unless the user is explicitly asking about middleware history;
 - mention the storefront checkout `500` only as a separated false blocker tied to cart and data-state unless the user is explicitly asking about that incident;
