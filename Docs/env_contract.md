@@ -132,23 +132,23 @@ root-level скрипты используют этот файл как исто
 
 #### Notifications
 
-- `NOTIFICATION_EMAIL_PROVIDER` нормализуется через [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:49) в два значения: `requestedProviderId` и `providerId`.
+- `NOTIFICATION_EMAIL_PROVIDER` нормализуется через [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:95) в два значения: `requestedProviderId` и `providerId`.
 - `NOTIFICATION_EMAIL_PROVIDER=local` — подтвержденный baseline-default.
 - Если requested provider равен `sendgrid`, но `SENDGRID_API_KEY` пустой, runtime остается baseline-safe:
   - Medusa startup, build и runtime не ломаются;
   - в [medusa-config.ts](../medusa-agency-boilerplate/medusa-config.ts:17) фиксируется warn про fallback;
-  - итоговый provider definition остается local через [`getNotificationEmailProviderDefinition()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:68).
+  - итоговый provider definition остается local через [`getNotificationEmailProviderDefinition()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:114).
 - `NOTIFICATION_EMAIL_FROM` задает sender для runtime, smoke workflow и `order.placed` lifecycle workflow, но не делает внешний provider обязательным.
 - Ни один markdown-документ этого репозитория не должен содержать фактическое значение `SENDGRID_API_KEY` или другого notification secret.
 
 #### Canonical order lifecycle notifications v1 contract
 
 Подтвержденный production-like contract для первого customer-facing notification slice теперь такой:
-1. subscriber [`orderPlacedNotificationHandler()`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:5) слушает trigger `order.placed` через config [`config`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:31);
-2. workflow [`sendOrderPlacedNotificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:147) читает order только в минимальной форме `{ id, display_id, email }` через query [`graph()`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:117);
+1. subscriber [`orderPlacedNotificationHandler()`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:5) слушает trigger `order.placed` через config [`config`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:33);
+2. workflow [`sendOrderPlacedNotificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:308) читает order только в минимальной форме `{ id, display_id, email }` через query [`graph()`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:117);
 3. canonical recipient rule в `v1` — только `order.email`, без fallback chain на customer, shipping address или другие поля;
 4. hardening v1.1 фиксирует anti-duplicate contract для `order.placed`: dedupe authority = existing notification storage, strategy = query-before-create, а canonical match set = `trigger_type + resource_type + resource_id + channel + template + normalized recipient`;
-5. normalized recipient вычисляется через [`normalizeNotificationRecipient()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:121) и входит в canonical dedupe identity;
+5. normalized recipient вычисляется через [`normalizeNotificationRecipient()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:74) и входит в canonical dedupe identity;
 6. при отсутствии order или email workflow делает controlled skip с reason `order_not_found` или `missing_order_email`, а при duplicate match делает controlled skip с reason `duplicate_notification`, а не создает второй notification;
 7. Notification Module получает template [`DEFAULT_ORDER_PLACED_NOTIFICATION_TEMPLATE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:13) = `order-placed-v1` и trigger type [`DEFAULT_ORDER_PLACED_NOTIFICATION_TRIGGER_TYPE`](../medusa-agency-boilerplate/src/modules/notification-email.ts:14) = `order.placed.customer.notification_requested`.
 
@@ -165,8 +165,8 @@ Guardrails этого контракта:
 Подтвержденный канонический локальный smoke path теперь такой:
 1. создать свежий secret admin API key через helper [`createSecretAdminApiKey()`](../medusa-agency-boilerplate/src/scripts/create-secret-admin-api-key.ts:22);
 2. использовать именно свежий `sk_*` token, потому что helper не должен полагаться на reuse старого считанного ключа;
-3. закодировать `secret_api_key:` в Basic auth через [`encodeAdminApiKeyAsBasicAuth()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:88);
-4. вызвать `POST /admin/notifications/smoke` по URL из [`getNotificationSmokeUrl()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:92) или готовому `curl` из [`getNotificationSmokeCurlCommand()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:96).
+3. закодировать `secret_api_key:` в Basic auth через [`encodeAdminApiKeyAsBasicAuth()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:138);
+4. вызвать `POST /admin/notifications/smoke` по URL из [`getNotificationSmokeUrl()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:142) или готовому `curl` из [`getNotificationSmokeCurlCommand()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:146).
 
 Этот путь считается каноническим потому что он подтвержден реальным verification pass и отражает текущий source of truth по аутентифицированному smoke без раскрытия секретов в документации.
 
@@ -188,7 +188,7 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 ##### Что считается согласованным contract
 
 - Workflow [`sendNotificationSmokeWorkflow`](../medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts:60) обязан записывать в notification data `provider_requested` и `provider_resolved`.
-- Runtime helper [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:49) обязан вычислять те же `requested provider` и `resolved provider`.
+- Runtime helper [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:95) обязан вычислять те же `requested provider` и `resolved provider`.
 - Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts:26) обязан отражать этот contract в блоке `provider` ответа.
 
 Именно эта связка теперь считается source of truth для notification hardening v1, а anti-duplicate semantics для `order.placed` дополнительно закреплены в hardening v1.1 через existing notification storage, normalized recipient matching и controlled skip diagnostics.
@@ -208,7 +208,7 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 
 - `APISHIP_TOKEN` включает ApiShip fulfillment provider только при непустом значении, что проверяется через [`isApiShipConfigured()`](../medusa-agency-boilerplate/src/modules/apiship.ts:69) и используется в [medusa-config.ts](../medusa-agency-boilerplate/medusa-config.ts:49).
 - `APISHIP_TEST_MODE` переключает live and test base URL внутри [`getApiShipProviderOptionsFromEnv()`](../medusa-agency-boilerplate/src/modules/apiship.ts:62) для уже включенного provider.
-- Safe default изменен: templates фиксируют `APISHIP_TEST_MODE=true`, а helper [`parseApiShipTestMode()`](../medusa-agency-boilerplate/src/modules/apiship.ts:449) трактует пустое и невалидное значение как test-mode, чтобы local/dev не уходил в live молча.
+- Safe default изменен: templates фиксируют `APISHIP_TEST_MODE=true`, а helper [`parseApiShipTestMode()`](../medusa-agency-boilerplate/src/modules/apiship.ts:461) трактует пустое и невалидное значение как test-mode, чтобы local/dev не уходил в live молча.
 - Подтверждённый runtime path `2026-04-18` использовал production token и явное `APISHIP_TEST_MODE=false`; это now-fixed source of truth для live-проверки текущего поддерживаемого slice, но не меняет baseline-safe default для clean clone.
 - Backend route [`GET()`](../medusa-agency-boilerplate/src/api/store/apiship/rates/route.ts:67) подтверждён runtime-проверкой: targeted fixes в route/data path закрыли blocker, rates из ApiShip/Yandex начали возвращаться.
 - Текущий shipping scope честно ограничен до `cheapest_only_v1`: route возвращает `quotes`, `selected_quote` и `selection_mode`, но checkout не считается полноценным multi-quote UX.
