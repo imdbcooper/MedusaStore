@@ -7,12 +7,18 @@ import {
   getNotificationEmailProviderDefinition,
   getNotificationEmailRuntime,
 } from "./src/modules/notification-email"
+import {
+  getNotificationVkProviderDefinition,
+  getNotificationVkRuntime,
+} from "./src/modules/notification-vk"
 import { isYooKassaConfigured } from "./src/modules/yookassa"
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd())
 
 const notificationEmailRuntime = getNotificationEmailRuntime()
 const emailNotificationProvider = getNotificationEmailProviderDefinition()
+const notificationVkRuntime = getNotificationVkRuntime()
+const vkNotificationProvider = getNotificationVkProviderDefinition()
 
 if (
   notificationEmailRuntime.requestedProviderId === "unisender" &&
@@ -20,6 +26,15 @@ if (
 ) {
   console.warn(
     "[notifications] NOTIFICATION_EMAIL_PROVIDER=unisender requested without UNISENDER_API_KEY; falling back to local provider."
+  )
+}
+
+if (
+  notificationVkRuntime.requestedProviderId === "community" &&
+  !notificationVkRuntime.communityConfigured
+) {
+  console.warn(
+    "[notifications] NOTIFICATION_VK_PROVIDER=community requested without VK_COMMUNITY_ACCESS_TOKEN and/or VK_COMMUNITY_GROUP_ID; VK provider remains disabled."
   )
 }
 
@@ -73,7 +88,10 @@ module.exports = defineConfig({
     {
       resolve: "@medusajs/medusa/notification",
       options: {
-        providers: [emailNotificationProvider],
+        providers: [
+          emailNotificationProvider,
+          ...(vkNotificationProvider ? [vkNotificationProvider] : []),
+        ],
       },
     },
     {

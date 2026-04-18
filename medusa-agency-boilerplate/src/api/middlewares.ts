@@ -6,6 +6,7 @@ import {
 } from "@medusajs/framework/http"
 
 import { AdminNotificationSmokeSchema } from "./admin/notifications/smoke/route"
+import { AdminVkNotificationSmokeSchema } from "./admin/notifications/smoke/vk/route"
 import { StoreApiShipRatesSchema } from "./store/apiship/rates/route"
 import { StoreYooKassaPaymentStatusSchema } from "./store/payment/yookassa/route"
 import { StoreYooKassaReturnSchema } from "./store/payment/yookassa/return/route"
@@ -18,6 +19,14 @@ export default defineMiddlewares({
       middlewares: [
         authenticate("user", ["session", "bearer", "api-key"]),
         validateAndTransformBody(AdminNotificationSmokeSchema),
+      ],
+    },
+    {
+      matcher: "/admin/notifications/smoke/vk",
+      methods: ["POST"],
+      middlewares: [
+        authenticate("user", ["session", "bearer", "api-key"]),
+        validateAndTransformBody(AdminVkNotificationSmokeSchema),
       ],
     },
     {
