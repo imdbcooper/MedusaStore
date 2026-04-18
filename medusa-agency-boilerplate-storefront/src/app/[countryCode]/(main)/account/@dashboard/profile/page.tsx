@@ -2,10 +2,12 @@ import { Metadata } from "next"
 import { notFound } from "next/navigation"
 
 import { retrieveCustomer } from "@lib/data/customer"
+import { retrieveMarketingPreferences } from "@lib/data/marketing"
 import { listRegions } from "@lib/data/regions"
 import { getMetadataTitle, storefrontConfig } from "@lib/storefront-config"
 import ProfileBillingAddress from "@modules/account/components/profile-billing-address"
 import ProfileEmail from "@modules/account/components/profile-email"
+import ProfileMarketingPreferences from "@modules/account/components/profile-marketing-preferences"
 import ProfileName from "@modules/account/components/profile-name"
 import ProfilePhone from "@modules/account//components/profile-phone"
 import ProfileVkLink from "@modules/account/components/profile-vk-link"
@@ -33,6 +35,7 @@ function readSearchParam(
 export default async function Profile(props: ProfilePageProps) {
   const customer = await retrieveCustomer()
   const regions = await listRegions()
+  const marketingPreferences = await retrieveMarketingPreferences()
   const { countryCode } = await props.params
   const searchParams = props.searchParams ? await props.searchParams : {}
   const initialResult = readSearchParam(searchParams.vk_id_result)
@@ -62,6 +65,11 @@ export default async function Profile(props: ProfilePageProps) {
           countryCode={countryCode}
           initialResult={initialResult}
           initialReason={initialReason}
+        />
+        <Divider />
+        <ProfileMarketingPreferences
+          preferences={marketingPreferences?.marketing || null}
+          bindings={marketingPreferences?.bindings || null}
         />
         <Divider />
         <ProfileBillingAddress customer={customer} regions={regions} />
