@@ -1,7 +1,10 @@
 import repeat from "@lib/util/repeat"
 import SkeletonProductPreview from "@modules/skeletons/components/skeleton-product-preview"
+import { resolveDefaultProductCardSurface } from "@modules/storefront-customization/components/listing-surface-resolver"
 
 const SkeletonRelatedProducts = () => {
+  const surface = resolveDefaultProductCardSurface()
+
   return (
     <div className="product-page-constraint">
       <div className="flex flex-col gap-8 items-center text-center mb-8">
@@ -14,7 +17,7 @@ const SkeletonRelatedProducts = () => {
       <ul className="grid grid-cols-2 small:grid-cols-3 medium:grid-cols-4 gap-x-6 gap-y-8 flex-1">
         {repeat(3).map((index) => (
           <li key={index}>
-            <SkeletonProductPreview />
+            <SkeletonProductPreview surface={surface} />
           </li>
         ))}
       </ul>
