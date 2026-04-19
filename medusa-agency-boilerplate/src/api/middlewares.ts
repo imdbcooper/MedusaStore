@@ -10,7 +10,6 @@ import { AdminSmsNotificationSmokeSchema } from "./admin/notifications/smoke/sms
 import { AdminVkNotificationSmokeSchema } from "./admin/notifications/smoke/vk/route"
 import { StoreApiShipRatesSchema } from "./store/apiship/rates/route"
 import { AdminCreateMarketingCampaignSchema, AdminUpdateCustomerMarketingPreferencesSchema } from "./admin/marketing/campaigns/route"
-import { AdminLaunchMarketingCampaignSchema } from "./admin/marketing/campaigns/[id]/route"
 import { StoreCustomerMarketingPreferencesSchema } from "./store/customers/me/marketing-preferences/route"
 import { StoreVkIdStartLinkSchema } from "./store/customers/me/vk-id/start/route"
 import { StoreYooKassaPaymentStatusSchema } from "./store/payment/yookassa/route"
@@ -48,10 +47,7 @@ export default defineMiddlewares({
     {
       matcher: "/admin/marketing/campaigns/:id",
       methods: ["POST"],
-      middlewares: [
-        authenticate("user", ["session", "bearer", "api-key"]),
-        validateAndTransformBody(AdminLaunchMarketingCampaignSchema),
-      ],
+      middlewares: [authenticate("user", ["session", "bearer", "api-key"])],
     },
     {
       matcher: "/admin/notifications/smoke",

@@ -15,6 +15,10 @@ export const MARKETING_CHANNEL_STATUS_VALUES = [
   "pending",
   "unavailable",
 ] as const
+export const MARKETING_MUTABLE_CHANNEL_STATUS_VALUES = [
+  "subscribed",
+  "unsubscribed",
+] as const
 export const DEFAULT_MARKETING_SOURCE = "system"
 export const STOREFRONT_MARKETING_SOURCE = "storefront"
 export const ADMIN_MARKETING_SOURCE = "admin"
@@ -24,6 +28,8 @@ export type MarketingGlobalStatus =
 export type MarketingChannel = (typeof MARKETING_CHANNELS)[number]
 export type MarketingChannelStatus =
   (typeof MARKETING_CHANNEL_STATUS_VALUES)[number]
+export type MutableMarketingChannelStatus =
+  (typeof MARKETING_MUTABLE_CHANNEL_STATUS_VALUES)[number]
 
 export type MarketingRecipientSnapshot = Record<string, unknown> | null
 
@@ -149,6 +155,25 @@ function normalizeMarketingChannelStatus(
 ): MarketingChannelStatus | null {
   return isMarketingChannelStatus(value)
     ? (value.trim() as MarketingChannelStatus)
+    : null
+}
+
+function isMutableMarketingChannelStatus(
+  value: unknown
+): value is MutableMarketingChannelStatus {
+  return (
+    typeof value === "string" &&
+    (MARKETING_MUTABLE_CHANNEL_STATUS_VALUES as readonly string[]).includes(
+      value.trim()
+    )
+  )
+}
+
+function normalizeMutableMarketingChannelStatus(
+  value: unknown
+): MutableMarketingChannelStatus | null {
+  return isMutableMarketingChannelStatus(value)
+    ? (value.trim() as MutableMarketingChannelStatus)
     : null
 }
 
@@ -351,12 +376,12 @@ export function buildCustomerMarketingMetadata(
     const currentChannel = currentMarketing.channels[channel]
     const requestedStatus = input.channels?.[channel]?.status
     const binding = bindings[channel]
+    const mutableRequestedStatus = normalizeMutableMarketingChannelStatus(
+      requestedStatus
+    )
     const nextStatus = resolveNextChannelStatus({
       currentStatus: currentChannel.status,
-      requestedStatus:
-        requestedStatus && isMarketingChannelStatus(requestedStatus)
-          ? requestedStatus
-          : null,
+      requestedStatus: mutableRequestedStatus,
       binding,
     })
     const nextSnapshot = binding.recipient_snapshot

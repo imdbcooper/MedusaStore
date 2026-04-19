@@ -96,6 +96,7 @@ export type MarketingCampaignRecord = {
   total_selected: number
   total_sent: number
   total_skipped: number
+  total_failed: number
   created_at: string
   updated_at: string
 }
@@ -269,6 +270,7 @@ function normalizeCampaignRecord(value: Record<string, unknown>): MarketingCampa
     total_selected: normalizePositiveInteger(value.total_selected, 0),
     total_sent: normalizePositiveInteger(value.total_sent, 0),
     total_skipped: normalizePositiveInteger(value.total_skipped, 0),
+    total_failed: normalizePositiveInteger(value.total_failed, 0),
     created_at: normalizeIsoDate(value.created_at) || new Date(0).toISOString(),
     updated_at: normalizeIsoDate(value.updated_at) || new Date(0).toISOString(),
   }
@@ -324,9 +326,15 @@ export async function ensureMarketingLayerTables(pgConnection: PgConnectionLike)
       total_selected integer not null default 0,
       total_sent integer not null default 0,
       total_skipped integer not null default 0,
+      total_failed integer not null default 0,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     )
+  `)
+
+  await pgConnection.raw(`
+    alter table marketing_campaign
+    add column if not exists total_failed integer not null default 0
   `)
 
   await pgConnection.raw(`
@@ -463,6 +471,7 @@ export async function updateMarketingCampaignStatus(
     totalSelected?: number
     totalSent?: number
     totalSkipped?: number
+    totalFailed?: number
   }
 ) {
   const rows = getRawRows<Record<string, unknown>>(
@@ -476,6 +485,7 @@ export async function updateMarketingCampaignStatus(
             total_selected = coalesce(?, total_selected),
             total_sent = coalesce(?, total_sent),
             total_skipped = coalesce(?, total_skipped),
+            total_failed = coalesce(?, total_failed),
             updated_at = now()
         where id = ?
         returning *
@@ -488,8 +498,42 @@ export async function updateMarketingCampaignStatus(
         typeof input.totalSelected === "number" ? input.totalSelected : null,
         typeof input.totalSent === "number" ? input.totalSent : null,
         typeof input.totalSkipped === "number" ? input.totalSkipped : null,
+        typeof input.totalFailed === "number" ? input.totalFailed : null,
         input.campaignId,
       ]
+    )
+  )
+
+  return rows[0] ? normalizeCampaignRecord(rows[0]) : null
+}
+
+export async function claimMarketingCampaignForLaunch(
+  pgConnection: PgConnectionLike,
+  input: {
+    campaignId: string
+    launchedAt: string
+  }
+) {
+  await ensureMarketingLayerTables(pgConnection)
+
+  const rows = getRawRows<Record<string, unknown>>(
+    await pgConnection.raw(
+      `
+        update marketing_campaign
+        set status = 'running',
+            launched_at = ?::timestamptz,
+            completed_at = null,
+            last_error = null,
+            total_selected = 0,
+            total_sent = 0,
+            total_skipped = 0,
+            total_failed = 0,
+            updated_at = now()
+        where id = ?
+          and status = 'draft'
+        returning *
+      `,
+      [input.launchedAt, input.campaignId]
     )
   )
 

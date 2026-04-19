@@ -6,8 +6,8 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { z } from "@medusajs/framework/zod"
 import {
   MARKETING_CHANNELS,
-  MARKETING_CHANNEL_STATUS_VALUES,
   MARKETING_GLOBAL_STATUS_VALUES,
+  MARKETING_MUTABLE_CHANNEL_STATUS_VALUES,
   STOREFRONT_MARKETING_SOURCE,
   buildCustomerMarketingMetadata,
   getMarketingCustomerById,
@@ -21,17 +21,17 @@ export const StoreCustomerMarketingPreferencesSchema = z.object({
     .object({
       email: z
         .object({
-          status: z.enum(MARKETING_CHANNEL_STATUS_VALUES).optional(),
+          status: z.enum(MARKETING_MUTABLE_CHANNEL_STATUS_VALUES).optional(),
         })
         .optional(),
       sms: z
         .object({
-          status: z.enum(MARKETING_CHANNEL_STATUS_VALUES).optional(),
+          status: z.enum(MARKETING_MUTABLE_CHANNEL_STATUS_VALUES).optional(),
         })
         .optional(),
       vk: z
         .object({
-          status: z.enum(MARKETING_CHANNEL_STATUS_VALUES).optional(),
+          status: z.enum(MARKETING_MUTABLE_CHANNEL_STATUS_VALUES).optional(),
         })
         .optional(),
     })

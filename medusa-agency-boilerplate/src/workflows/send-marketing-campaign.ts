@@ -7,6 +7,7 @@ import {
   WorkflowResponse,
 } from "@medusajs/framework/workflows-sdk"
 import {
+  claimMarketingCampaignForLaunch,
   DEFAULT_MARKETING_RESOURCE_TYPE,
   DEFAULT_MARKETING_TRIGGER_TYPE,
   type MarketingCampaignRecord,
@@ -245,9 +246,12 @@ const sendMarketingCampaignStep = createStep(
     const query = container.resolve(ContainerRegistrationKeys.QUERY)
     const notificationModuleService = container.resolve(Modules.NOTIFICATION)
     const pgConnection = getMarketingPgConnection(container)
-    const campaign = await getMarketingCampaignById(pgConnection, input.campaignId)
+    const existingCampaign = await getMarketingCampaignById(
+      pgConnection,
+      input.campaignId
+    )
 
-    if (!campaign) {
+    if (!existingCampaign) {
       logger.warn(
         `[marketing-campaign] skip reason=campaign_not_found campaign_id=${input.campaignId}`
       )
@@ -268,39 +272,60 @@ const sendMarketingCampaignStep = createStep(
       })
     }
 
-    if (campaign.status !== "draft") {
+    if (existingCampaign.status !== "draft") {
       logger.warn(
-        `[marketing-campaign] skip reason=campaign_not_launchable campaign_id=${campaign.id} status=${campaign.status}`
+        `[marketing-campaign] skip reason=campaign_not_launchable campaign_id=${existingCampaign.id} status=${existingCampaign.status}`
       )
 
       return new StepResponse<SendMarketingCampaignResult>({
         status: "failed",
         reason: "campaign_not_launchable",
-        campaign_id: campaign.id,
-        campaign_status: campaign.status,
-        channel: campaign.channel,
+        campaign_id: existingCampaign.id,
+        campaign_status: existingCampaign.status,
+        channel: existingCampaign.channel,
         launched_by: input.launchedBy?.trim() || null,
-        launched_at: campaign.launched_at,
-        total_selected: campaign.total_selected,
-        total_sent: campaign.total_sent,
-        total_skipped: campaign.total_skipped,
+        launched_at: existingCampaign.launched_at,
+        total_selected: existingCampaign.total_selected,
+        total_sent: existingCampaign.total_sent,
+        total_skipped: existingCampaign.total_skipped,
         total_failed: 0,
         journal: [],
       })
     }
 
     const launchedAt = new Date().toISOString()
-
-    await updateMarketingCampaignStatus(pgConnection, {
-      campaignId: campaign.id,
-      status: "running",
+    const campaign = await claimMarketingCampaignForLaunch(pgConnection, {
+      campaignId: existingCampaign.id,
       launchedAt,
-      completedAt: null,
-      lastError: null,
-      totalSelected: 0,
-      totalSent: 0,
-      totalSkipped: 0,
     })
+
+    if (!campaign) {
+      const currentCampaign = await getMarketingCampaignById(
+        pgConnection,
+        existingCampaign.id
+      )
+
+      logger.warn(
+        `[marketing-campaign] skip reason=campaign_not_launchable campaign_id=${existingCampaign.id} status=${currentCampaign?.status || "missing"}`
+      )
+
+      return new StepResponse<SendMarketingCampaignResult>({
+        status: "failed",
+        reason: "campaign_not_launchable",
+        campaign_id: existingCampaign.id,
+        campaign_status: currentCampaign?.status || null,
+        channel: currentCampaign?.channel || existingCampaign.channel,
+        launched_by: input.launchedBy?.trim() || null,
+        launched_at: currentCampaign?.launched_at || existingCampaign.launched_at,
+        total_selected:
+          currentCampaign?.total_selected ?? existingCampaign.total_selected,
+        total_sent: currentCampaign?.total_sent ?? existingCampaign.total_sent,
+        total_skipped:
+          currentCampaign?.total_skipped ?? existingCampaign.total_skipped,
+        total_failed: currentCampaign?.total_failed ?? existingCampaign.total_failed,
+        journal: [],
+      })
+    }
 
     try {
       const runtime = getChannelRuntime(campaign.channel)
@@ -451,7 +476,8 @@ const sendMarketingCampaignStep = createStep(
             : null,
         totalSelected: audience.length,
         totalSent: sentCount,
-        totalSkipped: skippedCount + failedCount,
+        totalSkipped: skippedCount,
+        totalFailed: failedCount,
       })
 
       logger.info(

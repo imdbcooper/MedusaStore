@@ -61,7 +61,7 @@ describe("marketing preferences contract", () => {
         global_status: "unsubscribed",
         channels: {
           email: { status: "unsubscribed" },
-          sms: { status: "pending" },
+          sms: { status: "subscribed" },
         },
         source: "admin",
         updated_at: "2026-04-18T20:00:00.000Z",
@@ -77,7 +77,8 @@ describe("marketing preferences contract", () => {
     expect(resolution.preferences.global_status).toBe("unsubscribed")
     expect(resolution.preferences.channels.email.status).toBe("unsubscribed")
     expect(resolution.preferences.channels.email.source).toBe("admin")
-    expect(resolution.preferences.channels.sms.status).toBe("pending")
+    expect(resolution.preferences.channels.sms.status).toBe("unavailable")
+    expect(resolution.preferences.channels.sms.source).toBeNull()
     expect(resolution.preferences.channels.vk.status).toBe("unavailable")
   })
 })
@@ -90,7 +91,11 @@ describe("marketing layer storage and audience selection", () => {
     raw: jest.fn(async (sql: string, bindings?: unknown[]) => {
       const normalized = sql.replace(/\s+/g, " ").trim().toLowerCase()
 
-      if (normalized.startsWith("create table") || normalized.startsWith("create index")) {
+      if (
+        normalized.startsWith("create table") ||
+        normalized.startsWith("create index") ||
+        normalized.startsWith("alter table")
+      ) {
         return { rows: [] }
       }
 
@@ -112,6 +117,7 @@ describe("marketing layer storage and audience selection", () => {
           total_selected: 0,
           total_sent: 0,
           total_skipped: 0,
+          total_failed: 0,
           created_at: "2026-04-18T20:00:00.000Z",
           updated_at: "2026-04-18T20:00:00.000Z",
         }
@@ -320,13 +326,14 @@ describe("sendMarketingCampaignWorkflow", () => {
           completed_at: null,
           last_error: null,
           frequency_cap_window_hours: 24,
-          frequency_cap_count: 1,
-          total_selected: 0,
-          total_sent: 0,
-          total_skipped: 0,
-          created_at: "2026-04-18T20:00:00.000Z",
-          updated_at: "2026-04-18T20:00:00.000Z",
-        },
+            frequency_cap_count: 1,
+            total_selected: 0,
+            total_sent: 0,
+            total_skipped: 0,
+            total_failed: 0,
+            created_at: "2026-04-18T20:00:00.000Z",
+            updated_at: "2026-04-18T20:00:00.000Z",
+          },
       ],
     ])
     const journalStore: any[] = []
@@ -336,7 +343,11 @@ describe("sendMarketingCampaignWorkflow", () => {
       raw: jest.fn(async (sql: string, bindings?: unknown[]) => {
         const normalized = sql.replace(/\s+/g, " ").trim().toLowerCase()
 
-        if (normalized.startsWith("create table") || normalized.startsWith("create index")) {
+        if (
+          normalized.startsWith("create table") ||
+          normalized.startsWith("create index") ||
+          normalized.startsWith("alter table")
+        ) {
           return { rows: [] }
         }
 
@@ -344,8 +355,35 @@ describe("sendMarketingCampaignWorkflow", () => {
           return { rows: [campaigns.get(String(bindings?.[0]))].filter(Boolean) }
         }
 
+        if (
+          normalized.includes("update marketing_campaign") &&
+          normalized.includes("where id = ? and status = 'draft'")
+        ) {
+          const current = campaigns.get(String(bindings?.[1]))
+
+          if (!current || current.status !== "draft") {
+            return { rows: [] }
+          }
+
+          const next = {
+            ...current,
+            status: "running",
+            launched_at: bindings?.[0],
+            completed_at: null,
+            last_error: null,
+            total_selected: 0,
+            total_sent: 0,
+            total_skipped: 0,
+            total_failed: 0,
+            updated_at: "2026-04-18T20:10:00.000Z",
+          }
+
+          campaigns.set(String(bindings?.[1]), next)
+          return { rows: [next] }
+        }
+
         if (normalized.includes("update marketing_campaign set status =")) {
-          const current = campaigns.get(String(bindings?.[7]))
+          const current = campaigns.get(String(bindings?.[8]))
           const next = {
             ...current,
             status: bindings?.[0],
@@ -355,9 +393,10 @@ describe("sendMarketingCampaignWorkflow", () => {
             total_selected: bindings?.[4] ?? current.total_selected,
             total_sent: bindings?.[5] ?? current.total_sent,
             total_skipped: bindings?.[6] ?? current.total_skipped,
+            total_failed: bindings?.[7] ?? current.total_failed,
             updated_at: "2026-04-18T20:10:00.000Z",
           }
-          campaigns.set(String(bindings?.[7]), next)
+          campaigns.set(String(bindings?.[8]), next)
           return { rows: [next] }
         }
 
@@ -464,11 +503,19 @@ describe("sendMarketingCampaignWorkflow", () => {
     expect(result.total_selected).toBe(3)
     expect(result.total_sent).toBe(1)
     expect(result.total_skipped).toBe(2)
+    expect(result.total_failed).toBe(0)
     expect(notificationModuleService.createNotifications).toHaveBeenCalledTimes(1)
     expect(journalStore.map((row) => row.decision_reason)).toEqual([
       null,
       "global_unsubscribe",
       "frequency_cap_exceeded",
     ])
+    expect(campaigns.get("mc_1")).toMatchObject({
+      status: "completed",
+      total_selected: 3,
+      total_sent: 1,
+      total_skipped: 2,
+      total_failed: 0,
+    })
   })
 })

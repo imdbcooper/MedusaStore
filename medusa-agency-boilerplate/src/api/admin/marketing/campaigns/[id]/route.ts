@@ -2,21 +2,12 @@ import type {
   AuthenticatedMedusaRequest,
   MedusaResponse,
 } from "@medusajs/framework/http"
-import { z } from "@medusajs/framework/zod"
 import {
   getMarketingCampaignById,
   getMarketingPgConnection,
   listMarketingDeliveryJournalByCampaignId,
 } from "../../../../../modules/marketing-layer"
 import sendMarketingCampaignWorkflow from "../../../../../workflows/send-marketing-campaign"
-
-export const AdminLaunchMarketingCampaignSchema = z.object({
-  launch: z.boolean().optional(),
-})
-
-type AdminLaunchMarketingCampaignRequestBody = z.infer<
-  typeof AdminLaunchMarketingCampaignSchema
->
 
 function getCampaignId(req: AuthenticatedMedusaRequest<any>) {
   const path = req.url?.split("?")[0] || ""
@@ -60,7 +51,7 @@ export async function GET(
 }
 
 export async function POST(
-  req: AuthenticatedMedusaRequest<AdminLaunchMarketingCampaignRequestBody>,
+  req: AuthenticatedMedusaRequest,
   res: MedusaResponse
 ) {
   const campaignId = getCampaignId(req)

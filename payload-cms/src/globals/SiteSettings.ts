@@ -1,11 +1,12 @@
 import type { GlobalConfig } from 'payload'
+import { publishedOrPreviewAccess } from '../access/publishedOrPreview.ts'
 import { seoFields } from '../fields/seo.ts'
 import { triggerStorefrontRevalidation } from '../lib/revalidate.ts'
 
 export const SiteSettings: GlobalConfig = {
   slug: 'siteSettings',
   access: {
-    read: () => true,
+    read: publishedOrPreviewAccess,
   },
   versions: {
     drafts: true,
