@@ -178,6 +178,15 @@ export type StorefrontPostPageLandingSurface = {
   slots: StorefrontPostPageHeaderSlot[]
 }
 
+export type StorefrontProductSupportHighlightsSurface = {
+  mode: "list"
+  items: StorefrontTitleDescriptionItem[]
+}
+
+export type StorefrontProductSurfaces = {
+  supportHighlights: StorefrontProductSupportHighlightsSurface
+}
+
 export type StorefrontClientConfig = {
   meta: {
     preset: StorefrontPreset
@@ -192,11 +201,7 @@ export type StorefrontClientConfig = {
     contentPage: StorefrontContentPageLandingSurface
     postPage: StorefrontPostPageLandingSurface
   }
-  surfaces: {
-    product: {
-      supportHighlights: StorefrontTitleDescriptionItem[]
-    }
-  }
+  productSurfaces: StorefrontProductSurfaces
   overridePolicy: {
     customizable: readonly string[]
     coreLocked: readonly string[]
@@ -212,7 +217,7 @@ const sharedOverridePolicy = {
     "brand tokens",
     "nav/footer variants",
     "landing surfaces (home, collection, content, post)",
-    "product support highlights",
+    "adjacent product display surfaces (productSurfaces.supportHighlights)",
   ],
   coreLocked: [
     "cart logic",
@@ -228,11 +233,13 @@ const sharedOverridePolicy = {
 const sharedGuardrails = {
   sanctionedExtensionPath: [
     "Switch client scenarios only through NEXT_PUBLIC_STOREFRONT_PRESET.",
-    "Add new client-specific behavior in storefront-client-config.ts and storefront-customization components.",
+    "Materialize sanctioned overrides in storefront-client-config.ts via landingSurfaces and adjacent productSurfaces.",
+    "Resolve preset-owned display surfaces inside storefront-customization components, not shared templates.",
     "Treat cart, checkout, account, order flow, Store API contracts, and provider integrations as locked core.",
   ],
   prohibitedPatterns: [
     "Do not fork shared storefront core per client.",
+    "Do not add preset-specific branching inside shared product templates.",
     "Do not add client-only logic inside checkout, account, or order flow components.",
     "Do not introduce new backend contracts just to support a visual storefront scenario.",
   ],
@@ -457,9 +464,10 @@ export const storefrontPresetCatalog = {
         ],
       },
     },
-    surfaces: {
-      product: {
-        supportHighlights: [
+    productSurfaces: {
+      supportHighlights: {
+        mode: "list",
+        items: [
           {
             title: "Доставка под текущий регион",
             description:
@@ -657,9 +665,10 @@ export const storefrontPresetCatalog = {
         ],
       },
     },
-    surfaces: {
-      product: {
-        supportHighlights: [
+    productSurfaces: {
+      supportHighlights: {
+        mode: "list",
+        items: [
           {
             title: "Операционный checkout core",
             description:
