@@ -1005,8 +1005,8 @@ Truthfully closed after valid reopen and remediation: all sanctioned base slices
 
 ### Артефакты
 
-- client init flow;
-- template release checklist;
+- `tranche 1` уже materialized: canonical client init flow / contract baseline через [`Docs/client_init_contract.md`](./client_init_contract.md), [`package.json`](../package.json), [`.env.example`](../.env.example), [`medusa-agency-boilerplate/.env.template`](../medusa-agency-boilerplate/.env.template), [`medusa-agency-boilerplate-storefront/.env.local.example`](../medusa-agency-boilerplate-storefront/.env.local.example), [`Docs/env_contract.md`](./env_contract.md) и [`Docs/current_work.md`](./current_work.md);
+- следующий tranche после этого baseline: template release checklist;
 - onboarding doc для нового клиента;
 - cleaned template branch/release.
 
@@ -1016,6 +1016,13 @@ Truthfully closed after valid reopen and remediation: all sanctioned base slices
 - обязательные client-specific шаги перечислены явно;
 - шаблон не содержит случайных демо-зависимостей;
 - запуск нового проекта не требует “вспоминать, как мы делали в прошлый раз”.
+
+### Статус после closure `tranche 1`
+
+- `Phase 7 / tranche 1` `client-init contract and placeholder-safe template baseline` truthfully закрыт commit'ом `a96aa81adfd655ddda9b6fea03dacf61c3174737` `feat(template): add client-init contract baseline`;
+- closure narrative не означает завершение всей `Фазы 7`: materialized только baseline contract/init slice;
+- blocking inconsistency по storefront runtime keys `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_DEFAULT_REGION` закрыта truthful remediation к optional runtime semantics; повторный review verdict = **APPROVE**;
+- следующий logical workstream внутри `Фазы 7` остаётся template release/onboarding/package slice.
 
 ### Контрольные риски
 

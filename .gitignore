@@ -11,3 +11,8 @@ medusa-dump.sql
 .phase2-*
 .playwright-mcp/
 medusa-agency-boilerplate-storefront/.middleware-check.log
+
+# Generated app/runtime artifacts
+payload-cms/.next/
+payload-cms/node_modules/
+tmp-payload-orchestration.*/

@@ -1,8 +1,10 @@
 # Client Init Contract — Phase 7 tranche 1
 
-> Статус: активный tranche `client-init contract and placeholder-safe template baseline`.
+> Статус: tranche `client-init contract and placeholder-safe template baseline` truthfully закрыт commit'ом `a96aa81adfd655ddda9b6fea03dacf61c3174737` `feat(template): add client-init contract baseline`.
 >
 > Цель: дать один канонический contract для инициализации нового клиента без reopening `Фазы 6 storefront customization`.
+>
+> Closure checkpoint: после materialization tranche 1 blocking inconsistency между docs / manifest / storefront runtime classification для `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_BASE_URL` и `NEXT_PUBLIC_DEFAULT_REGION` была закрыта truthful remediation к runtime semantics, где все три ключа canonical classified как optional; повторный review verdict = **APPROVE**.
 
 ---
 
@@ -118,7 +120,7 @@ Template baseline теперь должен соблюдать такие пра
 
 ## 5. Что считается завершением tranche 1
 
-`Tranche 1` считается готовым к review, когда одновременно выполнено всё ниже:
+`Tranche 1` считался готовым к review, когда одновременно выполнялось всё ниже:
 
 - есть один канонический contract через `npm run client:init:contract`;
 - mandatory vs bootstrap-generated vs optional inputs перечислены явно;
@@ -130,9 +132,21 @@ Template baseline теперь должен соблюдать такие пра
 
 ## 6. Минимальная targeted validation
 
-Для этого tranche достаточно такого baseline набора:
+Для closure checkpoint этого tranche достаточен такой baseline набор:
 
 1. проверить, что [`package.json`](../package.json) содержит `client:init:contract` entrypoint;
 2. проверить, что [`.env.example`](../.env.example), [`medusa-agency-boilerplate/.env.template`](../medusa-agency-boilerplate/.env.template) и [`medusa-agency-boilerplate-storefront/.env.local.example`](../medusa-agency-boilerplate-storefront/.env.local.example) содержат template-safe placeholders;
 3. проверить, что [`medusa-agency-boilerplate-storefront/src/lib/storefront-config.ts`](../medusa-agency-boilerplate-storefront/src/lib/storefront-config.ts) больше не содержит demo/legal-contact residue;
 4. проверить, что [`medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts) всё ещё остаётся central preset authority и не меняет `Phase 6` behaviour.
+
+## 7. Truthful closure outcome
+
+По состоянию closure checkpoint этот tranche зафиксирован так:
+
+- канонический `client-init` contract materialized и остаётся source of truth в [`Docs/client_init_contract.md`](./client_init_contract.md);
+- root/backend/storefront init-facing surfaces перечислены без overclaim и без reopening `Фазы 6`;
+- `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_BASE_URL` и `NEXT_PUBLIC_DEFAULT_REGION` truthfully зафиксированы как optional storefront runtime inputs с safe fallback semantics;
+- canonical preset authority остаётся в [`storefront-client-config.ts`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts), а sanctioned selector остаётся [`NEXT_PUBLIC_STOREFRONT_PRESET`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:14);
+- remediation по blocking inconsistency завершена, повторный review дал **APPROVE**.
+
+Следующий logical slice внутри `Фазы 7` лежит уже после этого baseline: template release checklist, onboarding doc и cleaned template release/package path. Этот следующий tranche здесь не считается реализованным автоматически.
