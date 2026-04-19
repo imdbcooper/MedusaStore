@@ -7,11 +7,15 @@ import { Button } from "@medusajs/ui"
 import Divider from "@modules/common/components/divider"
 import OptionSelect from "@modules/products/components/product-actions/option-select"
 import { isEqual } from "lodash"
-import { useParams, usePathname, useSearchParams } from "next/navigation"
+import {
+  useParams,
+  usePathname,
+  useRouter,
+  useSearchParams,
+} from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react"
 import ProductPrice from "../product-price"
 import MobileActions from "./mobile-actions"
-import { useRouter } from "next/navigation"
 
 type ProductActionsProps = {
   product: HttpTypes.StoreProduct
@@ -39,6 +43,7 @@ export default function ProductActions({
   const [options, setOptions] = useState<Record<string, string | undefined>>({})
   const [isAdding, setIsAdding] = useState(false)
   const countryCode = useParams().countryCode as string
+  const searchParamsString = searchParams.toString()
 
   // If there is only 1 variant, preselect the options
   useEffect(() => {
@@ -76,8 +81,8 @@ export default function ProductActions({
   }, [product.variants, options])
 
   useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString())
-    const value = isValidVariant ? selectedVariant?.id : null
+    const params = new URLSearchParams(searchParamsString)
+    const value = isValidVariant ? selectedVariant?.id || null : null
 
     if (params.get("v_id") === value) {
       return
@@ -89,8 +94,11 @@ export default function ProductActions({
       params.delete("v_id")
     }
 
-    router.replace(pathname + "?" + params.toString())
-  }, [selectedVariant, isValidVariant])
+    const nextQuery = params.toString()
+    const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname
+
+    router.replace(nextUrl, { scroll: false })
+  }, [isValidVariant, pathname, router, searchParamsString, selectedVariant?.id])
 
   // check if the selected variant is in stock
   const inStock = useMemo(() => {

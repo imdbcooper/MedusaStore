@@ -51,7 +51,6 @@ export async function fetchPayloadAPI<T>(
 
   if (isDraft) {
     url.searchParams.set('draft', 'true')
-    url.searchParams.set('overrideAccess', 'true')
   }
 
   const headers: HeadersInit = {

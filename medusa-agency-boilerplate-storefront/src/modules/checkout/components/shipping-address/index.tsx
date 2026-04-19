@@ -4,9 +4,37 @@ import { storefrontConfig } from "@lib/storefront-config"
 import Checkbox from "@modules/common/components/checkbox"
 import Input from "@modules/common/components/input"
 import { mapKeys } from "lodash"
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useRef, useState } from "react"
 import AddressSelect from "../address-select"
 import CountrySelect from "../country-select"
+
+type ShippingAddressFormData = {
+  "shipping_address.first_name": string
+  "shipping_address.last_name": string
+  "shipping_address.address_1": string
+  "shipping_address.company": string
+  "shipping_address.postal_code": string
+  "shipping_address.city": string
+  "shipping_address.country_code": string
+  "shipping_address.province": string
+  "shipping_address.phone": string
+  email: string
+}
+
+const buildShippingAddressFormData = (
+  cart: HttpTypes.StoreCart | null
+): ShippingAddressFormData => ({
+  "shipping_address.first_name": cart?.shipping_address?.first_name || "",
+  "shipping_address.last_name": cart?.shipping_address?.last_name || "",
+  "shipping_address.address_1": cart?.shipping_address?.address_1 || "",
+  "shipping_address.company": cart?.shipping_address?.company || "",
+  "shipping_address.postal_code": cart?.shipping_address?.postal_code || "",
+  "shipping_address.city": cart?.shipping_address?.city || "",
+  "shipping_address.country_code": cart?.shipping_address?.country_code || "",
+  "shipping_address.province": cart?.shipping_address?.province || "",
+  "shipping_address.phone": cart?.shipping_address?.phone || "",
+  email: cart?.email || "",
+})
 
 const ShippingAddress = ({
   customer,
@@ -19,18 +47,34 @@ const ShippingAddress = ({
   checked: boolean
   onChange: () => void
 }) => {
-  const [formData, setFormData] = useState<Record<string, any>>({
-    "shipping_address.first_name": cart?.shipping_address?.first_name || "",
-    "shipping_address.last_name": cart?.shipping_address?.last_name || "",
-    "shipping_address.address_1": cart?.shipping_address?.address_1 || "",
-    "shipping_address.company": cart?.shipping_address?.company || "",
-    "shipping_address.postal_code": cart?.shipping_address?.postal_code || "",
-    "shipping_address.city": cart?.shipping_address?.city || "",
-    "shipping_address.country_code": cart?.shipping_address?.country_code || "",
-    "shipping_address.province": cart?.shipping_address?.province || "",
-    "shipping_address.phone": cart?.shipping_address?.phone || "",
-    email: cart?.email || "",
-  })
+  const [formData, setFormData] = useState<ShippingAddressFormData>(() =>
+    buildShippingAddressFormData(cart)
+  )
+  const hasUserEditedEmailRef = useRef(false)
+  const cartAddressFormData = useMemo(
+    () => ({
+      "shipping_address.first_name": cart?.shipping_address?.first_name || "",
+      "shipping_address.last_name": cart?.shipping_address?.last_name || "",
+      "shipping_address.address_1": cart?.shipping_address?.address_1 || "",
+      "shipping_address.company": cart?.shipping_address?.company || "",
+      "shipping_address.postal_code": cart?.shipping_address?.postal_code || "",
+      "shipping_address.city": cart?.shipping_address?.city || "",
+      "shipping_address.country_code": cart?.shipping_address?.country_code || "",
+      "shipping_address.province": cart?.shipping_address?.province || "",
+      "shipping_address.phone": cart?.shipping_address?.phone || "",
+    }),
+    [
+      cart?.shipping_address?.first_name,
+      cart?.shipping_address?.last_name,
+      cart?.shipping_address?.address_1,
+      cart?.shipping_address?.company,
+      cart?.shipping_address?.postal_code,
+      cart?.shipping_address?.city,
+      cart?.shipping_address?.country_code,
+      cart?.shipping_address?.province,
+      cart?.shipping_address?.phone,
+    ]
+  )
 
   const countriesInRegion = useMemo(
     () => cart?.region?.countries?.map((c) => c.iso_2),
@@ -50,7 +94,7 @@ const ShippingAddress = ({
     email?: string
   ) => {
     address &&
-      setFormData((prevState: Record<string, any>) => ({
+      setFormData((prevState) => ({
         ...prevState,
         "shipping_address.first_name": address?.first_name || "",
         "shipping_address.last_name": address?.last_name || "",
@@ -63,32 +107,84 @@ const ShippingAddress = ({
         "shipping_address.phone": address?.phone || "",
       }))
 
-    email &&
-      setFormData((prevState: Record<string, any>) => ({
+    if (email) {
+      hasUserEditedEmailRef.current = false
+      setFormData((prevState) => ({
         ...prevState,
-        email: email,
+        email,
       }))
+    }
   }
 
   useEffect(() => {
-    if (cart && cart.shipping_address) {
-      setFormAddress(cart?.shipping_address, cart?.email)
+    setFormData((prevState) => {
+      const nextState = cartAddressFormData
+      const nextEmail = cart?.email || prevState.email
+
+      if (
+        prevState["shipping_address.first_name"] ===
+          nextState["shipping_address.first_name"] &&
+        prevState["shipping_address.last_name"] ===
+          nextState["shipping_address.last_name"] &&
+        prevState["shipping_address.address_1"] ===
+          nextState["shipping_address.address_1"] &&
+        prevState["shipping_address.company"] ===
+          nextState["shipping_address.company"] &&
+        prevState["shipping_address.postal_code"] ===
+          nextState["shipping_address.postal_code"] &&
+        prevState["shipping_address.city"] === nextState["shipping_address.city"] &&
+        prevState["shipping_address.country_code"] ===
+          nextState["shipping_address.country_code"] &&
+        prevState["shipping_address.province"] ===
+          nextState["shipping_address.province"] &&
+        prevState["shipping_address.phone"] === nextState["shipping_address.phone"] &&
+        prevState.email === nextEmail
+      ) {
+        return prevState
+      }
+
+      return {
+        ...prevState,
+        ...nextState,
+        email: nextEmail,
+      }
+    })
+
+    if (cart?.email) {
+      hasUserEditedEmailRef.current = false
+    }
+  }, [cart?.email, cartAddressFormData])
+
+  useEffect(() => {
+    if (cart?.email || !customer?.email || hasUserEditedEmailRef.current) {
+      return
     }
 
-    if (cart && !cart.email && customer?.email) {
-      setFormAddress(undefined, customer.email)
-    }
-  }, [cart])
+    setFormData((prevState) => {
+      if (prevState.email) {
+        return prevState
+      }
+
+      return {
+        ...prevState,
+        email: customer.email,
+      }
+    })
+  }, [cart?.email, customer?.email])
 
   const handleChange = (
     e: React.ChangeEvent<
       HTMLInputElement | HTMLInputElement | HTMLSelectElement
     >
   ) => {
-    setFormData({
-      ...formData,
+    if (e.target.name === "email") {
+      hasUserEditedEmailRef.current = true
+    }
+
+    setFormData((prevState) => ({
+      ...prevState,
       [e.target.name]: e.target.value,
-    })
+    }))
   }
 
   const checkoutCopy = storefrontConfig.copy.checkout

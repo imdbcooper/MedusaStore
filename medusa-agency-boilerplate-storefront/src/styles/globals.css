@@ -2,6 +2,35 @@
 @import "tailwindcss/components";
 @import "tailwindcss/utilities";
 
+:root {
+  --theme-canvas: #f6f2ea;
+  --theme-surface: #fffdf8;
+  --theme-surface-muted: #efe6d6;
+  --theme-border: #d8cfbe;
+  --theme-foreground: #221f1a;
+  --theme-muted: #6d6356;
+  --theme-accent: #8b5e3c;
+  --theme-accent-contrast: #fffaf4;
+  --theme-accent-soft: #ead4bf;
+  --theme-hero-start: #f3e8d6;
+  --theme-hero-end: #d9c1aa;
+  --theme-radius-shell: 30px;
+  --theme-radius-card: 26px;
+  --theme-radius-pill: 999px;
+  --theme-shadow-shell: 0 20px 50px rgba(34, 31, 26, 0.08);
+  --theme-shadow-card: 0 18px 40px rgba(34, 31, 26, 0.06);
+  --theme-content-max-width: 1440px;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--theme-canvas);
+  color: var(--theme-foreground);
+}
+
 @layer utilities {
   /* Chrome, Safari and Opera */
   .no-scrollbar::-webkit-scrollbar {
@@ -51,7 +80,8 @@
 
 @layer components {
   .content-container {
-    @apply max-w-[1440px] w-full mx-auto px-6;
+    @apply w-full mx-auto px-6;
+    max-width: var(--theme-content-max-width);
   }
 
   .contrast-btn {

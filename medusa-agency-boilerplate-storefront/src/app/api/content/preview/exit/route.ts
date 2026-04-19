@@ -46,24 +46,71 @@ const redirectToTarget = (request: NextRequest, redirectTo?: string | null) => {
   return NextResponse.redirect(new URL(redirectPath, request.nextUrl.origin))
 }
 
-export async function GET(request: NextRequest) {
-  const redirectTo = request.nextUrl.searchParams.get('redirect') || '/'
-  const exp = request.nextUrl.searchParams.get('exp') || ''
-  const sig = request.nextUrl.searchParams.get('sig') || ''
+type ExitSignatureParams = {
+  redirect: string
+  exp: string
+  sig: string
+}
 
-  if (!hasValidExitSignature({ redirect: redirectTo, exp, sig })) {
+const getSignedExitParamsFromQuery = (
+  request: NextRequest
+): ExitSignatureParams => ({
+  redirect: request.nextUrl.searchParams.get('redirect') || '/',
+  exp: request.nextUrl.searchParams.get('exp') || '',
+  sig: request.nextUrl.searchParams.get('sig') || '',
+})
+
+const getSignedExitParamsFromBody = async (
+  request: NextRequest
+): Promise<ExitSignatureParams> => {
+  const contentType = request.headers.get('content-type') || ''
+
+  if (contentType.includes('application/json')) {
+    const body = await request.json().catch(() => ({} as Record<string, unknown>))
+
+    return {
+      redirect: typeof body.redirect === 'string' ? body.redirect : '/',
+      exp: typeof body.exp === 'string' ? body.exp : '',
+      sig: typeof body.sig === 'string' ? body.sig : '',
+    }
+  }
+
+  const formData = await request.formData().catch(() => null)
+
+  return {
+    redirect: typeof formData?.get('redirect') === 'string'
+      ? String(formData?.get('redirect'))
+      : '/',
+    exp: typeof formData?.get('exp') === 'string' ? String(formData?.get('exp')) : '',
+    sig: typeof formData?.get('sig') === 'string' ? String(formData?.get('sig')) : '',
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const signedParams = getSignedExitParamsFromQuery(request)
+
+  if (!hasValidExitSignature(signedParams)) {
     return NextResponse.json({ message: 'Invalid preview exit signature.' }, { status: 401 })
   }
 
   const draft = await draftMode()
   draft.disable()
 
-  return redirectToTarget(request, redirectTo)
+  return redirectToTarget(request, signedParams.redirect)
 }
 
 export async function POST(request: NextRequest) {
+  const signedParams =
+    request.nextUrl.searchParams.has('sig') || request.nextUrl.searchParams.has('exp')
+      ? getSignedExitParamsFromQuery(request)
+      : await getSignedExitParamsFromBody(request)
+
+  if (!hasValidExitSignature(signedParams)) {
+    return NextResponse.json({ message: 'Invalid preview exit signature.' }, { status: 401 })
+  }
+
   const draft = await draftMode()
   draft.disable()
 
-  return redirectToTarget(request, request.nextUrl.searchParams.get('redirect'))
+  return redirectToTarget(request, signedParams.redirect)
 }

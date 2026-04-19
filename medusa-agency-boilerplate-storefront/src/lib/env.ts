@@ -1,4 +1,5 @@
 const DEFAULT_MEDUSA_BACKEND_PORT = process.env.MEDUSA_BACKEND_PORT || "9000"
+const STOREFRONT_PRESET_CANDIDATES = ["atelier", "market"] as const
 
 export const MEDUSA_BACKEND_URL =
   process.env.MEDUSA_BACKEND_URL ||
@@ -9,6 +10,17 @@ export const STOREFRONT_BASE_URL =
 
 export const DEFAULT_REGION =
   process.env.NEXT_PUBLIC_DEFAULT_REGION?.toLowerCase() || "ru"
+
+export const STOREFRONT_PRESET_RAW =
+  process.env.NEXT_PUBLIC_STOREFRONT_PRESET?.trim().toLowerCase() || ""
+
+export const STOREFRONT_PRESET_IS_VALID = STOREFRONT_PRESET_CANDIDATES.includes(
+  STOREFRONT_PRESET_RAW as (typeof STOREFRONT_PRESET_CANDIDATES)[number]
+)
+
+export const STOREFRONT_PRESET = STOREFRONT_PRESET_IS_VALID
+  ? (STOREFRONT_PRESET_RAW as (typeof STOREFRONT_PRESET_CANDIDATES)[number])
+  : "atelier"
 
 export const YOOKASSA_ENABLED =
   process.env.NEXT_PUBLIC_YOOKASSA_ENABLED === "true"

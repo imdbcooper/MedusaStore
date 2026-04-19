@@ -1,7 +1,7 @@
 import {
-  resolveContentPageSlot,
-  resolvePostPageSlot,
-} from "../landing-surface-resolver"
+  StorefrontContentPageHeaderSection,
+  StorefrontPostPageHeaderSection,
+} from "@lib/storefront-client-config"
 
 type SharedHeaderProps = {
   title?: string | null
@@ -15,29 +15,25 @@ export function InformationalPageHeader({
   title,
   excerpt,
   pageType,
+  section,
 }: {
   title?: string | null
   excerpt?: string | null
   pageType?: "marketing" | "informational" | null
+  section: StorefrontContentPageHeaderSection
 }) {
-  const headerSlot = resolveContentPageSlot("header")
-
-  if (!headerSlot) {
-    return null
-  }
-
   const label =
     pageType === "marketing"
-      ? headerSlot.labels.marketing
-      : headerSlot.labels.informational
+      ? section.labels.marketing
+      : section.labels.informational
 
   return (
     <SharedContentHeader
-      variant={headerSlot.variant}
+      variant={section.variant}
       title={title}
       excerpt={excerpt}
       label={label}
-      eyebrow={headerSlot.eyebrow}
+      eyebrow={section.eyebrow}
     />
   )
 }
@@ -46,28 +42,24 @@ export function EditorialPostHeader({
   title,
   excerpt,
   publishedAt,
+  section,
 }: {
   title?: string | null
   excerpt?: string | null
   publishedAt?: string | null
+  section: StorefrontPostPageHeaderSection
 }) {
-  const headerSlot = resolvePostPageSlot("header")
-
-  if (!headerSlot) {
-    return null
-  }
-
   const meta = publishedAt
-    ? new Date(publishedAt).toLocaleDateString(headerSlot.publishedDateLocale)
+    ? new Date(publishedAt).toLocaleDateString(section.publishedDateLocale)
     : null
 
   return (
     <SharedContentHeader
-      variant={headerSlot.variant}
+      variant={section.variant}
       title={title}
       excerpt={excerpt}
-      label={headerSlot.label}
-      eyebrow={headerSlot.eyebrow}
+      label={section.label}
+      eyebrow={section.eyebrow}
       meta={meta}
     />
   )

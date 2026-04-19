@@ -1,3 +1,8 @@
 module.exports = {
-  extends: ["next/core-web-vitals"]
-};
+  extends: ["next/core-web-vitals"],
+  settings: {
+    next: {
+      rootDir: ".",
+    },
+  },
+}
