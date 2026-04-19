@@ -123,8 +123,25 @@ export type StorefrontTitleDescriptionItem = {
   description: string
 }
 
-export type StorefrontCollectionLandingHeaderSlot = {
-  slot: "header"
+export type StorefrontSurfaceInfoGridSection = {
+  type: "infoGrid"
+  eyebrow?: string
+  title: string
+  description?: string
+  items: StorefrontTitleDescriptionItem[]
+}
+
+export type StorefrontSurfaceCtaSection = {
+  type: "cta"
+  eyebrow?: string
+  title: string
+  description: string
+  primaryAction?: StorefrontActionLink
+  secondaryAction?: StorefrontActionLink
+}
+
+export type StorefrontCollectionLandingHeaderSection = {
+  type: "header"
   variant: "compact" | "editorial"
   eyebrow: string
   descriptionTemplate: string
@@ -132,13 +149,8 @@ export type StorefrontCollectionLandingHeaderSlot = {
   metaPills?: string[]
 }
 
-export type StorefrontCollectionLandingSupportPillarsSlot = {
-  slot: "supportPillars"
-  items: StorefrontTitleDescriptionItem[]
-}
-
-export type StorefrontContentPageHeaderSlot = {
-  slot: "header"
+export type StorefrontContentPageHeaderSection = {
+  type: "header"
   variant: "simple" | "editorial"
   eyebrow: string
   labels: {
@@ -147,8 +159,8 @@ export type StorefrontContentPageHeaderSlot = {
   }
 }
 
-export type StorefrontPostPageHeaderSlot = {
-  slot: "header"
+export type StorefrontPostPageHeaderSection = {
+  type: "header"
   variant: "simple" | "editorial"
   eyebrow: string
   label: string
@@ -161,21 +173,30 @@ export type StorefrontHomeLandingSurface = {
 }
 
 export type StorefrontCollectionLandingSurface = {
-  mode: "slots"
-  slots: (
-    | StorefrontCollectionLandingHeaderSlot
-    | StorefrontCollectionLandingSupportPillarsSlot
+  mode: "sections"
+  sections: (
+    | StorefrontCollectionLandingHeaderSection
+    | StorefrontSurfaceInfoGridSection
+    | StorefrontSurfaceCtaSection
   )[]
 }
 
 export type StorefrontContentPageLandingSurface = {
-  mode: "slots"
-  slots: StorefrontContentPageHeaderSlot[]
+  mode: "sections"
+  sections: (
+    | StorefrontContentPageHeaderSection
+    | StorefrontSurfaceInfoGridSection
+    | StorefrontSurfaceCtaSection
+  )[]
 }
 
 export type StorefrontPostPageLandingSurface = {
-  mode: "slots"
-  slots: StorefrontPostPageHeaderSlot[]
+  mode: "sections"
+  sections: (
+    | StorefrontPostPageHeaderSection
+    | StorefrontSurfaceInfoGridSection
+    | StorefrontSurfaceCtaSection
+  )[]
 }
 
 export type StorefrontProductSupportHighlightsSurface = {
@@ -185,6 +206,36 @@ export type StorefrontProductSupportHighlightsSurface = {
 
 export type StorefrontProductSurfaces = {
   supportHighlights: StorefrontProductSupportHighlightsSurface
+}
+
+export type StorefrontListingCardAspectRatio = "portrait" | "feature"
+
+export type StorefrontListingCardFrame = "subtle" | "elevated"
+
+export type StorefrontListingCardDensity = "compact" | "comfortable"
+
+export type StorefrontListingCardTitleTone = "subtle" | "default"
+
+export type StorefrontListingCardPriceTone = "muted" | "accent"
+
+export type StorefrontListingCardSurface = {
+  mode: "card"
+  image: {
+    aspectRatio: StorefrontListingCardAspectRatio
+    frame: StorefrontListingCardFrame
+  }
+  content: {
+    density: StorefrontListingCardDensity
+    titleTone: StorefrontListingCardTitleTone
+    priceTone: StorefrontListingCardPriceTone
+  }
+}
+
+export type StorefrontListingSurfaces = {
+  productCard: {
+    default: StorefrontListingCardSurface
+    featured: StorefrontListingCardSurface
+  }
 }
 
 export type StorefrontClientConfig = {
@@ -202,6 +253,7 @@ export type StorefrontClientConfig = {
     postPage: StorefrontPostPageLandingSurface
   }
   productSurfaces: StorefrontProductSurfaces
+  listingSurfaces: StorefrontListingSurfaces
   overridePolicy: {
     customizable: readonly string[]
     coreLocked: readonly string[]
@@ -217,6 +269,7 @@ const sharedOverridePolicy = {
     "brand tokens",
     "nav/footer variants",
     "landing surfaces (home, collection, content, post)",
+    "listing card presentation surfaces (listingSurfaces.productCard)",
     "adjacent product display surfaces (productSurfaces.supportHighlights)",
   ],
   coreLocked: [
@@ -233,7 +286,7 @@ const sharedOverridePolicy = {
 const sharedGuardrails = {
   sanctionedExtensionPath: [
     "Switch client scenarios only through NEXT_PUBLIC_STOREFRONT_PRESET.",
-    "Materialize sanctioned overrides in storefront-client-config.ts via landingSurfaces and adjacent productSurfaces.",
+    "Materialize sanctioned overrides in storefront-client-config.ts via landingSurfaces, listingSurfaces, and adjacent productSurfaces.",
     "Resolve preset-owned display surfaces inside storefront-customization components, not shared templates.",
     "Treat cart, checkout, account, order flow, Store API contracts, and provider integrations as locked core.",
   ],
@@ -404,19 +457,23 @@ export const storefrontPresetCatalog = {
         ],
       },
       collectionLanding: {
-        mode: "slots",
-        slots: [
+        mode: "sections",
+        sections: [
           {
-            slot: "header",
+            type: "header",
             variant: "editorial",
             eyebrow: "Collection Landing",
             descriptionTemplate:
-              "Подборка магазина {storeName}, которая использует общий catalog core, но уже живёт в client customization layer как отдельная управляемая presentation surface.",
+              "Подборка {collectionTitle} в магазине {storeName} использует общий catalog core, но уже живёт в client customization layer как отдельная управляемая presentation surface.",
             productCountLabel: "товаров",
             metaPills: ["Surface override без форка catalog logic"],
           },
           {
-            slot: "supportPillars",
+            type: "infoGrid",
+            eyebrow: "Collection Pillars",
+            title: "Что именно меняется на collection landing",
+            description:
+              "Preset управляет merchandising-подачей, не вмешиваясь в сортировку, пагинацию и product grid contracts.",
             items: [
               {
                 title: "Shared catalog core",
@@ -435,13 +492,28 @@ export const storefrontPresetCatalog = {
               },
             ],
           },
+          {
+            type: "cta",
+            eyebrow: "Preset-ready surface",
+            title: "Новый клиент получает collection landing как sanctioned override, а не как template fork",
+            description:
+              "Такой surface можно усиливать дальше через preset contract и section composition, не разрывая общий storefront core.",
+            primaryAction: {
+              label: "Открыть каталог",
+              href: "/store",
+            },
+            secondaryAction: {
+              label: "Смотреть подборки",
+              href: "/collections",
+            },
+          },
         ],
       },
       contentPage: {
-        mode: "slots",
-        slots: [
+        mode: "sections",
+        sections: [
           {
-            slot: "header",
+            type: "header",
             variant: "editorial",
             eyebrow: "Informational Surface",
             labels: {
@@ -449,17 +521,95 @@ export const storefrontPresetCatalog = {
               informational: "Informational page",
             },
           },
+          {
+            type: "infoGrid",
+            eyebrow: "Content Guardrails",
+            title: "Informational pages кастомизируются preset-driven layers, а не ad-hoc layout drift",
+            description:
+              "Payload продолжает управлять контентом, а storefront preset определяет presentation shell вокруг него.",
+            items: [
+              {
+                title: "Shared content contract",
+                description:
+                  "Block renderer и content fetch layer остаются одинаковыми для разных клиентов.",
+              },
+              {
+                title: "Preset-owned framing",
+                description:
+                  "Header, supporting grids и adjacent CTA читаются из sanctioned client config.",
+              },
+              {
+                title: "No commerce drift",
+                description:
+                  "Страница может выглядеть по-разному, не вмешиваясь в cart, account или checkout path.",
+              },
+            ],
+          },
+          {
+            type: "cta",
+            eyebrow: "Surface Policy",
+            title: "Контентные страницы можно развивать без скрытого форка storefront",
+            description:
+              "Новый клиентский сценарий должен добавлять section composition и preset copy, а не разводить отдельные templates под каждую витрину.",
+            primaryAction: {
+              label: "Открыть новости",
+              href: "/news",
+            },
+            secondaryAction: {
+              label: "Перейти в каталог",
+              href: "/store",
+            },
+          },
         ],
       },
       postPage: {
-        mode: "slots",
-        slots: [
+        mode: "sections",
+        sections: [
           {
-            slot: "header",
+            type: "header",
             variant: "editorial",
             eyebrow: "Editorial Surface",
             label: "News article",
             publishedDateLocale: "ru-RU",
+          },
+          {
+            type: "infoGrid",
+            eyebrow: "Editorial Framing",
+            title: "Даже editorial surface остаётся preset-driven и общим по архитектуре",
+            description:
+              "Посты могут получать разный тон подачи, но block content, preview и revalidate flow остаются едиными.",
+            items: [
+              {
+                title: "Shared content delivery",
+                description:
+                  "Payload feed и storefront post template не дробятся по клиентам.",
+              },
+              {
+                title: "Preset presentation",
+                description:
+                  "Header, supporting notes и CTA живут в client config, а не в ad-hoc markup внутри template.",
+              },
+              {
+                title: "Composable next step",
+                description:
+                  "Следующие editorial scenarios можно добавлять как новые sections без изменения core content contract.",
+              },
+            ],
+          },
+          {
+            type: "cta",
+            eyebrow: "Editorial Journey",
+            title: "Один и тот же post flow может вести к разным клиентским сценариям без template fork",
+            description:
+              "Preset меняет framing и adjacent CTA, а content lifecycle продолжает использовать общий Payload integration layer.",
+            primaryAction: {
+              label: "Все новости",
+              href: "/news",
+            },
+            secondaryAction: {
+              label: "Перейти в каталог",
+              href: "/store",
+            },
           },
         ],
       },
@@ -484,6 +634,34 @@ export const storefrontPresetCatalog = {
               "Display-only product surfaces можно настраивать отдельно, не дублируя cart и order logic.",
           },
         ],
+      },
+    },
+    listingSurfaces: {
+      productCard: {
+        default: {
+          mode: "card",
+          image: {
+            aspectRatio: "portrait",
+            frame: "subtle",
+          },
+          content: {
+            density: "comfortable",
+            titleTone: "default",
+            priceTone: "muted",
+          },
+        },
+        featured: {
+          mode: "card",
+          image: {
+            aspectRatio: "feature",
+            frame: "elevated",
+          },
+          content: {
+            density: "comfortable",
+            titleTone: "default",
+            priceTone: "accent",
+          },
+        },
       },
     },
     overridePolicy: sharedOverridePolicy,
@@ -606,18 +784,22 @@ export const storefrontPresetCatalog = {
         ],
       },
       collectionLanding: {
-        mode: "slots",
-        slots: [
+        mode: "sections",
+        sections: [
           {
-            slot: "header",
+            type: "header",
             variant: "compact",
             eyebrow: "Catalog Surface",
             descriptionTemplate:
-              "Подборка магазина {storeName} с общим catalog core и управляемой клиентской presentation-layer.",
+              "Подборка {collectionTitle} в магазине {storeName} с общим catalog core и управляемой клиентской presentation-layer.",
             productCountLabel: "товаров",
           },
           {
-            slot: "supportPillars",
+            type: "infoGrid",
+            eyebrow: "Preset Fit",
+            title: "Почему этот collection surface удобен для utility-сценария",
+            description:
+              "Здесь важны скорость понимания, быстрый доступ к товарам и минимальный визуальный overhead вокруг product grid.",
             items: [
               {
                 title: "Compact merchandising",
@@ -636,13 +818,28 @@ export const storefrontPresetCatalog = {
               },
             ],
           },
+          {
+            type: "cta",
+            eyebrow: "Catalog-first rollout",
+            title: "Если клиенту нужен другой тон collection landing, его нужно оформлять через preset composition",
+            description:
+              "Так мы сохраняем один storefront core и не разращиваем коллекционные templates до состояния скрытых клиентских форков.",
+            primaryAction: {
+              label: "Перейти к товарам",
+              href: "/store",
+            },
+            secondaryAction: {
+              label: "Открыть аккаунт",
+              href: "/account",
+            },
+          },
         ],
       },
       contentPage: {
-        mode: "slots",
-        slots: [
+        mode: "sections",
+        sections: [
           {
-            slot: "header",
+            type: "header",
             variant: "simple",
             eyebrow: "Utility Information",
             labels: {
@@ -650,17 +847,95 @@ export const storefrontPresetCatalog = {
               informational: "Service page",
             },
           },
+          {
+            type: "infoGrid",
+            eyebrow: "Utility Context",
+            title: "Service и campaign pages должны быстро объяснять действие и путь дальше",
+            description:
+              "Этот preset уменьшает editorial framing, но всё равно держит страницу внутри sanctioned customization contract.",
+            items: [
+              {
+                title: "Fast comprehension",
+                description:
+                  "Пользователь быстрее считывает назначение страницы и следующий шаг.",
+              },
+              {
+                title: "Shared renderer",
+                description:
+                  "Payload blocks продолжают работать через общий content renderer без новых backend contracts.",
+              },
+              {
+                title: "Preset-only divergence",
+                description:
+                  "Изменения copy и adjacent sections оформляются через preset, а не через ручную правку template.",
+              },
+            ],
+          },
+          {
+            type: "cta",
+            eyebrow: "Service path",
+            title: "Content surface остаётся расширяемым, но не превращается в отдельный storefront",
+            description:
+              "Даже utility-сценарий должен усиливаться через config-driven composition, сохраняя общие content и commerce boundaries.",
+            primaryAction: {
+              label: "Перейти в каталог",
+              href: "/store",
+            },
+            secondaryAction: {
+              label: "Открыть новости",
+              href: "/news",
+            },
+          },
         ],
       },
       postPage: {
-        mode: "slots",
-        slots: [
+        mode: "sections",
+        sections: [
           {
-            slot: "header",
+            type: "header",
             variant: "simple",
             eyebrow: "Utility Editorial",
             label: "Update",
             publishedDateLocale: "ru-RU",
+          },
+          {
+            type: "infoGrid",
+            eyebrow: "Update framing",
+            title: "Даже короткий update-поток должен оставаться composable surface",
+            description:
+              "Preset может делать editorial layer более утилитарным, не ломая общий content delivery contour.",
+            items: [
+              {
+                title: "Update-first tone",
+                description:
+                  "Ключевая информация выносится ближе к началу страницы без лишнего visual overhead.",
+              },
+              {
+                title: "Common content core",
+                description:
+                  "Cover image, blocks и publishing lifecycle остаются общими для всех сценариев.",
+              },
+              {
+                title: "Preset growth path",
+                description:
+                  "Новые post variations должны расширять section config, а не плодить разные post templates.",
+              },
+            ],
+          },
+          {
+            type: "cta",
+            eyebrow: "Preset rollout",
+            title: "Следующий editorial scenario должен добавляться как preset composition",
+            description:
+              "Так repository остаётся template-ready и не получает скрытую клиентскую дивергенцию в content templates.",
+            primaryAction: {
+              label: "Все новости",
+              href: "/news",
+            },
+            secondaryAction: {
+              label: "Открыть подборки",
+              href: "/collections",
+            },
           },
         ],
       },
@@ -685,6 +960,34 @@ export const storefrontPresetCatalog = {
               "Новый клиентский сценарий должен расширять preset layer, а не дублировать templates.",
           },
         ],
+      },
+    },
+    listingSurfaces: {
+      productCard: {
+        default: {
+          mode: "card",
+          image: {
+            aspectRatio: "portrait",
+            frame: "subtle",
+          },
+          content: {
+            density: "compact",
+            titleTone: "subtle",
+            priceTone: "muted",
+          },
+        },
+        featured: {
+          mode: "card",
+          image: {
+            aspectRatio: "feature",
+            frame: "subtle",
+          },
+          content: {
+            density: "compact",
+            titleTone: "default",
+            priceTone: "accent",
+          },
+        },
       },
     },
     overridePolicy: sharedOverridePolicy,
