@@ -1,6 +1,6 @@
 # Current Work
 
-> Статус документа: текущий операционный фокус проекта по состоянию на `2026-04-18`
+> Статус документа: текущий операционный фокус проекта по состоянию на `2026-04-19`
 >
 > Назначение: дать агенту с пустым контекстом быстрый и однозначный ответ на три вопроса:
 >
@@ -31,9 +31,11 @@
 
 **Фаза 2** из [master_repo_plan_v2.md](./master_repo_plan_v2.md) завершена и подтверждена проверками.
 
-Текущий operational context по-прежнему находится в **Фазе 3: архитектура интеграций и техническая верификация провайдеров**, но ее notification-ветка больше не является открытым workstream.
+`Фаза 6 storefront customization` теперь truthfully закрыта только после reopen/remediation cycle: прежний closure verdict был overstated, затем reopening был признан валидным по трём gap'ам, а post-remediation regression/readiness checkpoint `2026-04-19` зафиксировал финальный verdict **PASS**.
 
-Первые интеграционные шаги Фазы 3 уже зафиксированы в репозитории:
+Текущий operational context больше не находится внутри открытого implementation workstream `Фазы 6`: readiness для storefront customization зафиксирован как **готово к следующему roadmap stage**, то есть к **Фазе 7: шаблонизация и ускорение запуска нового клиента**, потому что reopened gaps уже закрыты remediation-коммитами и повторный checkpoint подтвердил truthful re-closure без marketing-style overclaim.
+
+Первые интеграционные шаги Фазы 3 и последующие foundational steps уже зафиксированы в репозитории:
 
 - **notification slice v1** реализован и подтвержден как первый integration slice;
 - **notification hardening v1** теперь тоже реализован и проверен как закрытый delivery result для notification-track;
@@ -42,8 +44,8 @@
 - **shipping track v1** реализован как backend-first **ApiShip** slice; **`cheapest_only_v1` подтверждён runtime-проверкой `2026-04-18`**: production token получен, provider активирован, route path [`GET /store/apiship/rates`](../medusa-agency-boilerplate/src/api/store/apiship/rates/route.ts) подтверждён, rates из ApiShip/Yandex возвращаются; blocker по ApiShip **закрыт targeted code fixes** в route и seed, а не ожиданием account-state;
 - **checkout end-to-end validation v1** закрыт: подтвержден полный flow `shipping → hosted YooKassa payment → automatic return → review → order placement → confirmed order page`; ложный blocker вокруг `payment_collection` снят; targeted fix в [`payment-button/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx) больше не допускает вызов `placeOrder()` до hosted authorization, а targeted fix в [`cookies.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts) меняет policy для cart cookie c `sameSite: "strict"` на `sameSite: "lax"` для корректного cross-site return.
 
-Payload CMS как будущий content layer уже считается **зафиксированным архитектурным направлением**, но его реализация по плану начинается только после storefront core, а не в текущем integration track.
-В каноническом плане это отдельный трек **Фаза 5.5**, а не расплывчатая идея на потом.
+`Payload CMS v1` как content layer маркетинговых страниц уже реализован и закрыт как отдельный workstream после стабилизации storefront core.
+В каноническом плане это больше не будущий трек **Фаза 5.5**, а завершённый source-of-truth этап перед переходом к **Фазе 6** с client customization.
 
 Отдельная обязательная рамка текущего sequencing:
 
@@ -80,7 +82,7 @@ Payload CMS как будущий content layer уже считается **за
 
 - baseline-safe режим без внешних notification secrets подтвержден;
 - `NOTIFICATION_EMAIL_PROVIDER=local` остается baseline-default;
-- `sendgrid` без `SENDGRID_API_KEY` не ломает startup, build и runtime и корректно падает обратно на local provider;
+- `unisender` без `UNISENDER_API_KEY` не ломает startup, build и runtime и корректно падает обратно на local provider;
 - authenticated smoke path реально работает через secret admin API key и Basic auth;
 - helper `createSecretAdminApiKey()` теперь обязан создавать свежий `sk_*` key для канонического smoke path и не полагается на reuse старого считанного token;
 - route `POST /admin/notifications/smoke` возвращает стабильную форму ответа с блоками `ok`, `request`, `auth`, `provider`, `notification`;
@@ -101,7 +103,7 @@ Payload CMS как будущий content layer уже считается **за
 - **checkout end-to-end validation v1 подтвержден runtime/E2E pass**: полный flow `shipping → hosted YooKassa payment → automatic return → review → order placement → confirmed order page` реально пройден;
 - targeted storefront fixes для этого pass зафиксированы в [`payment-button/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx) и [`cookies.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts): YooKassa больше не инициирует преждевременный `placeOrder()`, а cart cookie сохраняется с `sameSite: "lax"` для cross-site return;
 - **bootstrap idempotency hardening v1 подтвержден runtime validation**: clean DB, dirty DB idempotent rerun и dirty DB conflict injection — все три сценария прошли;
-- стартовал независимый storefront track **storefront core baseline v1**: ключевой starter/demo branding убран с shared entrypoints, добавлен минимальный [`storefrontConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-config.ts), а checkout/review copy оставлен совместимым с текущими YooKassa-first, подтверждённым ApiShip `cheapest_only_v1` и уже закрытым checkout E2E путями без новых обязательных env-переменных;
+- **`storefront core baseline v1` закрыт и больше не считается current work**: shared storefront shell, runtime/config baseline и starter/demo cleanup синхронизированы как предыдущий repo-level шаг и зафиксированы коммитом `6f9a5499e2c9fcf08e2e6d1fffa75f350e82f5bb`;
 - повторный `npm run bootstrap` поверх уже заполненной БД теперь является подтвержденным idempotent path: seed reuse-or-fail семантика корректно работает, publishable key стабильно извлекается, дубликаты не создаются;
 - при конфликтном состоянии базы (несколько publishable keys без baseline title match) bootstrap корректно завершается с exit code 1 и не обновляет storefront env.
 
@@ -125,13 +127,13 @@ Payload CMS как будущий content layer уже считается **за
 - notification slice v1 и notification hardening v1 подтверждены в backend-only контуре:
   - Notification Module;
   - local provider для dev и baseline-default;
-  - SendGrid path для production;
-  - fallback к local provider при `sendgrid` без `SENDGRID_API_KEY`;
+  - `UniSender` path для production;
+  - fallback к local provider при `unisender` без `UNISENDER_API_KEY`;
   - provider-agnostic workflow;
   - admin smoke route;
   - authenticated smoke через Basic auth и secret admin API key;
   - opt-in helper для on-demand fresh secret admin API key.
-  - на уровне roadmap этот production path больше не считается окончательным RF-oriented выбором: целевой email provider для шаблона теперь `UniSender` для service и marketing email, а текущий SendGrid path рассматривается как transitional bridge.
+  - roadmap уже больше не описывает SendGrid как актуальный bridge: целевой email provider для шаблона зафиксирован как `UniSender` для service и marketing email.
 - payment slice v1 реализован как YooKassa-first minimal vertical slice и ранее подтвержден end-to-end для текущего payment scope:
   - provider registration;
   - session initiation;
@@ -162,7 +164,7 @@ Payload CMS как будущий content layer уже считается **за
   - текущая checkout-семантика честно зафиксирована как `cheapest_only_v1`: storefront и backend выбирают один самый дешевый тариф, а не полноценный multi-quote UX.
 - подтверждено verification pass, что baseline не сломан:
   - `npm run bootstrap`, `npm run preflight` и `npm run dev` продолжают работать без обязательных payment secrets, без обязательного `APISHIP_TOKEN` и без обязательных внешних notification secrets;
-  - notification runtime сохраняет baseline-safe semantics и не требует `SENDGRID_API_KEY` для local default path;
+  - notification runtime сохраняет baseline-safe semantics и не требует `UNISENDER_API_KEY` для local default path;
   - ApiShip provider реально включается только при наличии токена;
   - safe-by-default закрыт не только в runtime-коде, но и на orchestration/env-sync уровне: отсутствие `APISHIP_TEST_MODE` в root env после sync больше не ведет backend env в live;
   - shipping option `ApiShip Courier to Address` появляется после повторного seed в ApiShip-enabled окружении;
@@ -170,55 +172,48 @@ Payload CMS как будущий content layer уже считается **за
   - payload mapping, endpoint usage и live and test режим по текущей реализации выглядят корректно;
   - расширение env-contract осталось opt-in и baseline-safe.
 
-### Текущая цель
+### Статус после закрытия `marketing layer v1`
 
-**Текущий planning-selected workstream: design `UniSender email migration v1` как следующий communication-stack workstream после уже закрытых lifecycle slices `order.placed`, `shipment.created`, `payment_session.failed.customer.notification_requested` и `order.canceled`.**
+**`storefront core baseline v1` уже закрыт коммитом `6f9a5499e2c9fcf08e2e6d1fffa75f350e82f5bb`, `VK ID v1` закрыт коммитом `f48a02658d116a04afd794c1134ac72e0ab00bc8` `feat(vk): add vk id linking v1`, `MTS Exolve` закрыт коммитом `b13f6fa93473bb8bc0320566a75d264d60739784` `feat(notification): add MTS Exolve SMS workstream`, а `marketing layer v1` закрыт коммитом `a4711906b16523dcf03da9601ccf1a914702ca7d` `feat(marketing-layer): add marketing preferences and campaign workflows`.**
 
-**Notification hardening v1**, **order lifecycle notifications hardening v1.1**, **bootstrap idempotency hardening v1**, **YooKassa runtime/E2E**, **ApiShip `cheapest_only_v1`**, **checkout end-to-end validation v1**, **storefront core baseline**, **RU copy baseline**, **post-review cleanup**, **template-readiness regression formalization v1**, **order lifecycle notifications v1**, **implementation `order shipped notification v1`**, **targeted validation `order shipped notification v1`**, **implementation `payment failed notification v1`**, **targeted validation `payment failed notification v1`**, **implementation `order canceled notification v1`** и **targeted validation `order canceled notification v1`** уже подтверждены и не являются активными implementation-треками.
+Новый подтвержденный результат закрытого `marketing layer v1` шага:
 
-Результат, который теперь считается входным инвариантом:
+- metadata-first consent/preferences contract материализован в `customer.metadata.marketing`: каноническая структура описана типом [`MarketingPreferences`](../medusa-agency-boilerplate/src/modules/marketing-preferences.ts:37), а channel bindings нормализуются через [`resolveMarketingBindings()`](../medusa-agency-boilerplate/src/modules/marketing-preferences.ts:202) из existing customer email, phone и VK metadata surfaces;
+- customer self-service и admin updates пишут обратно в один и тот же metadata contract через store route [`POST()`](../medusa-agency-boilerplate/src/api/store/customers/me/marketing-preferences/route.ts:80) и admin route [`PUT()`](../medusa-agency-boilerplate/src/api/admin/marketing/campaigns/route.ts:110), а не через отдельный consent storage;
+- campaign and journal surface материализованы в [`ensureMarketingLayerTables()`](../medusa-agency-boilerplate/src/modules/marketing-layer.ts:305) как внутренние таблицы `marketing_campaign` и `marketing_delivery_journal` с audience selection, frequency cap и delivery audit trail;
+- execution semantics теперь зафиксированы как single-channel per campaign: каждая campaign record хранит один `channel`, а [`sendMarketingCampaignWorkflow`](../medusa-agency-boilerplate/src/workflows/send-marketing-campaign.ts:508) при launch использует ровно один delivery runtime, пишет `sent/skipped/failed` journal rows, уважает global/channel consent, `suppressed_until`, recipient binding availability и frequency cap;
+- store API surface материализован в [`GET()`](../medusa-agency-boilerplate/src/api/store/customers/me/marketing-preferences/route.ts:45) и [`POST()`](../medusa-agency-boilerplate/src/api/store/customers/me/marketing-preferences/route.ts:80) для `/store/customers/me/marketing-preferences`;
+- admin API surface материализован в campaign list/create/preferences route [`GET()`](../medusa-agency-boilerplate/src/api/admin/marketing/campaigns/route.ts:72), [`POST()`](../medusa-agency-boilerplate/src/api/admin/marketing/campaigns/route.ts:85), [`PUT()`](../medusa-agency-boilerplate/src/api/admin/marketing/campaigns/route.ts:110) и в per-campaign route [`GET()`](../medusa-agency-boilerplate/src/api/admin/marketing/campaigns/[id]/route.ts:28) / [`POST()`](../medusa-agency-boilerplate/src/api/admin/marketing/campaigns/[id]/route.ts:62); auth and validation boundary синхронизирован через [`defineMiddlewares()`](../medusa-agency-boilerplate/src/api/middlewares.ts:20);
+- storefront profile preferences section материализован в компоненте [`ProfileMarketingPreferences`](../medusa-agency-boilerplate-storefront/src/modules/account/components/profile-marketing-preferences/index.tsx:92), data helpers [`retrieveMarketingPreferences()`](../medusa-agency-boilerplate-storefront/src/lib/data/marketing.ts:61) и [`updateMarketingPreferences()`](../medusa-agency-boilerplate-storefront/src/lib/data/marketing.ts:80), а также встраивании в [`Profile()`](../medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/account/@dashboard/profile/page.tsx:35);
+- validation and review outcome закрыты: backend typecheck PASS, storefront typecheck PASS, targeted tests в [`marketing-layer.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/marketing-layer.unit.spec.ts:27) PASS `1` suite / `6` tests, review verdict = `approve`;
+- review notes остались только non-blocker: admin [`PUT()`](../medusa-agency-boilerplate/src/api/admin/marketing/campaigns/route.ts:110) всё ещё опирается на `customer_id` query ergonomics, а dynamic route пока использует manual URL parsing в [`getCampaignId()`](../medusa-agency-boilerplate/src/api/admin/marketing/campaigns/[id]/route.ts:21).
 
-- **clean DB path:** PASS — bootstrap exit 0, все baseline entities создаются, publishable key извлекается и пишется в storefront `.env.local`;
-- **dirty DB idempotent rerun:** PASS — bootstrap exit 0, все entities reused, тот же publishable key, нет дубликатов;
-- **dirty DB conflict injection:** PASS — bootstrap exit 1, hardening error message, storefront env не обновляется;
-- **canonical root workflow:** source of truth остается `bootstrap → preflight → dev`; root scripts описываются как clean-start orchestration, а не как универсальный reuse-any-running-runtime слой;
-- **preflight/dev runtime semantics:** [scripts/preflight.sh](../scripts/preflight.sh) допускает reuse только для compose-owned PostgreSQL, Redis и backend там, где это предусмотрено, а уже занятые локальными процессами `9000` и `8000` могут давать ожидаемый fail вне канонического сценария;
-- **ApiShip `cheapest_only_v1`:** PASS `2026-04-18` — production token получен, provider активирован, rates из ApiShip/Yandex возвращаются, blocker закрыт targeted code fixes в [`route.ts`](../medusa-agency-boilerplate/src/api/store/apiship/rates/route.ts) и [`seed.ts`](../medusa-agency-boilerplate/src/scripts/seed.ts);
-- **checkout end-to-end validation v1:** PASS — подтвержден полный flow `shipping → hosted YooKassa payment → automatic return → review → order placement → confirmed order page`; blocker вокруг `payment_collection` снят, а targeted fixes в [`payment-button/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx) и [`cookies.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts) закрепили корректный hosted authorization и cross-site return;
-- **targeted validation `order shipped notification v1`:** PASS — harness [`send-order-shipped-notification.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/send-order-shipped-notification.unit.spec.ts) уже закрывает single-send, `no_notification=true`, missing `order.email`, duplicate suppression и отсутствие ложного dedupe между двумя разными shipment одного заказа;
-- **targeted validation `payment failed notification v1`:** PASS — harness [`send-payment-failed-notification.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/send-payment-failed-notification.unit.spec.ts) уже закрывает single-send для terminal failed attempt, missing `cart.email`, non-terminal non-send, duplicate suppression по тому же `payment_session.id` и отсутствие ложного dedupe между двумя разными failed attempts одного cart;
-- **targeted validation `order canceled notification v1`:** PASS — harness [`send-order-canceled-notification.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/send-order-canceled-notification.unit.spec.ts) уже закрывает single-send, missing `order.email`, `order_not_canceled`, duplicate suppression по тому же `order.id` и отсутствие ложного dedupe между двумя разными canceled orders одного recipient.
+Это значит для дальнейшего sequencing:
 
-Рекомендуемый следующий implementation step после завершения этого design-pass: **implementation `UniSender email migration v1`**. Обоснование и execution blueprint синхронизированы ниже и в [plan_analysis.md](./plan_analysis.md).
-
-Что это значит для выбора решений:
-
-- не переоткрывать payment track в сторону Stripe или других нецелевых для РФ default-кандидатов;
-- не переоткрывать lifecycle notification track без нового подтвержденного evidence о регрессии;
-- не переоткрывать email-provider выбор без нового evidence: целевой RF-oriented path теперь `UniSender`, а текущий SendGrid path остается только transitional bridge;
-- не раздувать текущий шаг в параллельную реализацию `VK Community Messaging`, `VK ID`, `MTS Exolve` или marketing layer;
-- не подменять transport migration задачами storefront, Payload, segmentation, consent orchestration или campaign management;
-- сохранять distinction между каноническим root clean-start workflow и ad-hoc local debug через прямой [`npx medusa develop`](../medusa-agency-boilerplate/package.json) плюс отдельный storefront runtime;
-- не описывать root `preflight` и root `dev` как wrapper для произвольного уже запущенного локального состояния;
-- не раздувать текущий шаг в отдельный CI framework или новый большой test harness.
+- не переоткрывать `storefront core baseline v1`, `VK Community Messaging v1 foundation`, `VK ID v1`, `MTS Exolve`, `marketing layer v1` и теперь уже закрытый `Payload CMS v1` без нового evidence о регрессии;
+- approved communication stack теперь materialized end-to-end как `UniSender + VK Community Messaging + optional VK ID + MTS Exolve + marketing layer`, при этом role split остается прежним: `Payload = content`, `admin = operations`, `marketing layer = orchestration`;
+- `Payload CMS v1` уже зафиксирован как закрытый workstream: отдельный app [`payload-cms`](../payload-cms), storefront content integration, preview/revalidate path, globals и fallback behaviour materialized и закоммичены как [`22486388f4c89d884b4c3cbe668ebec4ab695dee`](../package.json:1) `feat(content): add Payload CMS marketing content layer`;
+- storefront build blocker перед `Фазой 6` дополнительно закрыт: [`generateStaticParams()`](../medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/categories/[...category]/page.tsx:19), [`generateStaticParams()`](../medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/collections/[handle]/page.tsx:21) и уже защищенный [`generateStaticParams()`](../medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/products/[handle]/page.tsx:15) теперь не роняют `next build` при недоступном Store API, а деградируют до пустых static params;
+- активным roadmap step теперь считать **Фазу 6**: client customization layer поверх уже materialized commerce-core и content-layer, без повторного открытия Payload integration track;
+- `Фаза 6` уже продвинулась дальше стартового foundation slice: [`storefront-client-config.ts`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts) теперь удерживает sanctioned preset catalog `atelier|market`, env-driven switch `NEXT_PUBLIC_STOREFRONT_PRESET`, anti-fork guardrails и два реально разных client scenarios на одном storefront core; typed section registry и preset-driven composition уже покрывают `home`, `collectionLanding`, `contentPage` и `postPage`, а adjacent product support surface продолжает жить в том же customization layer без дублирования cart/checkout/account/order logic;
+- не смешивать текущий client customization track с template release packaging до соответствующих фаз плана;
+- сохранять distinction между каноническим root clean-start workflow и ad-hoc local debug через прямой [`npx medusa develop`](../medusa-agency-boilerplate/package.json) плюс отдельный storefront runtime.
 
 Отдельно зафиксировано на уровне плана:
 
-- Payload CMS будет встроен как отдельный headless content service;
-- это произойдет после Фазы 5 как трек `Payload CMS v1 как content layer маркетинговых страниц`;
-- до этого момента Payload не является активной фазой реализации;
-- агент не должен начинать `payload-cms` app, block renderer и publish and revalidate flow, пока текущий integration track и storefront core не доведены до соответствующих ворот плана.
-- approved future communication stack больше не находится в статусе открытого выбора:
+- `Payload CMS v1` уже встроен как отдельный headless content service через app [`payload-cms`](../payload-cms);
+- текущий roadmap track после закрытого `Payload CMS v1` — уже стартовавшая **Фаза 6** с client customization layer;
+- approved communication stack больше не находится в статусе открытого выбора:
   - `UniSender` — целевой email provider для service и marketing email;
   - `VK Community Messaging` — целевой VK transport для service и marketing messages;
   - `VK ID` — optional auth/identity link для привязки пользователя к VK-каналу, а не самостоятельный transport;
   - `MTS Exolve` — целевой SMS provider для service и marketing SMS;
   - внешний marketing hub вроде `Sendsay` не является выбранным направлением для этого master repo.
-- approved future marketing architecture тоже зафиксирована:
-  - отдельный `marketing layer` отвечает за orchestration, segmentation, consent, frequency cap, suppression, audience selection и delivery journal;
+- marketing architecture больше не planning-only и читается так:
+  - `customer.metadata.marketing` = consent/preferences source of truth;
+  - `marketing_campaign` + `marketing_delivery_journal` = campaign and audit surface;
   - `Payload` отвечает за marketing content, promo blocks, campaign copy и landing content;
-  - `admin` отвечает за operational visibility, ручные запуски, статусы кампаний и пользовательские channel preferences;
-  - transports `email / VK / SMS` не должны подменять собой marketing orchestration.
+  - `admin` отвечает за operational visibility, ручные запуски, статусы кампаний и пользовательские channel preferences.
 
 ---
 
@@ -250,11 +245,11 @@ Payload CMS как будущий content layer уже считается **за
 - env-contract для opt-in notification, payment и shipping переменных без превращения их в baseline requirement;
 - кодовые изменения по integration runtime только если они действительно нужны для regression-support, а не для нового product scope.
 
-Payload-related рабочая поверхность пока **не активна**, но позже основной контур сместится в:
+Payload-related рабочая поверхность уже **materialized и закрыта как completed track**, а её source of truth теперь удерживает:
 
-- отдельное приложение `payload-cms`;
-- storefront block renderer и content-provider boundary;
-- content schema docs и publish and revalidate flow.
+- отдельное приложение [`payload-cms`](../payload-cms);
+- storefront block renderer, content-provider boundary, globals integration и fallback behaviour;
+- content schema docs, preview and revalidate flow и root orchestration scripts для payload runtime.
 
 Для закрытого notification-track канонический source of truth остается в:
 
@@ -269,7 +264,7 @@ Payload-related рабочая поверхность пока **не актив
 - server-side shipping adapter и contracts вокруг **ApiShip-first** сценария;
 - storefront checkout shipping selection и cart and runtime validation.
 
-Следующий planning-selected шаг после уже закрытых shipping/payment/checkout proof points и завершённых placed + shipped + failed-payment + canceled slices — **design `UniSender email migration v1`**: сначала зафиксировать docs-level blueprint для замены текущего SendGrid bridge, затем перейти к точечной реализации provider/runtime migration без смешения с VK, SMS, marketing orchestration или storefront work.
+Текущий roadmap step после уже закрытых shipping/payment/checkout proof points, завершённых placed + shipped + failed-payment + canceled slices, закрытых `post-UniSender cleanup-step`, `VK Community Messaging v1 foundation`, `storefront core baseline v1`, `VK ID v1`, `MTS Exolve`, `marketing layer v1`, `Payload CMS v1` и теперь уже закрытой `Фазы 6 storefront customization` — это readiness-переход к **Фазе 7 client/template packaging**: sequencing больше не возвращается к storefront-core, VK identity-linking, SMS transport, marketing orchestration, Payload content layer или Phase 6 browse customization и должен читать следующий workstream только как post-Phase-6 roadmap stage.
 
 ---
 
@@ -284,67 +279,192 @@ Payload-related рабочая поверхность пока **не актив
 - targeted fix в [`payment-button/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx) предотвращает преждевременный `placeOrder()` до hosted authorization;
 - targeted fix в [`cookies.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts) меняет cart cookie policy с `sameSite: "strict"` на `sameSite: "lax"`, чтобы cross-site return не терял checkout state.
 
-### 4.2. Текущий planning-selected workstream — `UniSender email migration v1`
+### 4.2. Закрытый предыдущий operational workstream — `storefront core baseline v1`
 
-Этот шаг уже действительно следующий по sequencing: placed, shipped, failed-payment и canceled lifecycle slices закрыты, authenticated smoke anchor уже подтвержден, а текущий gap notification runtime теперь находится не в subscriber/workflow логике, а в migration production email path с transitional SendGrid bridge на целевой `UniSender` path.
+Этот шаг уже завершён как предыдущий repo-level track: `UniSender email migration v1`, `post-UniSender cleanup-step` и `VK Community Messaging v1 foundation` были его входным sequencing, затем storefront core был закрыт отдельным delivery-result и больше не считается текущим operational focus. Его подтверждённый scope сохраняется здесь как closed snapshot, чтобы не переоткрывать drift.
 
-### 4.3. Почему следующим идет именно `UniSender email migration v1`, а не соседние ветки
+### 4.2.1. Exact implementation scope для `storefront core baseline v1`
 
-- roadmap уже фиксирует `UniSender` как целевой email provider для service и marketing email, поэтому оставлять текущий `sendgrid` path в статусе неопределенного production default больше нельзя;
-- migration ограничена уже существующим email runtime и не требует параллельно открывать новый lifecycle slice, storefront work, marketing orchestration или multi-channel rollout;
-- reuse остается максимальным: сохраняются тот же path `subscriber → workflow → Notification Module`, тот же authenticated smoke route, та же requested/resolved provider semantics и тот же baseline-safe local dev path;
-- этот шаг уже безопаснее, чем одновременное открытие `VK Community Messaging`, `MTS Exolve` или marketing layer, потому что он заменяет только текущий transitional email bridge, а не расширяет communication surface сразу по нескольким каналам.
+**В baseline входят:**
 
-### 4.4. `UniSender email migration v1` — implementation status
+- shared commerce shell в [`medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/page.tsx`](../medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/page.tsx), [`medusa-agency-boilerplate-storefront/src/modules/layout/templates/nav/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/layout/templates/nav/index.tsx), [`medusa-agency-boilerplate-storefront/src/modules/layout/templates/footer/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/layout/templates/footer/index.tsx), catalog/category/collection/product/cart/checkout/account/order entrypoints и их shared templates;
+- runtime/config слой в [`medusa-agency-boilerplate-storefront/src/lib/storefront-config.ts`](../medusa-agency-boilerplate-storefront/src/lib/storefront-config.ts), [`medusa-agency-boilerplate-storefront/.env.local.example`](../medusa-agency-boilerplate-storefront/.env.local.example), [`medusa-agency-boilerplate-storefront/src/lib/config.ts`](../medusa-agency-boilerplate-storefront/src/lib/config.ts), [`medusa-agency-boilerplate-storefront/src/middleware.ts`](../medusa-agency-boilerplate-storefront/src/middleware.ts), [`medusa-agency-boilerplate-storefront/src/lib/data/regions.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/regions.ts) и [`medusa-agency-boilerplate-storefront/src/lib/data/locales.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/locales.ts);
+- shared customer-facing copy для home, navigation, footer, cart, checkout, account и order surfaces;
+- provider-aware storefront adaptation только для уже подтвержденных backend inputs: YooKassa-first payment path, manual fallback, optional Stripe-compatible reference path при наличии такого provider в backend и ApiShip `cheapest_only_v1` delivery UI;
+- удаление или нейтрализация starter/demo/admin-onboarding surfaces из shopper-facing entrypoints и storefront docs.
 
-**Реализованный scope и boundary**
+### 4.2.2. Какие проблемы и drifts нужно закрыть в первую очередь
 
-- текущий SendGrid-specific production bridge в email notification runtime заменён на `UniSender`-ориентированный provider path;
-- `local` сохранён как baseline-default и safe fallback path без внешних email secrets как обязательного условия clean onboarding;
-- lifecycle subscribers, workflows, template identifiers, dedupe semantics и authenticated smoke route сохранены как совместимый верхний слой поверх новой provider resolution logic;
-- scope по-прежнему ограничен service-email runtime без `VK`, `MTS Exolve`, marketing orchestration и storefront changes.
+- starter branding ещё протекает в shopper-facing shell через [`medusa-agency-boilerplate-storefront/src/modules/layout/components/medusa-cta/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/layout/components/medusa-cta/index.tsx), [`medusa-agency-boilerplate-storefront/src/modules/layout/templates/footer/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/layout/templates/footer/index.tsx) и [`medusa-agency-boilerplate-storefront/src/app/[countryCode]/(checkout)/layout.tsx`](../medusa-agency-boilerplate-storefront/src/app/[countryCode]/(checkout)/layout.tsx);
+- demo/onboarding UX всё ещё доступен покупателю через [`medusa-agency-boilerplate-storefront/src/modules/products/components/product-onboarding-cta/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/products/components/product-onboarding-cta/index.tsx), [`medusa-agency-boilerplate-storefront/src/modules/order/components/onboarding-cta/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/order/components/onboarding-cta/index.tsx), [`medusa-agency-boilerplate-storefront/src/modules/order/templates/order-completed-template.tsx`](../medusa-agency-boilerplate-storefront/src/modules/order/templates/order-completed-template.tsx) и helper [`medusa-agency-boilerplate-storefront/src/lib/data/onboarding.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/onboarding.ts);
+- storefront README в [`medusa-agency-boilerplate-storefront/README.md`](../medusa-agency-boilerplate-storefront/README.md) всё ещё описывает Medusa starter и Stripe-first setup, а не template backend contract текущего repo;
+- region/default semantics частично выровнены, но не унифицированы до конца: [`middleware.ts`](../medusa-agency-boilerplate-storefront/src/middleware.ts) уже опирается на env-driven default region, тогда как [`getRegion()`](../medusa-agency-boilerplate-storefront/src/lib/data/regions.ts) всё ещё содержит жесткий fallback на `ru`;
+- optional Stripe-compatible code path может оставаться reference adapter, но не должен формировать ощущение, что Stripe env — обязательный baseline для шаблона.
 
-**Что фактически реализовано**
+### 4.2.3. Какие backend/storefront boundaries уже достаточны
 
-- source of truth по provider resolution теперь находится в [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:119) и [`getNotificationEmailProviderDefinition()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:143);
-- requested provider определяется тем же env selector `NOTIFICATION_EMAIL_PROVIDER`, но production opt-in value теперь `unisender`;
-- resolved provider semantics сохранены: runtime отдельно фиксирует requested provider и фактически активированный provider;
-- custom provider [`notification-unisender.ts`](../medusa-agency-boilerplate/src/modules/notification-unisender.ts:1) отправляет email через UniSender transactional HTTP API и подключается через Medusa Notification Module Provider pattern;
-- smoke и lifecycle workflows продолжают создавать notifications provider-agnostic способом через Notification Module и по-прежнему пишут `provider_requested` / `provider_resolved` diagnostics.
+- текущие store APIs и runtime contracts уже достаточны для baseline-step: `/store/regions`, optional `/store/locales`, cart/checkout/account/order surfaces, confirmed YooKassa hosted return contract и ApiShip rates route;
+- storefront на этом шаге должен адаптироваться к уже существующим provider IDs, checkout semantics и confirmed region data, а не требовать новые backend endpoints или новый orchestration layer;
+- notification stack, `VK Community Messaging`, `VK ID`, `MTS Exolve`, marketing-layer и Payload content layer не являются prerequisites для storefront core baseline.
 
-**Env/runtime contract после implementation**
+### 4.2.4. Env и runtime assumptions, которые нужно зафиксировать
 
-- `NOTIFICATION_EMAIL_PROVIDER` и `NOTIFICATION_EMAIL_FROM` сохранены как базовый cross-runtime contract;
-- добавлены backend-only optional env keys `UNISENDER_API_KEY` и `UNISENDER_BASE_URL`;
-- эти ключи синхронизированы в [`.env.example`](../.env.example) и [`medusa-agency-boilerplate/.env.template`](../medusa-agency-boilerplate/.env.template) как strictly opt-in, а не baseline requirement.
+- baseline runtime остаётся привязан к текущему root orchestration contract: backend на `9000`, storefront на `8000`, template region = `ru` по умолчанию;
+- storefront baseline env ограничивается `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY`, `NEXT_PUBLIC_BASE_URL` и `NEXT_PUBLIC_DEFAULT_REGION`, а `NEXT_PUBLIC_STOREFRONT_PRESET` теперь допускается как optional `Фаза 6` switch для sanctioned client scenarios;
+- `NEXT_PUBLIC_YOOKASSA_ENABLED` остаётся opt-in public flag для уже подтвержденного payment slice;
+- `NEXT_PUBLIC_STRIPE_KEY`, `NEXT_PUBLIC_MEDUSA_PAYMENTS_PUBLISHABLE_KEY` и `NEXT_PUBLIC_MEDUSA_PAYMENTS_ACCOUNT_ID` допускаются только как optional compatibility env для reference adapter path, а не как baseline requirement;
+- отсутствие `/store/locales` должно оставаться baseline-safe и не ломать build/runtime;
+- storefront не получает новые public secrets для notification/VK/Payload tracks и не делает эти tracks частью core baseline.
 
-**Fallback, rollback и diagnosability**
+### 4.2.5. Required storefront files/areas для implementation шага
 
-- отсутствие `UNISENDER_API_KEY` при `NOTIFICATION_EMAIL_PROVIDER=unisender` больше не ломает startup/runtime: provider controlled-fallback'ится к `local`;
-- [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts:17) пишет явный warning о requested/resolved mismatch;
-- response contract authenticated smoke route с `provider.requested`, `provider.resolved`, `provider.fallback_to_local` и `provider.from` сохранён;
-- rollback path остаётся простым: вернуть `NOTIFICATION_EMAIL_PROVIDER=local`.
+- config/runtime: [`medusa-agency-boilerplate-storefront/.env.local.example`](../medusa-agency-boilerplate-storefront/.env.local.example), [`medusa-agency-boilerplate-storefront/src/lib/storefront-config.ts`](../medusa-agency-boilerplate-storefront/src/lib/storefront-config.ts), [`medusa-agency-boilerplate-storefront/src/lib/config.ts`](../medusa-agency-boilerplate-storefront/src/lib/config.ts), [`medusa-agency-boilerplate-storefront/src/middleware.ts`](../medusa-agency-boilerplate-storefront/src/middleware.ts), [`medusa-agency-boilerplate-storefront/src/lib/data/regions.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/regions.ts), [`medusa-agency-boilerplate-storefront/src/lib/data/locales.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/locales.ts);
+- shared shell and copy: [`medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/page.tsx`](../medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/page.tsx), [`medusa-agency-boilerplate-storefront/src/modules/home/components/hero/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/home/components/hero/index.tsx), [`medusa-agency-boilerplate-storefront/src/modules/layout/templates/footer/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/layout/templates/footer/index.tsx), [`medusa-agency-boilerplate-storefront/src/modules/layout/templates/nav/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/layout/templates/nav/index.tsx), [`medusa-agency-boilerplate-storefront/src/modules/layout/components/country-select/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/layout/components/country-select/index.tsx);
+- checkout/provider adaptation: [`medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment/index.tsx), [`medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-wrapper/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-wrapper/index.tsx), [`medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-container/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-container/index.tsx), [`medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx), [`medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx);
+- demo/onboarding cleanup: [`medusa-agency-boilerplate-storefront/src/modules/products/components/product-onboarding-cta/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/products/components/product-onboarding-cta/index.tsx), [`medusa-agency-boilerplate-storefront/src/modules/order/components/onboarding-cta/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/order/components/onboarding-cta/index.tsx), [`medusa-agency-boilerplate-storefront/src/modules/order/templates/order-completed-template.tsx`](../medusa-agency-boilerplate-storefront/src/modules/order/templates/order-completed-template.tsx), [`medusa-agency-boilerplate-storefront/src/lib/data/onboarding.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/onboarding.ts), [`medusa-agency-boilerplate-storefront/README.md`](../medusa-agency-boilerplate-storefront/README.md).
 
-**Validation status**
+### 4.2.6. Expected deliverables, validation strategy и sequencing
 
-- targeted code-level validation и type-surface sync выполнены для runtime/provider resolution и diagnostics contract;
-- отдельная live smoke/runtime проверка с реальными UniSender credentials в рамках этого шага не подтверждена, поэтому `unisender happy-path` остаётся зависимым от наличия валидного backend secret set в окружении.
+**Expected deliverables:**
+
+- storefront core без shopper-visible starter/demo branding;
+- синхронизированный RU-neutral copy/config baseline;
+- унифицированные region/runtime assumptions без скрытого возврата к demo defaults;
+- provider-aware checkout and shipping presentation, совместимый с текущими backend inputs без новых API;
+- storefront onboarding/readme notes, описывающие template backend contract, а не оригинальный starter.
+
+**Validation strategy:**
+
+- статическая проверка shared entrypoints на отсутствие shopper-visible `Medusa`, `demo`, `onboarding` и admin-setup CTA там, где это больше не часть baseline;
+- regression review для home, catalog, product, cart, checkout, account и confirmed order surfaces;
+- отдельная проверка того, что region switching и optional locales остаются baseline-safe;
+- отдельная проверка того, что текущий YooKassa-first checkout path и ApiShip `cheapest_only_v1` semantics не ломаются адаптацией storefront shell;
+- при implementation step использовать storefront build/lint/runtime smoke как validation surface, но не расширять baseline до новых integration tracks.
+
+**Recommended sequencing:**
+
+1. Сначала унифицировать runtime/config и region assumptions.
+2. Затем убрать shopper-visible starter/onboarding surfaces и starter docs.
+3. После этого дочистить shared copy и metadata до RU-neutral baseline.
+4. Затем довести payment/shipping presentation до provider-aware baseline без новых backend APIs.
+5. В конце зафиксировать validation notes и docs sync.
+
+### 4.2.7. Explicit non-goals для этого workstream
+
+- не запускать `VK ID`, `MTS Exolve`, Payload CMS, marketing pages или другой соседний roadmap track;
+- не делать клиентский visual branding system, theme engine или глубокую витринную кастомизацию под конкретного заказчика;
+- не вводить новые backend endpoints, новые payment providers, новый shipping scope или новый notification logic;
+- не расширять scope до multi-quote delivery UX, `providerConnectId` / `extraParams`, campaign/service pages или полноценного translation-management layer.
+
+### 4.3. Почему после `VK Community Messaging` сначала шёл `storefront core baseline v1`, а теперь следующим стал `MTS Exolve`
+
+- communication expansion `VK Community Messaging` уже материализован и закрыт, поэтому повторно называть его текущим planning-selected шагом больше нельзя;
+- storefront core действительно был ближайшим repo track и уже закрыт как предыдущий storefront-focused шаг, согласованный с [`Фаза 5. Общий storefront core и RU baseline`](./master_repo_plan_v2.md#фаза-5-общий-storefront-core-и-ru-baseline);
+- после закрытия storefront core и `VK ID v1` следующим явным opt-in communication track остаётся `MTS Exolve`;
+- sequencing по-прежнему безопаснее читать именно так, потому что marketing-layer и `Payload CMS v1` идут только после materialized channel stack и устойчивого storefront core.
+
+### 4.4. Закрытый delivery snapshot — `VK Community Messaging`
+
+**Что означает этот workstream в текущем repo state**
+
+- это **новый notification channel/provider** для Notification Module, а не замена существующего email runtime;
+- email path через [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:119), [`getNotificationEmailProviderDefinition()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:143), [`sendNotificationSmokeWorkflow`](../medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts) и [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts:26) остаётся source of truth для email и не переписывается в рамках VK rollout;
+- первый VK scope должен использовать **уже существующие lifecycle events/workflows как trigger source pattern**, а не открывать новый event surface без подтвержденной необходимости.
+
+**Какие notification slices входят в `v1`**
+
+- обязательный foundation slice: отдельный authenticated smoke path для канала `vk`;
+- service notification slices первого этапа:
+  - `order.placed`;
+  - `shipment.created`;
+  - `order.canceled`;
+- `payment_session.failed.customer.notification_requested` в `v1` **не входит**: pre-order `cart`-контекст и guest-checkout recipient binding пока хуже подходит для первого VK rollout, чем уже закрытые post-order order-level triggers;
+- marketing campaigns, broadcasts и audience orchestration в `v1` не входят, даже если transport позже будет переиспользован marketing-layer.
+
+**Trigger source и event surface**
+
+- source of truth для trigger boundary остаётся тем же, что и у email lifecycle paths: существующие Medusa events `order.placed`, `shipment.created`, `order.canceled`;
+- для `v1` не нужен новый upstream event surface, если достаточно подписаться на те же события отдельными VK subscribers или вызвать отдельные VK workflows из параллельного subscriber layer;
+- новый internal event surface допускается только позже, если появится подтвержденный runtime-pressure для multi-channel fan-out, но это не часть `v1` blueprint.
+
+**Required backend files/modules**
+
+- новый provider module: `medusa-agency-boilerplate/src/modules/notification-vk-community.ts`;
+- новый VK runtime/helper module для env parsing и recipient normalization: `medusa-agency-boilerplate/src/modules/notification-vk.ts`;
+- расширение provider registration в [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts) через добавление opt-in VK provider в Notification Module рядом с текущим email provider;
+- отдельный smoke workflow: `medusa-agency-boilerplate/src/workflows/send-vk-notification-smoke.ts`;
+- отдельный admin smoke route: `medusa-agency-boilerplate/src/api/admin/notifications/smoke/vk/route.ts`;
+- lifecycle workflows `v1`:
+  - `medusa-agency-boilerplate/src/workflows/send-order-placed-vk-notification.ts`;
+  - `medusa-agency-boilerplate/src/workflows/send-order-shipped-vk-notification.ts`;
+  - `medusa-agency-boilerplate/src/workflows/send-order-canceled-vk-notification.ts`;
+- lifecycle subscribers `v1`:
+  - `medusa-agency-boilerplate/src/subscribers/order-placed-vk-notification.ts`;
+  - `medusa-agency-boilerplate/src/subscribers/order-shipped-vk-notification.ts`;
+  - `medusa-agency-boilerplate/src/subscribers/order-canceled-vk-notification.ts`;
+- targeted validation surface:
+  - `medusa-agency-boilerplate/src/workflows/__tests__/notification-vk-runtime.unit.spec.ts`;
+  - `medusa-agency-boilerplate/src/workflows/__tests__/send-order-placed-vk-notification.unit.spec.ts`;
+  - `medusa-agency-boilerplate/src/workflows/__tests__/send-order-shipped-vk-notification.unit.spec.ts`;
+  - `medusa-agency-boilerplate/src/workflows/__tests__/send-order-canceled-vk-notification.unit.spec.ts`.
+
+**Env contract и provider credentials surface**
+
+- `NOTIFICATION_VK_PROVIDER` — opt-in selector для VK transport runtime, где baseline-default = `disabled`, а `community` означает явный запрос на VK Community Messaging provider;
+- `VK_COMMUNITY_ACCESS_TOKEN` — required только при `NOTIFICATION_VK_PROVIDER=community`;
+- `VK_COMMUNITY_GROUP_ID` — required только при `NOTIFICATION_VK_PROVIDER=community`;
+- `VK_API_VERSION` — optional override для VK API version, если implementation решит не хардкодить её в provider module;
+- storefront и public env не должны получать никакие VK transport secrets;
+- отсутствие всех `VK_*` переменных должно оставаться baseline-safe и не ломать clean onboarding, bootstrap, preflight, build или local email runtime.
+
+**Recipient resolution, dedupe и skip semantics**
+
+- canonical recipient для VK `v1` — не email, а нормализованный `vk_peer_id` как string;
+- первый storage surface для привязки recipient должен быть максимально узким и opt-in: `customer.metadata.vk_peer_id` как canonical mapping source для service notifications `v1`;
+- следствие для `v1`: VK lifecycle slices допускают controlled skip, если у order нет customer linkage или у customer отсутствует `metadata.vk_peer_id`;
+- dedupe authority не меняется: source of truth по duplicate suppression остаётся existing notification storage;
+- canonical dedupe identity для VK повторяет уже подтвержденную модель, но с `channel=vk` и VK recipient: `trigger_type + resource_type + resource_id + channel + template + normalized recipient`;
+- duplicate match должен оставаться controlled skip с diagnostics, а не отдельным resend-flow;
+- accepted limitation сохраняется: query-before-create race window остаётся допустимым ограничением и для VK `v1`.
+
+**Ожидаемая интеграция с Notification Module**
+
+- VK provider должен регистрироваться как второй opt-in provider в том же Notification Module, а не как отдельный ad-hoc transport bypass;
+- smoke и lifecycle VK workflows должны, как и email, создавать notification entity через Notification Module, чтобы не потерять единый storage, statuses и dedupe surface;
+- email и VK должны жить как параллельные каналы: одинаковый trigger source может приводить к email notification, VK notification или обоим, но без смешения provider-specific runtime helpers;
+- `VK Community Messaging` `v1` не должен требовать переписывания существующих email workflows, runtime helpers или smoke route.
+
+**Smoke и validation strategy**
+
+- существующий email smoke path через [`sendNotificationSmokeWorkflow`](../medusa-agency-boilerplate/src/workflows/send-notification-smoke.ts:60) и [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/route.ts:26) остаётся неизменным regression anchor;
+- для VK добавляется sibling smoke path с отдельным route/workflow, который проверяет auth, provider resolution и успешное создание `channel=vk` notification без касания email route contract;
+- unit validation для VK runtime должна подтвердить provider resolution semantics `disabled | community`, required credential guardrails и baseline-safe no-secret mode;
+- targeted workflow validation для VK lifecycle slices должна зеркалить email harness pattern: single send, missing recipient skip, duplicate suppression и отсутствие ложного dedupe между двумя разными resources;
+- live smoke на реального VK recipient допустим только как opt-in operator validation и не становится baseline regression requirement.
+
+**Sequencing относительно `VK ID`, `MTS Exolve` и marketing-layer**
+
+- `VK Community Messaging` идёт раньше `VK ID`: transport можно внедрить поверх manual или operator-managed `customer.metadata.vk_peer_id`, а `VK ID` позже автоматизирует и стандартизирует linking, но не владеет delivery;
+- `MTS Exolve` не смешивается с VK rollout и не использует его env/runtime surface;
+- marketing-layer позже должен переиспользовать transport как delivery adapter, но не должен появляться внутри `v1` transport implementation;
+- `Payload` и `admin` остаются выше по стеку: content и operations, а не transport credential owners.
 
 **Explicit non-goals**
 
-- не открывать параллельно `VK Community Messaging`, `VK ID`, `MTS Exolve` или отдельный marketing layer;
-- не менять lifecycle event contracts, dedupe identity, recipient rules, template ids и не переписывать existing order/payment notification slices;
-- не добавлять storefront features, marketing segmentation, consent model, delivery journal, campaign UI или customer channel preferences;
-- не превращать UniSender secrets в baseline requirement, не переносить их в storefront env и не документировать реальные ключи в markdown;
-- не расширять шаг до SMS/VK transport orchestration, promo content management или unrelated storefront work.
+- не переписывать existing email provider/runtime surface и не объединять его с VK в один большой cross-channel helper в том же шаге;
+- не менять existing lifecycle email workflows, their templates, recipient rules и dedupe boundaries;
+- не запускать `VK ID`, storefront linking UX, consent center, campaign builder, segmentation, suppression journal или marketing orchestration;
+- не покрывать `payment failed` в первом VK rollout;
+- не делать public/storefront env contract для VK secrets;
+- не превращать live VK smoke в обязательный regression-pack baseline;
+- не вводить новый dedicated delivery ledger, queue framework или storage-level lock только ради VK `v1`.
 
-**Minimal implementation order**
+**Фактический implementation result этого шага**
 
-1. Зафиксировать docs-level contract для `UniSender email migration v1`: scope, replacement boundary, expected env contract и fallback semantics.
-2. Реализовать provider/runtime migration в backend notification runtime и module registration, сохранив `local` baseline-default и requested/resolved diagnostics.
-3. Удержать authenticated smoke route и workflow как неизменный regression anchor для нового provider path.
-4. Провести targeted validation для `local`, `unisender happy-path` и `fallback-to-local` сценариев.
-5. Только после этого решать отдельный cleanup-step по удалению transitional SendGrid-specific naming и переходить к следующим communication-stack tracks.
+1. Opt-in VK provider/runtime surface и sibling authenticated VK smoke path материализованы без изменения email smoke contract.
+2. Lifecycle slice `order.placed` реализован для `channel=vk` поверх existing trigger source и existing notification storage dedupe model.
+3. Lifecycle slices `shipment.created` и `order.canceled` добавлены тем же pattern'ом.
+4. Step закрыт targeted validation без перехода к `VK ID`, `MTS Exolve` или marketing-layer.
 
 ---
 
@@ -388,31 +508,48 @@ checkout path уже закрыт, а текущий шаг — это не но
 - storefront `500` на checkout снят как ложный blocker для текущего shipping slice: проблема была в отсутствии или невалидности cart, а при валидном cart route отвечает `200`;
 - для template readiness теперь должен существовать один канонический regression-pack/source-of-truth с командами, expected results и failure signals в [Docs/template_readiness_regression.md](./template_readiness_regression.md);
 - remaining risks текущего этапа ограничены и явно известны:
-  - `UniSender email migration v1` ещё не реализован и требует точной замены текущего SendGrid-specific runtime bridge без поломки baseline-safe local path;
-  - approved future communication stack пока еще не материализован в runtime-коде:
-    - `UniSender` еще не заменил текущий SendGrid path в Medusa notification runtime;
-    - `VK Community Messaging` и `VK ID` еще не реализованы;
-    - `MTS Exolve` еще не реализован как SMS channel;
-    - отдельный `marketing layer` пока существует только как утвержденная архитектурная цель;
-  - migration должна сохранить stable smoke contract и requested/resolved provider diagnostics, а не подменить их новым ad-hoc route или прямым transport call из workflow;
+  - email runtime на `UniSender`, post-migration cleanup, `VK Community Messaging v1 foundation`, `storefront core baseline v1`, `VK ID v1`, `MTS Exolve` и `marketing layer v1` уже не являются активными blockers;
+  - `customer.metadata.vk_peer_id` и structured `customer.metadata.vk_link` остаются совместимым opt-in VK binding surface, а source-of-truth для marketing consent/preferences теперь материализован в `customer.metadata.marketing`;
+  - campaign storage и audit surface уже materialized как внутренние таблицы `marketing_campaign` и `marketing_delivery_journal`, поэтому marketing layer больше не считается design-only целью;
   - `providerConnectId` / `extraParams` support и true multi-quote checkout остаются deferred;
-  - race window в query-before-create dedupe для placed, shipped, failed-payment и canceled paths осознанно принят как accepted limitation и пока не закрыт отдельным storage-level lock;
+  - race window в query-before-create dedupe для placed, shipped, failed-payment, canceled, VK и SMS paths осознанно принят как accepted limitation и пока не закрыт отдельным storage-level lock;
   - ApiShip `cheapest_only_v1` подтверждён runtime-проверкой `2026-04-18`, но это не полноценный multi-quote UX;
+  - review notes по marketing layer остаются только non-blocker: query ergonomics для admin preferences update и manual URL parsing в dynamic admin campaign route.
 - повторный `npm run bootstrap` поверх уже заполненной БД подтвержден runtime validation как idempotent path и больше не является открытым hardening concern;
 - checkout end-to-end validation v1 закрыт: полный flow `shipping → hosted YooKassa payment → automatic return → review → order placement → confirmed order page` подтверждён runtime/E2E, а blockers сняты targeted fixes в [`payment-button/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx) и [`cookies.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts);
 - order lifecycle notifications v1 уже реализован как первый production-like customer-facing slice, а hardening v1.1 синхронизирован как действующий operational contract: subscriber [`orderPlacedNotificationHandler()`](../medusa-agency-boilerplate/src/subscribers/order-placed-notification.ts:5) слушает `order.placed`, workflow [`sendOrderPlacedNotificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-order-placed-notification.ts:308) делает query по минимальной форме `{ id, display_id, email }`, dedupe authority остается existing notification storage, canonical dedupe identity использует `trigger_type + resource_type + resource_id + channel + template + normalized recipient`, а duplicate suppression выполняется как controlled skip с diagnostics без второго notification;
 - `order shipped notification v1` уже реализован и его targeted validation закрыта через [send-order-shipped-notification.unit.spec.ts](../medusa-agency-boilerplate/src/workflows/__tests__/send-order-shipped-notification.unit.spec.ts): event = `shipment.created`, payload baseline = `{ id, no_notification }`, query baseline = `{ fulfillment.id, order.id, order.display_id, order.email }`, template = `order-shipped-v1`, trigger type = `shipment.created.customer.notification_requested`, canonical recipient = `order.email`, canonical dedupe resource identity = `fulfillment.id`;
-- `payment failed notification v1` уже реализован и его targeted validation закрыта через [send-payment-failed-notification.unit.spec.ts](../medusa-agency-boilerplate/src/workflows/__tests__/send-payment-failed-notification.unit.spec.ts): event = internal `payment_session.failed.customer.notification_requested`, canonical recipient = `cart.email`, canonical dedupe resource identity = `payment_session.id`, а duplicate suppression не смешивает два разных failed attempts одного cart;
+- `payment failed notification v1` уже реализован и его targeted validation закрыта через [`send-payment-failed-notification.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/send-payment-failed-notification.unit.spec.ts): event = internal `payment_session.failed.customer.notification_requested`, canonical recipient = `cart.email`, canonical dedupe resource identity = `payment_session.id`, а duplicate suppression не смешивает два разных failed attempts одного cart;
 - `order canceled notification v1` уже реализован и его targeted validation закрыта через [send-order-canceled-notification.unit.spec.ts](../medusa-agency-boilerplate/src/workflows/__tests__/send-order-canceled-notification.unit.spec.ts): event = `order.canceled`, canonical recipient = `order.email`, canonical dedupe resource identity = `order.id`, а duplicate suppression не смешивает два разных canceled orders одного recipient;
-- текущий step — **спроектировать `UniSender email migration v1`** как следующий communication-stack expansion поверх уже подтверждённых lifecycle contracts и smoke anchor;
-- рекомендуемый следующий implementation step после этого design sync — **implementation `UniSender email migration v1`**;
-- после этого communication roadmap читается так:
-  - implementation `UniSender email migration v1` как замены transitional SendGrid bridge;
-  - затем добавление `VK Community Messaging` как service и marketing channel;
-  - затем добавление `VK ID` как optional auth/identity link;
-  - затем добавление `MTS Exolve` как SMS channel;
-  - затем отдельный `marketing layer` с ролями `Payload = content`, `admin = operations`, `marketing layer = orchestration`;
-- Payload уже встроен в канонический план как post-storefront-core content layer, но не является текущей активной реализацией.
+- `MTS Exolve` уже реализован и закрыт как SMS channel: runtime/provider resolution материализованы в [`notification-sms.ts`](../medusa-agency-boilerplate/src/modules/notification-sms.ts), provider implementation — в [`notification-exolve.ts`](../medusa-agency-boilerplate/src/modules/notification-exolve.ts), smoke/admin route — в [`route.ts`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/sms/route.ts), middleware boundary — в [`defineMiddlewares()`](../medusa-agency-boilerplate/src/api/middlewares.ts:17), а targeted validation закрыта с результатом `3/3` suites PASS, `12/12` tests PASS и backend typecheck PASS;
+- `marketing layer v1` уже реализован и закрыт коммитом `a4711906b16523dcf03da9601ccf1a914702ca7d` `feat(marketing-layer): add marketing preferences and campaign workflows`: metadata-first consent surface живет в [`marketing-preferences.ts`](../medusa-agency-boilerplate/src/modules/marketing-preferences.ts), campaign and journal surface — в [`marketing-layer.ts`](../medusa-agency-boilerplate/src/modules/marketing-layer.ts), launch workflow — в [`send-marketing-campaign.ts`](../medusa-agency-boilerplate/src/workflows/send-marketing-campaign.ts), storefront profile section — в [`profile-marketing-preferences/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/account/components/profile-marketing-preferences/index.tsx), а validation закрыта как backend typecheck PASS + storefront typecheck PASS + `1` suite / `6` tests PASS с review verdict `approve`;
+- `Payload CMS v1` уже реализован и закрыт коммитом [`22486388f4c89d884b4c3cbe668ebec4ab695dee`](../package.json:1) `feat(content): add Payload CMS marketing content layer`: отдельный app [`payload-cms`](../payload-cms) materialized как content layer маркетинговых страниц, storefront получил content integration, preview/revalidate, globals и fallback behaviour, а root orchestration layer теперь включает payload scripts, env sync и blocker-fix по нормализации `NODE_ENV` в [`scripts/payload-run.sh`](../scripts/payload-run.sh:28);
+- финальный validation state для этого workstream зафиксирован как PASS по [`payload:types`](../package.json:25), [`payload:importmap`](../package.json:26) и [`payload:build`](../package.json:23), а final review verdict зафиксирован как approveable без blocking findings для commit;
+- residual non-blocking observations после review больше не считаются открытым security aftermath: preview access для draft globals и signed preview-exit доведены до закрытого состояния post-review hardening.
+- текущий roadmap step больше не находится внутри **Фазы 6**: `storefront customization` truthfully re-closed post-remediation checkpoint `2026-04-19`, а следующий roadmap transition теперь читается как readiness к **Фазе 7. Шаблонизация и ускорение запуска нового клиента**;
+- все sanctioned базовые `Phase 6` workstreams закрыты и остаются historical source-of-truth markers: [`Preset-driven landing-surface contract v1`](../plans/preset-driven-landing-surface-contract-v1.md), [`adjacent-preset-rollout-product-support-highlights.md`](../plans/adjacent-preset-rollout-product-support-highlights.md), [`preset-driven-listing-surface-contract-v1.md`](../plans/preset-driven-listing-surface-contract-v1.md), [`preset-driven-global-shell-contract-v1.md`](../plans/preset-driven-global-shell-contract-v1.md) и [`preset-driven-catalog-shell-contract-v1.md`](../plans/preset-driven-catalog-shell-contract-v1.md);
+- storefront customization удерживается на одном shared storefront core и на двух центральных selector/config authority:
+  - sanctioned preset selector остаётся только [`NEXT_PUBLIC_STOREFRONT_PRESET`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:21) с preset catalog `atelier|market`;
+  - sanctioned preset config authority остаётся [`storefront-client-config.ts`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts);
+  - typed [`landingSurfaces`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:317) покрывают `home`, `collectionLanding`, `contentPage` и `postPage` через [`collection-landing-surface/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/collection-landing-surface/index.tsx), [`content-page-surface/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/content-page-surface/index.tsx), [`post-page-surface/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/post-page-surface/index.tsx) и shared [`landing-surface-sections/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/landing-surface-sections/index.tsx);
+  - adjacent product display surface [`productSurfaces.supportHighlights`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:323) materialized через [`resolveProductSupportHighlightsSurface()`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/product-surface-resolver.ts:14) и [`ProductSupportHighlights`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/product-support-highlights/index.tsx:16);
+  - typed listing/card contract [`listingSurfaces.productCard`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:324) materialized через [`resolveDefaultProductCardSurface()`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/listing-surface-resolver.ts:14), [`resolveFeaturedProductCardSurface()`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/listing-surface-resolver.ts:17) и [`ProductCardSurface`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/product-card-surface.tsx:55);
+  - typed global shell contract [`StorefrontShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:74) materialized через [`resolveNavShellSurface()`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/shell-surface-resolver.ts:15), [`resolveSideMenuShellSurface()`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/shell-surface-resolver.ts:18), [`resolveFooterShellSurface()`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/shell-surface-resolver.ts:21) и thin seam в [`RootLayout`](../medusa-agency-boilerplate-storefront/src/app/layout.tsx:14);
+  - typed catalog shell contract [`catalogShell`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:325) materialized через [`resolveStoreCatalogIntroSurface()`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/catalog-shell-resolver.ts:15), [`resolveStoreCatalogResultsSurface()`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/catalog-shell-resolver.ts:18), [`resolveCollectionCatalogResultsSurface()`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/catalog-shell-resolver.ts:21), [`resolveFeaturedRailCatalogShellSurface()`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/catalog-shell-resolver.ts:24), [`StoreCatalogIntroSurface`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/catalog-shell-surface.tsx:51), [`CatalogResultsShellSurface`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/catalog-shell-surface.tsx:104) и [`FeaturedRailCatalogShellSurface`](../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/catalog-shell-surface.tsx:130).
+- truthful closure narrative для `Фазы 6` теперь зафиксирован явно:
+  - прежний closure verdict был overstated после закрытия базовых preset-driven slices и позже пересмотрен;
+  - reopening был признан валидным по трём gap'ам: category browse route вне sanctioned [`catalogShell`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:325) contour, related products вне sanctioned listing surface contract и loading/skeleton state вне card/listing contract;
+  - remediation slice по category browse contour закрыт коммитом `adb8df25ed64d9540e36588ee91dc5ff24951009` `fix(storefront): route category browse through catalogShell contour`;
+  - remediation slice по related products rail закрыт коммитом `275dc4d823b8203bd1d49364ba4d02211bf42799` `fix(storefront): move related products to sanctioned listing surface contract`;
+  - remediation slice по loading/skeleton sync закрыт коммитом `97a4837c483b054d25511f216ee487bf150306b4` `fix(storefront): align skeleton loading states with card surface contract`.
+- post-remediation regression/readiness checkpoint зафиксирован как **PASS**:
+  - category browse теперь routed через sanctioned `catalogShell` contour;
+  - related products rail теперь routed через sanctioned listing surface contract;
+  - loading/skeleton state синхронизирован с sanctioned card/listing contract;
+  - cross-preset typecheck/build для `atelier` и `market` завершён успешно;
+  - storefront `npm run lint` теперь проходит clean, а remaining warnings ограничены только controlled Store API warnings во время static params generation и не относятся к reopened gaps.
+- финальный readiness verdict для `Фазы 6` теперь такой: sanctioned preset-driven storefront customization **truthfully закрыта и готова к следующему roadmap stage**;
+- после truthful re-closure `Фазы 6` открытых пунктов внутри storefront customization больше нет, а дальнейшие открытые пункты лежат только в следующих roadmap стадиях: **Фаза 7** template/client packaging и **Фаза 8** release-grade checks, CI, staging и production readiness.
 
 ---
 
@@ -444,13 +581,16 @@ checkout path уже закрыт, а текущий шаг — это не но
 6. По умолчанию работать так:
    - считать notification-track закрытым на уровне hardening v1 и order lifecycle notifications hardening v1.1;
    - считать order lifecycle notifications v1 уже реализованным как первый production-like customer-facing slice с anti-duplicate contract поверх existing notification storage, включая shipped, failed-payment и canceled expansions;
+   - считать `UniSender email migration v1`, `post-UniSender cleanup-step`, `VK Community Messaging v1 foundation`, `storefront core baseline v1`, `VK ID v1`, `MTS Exolve`, `marketing layer v1` и `Payload CMS v1` закрытыми workstreams;
    - считать payment v1 подтвержденным YooKassa-first path;
    - считать shipping v1 подтверждённым ApiShip-first rate-selection slice `cheapest_only_v1` — runtime-проверка `2026-04-18` пройдена;
    - считать **bootstrap idempotency hardening v1** подтвержденным runtime validation;
    - считать checkout end-to-end validation v1 закрытым подтвержденным runtime/E2E результатом;
+   - считать payload content layer закрытым commit-уровнем, validation PASS по [`payload:types`](../package.json:25), [`payload:importmap`](../package.json:26), [`payload:build`](../package.json:23) и review-level residual observations без blocking findings;
    - использовать [template_readiness_regression.md](./template_readiness_regression.md) как source of truth по локальным regression-командам и failure signals;
-   - следующим workstream считать **design `UniSender email migration v1`**, а authenticated smoke path удерживать как отдельный regression anchor для provider migration.
-7. Не начинать Payload implementation, пока по плану не дойдем до storefront core и отдельного content-layer трека.
+   - считать storefront production build перед `Фазой 6` защищённым от обязательной live-зависимости на backend во время SSG static params collection;
+   - считать **Фазу 6 storefront customization** truthfully закрытой только после уже зафиксированного reopen/remediation cycle: sanctioned preset-driven stack materialized, три reopened gap'а закрыты remediation-коммитами, post-remediation cross-preset checkpoint зафиксирован как PASS, поэтому повторно Phase 6 не переоткрывать без нового evidence и использовать authenticated smoke path только как отдельный regression anchor вне storefront customization scope.
+7. Не начинать template release или phase `7/8` work, пока по плану не дойдем до соответствующих фаз после **Фазы 6**.
 8. После значимых изменений обновить:
    - [current_work.md](./current_work.md)
    - [template_readiness_regression.md](./template_readiness_regression.md), если меняется сам regression-pack;

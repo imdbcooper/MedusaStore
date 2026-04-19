@@ -1,6 +1,6 @@
 # Template Readiness Regression Pack
 
-> Статус документа: канонический regression-pack для локальной проверки template readiness по состоянию на `2026-04-17`
+> Статус документа: канонический regression-pack для локальной проверки template readiness по состоянию на `2026-04-19`
 >
 > Назначение: зафиксировать минимальный, воспроизводимый и профессиональный набор проверок для уже реализованных критичных путей без построения отдельного CI-контура.
 
@@ -17,6 +17,8 @@
    - `GET /store/payment/yookassa/return`;
    - `POST /yookassa/webhook`;
 4. текущий поддерживаемый ApiShip scope через `GET /store/apiship/rates` как `cheapest_only_v1` + safe-by-default env semantics.
+
+Отдельно как baseline hardening expectation удерживается и storefront build path: `npm --prefix medusa-agency-boilerplate-storefront run build` не должен падать только потому, что во время SSG static params collection недоступен live Store API. На closure checkpoint `2026-04-19` этот baseline был дополнительно подтверждён финальным cross-preset regression pass verdict **PASS** для `NEXT_PUBLIC_STOREFRONT_PRESET=atelier` и `NEXT_PUBLIC_STOREFRONT_PRESET=market` на browse surface matrix `landing + product support highlights + listing/product cards + global shell + catalog shell`.
 
 Этот документ не расширяет scope до полноценного test framework, e2e harness или CI redesign.
 
@@ -56,6 +58,8 @@ npm run dev
 - `npm run bootstrap` завершается не `0` на clean baseline;
 - `npm run preflight` завершается не `0` после успешного bootstrap;
 - storefront `.env.local` сохраняет placeholder `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=REPLACE_WITH_ROOT_BOOTSTRAP` после успешного bootstrap;
+- storefront `next build` hard-fail'ится только из-за недоступного backend во время SSG static params collection;
+- cross-preset build verification для `atelier` и `market` перестаёт проходить на уже закрытом preset-driven stack browse surfaces.
 - backend health-check не отвечает на `/health` после ожидаемого старта;
 - opt-in integration path начинает требовать секреты для baseline startup.
 
@@ -115,7 +119,7 @@ npm run bootstrap
 
 ### Цель
 
-Подтвердить, что authenticated smoke path для notifications остается воспроизводимым и baseline-safe.
+Подтвердить, что authenticated smoke path для notifications остается воспроизводимым, baseline-safe и согласованным с canonical naming `local|unisender`.
 
 ### Каноническая команда
 
@@ -143,7 +147,7 @@ npm run smoke:notification
   - `notification`;
 - `auth.secret_api_key` равен `true`;
 - `provider.requested` и `provider.resolved` отражают текущую runtime-semantics;
-- при `NOTIFICATION_EMAIL_PROVIDER=sendgrid` без `SENDGRID_API_KEY` ответ остается успешным, а `provider.fallback_to_local` должен показывать fallback-поведение.
+- при `NOTIFICATION_EMAIL_PROVIDER=unisender` без `UNISENDER_API_KEY` ответ остается успешным, а `provider.fallback_to_local` должен показывать fallback-поведение.
 
 ### Что считается regression signal
 
@@ -333,7 +337,7 @@ Expected non-crash responses:
 
 ## 8. Как использовать этот документ как source of truth
 
-Если нужно понять, что именно прогонять для template readiness, использовать этот документ как канонический regression-pack, а рядом держать:
+Если нужно понять, что именно прогонять для template readiness, использовать этот документ как канонический regression-pack, а рядом держать. Для closure sync `2026-04-19` этот документ также удерживает truthful final readiness marker для `Фазы 6 storefront customization`: первоначальный closure verdict был later reopened по трём валидным gap'ам, затем remediation закрыла category browse contour, related products rail и loading/skeleton contract sync, а post-remediation cross-preset pass зафиксировал финальный readiness verdict **PASS**. Accepted baseline observations для этого финального checkpoint ограничены controlled Store API warnings during static params generation; storefront [`npm run lint`](../medusa-agency-boilerplate-storefront/package.json:14) после remediation lint stack и hook-dependency cleanup проходит clean. Эти warnings не считаются blockers закрытой `Фазы 6 storefront customization` и не относятся к reopened gap'ам.
 
 - `Docs/current_work.md` — operational sequencing;
 - `Docs/plan_analysis.md` — честный аудит текущего статуса;

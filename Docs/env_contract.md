@@ -1,6 +1,6 @@
 # Env Contract
 
-> Статус документа: рабочая спецификация окружения по состоянию на `2026-04-17`
+> Статус документа: рабочая спецификация окружения по состоянию на `2026-04-19`
 >
 > Назначение: зафиксировать, какой `.env` за что отвечает в проекте и какие команды теперь считаются каноническими для локальной разработки.
 
@@ -57,13 +57,18 @@
 - `AUTH_CORS`
 - `NOTIFICATION_EMAIL_PROVIDER`
 - `NOTIFICATION_EMAIL_FROM`
-- `SENDGRID_API_KEY`
+- `UNISENDER_API_KEY`
+- `UNISENDER_BASE_URL`
 - `MEDUSA_BACKEND_URL`
 - `NOTIFICATION_SMOKE_TO`
 - `NOTIFICATION_SMOKE_SUBJECT`
 - `NOTIFICATION_SMOKE_MESSAGE`
 - `APISHIP_TOKEN`
 - `APISHIP_TEST_MODE`
+- `NOTIFICATION_SMS_PROVIDER`
+- `MTS_EXOLVE_API_KEY`
+- `MTS_EXOLVE_SENDER`
+- `MTS_EXOLVE_BASE_URL`
 - `YOOKASSA_SHOP_ID`
 - `YOOKASSA_SECRET_KEY`
 - `YOOKASSA_RETURN_URL`
@@ -78,7 +83,7 @@ root-level скрипты используют этот файл как исто
 Интеграционные guardrails этого слоя:
 - `NOTIFICATION_EMAIL_PROVIDER` и `NOTIFICATION_EMAIL_FROM` описывают только желаемый notification runtime, но не делают внешнего email provider обязательным для baseline;
 - `NOTIFICATION_EMAIL_PROVIDER=local` — подтвержденный baseline-default как в [medusa-agency-boilerplate/.env.template](../medusa-agency-boilerplate/.env.template), так и в [.env.example](../.env.example);
-- `SENDGRID_API_KEY` — строго **opt-in** секрет для текущего transitional SendGrid path; пустое значение не должно ломать startup, build и runtime, а при `NOTIFICATION_EMAIL_PROVIDER=sendgrid` система должна безопасно падать обратно на local provider;
+- `UNISENDER_API_KEY` и optional `UNISENDER_BASE_URL` — строго **opt-in** backend-only keys для текущего production email path; пустое значение не должно ломать startup, build и runtime, а при `NOTIFICATION_EMAIL_PROVIDER=unisender` система должна безопасно падать обратно на local provider;
 - `MEDUSA_BACKEND_URL`, `NOTIFICATION_SMOKE_TO`, `NOTIFICATION_SMOKE_SUBJECT` и `NOTIFICATION_SMOKE_MESSAGE` — helper-переменные только для локального authenticated smoke path; они не являются baseline requirement и не должны содержать реальные боевые секреты;
 - `APISHIP_TOKEN` — строго **opt-in** переменная для включения ApiShip shipping slice; пустое значение означает, что provider не должен регистрироваться и baseline onboarding, build и runtime не должны ломаться; при этом подтверждённый runtime path `2026-04-18` был проверен именно с production token, без фиксации самого секрета в документации;
 - `APISHIP_TEST_MODE` — safe-by-default флаг выбора ApiShip endpoint: шаблонный default теперь `true`, пустое или невалидное значение трактуется как test-mode, а live допускается только при явном `false`; это правило теперь закрыто и на orchestration-слое, потому что [scripts/env-sync.sh](../scripts/env-sync.sh) при отсутствии root-переменной синхронизирует в backend env именно `true`, а не live-значение; подтверждённый runtime path `2026-04-18` был проверен в live-режиме через явное `APISHIP_TEST_MODE=false`;
@@ -110,7 +115,8 @@ root-level скрипты используют этот файл как исто
 - `COOKIE_SECRET`
 - `NOTIFICATION_EMAIL_PROVIDER`
 - `NOTIFICATION_EMAIL_FROM`
-- `SENDGRID_API_KEY`
+- `UNISENDER_API_KEY`
+- `UNISENDER_BASE_URL`
 - `MEDUSA_BACKEND_URL`
 - `NOTIFICATION_SMOKE_TO`
 - `NOTIFICATION_SMOKE_SUBJECT`
@@ -124,6 +130,10 @@ root-level скрипты используют этот файл как исто
 - `YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS`
 - `APISHIP_TOKEN`
 - `APISHIP_TEST_MODE`
+- `NOTIFICATION_SMS_PROVIDER`
+- `MTS_EXOLVE_API_KEY`
+- `MTS_EXOLVE_SENDER`
+- `MTS_EXOLVE_BASE_URL`
 
 Простыми словами:
 если корневой `.env` описывает инфраструктуру и orchestration, то backend `.env` описывает то, как Medusa должна работать как приложение.
@@ -132,30 +142,78 @@ root-level скрипты используют этот файл как исто
 
 #### Notifications
 
-- `NOTIFICATION_EMAIL_PROVIDER` нормализуется через [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:95) в два значения: `requestedProviderId` и `providerId`.
+- `NOTIFICATION_EMAIL_PROVIDER` нормализуется через [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:119) в два значения: `requestedProviderId` и `providerId`.
 - `NOTIFICATION_EMAIL_PROVIDER=local` — подтвержденный baseline-default.
-- Если requested provider равен `sendgrid`, но `SENDGRID_API_KEY` пустой, runtime остается baseline-safe:
+- Если requested provider равен `unisender`, но `UNISENDER_API_KEY` пустой, runtime остается baseline-safe:
   - Medusa startup, build и runtime не ломаются;
-  - в [medusa-config.ts](../medusa-agency-boilerplate/medusa-config.ts:17) фиксируется warn про fallback;
-  - итоговый provider definition остается local через [`getNotificationEmailProviderDefinition()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:114).
-- `NOTIFICATION_EMAIL_FROM` задает sender для runtime, smoke workflow и `order.placed` lifecycle workflow, но не делает внешний provider обязательным.
-- Ни один markdown-документ этого репозитория не должен содержать фактическое значение `SENDGRID_API_KEY` или другого notification secret.
+  - в [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts:17) фиксируется warn про fallback;
+  - итоговый provider definition остается local через [`getNotificationEmailProviderDefinition()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:143).
+- `NOTIFICATION_EMAIL_FROM` задает sender для runtime, smoke workflow и lifecycle workflows, но не делает внешний provider обязательным.
+- Ни один markdown-документ этого репозитория не должен содержать фактическое значение `UNISENDER_API_KEY`, `UNISENDER_BASE_URL` c секретным query/token payload или другого notification secret.
 
-#### Approved future communication stack and designed next email migration workstream
+#### Approved communication stack after delivered UniSender, VK, SMS and marketing workstreams
 
-На уровне roadmap уже зафиксированы такие будущие направления:
-- `UniSender` — целевой email provider для service и marketing email;
-- `VK Community Messaging` — целевой VK transport для service и marketing messages;
+На уровне roadmap уже зафиксированы такие направления:
+- `UniSender` — целевой email provider для service и marketing email, уже materialized в runtime;
+- `VK Community Messaging` — целевой VK transport для service и marketing messages, уже materialized как opt-in provider/channel;
 - `VK ID` — optional auth/identity layer для привязки сайта к VK-каналу пользователя;
-- `MTS Exolve` — целевой SMS provider;
-- отдельный `marketing layer` — orchestration, consent, segmentation, frequency cap, suppression и delivery journal.
+- `MTS Exolve` — целевой SMS provider, уже materialized как opt-in transport/channel;
+- `marketing layer v1` — уже materialized orchestration слой с metadata-first consent/preferences contract, campaign execution, frequency cap, suppression и delivery journal.
 
-Guardrails для этого будущего env-contract:
-- базовый cross-runtime selector по-прежнему проходит через `NOTIFICATION_EMAIL_PROVIDER`, а backend-only opt-in secret для текущего email transport path теперь материализован как `UNISENDER_API_KEY`;
-- новые provider-specific env keys для `VK`, `VK ID` и `Exolve` пока не считаются каноническими и не должны добавляться в шаблоны как baseline requirement до старта соответствующих implementation workstream'ов;
-- при их появлении они должны остаться strictly opt-in и не ломать clean onboarding без внешних communication secrets;
-- storefront не должен получать приватные provider secrets ни для `UniSender`, ни для `VK`, ни для `Exolve`;
+Guardrails для этого env-contract:
+- базовый email selector по-прежнему проходит через `NOTIFICATION_EMAIL_PROVIDER`, а backend-only opt-in secret для текущего email transport path материализован как `UNISENDER_API_KEY`;
+- `VK Community Messaging v1` уже реализован как отдельный opt-in transport surface и не меняет baseline-safe email contract;
+- `VK ID v1` уже materialized как отдельный optional identity-linking surface и не меняет baseline-safe transport startup contract;
+- `MTS Exolve` уже materialized как отдельный opt-in SMS transport surface и не меняет baseline-safe startup contract для clean onboarding;
+- metadata-first source of truth для marketing consent/preferences теперь живет в [`MarketingPreferences`](../medusa-agency-boilerplate/src/modules/marketing-preferences.ts:37) внутри `customer.metadata.marketing`, а не в отдельном provider-owned storage;
+- campaign and audit surface теперь живут в backend-only таблицах [`marketing_campaign`](../medusa-agency-boilerplate/src/modules/marketing-layer.ts:307) и [`marketing_delivery_journal`](../medusa-agency-boilerplate/src/modules/marketing-layer.ts:333);
+- storefront не должен получать приватные provider secrets ни для `UniSender`, ни для `VK`, ни для `Exolve`, а для `VK ID` допустим только public feature-flag без client secret;
 - `Payload` не должен становиться местом хранения provider secrets, consent truth или delivery journal; его зона ответственности — content, а не transport credentials.
+
+#### Implemented `VK Community Messaging v1` env/runtime contract
+
+Фактически реализованный contract для текущего communication-step теперь такой:
+- `VK Community Messaging` введён как **новый Notification Module provider/channel**, а не как замена email runtime в [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:119) или [`getNotificationEmailProviderDefinition()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:143);
+- baseline-safe startup сохранён: при отсутствии VK env keys backend startup, build, bootstrap, preflight и email runtime не ломаются;
+- минимальный opt-in backend contract `v1` материализован через:
+  - `NOTIFICATION_VK_PROVIDER` со значениями `disabled | community`, где default = `disabled`;
+  - `VK_COMMUNITY_ACCESS_TOKEN` как required secret только при `NOTIFICATION_VK_PROVIDER=community`;
+  - `VK_COMMUNITY_GROUP_ID` как required identifier только при `NOTIFICATION_VK_PROVIDER=community`;
+  - optional `VK_API_VERSION`;
+- новые VK keys добавлены в [`.env.example`](../.env.example) и [`medusa-agency-boilerplate/.env.template`](../medusa-agency-boilerplate/.env.template) как optional и синхронизируются в backend через [`env-sync.sh`](../scripts/env-sync.sh), но storefront `.env.local` и публичные runtime surfaces не получают VK transport secrets;
+- provider/runtime surface материализован в [`notification-vk.ts`](../medusa-agency-boilerplate/src/modules/notification-vk.ts:1), а provider registration идёт через [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts:10) и custom provider [`notification-vk-community.ts`](../medusa-agency-boilerplate/src/modules/notification-vk-community.ts:1);
+- runtime фиксирует requested/resolved semantics отдельно: `community` без полного набора credentials controlled-resolve'ится в `disabled`, а [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts:32) пишет явный warning про disabled fallback;
+- sibling VK smoke и lifecycle VK workflows, как и email path, создают notification entity через Notification Module, так что dedupe authority остаётся в existing notification storage;
+- canonical recipient для `VK Community Messaging v1` реализован не как email, а как нормализованный `vk_peer_id`; минимальный mapping-source для service notifications `v1` = `customer.metadata.vk_peer_id` через helper [`resolveCustomerVkPeerId()`](../medusa-agency-boilerplate/src/modules/notification-vk.ts:54);
+- controlled skip при отсутствии customer linkage или `customer.metadata.vk_peer_id` считается нормальной baseline-semantics для opt-in VK rollout, а не runtime error.
+
+#### Implemented `VK ID v1` env/runtime contract
+
+Фактически реализованный contract для optional identity-linking шага теперь такой:
+- `VK ID` введён как отдельный auth and linking helper surface поверх already delivered VK transport, а не как transport replacement или prerequisite для `VK Community Messaging`;
+- baseline-safe startup сохранён: при отсутствии VK ID env keys backend startup, build, bootstrap, preflight, existing VK transport и storefront baseline runtime не ломаются;
+- минимальный opt-in backend contract materialized через `VK_ID_ENABLED`, `VK_ID_CLIENT_ID`, `VK_ID_CLIENT_SECRET`, `VK_ID_REDIRECT_URI`, optional `VK_ID_SCOPES`, `VK_ID_SESSION_SECRET`, `VK_ID_STOREFRONT_RETURN_ORIGINS` в [`.env.example`](../.env.example), [`medusa-agency-boilerplate/.env.template`](../medusa-agency-boilerplate/.env.template) и root sync path [`env-sync.sh`](../scripts/env-sync.sh:95);
+- storefront получает только public feature-flag `NEXT_PUBLIC_VK_ID_ENABLED` в [`medusa-agency-boilerplate-storefront/.env.local.example`](../medusa-agency-boilerplate-storefront/.env.local.example) и через [`env-sync.sh`](../scripts/env-sync.sh:119), без передачи `VK_ID_CLIENT_SECRET` или других backend-only secrets в public runtime;
+- runtime фиксирует requested/resolved semantics отдельно: `VK_ID_ENABLED=true` без полного набора credentials controlled-resolve'ится в disabled linking surface, а profile UI остаётся скрытым при `NEXT_PUBLIC_VK_ID_ENABLED=false`;
+- authenticated customer linking routes materialized в [`route.ts`](../medusa-agency-boilerplate/src/api/store/customers/me/vk-id/route.ts), [`route.ts`](../medusa-agency-boilerplate/src/api/store/customers/me/vk-id/start/route.ts), [`route.ts`](../medusa-agency-boilerplate/src/api/store/customers/me/vk-id/unlink/route.ts) и callback [`route.ts`](../medusa-agency-boilerplate/src/api/store/vk-id/callback/route.ts), а storefront account UX — в [`index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/account/components/profile-vk-link/index.tsx);
+- metadata contract намеренно legacy-compatible: existing transport-facing truth `customer.metadata.vk_peer_id` сохраняется для delivery compatibility, а structured `customer.metadata.vk_link` хранит provider-aware linking state, `vk_user_id`, `vk_peer_id`, `linked_at`, `last_verified_at`, `link_source`, `link_status`, `unlinked_at` через [`resolveVkLinkState()`](../medusa-agency-boilerplate/src/modules/vk-id.ts:626);
+- unlink contract не разрушает historical state: root `vk_peer_id` убирается, а structured `vk_link` остаётся с `link_status=unlinked`, чтобы account UX и diagnostics сохраняли предыдущее состояние;
+- return-url и storefront-origin contract зафиксирован как allowlisted opt-in surface, а local fallback допустим только для controlled dev/test semantics внутри [`getAllowedStorefrontOrigins()`](../medusa-agency-boilerplate/src/modules/vk-id.ts:234);
+- workstream закрыт после blocker-fix cycle, repeat targeted validation `8/8` tests PASS + backend typecheck PASS и review verdict `approve`.
+
+#### Implemented `MTS Exolve` SMS env/runtime contract
+
+Фактически реализованный contract для optional SMS шага теперь такой:
+- `MTS Exolve` введён как **новый Notification Module provider/channel** c `channel = sms`, а не как замена email runtime в [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:119) или VK runtime в [`getNotificationVkRuntime()`](../medusa-agency-boilerplate/src/modules/notification-vk.ts:96);
+- baseline-safe startup сохранён: при отсутствии SMS env keys backend startup, build, bootstrap, preflight и existing email/VK runtime не ломаются;
+- минимальный opt-in backend contract materialized через `NOTIFICATION_SMS_PROVIDER` со значениями `disabled | exolve`, `MTS_EXOLVE_API_KEY`, `MTS_EXOLVE_SENDER` и optional `MTS_EXOLVE_BASE_URL` в [`.env.example`](../.env.example) и [`medusa-agency-boilerplate/.env.template`](../medusa-agency-boilerplate/.env.template);
+- runtime/provider resolution материализованы в [`getNotificationSmsRuntime()`](../medusa-agency-boilerplate/src/modules/notification-sms.ts:107) и [`getNotificationSmsProviderDefinition()`](../medusa-agency-boilerplate/src/modules/notification-sms.ts:128): default = `disabled`, а `exolve` без полного набора credentials controlled-resolve'ится обратно в `disabled`;
+- [`defineConfig()`](../medusa-agency-boilerplate/medusa-config.ts:98) регистрирует provider `exolve` только при полном configured state, а при `NOTIFICATION_SMS_PROVIDER=exolve` без `MTS_EXOLVE_API_KEY` и/или `MTS_EXOLVE_SENDER` пишет явный warn из [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts:40);
+- provider implementation materialized в [`ExolveNotificationService`](../medusa-agency-boilerplate/src/modules/notification-exolve.ts:29): provider валидирует `api_key` и `sender`, normalizes `base_url`, нормализует phone через [`normalizeSmsPhone()`](../medusa-agency-boilerplate/src/modules/notification-sms.ts:57), отправляет `POST` в Exolve API и пытается извлечь `message_id` из response body;
+- canonical admin smoke surface materialized в route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/sms/route.ts:25) для `/admin/notifications/smoke/sms`, а blocker на boundary закрыт matcher'ом [`defineMiddlewares()`](../medusa-agency-boilerplate/src/api/middlewares.ts:17) для [`"/admin/notifications/smoke/sms"`](../medusa-agency-boilerplate/src/api/middlewares.ts:36), чтобы route получал auth и body validation так же, как sibling smoke routes;
+- smoke workflow [`sendSmsNotificationSmokeWorkflow`](../medusa-agency-boilerplate/src/workflows/send-sms-notification-smoke.ts:118) остаётся provider-aware и diagnostics-friendly: при disabled runtime даёт controlled skip `provider_not_configured`, при невалидном номере — `missing_or_invalid_phone`, а при send path пишет notification через existing Notification Module;
+- lifecycle SMS recipients для order-like flows materialized через [`resolveOrderLikeSmsRecipient()`](../medusa-agency-boilerplate/src/workflows/notification-sms-shared.ts:71) с canonical fallback chain `shipping_address.phone → billing_address.phone → customer.phone`, а duplicate suppression по-прежнему опирается на existing notification storage;
+- repeat targeted validation для workstream подтверждена: `3/3` suites PASS, `12/12` tests PASS, backend typecheck PASS, review verdict `approve`, финальный commit = `b13f6fa93473bb8bc0320566a75d264d60739784`.
 
 #### Implemented `UniSender email migration v1` env/runtime contract
 
@@ -276,13 +334,15 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - `MEDUSA_BACKEND_URL` используется в [src/lib/config.ts](/home/somdev/Projects/medusa-agency-boilerplate/medusa-agency-boilerplate-storefront/src/lib/config.ts:5)
 - `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` и `NEXT_PUBLIC_DEFAULT_REGION` используются в [src/middleware.ts](/home/somdev/Projects/medusa-agency-boilerplate/medusa-agency-boilerplate-storefront/src/middleware.ts:4)
 - `NEXT_PUBLIC_BASE_URL` используется в [src/lib/util/env.ts](/home/somdev/Projects/medusa-agency-boilerplate/medusa-agency-boilerplate-storefront/src/lib/util/env.ts:2)
+- optional `NEXT_PUBLIC_STOREFRONT_PRESET` используется в [src/lib/env.ts](/home/somdev/Projects/medusa-agency-boilerplate/medusa-agency-boilerplate-storefront/src/lib/env.ts:14) и [src/lib/storefront-client-config.ts](/home/somdev/Projects/medusa-agency-boilerplate/medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:1) как единственный sanctioned Phase 6 switch между preset scenarios `atelier` и `market`, включая уже закрытые typed [`landingSurfaces`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:317) для `home`, `collectionLanding`, `contentPage`, `postPage`, adjacent typed [`productSurfaces.supportHighlights`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:323), typed listing/card contract [`listingSurfaces.productCard`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:324), typed global shell contract [`StorefrontShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:74) и typed catalog shell contract [`StorefrontCatalogShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:298)
 - `NEXT_PUBLIC_YOOKASSA_ENABLED` остается storefront opt-in flag для payment path и не является baseline requirement, что видно в [medusa-agency-boilerplate-storefront/.env.local.example](../medusa-agency-boilerplate-storefront/.env.local.example)
 
 Практическое правило:
 - publishable key хранится здесь;
 - backend URL может задаваться здесь;
 - root-level скрипты могут подставлять `MEDUSA_BACKEND_URL` и `NEXT_PUBLIC_BASE_URL` сверху, если запуск идет через корневые команды;
-- storefront не хранит отдельный ApiShip token, SendGrid API key или secret admin API key и не должен получать эти значения в публичный env;
+- `NEXT_PUBLIC_STOREFRONT_PRESET` остается optional public config: при отсутствии или невалидном значении storefront безопасно откатывается к preset `atelier`, а sanctioned client-specific divergence должна оформляться через preset/config layer, typed landing-surface registry, adjacent product surfaces, typed listing/card contract, typed global shell contract [`StorefrontShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:74), typed catalog shell contract [`StorefrontCatalogShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:298) и sanctioned resolver boundaries, а не через форк shared templates;
+- storefront не хранит отдельный ApiShip token, `UNISENDER_API_KEY`, `UNISENDER_BASE_URL` с credential-параметрами или secret admin API key и не должен получать эти значения в публичный env;
 - текущий первый ApiShip slice использует storefront только как consumer backend route [src/lib/data/apiship.ts](../medusa-agency-boilerplate-storefront/src/lib/data/apiship.ts:22), а все чувствительные integration credentials остаются на backend стороне;
 - notification authenticated smoke path является backend-admin concern и не должен переноситься в storefront env;
 - cart identity для checkout runtime хранится storefront-side cookie helper [`setCartId()`](../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts:74), и для подтвержденного YooKassa hosted return path эта cookie policy должна оставаться совместимой с cross-site return;
@@ -368,7 +428,7 @@ Guardrail:
 ### Канонический authenticated notification smoke path
 
 После закрытия notification hardening v1 и синхронизации `order lifecycle notifications hardening v1.1` для локальной проверки notifications каноническим считается только такой порядок:
-1. оставить `NOTIFICATION_EMAIL_PROVIDER=local` как baseline-default или явно понимать, что `sendgrid` без `SENDGRID_API_KEY` все равно будет разрешен в `local` fallback;
+1. оставить `NOTIFICATION_EMAIL_PROVIDER=local` как baseline-default или явно понимать, что `unisender` без `UNISENDER_API_KEY` все равно будет разрешен в `local` fallback;
 2. создать fresh secret admin API key через helper [`createSecretAdminApiKey()`](../medusa-agency-boilerplate/src/scripts/create-secret-admin-api-key.ts:22);
 3. использовать полученный fresh `sk_*` key в Basic auth формате `Authorization: Basic <base64(secret_api_key:)>`;
 4. вызвать backend route `POST /admin/notifications/smoke`;
@@ -387,11 +447,11 @@ Guardrail:
 
 Guardrails этого пути:
 - docs и templates не должны содержать реальный `sk_*` key;
-- docs и templates не должны содержать реальный `SENDGRID_API_KEY`;
+- docs и templates не должны содержать реальный `UNISENDER_API_KEY`, credential-bearing `UNISENDER_BASE_URL` или другой notification secret;
 - reuse старого уже прочитанного secret token не считается каноническим способом smoke-проверки;
 - helper не заменяет route contract и не считается новой baseline requirement;
 - authenticated smoke path — opt-in operational path, а не обязательная часть clean onboarding baseline.
-- будущие communication providers `UniSender`, `VK Community Messaging`, `VK ID` и `MTS Exolve` не должны превращаться в baseline requirement для smoke или clean onboarding, пока их integration workstreams не начаты и не подтверждены отдельно.
+- уже materialized communication providers `UniSender` и `VK Community Messaging`, а также будущие tracks `VK ID` и `MTS Exolve`, не должны превращаться в baseline requirement для smoke или clean onboarding вне их explicit opt-in contract.
 
 Статус по ApiShip и checkout для этого канонического пути:
 - отсутствие `APISHIP_TOKEN` считается подтвержденным baseline-safe состоянием;
@@ -403,8 +463,16 @@ Guardrails этого пути:
 - полная runtime-цепочка `shipping → hosted YooKassa payment → automatic return → review → order placement → confirmed order page` теперь подтверждена end-to-end;
 - practical return contract после hosted payment теперь такой: storefront должен вернуться в review state с сохранённым cart context, не вызывать `placeOrder()` до hosted authorization и только затем завершать order placement;
 - `order lifecycle notifications v1` уже реализован как первый production-like slice от события `order.placed`, а hardening v1.1 фиксирует anti-duplicate contract через existing notification storage, normalized recipient matching, controlled duplicate suppression и accepted race window;
-- shipped slice и его validation уже закрыты, поэтому следующий рекомендуемый workstream после docs sync — **implementation `payment failed notification v1`**;
-- planning baseline для failed-payment slice должен опираться на реальный payment runtime через [handleYooKassaWebhook()](../medusa-agency-boilerplate/src/api/yookassa/webhook/shared.ts:15), [mapYooKassaWebhookAction()](../medusa-agency-boilerplate/src/api/yookassa/webhook/shared.ts:150) и [mapYooKassaStatusToSessionStatus()](../medusa-agency-boilerplate/src/modules/yookassa.ts:403), а не на неподтвержденное имя события `order.payment_failed`.
+- `payment failed notification v1`, `order canceled notification v1`, `post-UniSender cleanup-step`, `VK Community Messaging v1 foundation`, `storefront core baseline v1`, `VK ID v1`, `MTS Exolve`, `marketing layer v1`, `Payload CMS v1`, [`Preset-driven landing-surface contract v1`](../plans/preset-driven-landing-surface-contract-v1.md), [`adjacent-preset-rollout-product-support-highlights.md`](../plans/adjacent-preset-rollout-product-support-highlights.md), [`preset-driven-listing-surface-contract-v1.md`](../plans/preset-driven-listing-surface-contract-v1.md), [`preset-driven-global-shell-contract-v1.md`](../plans/preset-driven-global-shell-contract-v1.md) и [`preset-driven-catalog-shell-contract-v1.md`](../plans/preset-driven-catalog-shell-contract-v1.md) уже тоже закрыты как materialized/validated workstreams;
+- source of truth для marketing consent/preferences теперь проходит через `customer.metadata.marketing`, а campaign execution semantics остаются single-channel per campaign через [`sendMarketingCampaignWorkflow`](../medusa-agency-boilerplate/src/workflows/send-marketing-campaign.ts:508);
+- store/admin surfaces для marketing layer materialized в [`route.ts`](../medusa-agency-boilerplate/src/api/store/customers/me/marketing-preferences/route.ts), [`route.ts`](../medusa-agency-boilerplate/src/api/admin/marketing/campaigns/route.ts) и [`route.ts`](../medusa-agency-boilerplate/src/api/admin/marketing/campaigns/[id]/route.ts), а storefront profile section materialized в [`profile-marketing-preferences/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/account/components/profile-marketing-preferences/index.tsx);
+- source of truth для content layer теперь тоже materialized: отдельный app [`payload-cms`](../payload-cms) отвечает за marketing pages, preview/drafts, globals и publish/revalidate lifecycle, а storefront интегрирован с Payload через content client и fallback behaviour для commerce-only режима;
+- root orchestration layer теперь включает payload scripts [`payload:dev`](../package.json:22), [`payload:build`](../package.json:23), [`payload:start`](../package.json:24), [`payload:types`](../package.json:25), [`payload:importmap`](../package.json:26), env sync для payload app и blocker-fix через нормализацию `NODE_ENV` в [`scripts/payload-run.sh`](../scripts/payload-run.sh:28), который закрыл residual build blocker `Html should not be imported outside of pages/_document`;
+- validation contract для закрытого `Payload CMS v1` зафиксирован как PASS по [`payload:types`](../package.json:25), [`payload:importmap`](../package.json:26) и [`payload:build`](../package.json:23), а review aftermath удерживается как approveable без blocking findings; post-review hardening дополнительно закрыл preview-access residuals для draft globals и preview-exit path.
+- `Фаза 6 storefront customization` теперь должна описываться как truthfully re-closed scope, а не как straight-line closure: sanctioned preset selector [`NEXT_PUBLIC_STOREFRONT_PRESET`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:21) и central config authority [`storefront-client-config.ts`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts) не менялись, базовый preset-driven stack [`landingSurfaces`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:317) → [`productSurfaces.supportHighlights`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:323) → [`listingSurfaces.productCard`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:324) → [`StorefrontShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:74) → [`StorefrontCatalogShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:298) materialized на одном storefront core, но прежний closure verdict был пересмотрен после valid reopen.
+- reopened gaps зафиксированы явно и уже закрыты remediation-коммитами: category browse contour через `adb8df25ed64d9540e36588ee91dc5ff24951009`, related products rail через `275dc4d823b8203bd1d49364ba4d02211bf42799`, loading/skeleton sync через `97a4837c483b054d25511f216ee487bf150306b4`.
+- финальный post-remediation cross-preset regression/readiness pass по preset matrix `atelier|market` зафиксирован как **PASS**: category browse routed через sanctioned `catalogShell`, related products rail routed через sanctioned listing surface contract, loading/skeleton state синхронизирован с sanctioned card/listing contract; accepted non-blocking baseline observations теперь ограничены controlled Store API warnings during static params generation, соответствующими baseline в [`template_readiness_regression.md`](./template_readiness_regression.md), а storefront [`npm run lint`](../medusa-agency-boilerplate-storefront/package.json:14) после remediation lint stack и hook-dependency cleanup проходит clean.
+- следующий рекомендуемый workstream после этого docs sync уже лежит вне `Фазы 6`: readiness verdict = готово к следующему roadmap stage, то есть к **Фазе 7** template/client packaging; Phase 6 preset-driven stack не переоткрывать без нового evidence о regression.
 
 ---
 
