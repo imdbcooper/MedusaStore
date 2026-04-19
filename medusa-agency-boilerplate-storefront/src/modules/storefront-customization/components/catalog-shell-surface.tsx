@@ -1,13 +1,16 @@
 import { ReactNode } from "react"
 
+import { HttpTypes } from "@medusajs/types"
 import { Text, clx } from "@medusajs/ui"
 
 import type {
   StorefrontCatalogResultsShellSurface,
+  StorefrontCategoryCatalogIntroSurface,
   StorefrontFeaturedRailShellSurface,
   StorefrontStoreCatalogIntroSurface,
 } from "@lib/storefront-client-config"
 import InteractiveLink from "@modules/common/components/interactive-link"
+import LocalizedClientLink from "@modules/common/components/localized-client-link"
 
 type CatalogTone = "surface" | "muted"
 
@@ -15,6 +18,12 @@ type CatalogSpacing = "compact" | "comfortable"
 
 type CatalogIntroSurfaceProps = {
   surface: StorefrontStoreCatalogIntroSurface
+}
+
+type CategoryCatalogIntroSurfaceProps = {
+  surface: StorefrontCategoryCatalogIntroSurface
+  category: HttpTypes.StoreProductCategory
+  parents: HttpTypes.StoreProductCategory[]
 }
 
 type CatalogResultsShellSurfaceProps = {
@@ -48,16 +57,37 @@ const getSectionSpacingClassName = (spacing: CatalogSpacing) =>
     "py-12 small:py-20": spacing === "comfortable",
   })
 
-export function StoreCatalogIntroSurface({
-  surface,
-}: CatalogIntroSurfaceProps) {
-  const wrapperClassName = clx(
+const getIntroWrapperClassName = ({
+  tone,
+  variant,
+}: {
+  tone: CatalogTone
+  variant: "simple" | "editorial"
+}) =>
+  clx(
     "border",
-    getToneClassName(surface.tone),
-    surface.variant === "editorial"
+    getToneClassName(tone),
+    variant === "editorial"
       ? "rounded-[var(--theme-radius-shell)] px-6 py-8 small:px-8 small:py-10 shadow-[var(--theme-shadow-shell)]"
       : "rounded-[var(--theme-radius-card)] px-5 py-6 small:px-6 small:py-7"
   )
+
+const getIntroTitleClassName = (variant: "simple" | "editorial") =>
+  clx("font-semibold tracking-tight text-[var(--theme-foreground)]", {
+    "text-2xl small:text-4xl": variant === "editorial",
+    "text-2xl": variant === "simple",
+  })
+
+const getIntroDescriptionClassName = (variant: "simple" | "editorial") =>
+  clx("max-w-3xl text-[var(--theme-muted)]", {
+    "pt-3 text-base leading-8": variant === "editorial",
+    "pt-2 text-sm leading-7": variant === "simple",
+  })
+
+export function StoreCatalogIntroSurface({
+  surface,
+}: CatalogIntroSurfaceProps) {
+  const wrapperClassName = getIntroWrapperClassName(surface)
 
   return (
     <section className="mb-8">
@@ -74,26 +104,82 @@ export function StoreCatalogIntroSurface({
         )}
         <div className={surface.eyebrow ? "pt-3" : undefined}>
           <h1
-            className={clx(
-              "font-semibold tracking-tight text-[var(--theme-foreground)]",
-              {
-                "text-2xl small:text-4xl": surface.variant === "editorial",
-                "text-2xl": surface.variant === "simple",
-              }
-            )}
+            className={getIntroTitleClassName(surface.variant)}
             data-testid="store-page-title"
           >
             {surface.title}
           </h1>
           {surface.description && (
-            <Text
-              className={clx("max-w-3xl text-[var(--theme-muted)]", {
-                "pt-3 text-base leading-8": surface.variant === "editorial",
-                "pt-2 text-sm leading-7": surface.variant === "simple",
-              })}
-            >
+            <Text className={getIntroDescriptionClassName(surface.variant)}>
               {surface.description}
             </Text>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+export function CategoryCatalogIntroSurface({
+  surface,
+  category,
+  parents,
+}: CategoryCatalogIntroSurfaceProps) {
+  const wrapperClassName = getIntroWrapperClassName(surface)
+
+  return (
+    <section className="mb-8">
+      <div
+        className={wrapperClassName}
+        style={{
+          borderColor: "var(--theme-border)",
+        }}
+      >
+        {surface.eyebrow && (
+          <span className="text-sm font-medium uppercase tracking-[0.24em] text-[var(--theme-muted)]">
+            {surface.eyebrow}
+          </span>
+        )}
+        <div className={surface.eyebrow ? "pt-3" : undefined}>
+          {parents.length > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-[var(--theme-muted)]">
+              {parents.map((parent) => (
+                <span key={parent.id} className="inline-flex items-center gap-2">
+                  <LocalizedClientLink
+                    className="transition-colors hover:text-[var(--theme-foreground)]"
+                    href={`/categories/${parent.handle}`}
+                    data-testid="category-parent-link"
+                  >
+                    {parent.name}
+                  </LocalizedClientLink>
+                  <span>/</span>
+                </span>
+              ))}
+            </div>
+          )}
+          <h1
+            className={getIntroTitleClassName(surface.variant)}
+            data-testid="category-page-title"
+          >
+            {category.name}
+          </h1>
+          {category.description && (
+            <Text className={getIntroDescriptionClassName(surface.variant)}>
+              {category.description}
+            </Text>
+          )}
+          {category.category_children && category.category_children.length > 0 && (
+            <div className="pt-6 text-base-large">
+              <ul className="grid grid-cols-1 gap-2">
+                {category.category_children.map((child) => (
+                  <li key={child.id}>
+                    <InteractiveLink href={`/categories/${child.handle}`}>
+                      {child.name}
+                    </InteractiveLink>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       </div>

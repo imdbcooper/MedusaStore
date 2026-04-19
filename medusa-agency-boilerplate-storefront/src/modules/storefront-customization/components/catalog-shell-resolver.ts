@@ -1,5 +1,6 @@
 import {
   StorefrontCatalogResultsShellSurface,
+  StorefrontCategoryCatalogIntroSurface,
   StorefrontClientConfig,
   StorefrontFeaturedRailShellSurface,
   StorefrontStoreCatalogIntroSurface,
@@ -17,6 +18,12 @@ export const resolveStoreCatalogIntroSurface = (): StorefrontStoreCatalogIntroSu
 
 export const resolveStoreCatalogResultsSurface = (): StorefrontCatalogResultsShellSurface =>
   resolveCatalogShell("store").results as StorefrontCatalogResultsShellSurface
+
+export const resolveCategoryCatalogIntroSurface = (): StorefrontCategoryCatalogIntroSurface =>
+  resolveCatalogShell("category").intro as StorefrontCategoryCatalogIntroSurface
+
+export const resolveCategoryCatalogResultsSurface = (): StorefrontCatalogResultsShellSurface =>
+  resolveCatalogShell("category").results as StorefrontCatalogResultsShellSurface
 
 export const resolveCollectionCatalogResultsSurface = (): StorefrontCatalogResultsShellSurface =>
   resolveCatalogShell("collection").results as StorefrontCatalogResultsShellSurface

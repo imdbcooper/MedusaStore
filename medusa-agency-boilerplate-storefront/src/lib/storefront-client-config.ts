@@ -281,6 +281,13 @@ export type StorefrontStoreCatalogIntroSurface = {
   tone: StorefrontCatalogShellTone
 }
 
+export type StorefrontCategoryCatalogIntroSurface = {
+  mode: "intro"
+  variant: StorefrontCatalogIntroVariant
+  eyebrow?: string
+  tone: StorefrontCatalogShellTone
+}
+
 export type StorefrontCatalogResultsShellSurface = {
   mode: "frame"
   variant: StorefrontCatalogFrameVariant
@@ -298,6 +305,10 @@ export type StorefrontFeaturedRailShellSurface = {
 export type StorefrontCatalogShellConfig = {
   store: {
     intro: StorefrontStoreCatalogIntroSurface
+    results: StorefrontCatalogResultsShellSurface
+  }
+  category: {
+    intro: StorefrontCategoryCatalogIntroSurface
     results: StorefrontCatalogResultsShellSurface
   }
   collection: {
@@ -339,7 +350,7 @@ const sharedOverridePolicy = {
     "global shell presentation surfaces (shell.nav, shell.sideMenu, shell.footer)",
     "landing surfaces (home, collection, content, post)",
     "listing card presentation surfaces (listingSurfaces.productCard)",
-    "catalog shell presentation surfaces (catalogShell.store, catalogShell.collection, catalogShell.featuredRail)",
+    "catalog shell presentation surfaces (catalogShell.store, catalogShell.category, catalogShell.collection, catalogShell.featuredRail)",
     "adjacent product display surfaces (productSurfaces.supportHighlights)",
   ],
   coreLocked: [
@@ -772,6 +783,20 @@ export const storefrontPresetCatalog = {
           spacing: "comfortable",
         },
       },
+      category: {
+        intro: {
+          mode: "intro",
+          variant: "editorial",
+          eyebrow: "Category Surface",
+          tone: "surface",
+        },
+        results: {
+          mode: "frame",
+          variant: "panel",
+          tone: "muted",
+          spacing: "comfortable",
+        },
+      },
       collection: {
         results: {
           mode: "frame",
@@ -1138,6 +1163,20 @@ export const storefrontPresetCatalog = {
           title: "All products",
           description:
             "Каталог сохраняет общий browse flow, а preset управляет только intro framing и surrounding results shell без изменений query mechanics.",
+          tone: "muted",
+        },
+        results: {
+          mode: "frame",
+          variant: "plain",
+          tone: "surface",
+          spacing: "compact",
+        },
+      },
+      category: {
+        intro: {
+          mode: "intro",
+          variant: "simple",
+          eyebrow: "Category catalog",
           tone: "muted",
         },
         results: {
