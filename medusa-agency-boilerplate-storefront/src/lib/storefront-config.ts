@@ -3,28 +3,30 @@ export type StorefrontLink = {
   href: string
 }
 
+// Mandatory client-init branding and legal-contact replacements live here.
+// Keep preset-specific presentation authority in `src/lib/storefront-client-config.ts`.
 export const storefrontConfig = {
-  storeName: "Интернет-магазин",
-  defaultTitle: "Витрина магазина",
+  storeName: "CLIENT_STORE_NAME",
+  defaultTitle: "CLIENT_DEFAULT_TITLE",
   defaultDescription:
-    "Готовая витрина для каталога, корзины, оформления заказа и личного кабинета.",
-  tagline: "Каталог, корзина и оформление заказа в нейтральном RU-ready baseline.",
+    "Replace this placeholder with the approved client-specific storefront description before review or release.",
+  tagline: "CLIENT_TAGLINE",
   contact: {
-    email: "hello@example.com",
-    phone: "+7 (000) 000-00-00",
+    email: "client@example.com",
+    phone: "CLIENT_CONTACT_PHONE",
   },
   socialLinks: [
     {
       label: "Telegram",
-      href: "https://t.me/your_store",
+      href: "https://t.me/CLIENT_TELEGRAM_HANDLE",
     },
     {
       label: "VK",
-      href: "https://vk.com/your_store",
+      href: "https://vk.com/CLIENT_VK_HANDLE",
     },
     {
       label: "WhatsApp",
-      href: "https://wa.me/70000000000",
+      href: "https://wa.me/CLIENT_WHATSAPP_NUMBER",
     },
   ] as StorefrontLink[],
   copy: {

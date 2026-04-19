@@ -5,6 +5,7 @@
   "description": "Root orchestration layer for the medusa agency master repo.",
   "packageManager": "npm@11.6.2",
   "scripts": {
+    "client:init:contract": "node -e \"process.stdout.write(require('fs').readFileSync('Docs/client_init_contract.md', 'utf8'))\"",
     "preflight": "bash ./scripts/preflight.sh",
     "env:sync": "bash ./scripts/env-sync.sh",
     "permissions:fix": "bash ./scripts/fix-medusa-permissions.sh",

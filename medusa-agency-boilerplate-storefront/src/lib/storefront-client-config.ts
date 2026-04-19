@@ -1266,6 +1266,47 @@ export const storefrontPresetOptions = Object.keys(
   storefrontPresetCatalog
 ) as StorefrontPreset[]
 
+export const storefrontClientInitSurfaceContract = {
+  presetAuthority: {
+    envKey: "NEXT_PUBLIC_STOREFRONT_PRESET",
+    supportedPresets: storefrontPresetOptions,
+    defaultPreset: "atelier" as StorefrontPreset,
+  },
+  runtimeEnv: {
+    mandatory: [],
+    bootstrapGenerated: ["NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY"],
+    optional: [
+      "MEDUSA_BACKEND_URL",
+      "NEXT_PUBLIC_BASE_URL",
+      "NEXT_PUBLIC_DEFAULT_REGION",
+      "NEXT_PUBLIC_YOOKASSA_ENABLED",
+      "NEXT_PUBLIC_VK_ID_ENABLED",
+      "NEXT_PUBLIC_STRIPE_KEY",
+      "NEXT_PUBLIC_MEDUSA_PAYMENTS_PUBLISHABLE_KEY",
+      "NEXT_PUBLIC_MEDUSA_PAYMENTS_ACCOUNT_ID",
+      "PAYLOAD_ENABLED",
+      "PAYLOAD_CMS_URL",
+      "PAYLOAD_CONTENT_PREVIEW_TOKEN",
+      "PAYLOAD_PREVIEW_SECRET",
+      "PAYLOAD_REVALIDATE_SECRET",
+      "REVALIDATE_SECRET",
+      "MEDUSA_CLOUD_S3_HOSTNAME",
+      "MEDUSA_CLOUD_S3_PATHNAME",
+    ],
+  },
+  branding: {
+    mandatory: [
+      "storefrontConfig.storeName",
+      "storefrontConfig.defaultTitle",
+      "storefrontConfig.defaultDescription",
+      "storefrontConfig.tagline",
+      "storefrontConfig.contact.email",
+      "storefrontConfig.contact.phone",
+      "storefrontConfig.socialLinks",
+    ],
+  },
+} as const
+
 export const storefrontClientConfig =
   storefrontPresetCatalog[storefrontPresetName]
 

@@ -23,6 +23,22 @@
 
 ---
 
+## 1.1. Канонический `client-init` contract для Фазы 7 tranche 1
+
+Канонический Phase 7 tranche 1 contract теперь materialized в [`Docs/client_init_contract.md`](./client_init_contract.md).
+
+Этот contract фиксирует:
+- один стандартизированный entrypoint через `npm run client:init:contract`;
+- inventory client-specific inputs across root/backend/storefront surfaces;
+- разделение на `mandatory`, `bootstrap-generated` и `optional` inputs;
+- template-safe placeholder baseline без workstation/demo residue в env и storefront branding/legal-contact surfaces.
+
+`Фаза 6 storefront customization` при этом не переоткрывается:
+- sanctioned preset selector остается [`NEXT_PUBLIC_STOREFRONT_PRESET`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:14);
+- sanctioned preset authority остается [`storefront-client-config.ts`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts).
+
+---
+
 ## 2. Корневой `.env`
 
 Файл:
@@ -338,10 +354,13 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - `NEXT_PUBLIC_YOOKASSA_ENABLED` остается storefront opt-in flag для payment path и не является baseline requirement, что видно в [medusa-agency-boilerplate-storefront/.env.local.example](../medusa-agency-boilerplate-storefront/.env.local.example)
 
 Практическое правило:
-- publishable key хранится здесь;
+- publishable key хранится здесь и остается единственным storefront env, который preflight действительно hard-require'ит через [`check-env-variables.js`](../medusa-agency-boilerplate-storefront/check-env-variables.js:3);
+- `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_BASE_URL` и `NEXT_PUBLIC_DEFAULT_REGION` — truthful optional storefront runtime inputs для tranche 1 baseline: [`env.ts`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:4) подставляет safe fallback'и `http://localhost:${MEDUSA_BACKEND_PORT || 9000}`, `http://localhost:8000` и `ru`, поэтому отсутствие этих ключей не ломает clean-clone runtime contract;
 - backend URL может задаваться здесь;
 - root-level скрипты могут подставлять `MEDUSA_BACKEND_URL` и `NEXT_PUBLIC_BASE_URL` сверху, если запуск идет через корневые команды;
 - `NEXT_PUBLIC_STOREFRONT_PRESET` остается optional public config: при отсутствии или невалидном значении storefront безопасно откатывается к preset `atelier`, а sanctioned client-specific divergence должна оформляться через preset/config layer, typed landing-surface registry, adjacent product surfaces, typed listing/card contract, typed global shell contract [`StorefrontShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:74), typed catalog shell contract [`StorefrontCatalogShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:298) и sanctioned resolver boundaries, а не через форк shared templates;
+- `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` намеренно остается placeholder-only в template baseline и должен materialize'иться только успешным [`bootstrap.sh`](../scripts/bootstrap.sh:1) после seed, а не ручным копированием из старого клиента;
+- `PAYLOAD_CONTENT_PREVIEW_TOKEN`, `PAYLOAD_PREVIEW_SECRET`, `PAYLOAD_REVALIDATE_SECRET` и `REVALIDATE_SECRET` в storefront template baseline теперь намеренно пустые: secret values допускаются только при явном включении соответствующих preview/revalidate hooks;
 - storefront не хранит отдельный ApiShip token, `UNISENDER_API_KEY`, `UNISENDER_BASE_URL` с credential-параметрами или secret admin API key и не должен получать эти значения в публичный env;
 - текущий первый ApiShip slice использует storefront только как consumer backend route [src/lib/data/apiship.ts](../medusa-agency-boilerplate-storefront/src/lib/data/apiship.ts:22), а все чувствительные integration credentials остаются на backend стороне;
 - notification authenticated smoke path является backend-admin concern и не должен переноситься в storefront env;
@@ -355,6 +374,7 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 
 Теперь вход в проект должен идти через корневые команды из [package.json](package.json):
 
+- `npm run client:init:contract`
 - `npm run env:sync`
 - `npm run bootstrap`
 - `npm run preflight`
@@ -374,13 +394,15 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 ### Канонический clean-clone path
 
 Для нового разработчика канонический сценарий теперь такой:
-1. `cp .env.example .env`
-2. при необходимости поменять только root-level порты и локальные секреты в [.env.example](.env.example) → локальном `.env`
-3. `npm run bootstrap`
-4. `npm run preflight`
-5. `npm run dev`
+1. `npm run client:init:contract`
+2. `cp .env.example .env`
+3. при необходимости поменять только root-level порты и локальные секреты в [.env.example](.env.example) → локальном `.env`
+4. заменить все mandatory client-specific placeholders из [`Docs/client_init_contract.md`](./client_init_contract.md)
+5. `npm run bootstrap`
+6. `npm run preflight`
+7. `npm run dev`
 
-Root clean-start путь остается каноническим именно в последовательности `bootstrap → preflight → dev`.
+Root clean-start путь остается каноническим именно в последовательности `client:init:contract → bootstrap → preflight → dev`.
 
 Что делает `npm run bootstrap`:
 - синхронизирует [medusa-agency-boilerplate/.env](medusa-agency-boilerplate/.env) и [medusa-agency-boilerplate-storefront/.env.local](medusa-agency-boilerplate-storefront/.env.local) из root `.env`, включая YooKassa guardrails `YOOKASSA_STOREFRONT_RETURN_ORIGINS`, `YOOKASSA_WEBHOOK_URL`, `YOOKASSA_WEBHOOK_SECRET` и `YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS`;

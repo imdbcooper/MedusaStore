@@ -550,6 +550,9 @@ checkout path уже закрыт, а текущий шаг — это не но
   - storefront `npm run lint` теперь проходит clean, а remaining warnings ограничены только controlled Store API warnings во время static params generation и не относятся к reopened gaps.
 - финальный readiness verdict для `Фазы 6` теперь такой: sanctioned preset-driven storefront customization **truthfully закрыта и готова к следующему roadmap stage**;
 - после truthful re-closure `Фазы 6` открытых пунктов внутри storefront customization больше нет, а дальнейшие открытые пункты лежат только в следующих roadmap стадиях: **Фаза 7** template/client packaging и **Фаза 8** release-grade checks, CI, staging и production readiness.
+- активный roadmap step теперь уже начат внутри **Фазы 7**: `tranche 1 — client-init contract and placeholder-safe template baseline`.
+- текущий tranche ограничен только materialization одного canonical client-init contract, inventory client-specific inputs across root/backend/storefront surfaces, явным split `mandatory vs bootstrap-generated vs optional` и template-safe placeholder baseline для env/branding/legal-contact surfaces.
+- guardrails активного tranche остаются жёсткими: не переоткрывать `Фазу 6`, не заходить в `Фазу 8`, не обходить sanctioned selector [`NEXT_PUBLIC_STOREFRONT_PRESET`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:14) и не переносить preset authority из [`storefront-client-config.ts`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts).
 
 ---
 
