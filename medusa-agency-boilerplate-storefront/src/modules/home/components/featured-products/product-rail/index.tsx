@@ -1,17 +1,23 @@
 import { listProducts } from "@lib/data/products"
 import { storefrontConfig } from "@lib/storefront-config"
 import { HttpTypes } from "@medusajs/types"
-import { Text } from "@medusajs/ui"
 
-import InteractiveLink from "@modules/common/components/interactive-link"
+import {
+  FeaturedRailCatalogShellSurface,
+} from "@modules/storefront-customization/components/catalog-shell-surface"
+import {
+  resolveFeaturedRailCatalogShellSurface,
+} from "@modules/storefront-customization/components/catalog-shell-resolver"
 import ProductPreview from "@modules/products/components/product-preview"
 
 export default async function ProductRail({
   collection,
   region,
+  maxProducts,
 }: {
   collection: HttpTypes.StoreCollection
   region: HttpTypes.StoreRegion
+  maxProducts?: number
 }) {
   const {
     response: { products: pricedProducts },
@@ -27,22 +33,27 @@ export default async function ProductRail({
     return null
   }
 
+  const resolvedProducts = maxProducts
+    ? pricedProducts.slice(0, maxProducts)
+    : pricedProducts
+
+  const shellSurface = resolveFeaturedRailCatalogShellSurface()
+
   return (
-    <div className="content-container py-12 small:py-24">
-      <div className="flex justify-between mb-8">
-        <Text className="txt-xlarge">{collection.title}</Text>
-        <InteractiveLink href={`/collections/${collection.handle}`}>
-          {storefrontConfig.copy.common.viewAll}
-        </InteractiveLink>
-      </div>
+    <FeaturedRailCatalogShellSurface
+      surface={shellSurface}
+      title={collection.title}
+      href={`/collections/${collection.handle}`}
+      actionLabel={storefrontConfig.copy.common.viewAll}
+    >
       <ul className="grid grid-cols-2 small:grid-cols-3 gap-x-6 gap-y-24 small:gap-y-36">
-        {pricedProducts &&
-          pricedProducts.map((product) => (
+        {resolvedProducts &&
+          resolvedProducts.map((product) => (
             <li key={product.id}>
               <ProductPreview product={product} region={region} isFeatured />
             </li>
           ))}
       </ul>
-    </div>
+    </FeaturedRailCatalogShellSurface>
   )
 }

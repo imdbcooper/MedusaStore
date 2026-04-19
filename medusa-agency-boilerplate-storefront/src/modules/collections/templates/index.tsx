@@ -5,7 +5,13 @@ import SkeletonProductGrid from "@modules/skeletons/templates/skeleton-product-g
 import RefinementList from "@modules/store/components/refinement-list"
 import { SortOptions } from "@modules/store/components/refinement-list/sort-products"
 import PaginatedProducts from "@modules/store/templates/paginated-products"
-import CollectionLandingHeader from "@modules/storefront-customization/components/collection-landing-header"
+import {
+  CatalogResultsShellSurface,
+} from "@modules/storefront-customization/components/catalog-shell-surface"
+import {
+  resolveCollectionCatalogResultsSurface,
+} from "@modules/storefront-customization/components/catalog-shell-resolver"
+import CollectionLandingSurface from "@modules/storefront-customization/components/collection-landing-surface"
 
 export default function CollectionTemplate({
   sortBy,
@@ -21,11 +27,13 @@ export default function CollectionTemplate({
   const pageNumber = page ? parseInt(page) : 1
   const sort = sortBy || "created_at"
 
+  const resultsSurface = resolveCollectionCatalogResultsSurface()
+
   return (
     <div className="flex flex-col small:flex-row small:items-start py-6 content-container">
       <RefinementList sortBy={sort} />
-      <div className="w-full">
-        <CollectionLandingHeader collection={collection} />
+      <CatalogResultsShellSurface surface={resultsSurface}>
+        <CollectionLandingSurface collection={collection} />
         <Suspense
           fallback={
             <SkeletonProductGrid
@@ -40,7 +48,7 @@ export default function CollectionTemplate({
             countryCode={countryCode}
           />
         </Suspense>
-      </div>
+      </CatalogResultsShellSurface>
     </div>
   )
 }

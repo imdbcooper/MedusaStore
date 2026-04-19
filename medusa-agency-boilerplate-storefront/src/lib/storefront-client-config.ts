@@ -262,6 +262,50 @@ export type StorefrontListingSurfaces = {
   }
 }
 
+export type StorefrontCatalogShellTone = "surface" | "muted"
+
+export type StorefrontCatalogFrameVariant = "plain" | "panel"
+
+export type StorefrontCatalogSpacing = "compact" | "comfortable"
+
+export type StorefrontCatalogIntroVariant = "simple" | "editorial"
+
+export type StorefrontFeaturedRailVariant = "split" | "stacked"
+
+export type StorefrontStoreCatalogIntroSurface = {
+  mode: "intro"
+  variant: StorefrontCatalogIntroVariant
+  eyebrow?: string
+  title: string
+  description?: string
+  tone: StorefrontCatalogShellTone
+}
+
+export type StorefrontCatalogResultsShellSurface = {
+  mode: "frame"
+  variant: StorefrontCatalogFrameVariant
+  tone: StorefrontCatalogShellTone
+  spacing: StorefrontCatalogSpacing
+}
+
+export type StorefrontFeaturedRailShellSurface = {
+  mode: "rail"
+  variant: StorefrontFeaturedRailVariant
+  tone: StorefrontCatalogShellTone
+  spacing: StorefrontCatalogSpacing
+}
+
+export type StorefrontCatalogShellConfig = {
+  store: {
+    intro: StorefrontStoreCatalogIntroSurface
+    results: StorefrontCatalogResultsShellSurface
+  }
+  collection: {
+    results: StorefrontCatalogResultsShellSurface
+  }
+  featuredRail: StorefrontFeaturedRailShellSurface
+}
+
 export type StorefrontClientConfig = {
   meta: {
     preset: StorefrontPreset
@@ -278,6 +322,7 @@ export type StorefrontClientConfig = {
   }
   productSurfaces: StorefrontProductSurfaces
   listingSurfaces: StorefrontListingSurfaces
+  catalogShell: StorefrontCatalogShellConfig
   overridePolicy: {
     customizable: readonly string[]
     coreLocked: readonly string[]
@@ -294,6 +339,7 @@ const sharedOverridePolicy = {
     "global shell presentation surfaces (shell.nav, shell.sideMenu, shell.footer)",
     "landing surfaces (home, collection, content, post)",
     "listing card presentation surfaces (listingSurfaces.productCard)",
+    "catalog shell presentation surfaces (catalogShell.store, catalogShell.collection, catalogShell.featuredRail)",
     "adjacent product display surfaces (productSurfaces.supportHighlights)",
   ],
   coreLocked: [
@@ -301,8 +347,9 @@ const sharedOverridePolicy = {
     "checkout flow",
     "account flow",
     "order flow",
-    "provider integrations",
+    "sorting, filtering, pagination, and query behavior",
     "region and locale data layer",
+    "provider integrations",
     "Store API contracts",
   ],
 } as const
@@ -310,13 +357,16 @@ const sharedOverridePolicy = {
 const sharedGuardrails = {
   sanctionedExtensionPath: [
     "Switch client scenarios only through NEXT_PUBLIC_STOREFRONT_PRESET.",
-    "Materialize sanctioned overrides in storefront-client-config.ts via shell, landingSurfaces, listingSurfaces, and adjacent productSurfaces.",
+    "Materialize sanctioned overrides in storefront-client-config.ts via shell, landingSurfaces, listingSurfaces, catalogShell, and adjacent productSurfaces.",
     "Resolve preset-owned display surfaces inside storefront-customization components, not shared templates.",
+    "Keep catalogShell presentation-only and separate from sorting, filtering, pagination, region lookup, and product query logic.",
     "Treat cart, checkout, account, order flow, Store API contracts, and provider integrations as locked core.",
   ],
   prohibitedPatterns: [
     "Do not fork shared storefront core per client.",
-    "Do not add preset-specific branching inside shared product templates.",
+    "Do not add preset-specific branching inside shared browse, product, or home catalog templates.",
+    "Do not reopen landingSurfaces.collectionLanding inside catalogShell.",
+    "Do not move sorting, filtering, pagination, region lookup, or product queries under catalogShell.",
     "Do not add client-only logic inside checkout, account, or order flow components.",
     "Do not introduce new backend contracts just to support a visual storefront scenario.",
   ],
@@ -704,6 +754,39 @@ export const storefrontPresetCatalog = {
         },
       },
     },
+    catalogShell: {
+      store: {
+        intro: {
+          mode: "intro",
+          variant: "editorial",
+          eyebrow: "Catalog Surface",
+          title: "All products",
+          description:
+            "Общий каталог остаётся частью shared commerce core, а framing страницы теперь управляется preset-driven catalog shell contract.",
+          tone: "surface",
+        },
+        results: {
+          mode: "frame",
+          variant: "panel",
+          tone: "surface",
+          spacing: "comfortable",
+        },
+      },
+      collection: {
+        results: {
+          mode: "frame",
+          variant: "panel",
+          tone: "muted",
+          spacing: "comfortable",
+        },
+      },
+      featuredRail: {
+        mode: "rail",
+        variant: "split",
+        tone: "surface",
+        spacing: "comfortable",
+      },
+    },
     overridePolicy: sharedOverridePolicy,
     guardrails: sharedGuardrails,
   },
@@ -1044,6 +1127,39 @@ export const storefrontPresetCatalog = {
             priceTone: "accent",
           },
         },
+      },
+    },
+    catalogShell: {
+      store: {
+        intro: {
+          mode: "intro",
+          variant: "simple",
+          eyebrow: "Store catalog",
+          title: "All products",
+          description:
+            "Каталог сохраняет общий browse flow, а preset управляет только intro framing и surrounding results shell без изменений query mechanics.",
+          tone: "muted",
+        },
+        results: {
+          mode: "frame",
+          variant: "plain",
+          tone: "surface",
+          spacing: "compact",
+        },
+      },
+      collection: {
+        results: {
+          mode: "frame",
+          variant: "plain",
+          tone: "surface",
+          spacing: "compact",
+        },
+      },
+      featuredRail: {
+        mode: "rail",
+        variant: "stacked",
+        tone: "muted",
+        spacing: "compact",
       },
     },
     overridePolicy: sharedOverridePolicy,
