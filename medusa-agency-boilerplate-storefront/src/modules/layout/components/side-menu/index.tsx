@@ -11,6 +11,7 @@ import { Fragment } from "react"
 
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import ContentLinkItem from "@modules/content/components/content-link"
+import { resolveSideMenuShellSurface } from "@modules/storefront-customization/components/shell-surface-resolver"
 import CountrySelect from "../country-select"
 import LanguageSelect from "../language-select"
 
@@ -56,6 +57,11 @@ const SideMenu = ({
   const languageToggleState = useToggleState()
   const navigationCopy = storefrontConfig.copy.navigation
   const commonCopy = storefrontConfig.copy.common
+  const sideMenuSurface = resolveSideMenuShellSurface()
+  const isGlassVariant = sideMenuSurface.variant === "glass"
+  const isInverseTone = sideMenuSurface.tone === "inverse"
+  const shouldShowSupplementalContentItems =
+    sideMenuSurface.content.showSupplementalContentItems
 
   return (
     <div className="h-full">
@@ -66,7 +72,10 @@ const SideMenu = ({
               <div className="relative flex h-full">
                 <Popover.Button
                   data-testid="nav-menu-button"
-                  className="relative h-full flex items-center transition-all ease-out duration-200 focus:outline-none hover:text-ui-fg-base"
+                  className={clx(
+                    "relative h-full flex items-center transition-all ease-out duration-200 focus:outline-none",
+                    isInverseTone ? "hover:text-[var(--theme-accent-contrast)]" : "hover:text-ui-fg-base"
+                  )}
                 >
                   {navigationCopy.menu}
                 </Popover.Button>
@@ -90,13 +99,44 @@ const SideMenu = ({
                 leaveFrom="opacity-100 backdrop-blur-2xl"
                 leaveTo="opacity-0"
               >
-                <PopoverPanel className="flex flex-col absolute w-full pr-4 sm:pr-0 sm:w-1/3 2xl:w-1/4 sm:min-w-min h-[calc(100vh-1rem)] z-[51] inset-x-0 text-sm text-ui-fg-on-color m-2 backdrop-blur-2xl">
+                <PopoverPanel
+                  className={clx(
+                    "flex flex-col absolute w-full pr-4 sm:pr-0 sm:w-1/3 2xl:w-1/4 sm:min-w-min h-[calc(100vh-1rem)] z-[51] inset-x-0 text-sm m-2",
+                    isGlassVariant && "backdrop-blur-2xl",
+                    isInverseTone ? "text-ui-fg-on-color" : "text-[var(--theme-foreground)]"
+                  )}
+                >
                   <div
                     data-testid="nav-menu-popup"
-                    className="flex flex-col h-full bg-[rgba(3,7,18,0.5)] rounded-rounded justify-between p-6"
+                    data-side-menu-variant={sideMenuSurface.variant}
+                    data-side-menu-tone={sideMenuSurface.tone}
+                    className={clx(
+                      "flex flex-col h-full justify-between p-6",
+                      isGlassVariant ? "rounded-rounded" : "rounded-[var(--theme-radius-shell)] border"
+                    )}
+                    style={{
+                      background: isInverseTone
+                        ? "rgba(3, 7, 18, 0.72)"
+                        : "var(--theme-surface)",
+                      borderColor: isGlassVariant
+                        ? "transparent"
+                        : isInverseTone
+                          ? "rgba(255, 255, 255, 0.12)"
+                          : "var(--theme-border)",
+                      boxShadow: isGlassVariant ? undefined : "var(--theme-shadow-shell)",
+                    }}
                   >
                     <div className="flex justify-end" id="xmark">
-                      <button data-testid="close-menu-button" onClick={close}>
+                      <button
+                        data-testid="close-menu-button"
+                        onClick={close}
+                        className={clx(
+                          "transition",
+                          isInverseTone
+                            ? "hover:text-[var(--theme-accent-contrast)]"
+                            : "hover:text-[var(--theme-foreground)]"
+                        )}
+                      >
                         <XMark />
                       </button>
                     </div>
@@ -107,7 +147,12 @@ const SideMenu = ({
                             <li key={item.href}>
                               <LocalizedClientLink
                                 href={item.href}
-                                className="text-3xl leading-10 hover:text-ui-fg-disabled"
+                                className={clx(
+                                  "text-3xl leading-10",
+                                  isInverseTone
+                                    ? "hover:text-ui-fg-disabled"
+                                    : "hover:text-[var(--theme-muted)]"
+                                )}
                                 onClick={close}
                                 data-testid={item.testId}
                               >
@@ -118,14 +163,24 @@ const SideMenu = ({
                         })}
                       </ul>
 
-                      {contentItems.length > 0 && (
-                        <ul className="flex flex-col gap-4 items-start justify-start border-t border-white/10 pt-6">
+                      {shouldShowSupplementalContentItems && contentItems.length > 0 && (
+                        <ul
+                          className={clx(
+                            "flex flex-col gap-4 items-start justify-start border-t pt-6",
+                            isInverseTone ? "border-white/10" : "border-[var(--theme-border)]"
+                          )}
+                        >
                           {contentItems.map((item, index) => (
                             <li key={String(item.id || index)}>
                               <ContentLinkItem
                                 item={item}
                                 onClick={close}
-                                className="text-lg leading-7 hover:text-ui-fg-disabled"
+                                className={clx(
+                                  "text-lg leading-7",
+                                  isInverseTone
+                                    ? "hover:text-ui-fg-disabled"
+                                    : "hover:text-[var(--theme-muted)]"
+                                )}
                               />
                             </li>
                           ))}
@@ -170,7 +225,14 @@ const SideMenu = ({
                           )}
                         />
                       </div>
-                      <Text className="flex justify-between txt-compact-small">
+                      <Text
+                        className={clx(
+                          "flex justify-between txt-compact-small",
+                          isInverseTone
+                            ? "text-[color:rgba(247,251,255,0.72)]"
+                            : "text-[var(--theme-muted)]"
+                        )}
+                      >
                         © {new Date().getFullYear()} {storefrontConfig.storeName}.{" "}
                         {commonCopy.allRightsReserved}
                       </Text>

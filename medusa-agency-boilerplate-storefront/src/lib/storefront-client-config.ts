@@ -44,13 +44,37 @@ export type StorefrontTheme = {
   }
 }
 
+export type StorefrontShellTone = "surface" | "inverse"
+
+export type StorefrontNavShellSurface = {
+  variant: "bordered" | "floating"
+  tone: StorefrontShellTone
+  content: {
+    desktopContentItemsLimit: number
+  }
+}
+
+export type StorefrontSideMenuShellSurface = {
+  variant: "drawer" | "glass"
+  tone: StorefrontShellTone
+  content: {
+    showSupplementalContentItems: boolean
+  }
+}
+
+export type StorefrontFooterShellSurface = {
+  variant: "default" | "editorial"
+  tone: StorefrontShellTone
+  content: {
+    categoryLinksLimit: number
+    collectionLinksLimit: number
+  }
+}
+
 export type StorefrontShellConfig = {
-  nav: {
-    variant: "bordered" | "floating"
-  }
-  footer: {
-    variant: "default" | "editorial"
-  }
+  nav: StorefrontNavShellSurface
+  sideMenu: StorefrontSideMenuShellSurface
+  footer: StorefrontFooterShellSurface
 }
 
 export type HomeHeroSection = {
@@ -267,7 +291,7 @@ export type StorefrontClientConfig = {
 const sharedOverridePolicy = {
   customizable: [
     "brand tokens",
-    "nav/footer variants",
+    "global shell presentation surfaces (shell.nav, shell.sideMenu, shell.footer)",
     "landing surfaces (home, collection, content, post)",
     "listing card presentation surfaces (listingSurfaces.productCard)",
     "adjacent product display surfaces (productSurfaces.supportHighlights)",
@@ -286,7 +310,7 @@ const sharedOverridePolicy = {
 const sharedGuardrails = {
   sanctionedExtensionPath: [
     "Switch client scenarios only through NEXT_PUBLIC_STOREFRONT_PRESET.",
-    "Materialize sanctioned overrides in storefront-client-config.ts via landingSurfaces, listingSurfaces, and adjacent productSurfaces.",
+    "Materialize sanctioned overrides in storefront-client-config.ts via shell, landingSurfaces, listingSurfaces, and adjacent productSurfaces.",
     "Resolve preset-owned display surfaces inside storefront-customization components, not shared templates.",
     "Treat cart, checkout, account, order flow, Store API contracts, and provider integrations as locked core.",
   ],
@@ -338,9 +362,25 @@ export const storefrontPresetCatalog = {
     shell: {
       nav: {
         variant: "floating",
+        tone: "surface",
+        content: {
+          desktopContentItemsLimit: 3,
+        },
+      },
+      sideMenu: {
+        variant: "glass",
+        tone: "inverse",
+        content: {
+          showSupplementalContentItems: true,
+        },
       },
       footer: {
         variant: "editorial",
+        tone: "surface",
+        content: {
+          categoryLinksLimit: 6,
+          collectionLinksLimit: 6,
+        },
       },
     },
     landingSurfaces: {
@@ -706,9 +746,25 @@ export const storefrontPresetCatalog = {
     shell: {
       nav: {
         variant: "bordered",
+        tone: "surface",
+        content: {
+          desktopContentItemsLimit: 2,
+        },
+      },
+      sideMenu: {
+        variant: "drawer",
+        tone: "surface",
+        content: {
+          showSupplementalContentItems: false,
+        },
       },
       footer: {
         variant: "default",
+        tone: "surface",
+        content: {
+          categoryLinksLimit: 4,
+          collectionLinksLimit: 4,
+        },
       },
     },
     landingSurfaces: {

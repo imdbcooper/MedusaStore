@@ -7,6 +7,7 @@ import { Text, clx } from "@medusajs/ui"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import ContentLinkItem from "@modules/content/components/content-link"
 import MedusaCTA from "@modules/layout/components/medusa-cta"
+import { resolveFooterShellSurface } from "@modules/storefront-customization/components/shell-surface-resolver"
 
 export default async function Footer() {
   const [{ collections }, productCategories, payloadFooter, siteSettings] =
@@ -29,26 +30,99 @@ export default async function Footer() {
   const contactPhone = payloadFooter?.contactPhone || storefrontConfig.contact.phone
   const footerColumns = payloadFooter?.columns || []
   const socialLinks = payloadFooter?.socialLinks || []
+  const footerSurface = resolveFooterShellSurface()
+  const isEditorial = footerSurface.variant === "editorial"
+  const isInverseTone = footerSurface.tone === "inverse"
+  const categoryLinkLimit = footerSurface.content.categoryLinksLimit
+  const collectionLinkLimit = footerSurface.content.collectionLinksLimit
 
   return (
-    <footer className="border-t border-ui-border-base w-full">
+    <footer
+      className={clx(
+        "w-full",
+        isEditorial ? "pt-6 pb-10" : "border-t",
+        isInverseTone && "bg-[var(--theme-foreground)] text-[var(--theme-accent-contrast)]"
+      )}
+      data-footer-variant={footerSurface.variant}
+      data-footer-tone={footerSurface.tone}
+      style={
+        isEditorial
+          ? undefined
+          : {
+              borderColor: isInverseTone ? "rgba(255, 255, 255, 0.12)" : "var(--theme-border)",
+            }
+      }
+    >
       <div className="content-container flex flex-col w-full">
-        <div className="flex flex-col gap-y-6 xsmall:flex-row items-start justify-between py-24">
+        <div
+          className={clx(
+            "flex flex-col gap-y-6 xsmall:flex-row items-start justify-between py-16 px-8 small:px-10",
+            isInverseTone && !isEditorial && "text-[var(--theme-accent-contrast)]"
+          )}
+          style={
+            isEditorial
+              ? {
+                  border: isInverseTone
+                    ? "1px solid rgba(255, 255, 255, 0.12)"
+                    : "1px solid var(--theme-border)",
+                  borderRadius: "var(--theme-radius-shell)",
+                  background: isInverseTone
+                    ? "var(--theme-foreground)"
+                    : "var(--theme-surface)",
+                  boxShadow: "var(--theme-shadow-shell)",
+                }
+              : undefined
+          }
+        >
           <div className="max-w-sm flex flex-col gap-y-4">
             <LocalizedClientLink
               href="/"
-              className="txt-compact-xlarge-plus text-ui-fg-subtle hover:text-ui-fg-base uppercase"
+              className={clx(
+                "txt-compact-xlarge-plus uppercase transition hover:opacity-80",
+                isInverseTone
+                  ? "text-[var(--theme-accent-contrast)]"
+                  : "text-[var(--theme-foreground)]"
+              )}
             >
               {brandName}
             </LocalizedClientLink>
-            <Text className="text-ui-fg-subtle txt-small">{tagline}</Text>
-            <div className="flex flex-col gap-y-1 text-ui-fg-subtle txt-small">
-              <a href={`mailto:${contactEmail}`} className="hover:text-ui-fg-base">
+            <Text
+              className={clx(
+                "txt-small",
+                isInverseTone
+                  ? "text-[color:rgba(247,251,255,0.72)]"
+                  : "text-[var(--theme-muted)]"
+              )}
+            >
+              {tagline}
+            </Text>
+            <div
+              className={clx(
+                "flex flex-col gap-y-1 txt-small",
+                isInverseTone
+                  ? "text-[color:rgba(247,251,255,0.72)]"
+                  : "text-[var(--theme-muted)]"
+              )}
+            >
+              <a
+                href={`mailto:${contactEmail}`}
+                className={clx(
+                  "transition",
+                  isInverseTone
+                    ? "hover:text-[var(--theme-accent-contrast)]"
+                    : "hover:text-[var(--theme-foreground)]"
+                )}
+              >
                 {contactEmail}
               </a>
               <a
                 href={`tel:${contactPhone.replace(/[^\d+]/g, "")}`}
-                className="hover:text-ui-fg-base"
+                className={clx(
+                  "transition",
+                  isInverseTone
+                    ? "hover:text-[var(--theme-accent-contrast)]"
+                    : "hover:text-[var(--theme-foreground)]"
+                )}
               >
                 {contactPhone}
               </a>
@@ -57,13 +131,32 @@ export default async function Footer() {
           <div className="text-small-regular gap-10 md:gap-x-16 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5">
             {footerColumns.map((column, index) => (
               <div className="flex flex-col gap-y-2" key={String(column.id || index)}>
-                <span className="txt-small-plus txt-ui-fg-base">{column.title}</span>
-                <ul className="grid grid-cols-1 gap-y-2 text-ui-fg-subtle txt-small">
+                <span
+                  className={clx(
+                    "txt-small-plus",
+                    isInverseTone ? "text-[var(--theme-accent-contrast)]" : "txt-ui-fg-base"
+                  )}
+                >
+                  {column.title}
+                </span>
+                <ul
+                  className={clx(
+                    "grid grid-cols-1 gap-y-2 txt-small",
+                    isInverseTone
+                      ? "text-[color:rgba(247,251,255,0.72)]"
+                      : "text-ui-fg-subtle"
+                  )}
+                >
                   {(column.links || []).map((item, itemIndex) => (
                     <li key={String(item.id || itemIndex)}>
                       <ContentLinkItem
                         item={item}
-                        className="hover:text-ui-fg-base"
+                        className={clx(
+                          "transition",
+                          isInverseTone
+                            ? "hover:text-[var(--theme-accent-contrast)]"
+                            : "hover:text-[var(--theme-foreground)]"
+                        )}
                       />
                     </li>
                   ))}
@@ -72,14 +165,24 @@ export default async function Footer() {
             ))}
             {productCategories && productCategories?.length > 0 && (
               <div className="flex flex-col gap-y-2">
-                <span className="txt-small-plus txt-ui-fg-base">
+                <span
+                  className={clx(
+                    "txt-small-plus",
+                    isInverseTone ? "text-[var(--theme-accent-contrast)]" : "txt-ui-fg-base"
+                  )}
+                >
                   {footerCopy.categories}
                 </span>
                 <ul
-                  className="grid grid-cols-1 gap-2"
+                  className={clx(
+                    "grid grid-cols-1 gap-2",
+                    isInverseTone
+                      ? "text-[color:rgba(247,251,255,0.72)]"
+                      : "text-ui-fg-subtle"
+                  )}
                   data-testid="footer-categories"
                 >
-                  {productCategories?.slice(0, 6).map((c) => {
+                  {productCategories?.slice(0, categoryLinkLimit).map((c) => {
                     if (c.parent_category) {
                       return
                     }
@@ -93,13 +196,21 @@ export default async function Footer() {
 
                     return (
                       <li
-                        className="flex flex-col gap-2 text-ui-fg-subtle txt-small"
+                        className={clx(
+                          "flex flex-col gap-2 txt-small",
+                          isInverseTone
+                            ? "text-[color:rgba(247,251,255,0.72)]"
+                            : "text-ui-fg-subtle"
+                        )}
                         key={c.id}
                       >
                         <LocalizedClientLink
                           className={clx(
-                            "hover:text-ui-fg-base",
-                            children && "txt-small-plus"
+                            "transition",
+                            children && "txt-small-plus",
+                            isInverseTone
+                              ? "hover:text-[var(--theme-accent-contrast)]"
+                              : "hover:text-[var(--theme-foreground)]"
                           )}
                           href={`/categories/${c.handle}`}
                           data-testid="category-link"
@@ -111,7 +222,12 @@ export default async function Footer() {
                             {children.map((child) => (
                               <li key={child.id}>
                                 <LocalizedClientLink
-                                  className="hover:text-ui-fg-base"
+                                  className={clx(
+                                    "transition",
+                                    isInverseTone
+                                      ? "hover:text-[var(--theme-accent-contrast)]"
+                                      : "hover:text-[var(--theme-foreground)]"
+                                  )}
                                   href={`/categories/${child.handle}`}
                                   data-testid="category-link"
                                 >
@@ -129,21 +245,34 @@ export default async function Footer() {
             )}
             {collections && collections.length > 0 && (
               <div className="flex flex-col gap-y-2">
-                <span className="txt-small-plus txt-ui-fg-base">
+                <span
+                  className={clx(
+                    "txt-small-plus",
+                    isInverseTone ? "text-[var(--theme-accent-contrast)]" : "txt-ui-fg-base"
+                  )}
+                >
                   {footerCopy.collections}
                 </span>
                 <ul
                   className={clx(
-                    "grid grid-cols-1 gap-2 text-ui-fg-subtle txt-small",
+                    "grid grid-cols-1 gap-2 txt-small",
+                    isInverseTone
+                      ? "text-[color:rgba(247,251,255,0.72)]"
+                      : "text-ui-fg-subtle",
                     {
                       "grid-cols-2": (collections?.length || 0) > 3,
                     }
                   )}
                 >
-                  {collections?.slice(0, 6).map((c) => (
+                  {collections?.slice(0, collectionLinkLimit).map((c) => (
                     <li key={c.id}>
                       <LocalizedClientLink
-                        className="hover:text-ui-fg-base"
+                        className={clx(
+                          "transition",
+                          isInverseTone
+                            ? "hover:text-[var(--theme-accent-contrast)]"
+                            : "hover:text-[var(--theme-foreground)]"
+                        )}
                         href={`/collections/${c.handle}`}
                       >
                         {c.title}
@@ -154,14 +283,31 @@ export default async function Footer() {
               </div>
             )}
             <div className="flex flex-col gap-y-2">
-              <span className="txt-small-plus txt-ui-fg-base">
+              <span
+                className={clx(
+                  "txt-small-plus",
+                  isInverseTone ? "text-[var(--theme-accent-contrast)]" : "txt-ui-fg-base"
+                )}
+              >
                 {footerCopy.customerCare}
               </span>
-              <ul className="grid grid-cols-1 gap-y-2 text-ui-fg-subtle txt-small">
+              <ul
+                className={clx(
+                  "grid grid-cols-1 gap-y-2 txt-small",
+                  isInverseTone
+                    ? "text-[color:rgba(247,251,255,0.72)]"
+                    : "text-ui-fg-subtle"
+                )}
+              >
                 <li>
                   <LocalizedClientLink
                     href="/account"
-                    className="hover:text-ui-fg-base"
+                    className={clx(
+                      "transition",
+                      isInverseTone
+                        ? "hover:text-[var(--theme-accent-contrast)]"
+                        : "hover:text-[var(--theme-foreground)]"
+                    )}
                   >
                     {navigationCopy.account}
                   </LocalizedClientLink>
@@ -169,7 +315,12 @@ export default async function Footer() {
                 <li>
                   <LocalizedClientLink
                     href="/cart"
-                    className="hover:text-ui-fg-base"
+                    className={clx(
+                      "transition",
+                      isInverseTone
+                        ? "hover:text-[var(--theme-accent-contrast)]"
+                        : "hover:text-[var(--theme-foreground)]"
+                    )}
                   >
                     {navigationCopy.cart}
                   </LocalizedClientLink>
@@ -177,7 +328,12 @@ export default async function Footer() {
                 <li>
                   <LocalizedClientLink
                     href="/store"
-                    className="hover:text-ui-fg-base"
+                    className={clx(
+                      "transition",
+                      isInverseTone
+                        ? "hover:text-[var(--theme-accent-contrast)]"
+                        : "hover:text-[var(--theme-foreground)]"
+                    )}
                   >
                     {navigationCopy.catalog}
                   </LocalizedClientLink>
@@ -185,14 +341,33 @@ export default async function Footer() {
               </ul>
             </div>
             <div className="flex flex-col gap-y-2">
-              <span className="txt-small-plus txt-ui-fg-base">{footerCopy.social}</span>
-              <ul className="grid grid-cols-1 gap-y-2 text-ui-fg-subtle txt-small">
+              <span
+                className={clx(
+                  "txt-small-plus",
+                  isInverseTone ? "text-[var(--theme-accent-contrast)]" : "txt-ui-fg-base"
+                )}
+              >
+                {footerCopy.social}
+              </span>
+              <ul
+                className={clx(
+                  "grid grid-cols-1 gap-y-2 txt-small",
+                  isInverseTone
+                    ? "text-[color:rgba(247,251,255,0.72)]"
+                    : "text-ui-fg-subtle"
+                )}
+              >
                 {socialLinks.length > 0
                   ? socialLinks.map((link, index) => (
                       <li key={String(link.id || index)}>
                         <ContentLinkItem
                           item={link}
-                          className="hover:text-ui-fg-base"
+                          className={clx(
+                            "transition",
+                            isInverseTone
+                              ? "hover:text-[var(--theme-accent-contrast)]"
+                              : "hover:text-[var(--theme-foreground)]"
+                          )}
                         />
                       </li>
                     ))
@@ -202,7 +377,12 @@ export default async function Footer() {
                           href={link.href}
                           target="_blank"
                           rel="noreferrer"
-                          className="hover:text-ui-fg-base"
+                          className={clx(
+                            "transition",
+                            isInverseTone
+                              ? "hover:text-[var(--theme-accent-contrast)]"
+                              : "hover:text-[var(--theme-foreground)]"
+                          )}
                         >
                           {link.label}
                         </a>
@@ -212,7 +392,15 @@ export default async function Footer() {
             </div>
           </div>
         </div>
-        <div className="flex w-full mb-16 justify-between text-ui-fg-muted gap-4 flex-col small:flex-row">
+        <div
+          className={clx(
+            "flex w-full justify-between gap-4 px-2 pt-6 flex-col small:flex-row",
+            isInverseTone
+              ? "text-[color:rgba(247,251,255,0.72)]"
+              : "text-[var(--theme-muted)]"
+          )}
+          style={isEditorial ? undefined : { marginBottom: "4rem" }}
+        >
           <Text className="txt-compact-small">
             © {new Date().getFullYear()} {brandName}.{" "}
             {commonCopy.allRightsReserved}
