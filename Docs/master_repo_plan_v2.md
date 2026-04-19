@@ -1006,23 +1006,24 @@ Truthfully closed after valid reopen and remediation: all sanctioned base slices
 ### Артефакты
 
 - `tranche 1` уже materialized: canonical client init flow / contract baseline через [`Docs/client_init_contract.md`](./client_init_contract.md), [`package.json`](../package.json), [`.env.example`](../.env.example), [`medusa-agency-boilerplate/.env.template`](../medusa-agency-boilerplate/.env.template), [`medusa-agency-boilerplate-storefront/.env.local.example`](../medusa-agency-boilerplate-storefront/.env.local.example), [`Docs/env_contract.md`](./env_contract.md) и [`Docs/current_work.md`](./current_work.md);
-- следующий tranche после этого baseline: template release checklist;
-- onboarding doc для нового клиента;
-- cleaned template branch/release.
+- `tranche 2` теперь materialized в [`Docs/template_release_handoff.md`](./template_release_handoff.md) как canonical template release checklist + onboarding path + cleaned release-package contour;
+- внутри этого artifact явно зафиксированы template-safe package contents, excluded residue classes и definition of ready for handoff/template release.
 
 ### Definition of Done
 
 - новый клиентский проект можно создать по стандартизированному сценарию;
 - обязательные client-specific шаги перечислены явно;
 - шаблон не содержит случайных демо-зависимостей;
-- запуск нового проекта не требует “вспоминать, как мы делали в прошлый раз”.
+- запуск нового проекта не требует “вспоминать, как мы делали в прошлый раз”;
+- contour handoff package явно отделяет template-safe baseline от local/dev/demo/unrelated residue.
 
-### Статус после closure `tranche 1`
+### Статус после materialization `tranche 2`
 
 - `Phase 7 / tranche 1` `client-init contract and placeholder-safe template baseline` truthfully закрыт commit'ом `a96aa81adfd655ddda9b6fea03dacf61c3174737` `feat(template): add client-init contract baseline`;
-- closure narrative не означает завершение всей `Фазы 7`: materialized только baseline contract/init slice;
+- closure narrative tranche 1 не означает завершение всей `Фазы 7`: tranche 1 фиксирует только baseline contract/init slice;
 - blocking inconsistency по storefront runtime keys `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_DEFAULT_REGION` закрыта truthful remediation к optional runtime semantics; повторный review verdict = **APPROVE**;
-- следующий logical workstream внутри `Фазы 7` остаётся template release/onboarding/package slice.
+- следующий logical workstream после tranche 1 truthfully materialized как markdown-only packaging slice в [`Docs/template_release_handoff.md`](./template_release_handoff.md);
+- этот tranche 2 intentionally ограничен release checklist, onboarding path и clean package contour и не делает claim'ов о CI, staging, prod hardening или release automation из `Фазы 8`.
 
 ### Контрольные риски
 

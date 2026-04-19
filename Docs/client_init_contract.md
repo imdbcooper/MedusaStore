@@ -149,4 +149,6 @@ Template baseline теперь должен соблюдать такие пра
 - canonical preset authority остаётся в [`storefront-client-config.ts`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts), а sanctioned selector остаётся [`NEXT_PUBLIC_STOREFRONT_PRESET`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:14);
 - remediation по blocking inconsistency завершена, повторный review дал **APPROVE**.
 
-Следующий logical slice внутри `Фазы 7` лежит уже после этого baseline: template release checklist, onboarding doc и cleaned template release/package path. Этот следующий tranche здесь не считается реализованным автоматически.
+Следующий logical slice внутри `Фазы 7` лежит уже после этого baseline: template release checklist, onboarding doc и cleaned template release/package path.
+
+По состоянию markdown-only packaging sync этот следующий tranche уже materialized отдельным canonical artifact в [`Docs/template_release_handoff.md`](./template_release_handoff.md). При этом сам этот документ остаётся узким source of truth именно для tranche 1 contract baseline и не подменяет собой tranche 2 handoff/release narrative.
