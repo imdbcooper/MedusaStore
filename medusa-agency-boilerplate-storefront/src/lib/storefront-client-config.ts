@@ -255,11 +255,32 @@ export type StorefrontListingCardSurface = {
   }
 }
 
+export type StorefrontRelatedProductsRailVariant = "plain" | "panel"
+
+export type StorefrontRelatedProductsRailHeaderAlignment = "start" | "center"
+
+export type StorefrontRelatedProductsRailSurface = {
+  mode: "rail"
+  variant: StorefrontRelatedProductsRailVariant
+  tone: StorefrontCatalogShellTone
+  spacing: StorefrontCatalogSpacing
+  header: {
+    eyebrow?: string
+    title: string
+    description?: string
+    alignment: StorefrontRelatedProductsRailHeaderAlignment
+  }
+  grid: {
+    density: StorefrontCatalogSpacing
+  }
+}
+
 export type StorefrontListingSurfaces = {
   productCard: {
     default: StorefrontListingCardSurface
     featured: StorefrontListingCardSurface
   }
+  relatedProductsRail: StorefrontRelatedProductsRailSurface
 }
 
 export type StorefrontCatalogShellTone = "surface" | "muted"
@@ -349,7 +370,7 @@ const sharedOverridePolicy = {
     "brand tokens",
     "global shell presentation surfaces (shell.nav, shell.sideMenu, shell.footer)",
     "landing surfaces (home, collection, content, post)",
-    "listing card presentation surfaces (listingSurfaces.productCard)",
+    "listing presentation surfaces (listingSurfaces.productCard, listingSurfaces.relatedProductsRail)",
     "catalog shell presentation surfaces (catalogShell.store, catalogShell.category, catalogShell.collection, catalogShell.featuredRail)",
     "adjacent product display surfaces (productSurfaces.supportHighlights)",
   ],
@@ -764,6 +785,20 @@ export const storefrontPresetCatalog = {
           },
         },
       },
+      relatedProductsRail: {
+        mode: "rail",
+        variant: "panel",
+        tone: "surface",
+        spacing: "comfortable",
+        header: {
+          eyebrow: "Related products",
+          title: "You might also want to check out these products.",
+          alignment: "center",
+        },
+        grid: {
+          density: "comfortable",
+        },
+      },
     },
     catalogShell: {
       store: {
@@ -1151,6 +1186,20 @@ export const storefrontPresetCatalog = {
             titleTone: "default",
             priceTone: "accent",
           },
+        },
+      },
+      relatedProductsRail: {
+        mode: "rail",
+        variant: "plain",
+        tone: "muted",
+        spacing: "compact",
+        header: {
+          eyebrow: "Related products",
+          title: "You might also want to check out these products.",
+          alignment: "start",
+        },
+        grid: {
+          density: "compact",
         },
       },
     },

@@ -1,6 +1,7 @@
 import {
   StorefrontClientConfig,
   StorefrontListingCardSurface,
+  StorefrontRelatedProductsRailSurface,
   storefrontClientConfig,
 } from "@lib/storefront-client-config"
 
@@ -16,3 +17,6 @@ export const resolveDefaultProductCardSurface = (): StorefrontListingCardSurface
 
 export const resolveFeaturedProductCardSurface = (): StorefrontListingCardSurface =>
   resolveListingSurface("productCard").featured as StorefrontListingCardSurface
+
+export const resolveRelatedProductsRailSurface = (): StorefrontRelatedProductsRailSurface =>
+  resolveListingSurface("relatedProductsRail") as StorefrontRelatedProductsRailSurface
