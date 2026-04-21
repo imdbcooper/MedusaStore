@@ -1,6 +1,6 @@
 # Current Work
 
-> Статус документа: текущий операционный фокус проекта по состоянию на `2026-04-19`
+> Статус документа: текущий операционный фокус проекта по состоянию на `2026-04-21`
 >
 > Назначение: дать агенту с пустым контекстом быстрый и однозначный ответ на три вопроса:
 >
@@ -44,6 +44,22 @@
 - **shipping track v1** реализован как backend-first **ApiShip** slice; **`cheapest_only_v1` подтверждён runtime-проверкой `2026-04-18`**: production token получен, provider активирован, route path [`GET /store/apiship/rates`](../medusa-agency-boilerplate/src/api/store/apiship/rates/route.ts) подтверждён, rates из ApiShip/Yandex возвращаются; blocker по ApiShip **закрыт targeted code fixes** в route и seed, а не ожиданием account-state;
 - **checkout end-to-end validation v1** закрыт: подтвержден полный flow `shipping → hosted YooKassa payment → automatic return → review → order placement → confirmed order page`; ложный blocker вокруг `payment_collection` снят; targeted fix в [`payment-button/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx) больше не допускает вызов `placeOrder()` до hosted authorization, а targeted fix в [`cookies.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts) меняет policy для cart cookie c `sameSite: "strict"` на `sameSite: "lax"` для корректного cross-site return.
 
+Новый truthfully confirmed update `2026-04-21` для shipping roadmap:
+
+- исторический ApiShip slice остается подтвержденным промежуточным результатом и не должен переписываться как будто его не было;
+- но долгосрочный shipping direction больше не читается как `ApiShip-first`, потому что direct `Yandex Delivery` investigation показал расхождение между работающим `Yandex Delivery` API и непрозрачным `ApiShip` runtime path для `PVZ` / `dropoff` сценариев;
+- текущий concrete workstream для shipping теперь truthfully смещён в проектирование и подготовку **собственного delivery-layer `delivery-hub`**, где первым adapter будет **`Yandex Delivery`**, а merchant-facing настройка должна жить в админке магазина без форка official admin;
+- source-of-truth спецификация этого workstream зафиксирована в [delivery_hub_spec.md](./delivery_hub_spec.md).
+- backend/admin/tests tranche-1 для `delivery-hub` уже materialized в `medusa-agency-boilerplate`: добавлены foundation module scaffold, encrypted connection storage, event log storage, provider registry, direct `Yandex Delivery` adapter, admin API routes `/admin/delivery/*`, middleware wiring, admin page `Settings -> Delivery` и базовое unit coverage;
+
+#### Truthful tranche-1 status for `delivery-hub`
+
+- уже materialized: foundation backend module, encrypted credentials storage, direct `Yandex Delivery` adapter, admin API, event-log storage и admin extension page [src/admin/routes/settings/delivery/page.tsx](../medusa-agency-boilerplate/src/admin/routes/settings/delivery/page.tsx);
+- частично done: страница `Settings -> Delivery` больше не является planned-only и сейчас даёт `Providers`, `Connections`, `Yandex connection`, `Connection diagnostics`, `Test Quote`; поля `Enabled`, `Auto confirm`, `Label format`, `Default warehouse id` сохраняются в connection config, но последнее поле пока остаётся opaque string и не является materialized warehouse domain;
+- реально существующие базовые tests: [src/workflows/__tests__/delivery-hub.unit.spec.ts](../medusa-agency-boilerplate/src/workflows/__tests__/delivery-hub.unit.spec.ts) покрывает encryption / registry / provider listing, а [src/workflows/__tests__/delivery-hub-admin.unit.spec.ts](../medusa-agency-boilerplate/src/workflows/__tests__/delivery-hub-admin.unit.spec.ts) покрывает admin list/create/test flows, successful `test-quote` response shape и stable error serialization with correlation details;
+- deferred: storefront neutral contract and cut-in, fulfillment-provider wiring, warehouses CRUD/domain, logs UI, shipment/order widgets, live Yandex integration tests, ApiShip cutover/removal и mature multi-provider orchestration;
+- известный contract nuance зафиксирован truthfully: успешный `Test connection` отдаёт correlation context внутри diagnostics, а успешный `Test quote` — отдельным top-level `correlation_id`; оба значения всё равно пишутся в event log storage, но merchant-facing logs screen пока не materialized.
+
 `Payload CMS v1` как content layer маркетинговых страниц уже реализован и закрыт как отдельный workstream после стабилизации storefront core.
 В каноническом плане это больше не будущий трек **Фаза 5.5**, а завершённый source-of-truth этап перед переходом к **Фазе 6** с client customization.
 
@@ -51,7 +67,7 @@
 
 - этот master repo по умолчанию делается для **российского рынка**;
 - для payments текущий v1 path остается **YooKassa-first**;
-- для shipping следующий целевой track по умолчанию — **ApiShip-first**;
+- для shipping следующий целевой track по умолчанию — **собственный `delivery-hub` с `Yandex-first` adapter path**;
 - решения, не подходящие для типового магазина в РФ, нельзя выбирать как default path только потому, что они лучше документированы в экосистеме Medusa.
 
 ### Текущий статус
@@ -98,6 +114,7 @@
 - **payment track v1 подтвержден для текущего YooKassa-first scope** и не является активным кодовым blocker;
 - **shipping slice `cheapest_only_v1` подтверждён runtime-проверкой** `2026-04-18`: production token получен и активирован, provider включён через [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts), route [`GET /store/apiship/rates`](../medusa-agency-boilerplate/src/api/store/apiship/rates/route.ts) подтверждён, rates из ApiShip/Yandex начали возвращаться;
 - blocker по ApiShip **закрыт**: проблема оказалась не в account-state, а была устранена targeted code fixes в [`route.ts`](../medusa-agency-boilerplate/src/api/store/apiship/rates/route.ts) и [`seed.ts`](../medusa-agency-boilerplate/src/scripts/seed.ts);
+- **`delivery-hub` tranche-1 materialized как параллельный foundation layer**: direct `Yandex Delivery` admin path, encrypted connection handling, admin page `Settings -> Delivery` и базовые unit tests уже есть; storefront cutover, warehouse/shipment domain и полная замена ApiShip остаются deferred и не должны overclaim'иться.
 - для подтверждённого runtime path использовался production token с `APISHIP_TEST_MODE=false`;
 - storefront `500` на checkout отделен от shipping slice и снят как ложный blocker: при валидном cart checkout route отвечает `200`;
 - **checkout end-to-end validation v1 подтвержден runtime/E2E pass**: полный flow `shipping → hosted YooKassa payment → automatic return → review → order placement → confirmed order page` реально пройден;

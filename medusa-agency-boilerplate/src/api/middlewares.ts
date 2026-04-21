@@ -5,6 +5,10 @@ import {
   validateAndTransformQuery,
 } from "@medusajs/framework/http"
 
+import { AdminCreateDeliveryConnectionSchema } from "./admin/delivery/connections/route"
+import { AdminUpdateDeliveryConnectionSchema } from "./admin/delivery/connections/[id]/route"
+import { AdminDeliveryConnectionTestSchema } from "./admin/delivery/connections/[id]/test/route"
+import { AdminDeliveryTestQuoteSchema } from "./admin/delivery/test-quote/route"
 import { AdminNotificationSmokeSchema } from "./admin/notifications/smoke/route"
 import { AdminSmsNotificationSmokeSchema } from "./admin/notifications/smoke/sms/route"
 import { AdminVkNotificationSmokeSchema } from "./admin/notifications/smoke/vk/route"
@@ -16,8 +20,40 @@ import { StoreYooKassaPaymentStatusSchema } from "./store/payment/yookassa/route
 import { StoreYooKassaReturnSchema } from "./store/payment/yookassa/return/route"
 import { StoreVkIdCallbackSchema } from "./store/vk-id/callback/route"
 
+const adminAuth = authenticate("user", ["session", "bearer", "api-key"])
+
 export default defineMiddlewares({
   routes: [
+    {
+      matcher: "/admin/delivery/providers",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/delivery/connections",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/delivery/connections",
+      methods: ["POST"],
+      middlewares: [adminAuth, validateAndTransformBody(AdminCreateDeliveryConnectionSchema)],
+    },
+    {
+      matcher: "/admin/delivery/connections/:id",
+      methods: ["PUT"],
+      middlewares: [adminAuth, validateAndTransformBody(AdminUpdateDeliveryConnectionSchema)],
+    },
+    {
+      matcher: "/admin/delivery/connections/:id/test",
+      methods: ["POST"],
+      middlewares: [adminAuth, validateAndTransformBody(AdminDeliveryConnectionTestSchema)],
+    },
+    {
+      matcher: "/admin/delivery/test-quote",
+      methods: ["POST"],
+      middlewares: [adminAuth, validateAndTransformBody(AdminDeliveryTestQuoteSchema)],
+    },
     {
       matcher: "/admin/marketing/campaigns",
       methods: ["GET"],

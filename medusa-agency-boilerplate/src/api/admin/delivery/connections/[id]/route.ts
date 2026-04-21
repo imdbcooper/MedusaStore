@@ -1,0 +1,33 @@
+import type {
+  AuthenticatedMedusaRequest,
+  MedusaResponse,
+} from "@medusajs/framework/http"
+import { z } from "@medusajs/framework/zod"
+import { DeliveryHubUpdateConnectionSchema } from "../../../../../modules/delivery-hub"
+import {
+  getDeliveryHubService,
+  getRouteParam,
+  handleDeliveryHubError,
+} from "../../shared"
+
+export const AdminUpdateDeliveryConnectionSchema = DeliveryHubUpdateConnectionSchema
+
+type AdminUpdateDeliveryConnectionBody = z.infer<typeof AdminUpdateDeliveryConnectionSchema>
+
+export async function PUT(
+  req: AuthenticatedMedusaRequest<AdminUpdateDeliveryConnectionBody>,
+  res: MedusaResponse
+) {
+  try {
+    const id = getRouteParam(req, "id")
+    const service = getDeliveryHubService(req)
+    const connection = await service.updateConnection(id, req.validatedBody)
+
+    res.status(200).json({
+      ok: true,
+      connection,
+    })
+  } catch (error) {
+    handleDeliveryHubError(res, error)
+  }
+}
