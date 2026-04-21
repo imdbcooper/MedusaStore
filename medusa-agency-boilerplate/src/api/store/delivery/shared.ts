@@ -1,6 +1,8 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { z } from "@medusajs/framework/zod"
 import {
   createDeliveryHubService,
+  DeliveryHubError,
   getDeliveryHubPgConnection,
   isDeliveryHubError,
 } from "../../../modules/delivery-hub"
@@ -12,15 +14,27 @@ export function getStoreDeliveryHubService(req: MedusaRequest) {
 }
 
 export function handleStoreDeliveryHubError(res: MedusaResponse, error: unknown) {
+  if (error instanceof z.ZodError) {
+    respondWithStoreDeliveryHubError(
+      res,
+      new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: "Store delivery request validation failed",
+        status: 400,
+        details: {
+          issues: error.issues.map((issue) => ({
+            code: issue.code,
+            message: issue.message,
+            path: issue.path.join("."),
+          })),
+        },
+      })
+    )
+    return
+  }
+
   if (isDeliveryHubError(error)) {
-    res.status(error.status).json({
-      ok: false,
-      error: {
-        code: error.code,
-        message: error.message,
-        details: sanitizeErrorDetails(error.details),
-      },
-    })
+    respondWithStoreDeliveryHubError(res, error)
     return
   }
 
@@ -39,10 +53,13 @@ export function parseStoreDeliveryItems(rawItems: string | undefined) {
     return undefined
   }
 
-  const parsed = JSON.parse(rawItems)
+  const parsed = parseStoreDeliveryJsonQuery(rawItems, "items")
 
   if (!Array.isArray(parsed)) {
-    throw new Error('Query parameter "items" must be a JSON array')
+    throw createStoreDeliveryValidationError(
+      'Query parameter "items" must be a JSON array',
+      "items"
+    )
   }
 
   return parsed
@@ -53,7 +70,7 @@ export function parseStoreDeliveryInterval(rawInterval: string | undefined) {
     return undefined
   }
 
-  const parsed = JSON.parse(rawInterval)
+  const parsed = parseStoreDeliveryJsonQuery(rawInterval, "interval_utc")
 
   if (
     !parsed ||
@@ -61,7 +78,10 @@ export function parseStoreDeliveryInterval(rawInterval: string | undefined) {
     typeof (parsed as { from?: unknown }).from !== "string" ||
     typeof (parsed as { to?: unknown }).to !== "string"
   ) {
-    throw new Error('Query parameter "interval_utc" must be a JSON object with "from" and "to"')
+    throw createStoreDeliveryValidationError(
+      'Query parameter "interval_utc" must be a JSON object with "from" and "to"',
+      "interval_utc"
+    )
   }
 
   return parsed as {
@@ -76,4 +96,37 @@ function sanitizeErrorDetails(details: Record<string, unknown> | undefined) {
   }
 
   return redactRecord(details)
+}
+
+function parseStoreDeliveryJsonQuery(rawValue: string, field: string) {
+  try {
+    return JSON.parse(rawValue)
+  } catch {
+    throw createStoreDeliveryValidationError(
+      `Query parameter "${field}" must be valid JSON`,
+      field
+    )
+  }
+}
+
+function createStoreDeliveryValidationError(message: string, field: string) {
+  return new DeliveryHubError({
+    code: "DELIVERY_HUB_VALIDATION_ERROR",
+    message,
+    status: 400,
+    details: {
+      field,
+    },
+  })
+}
+
+function respondWithStoreDeliveryHubError(res: MedusaResponse, error: DeliveryHubError) {
+  res.status(error.status).json({
+    ok: false,
+    error: {
+      code: error.code,
+      message: error.message,
+      details: sanitizeErrorDetails(error.details),
+    },
+  })
 }

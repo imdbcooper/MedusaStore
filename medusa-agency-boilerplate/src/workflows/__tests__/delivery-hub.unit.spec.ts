@@ -590,7 +590,10 @@ describe("Delivery Hub service", () => {
         pickup_points_embedded: [],
         pickup_window_required: false,
         pickup_window_options: [],
-        raw_reference: {},
+        raw_reference: {
+          provider_offer_id: "offer-123",
+          provider: "yandex",
+        },
       },
     ])
 
@@ -606,6 +609,7 @@ describe("Delivery Hub service", () => {
         expect.objectContaining({
           quote_key: "quote_1",
           amount: 499,
+          raw_reference: {},
         }),
       ],
     })

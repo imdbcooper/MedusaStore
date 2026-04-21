@@ -11,6 +11,7 @@ import type {
   DeliveryConnectionRecord,
   DeliveryConnectionUpsertInput,
 } from "./domain/connection"
+import type { DeliveryQuote } from "./domain/quote"
 import type { DeliveryTestQuoteInput } from "./domain/test-dto"
 import type {
   DeliveryWarehousePublic,
@@ -492,7 +493,7 @@ export class DeliveryHubService {
 
       return {
         ok: true,
-        quotes,
+        quotes: quotes.map((quote) => sanitizeStoreQuote(quote)),
       }
     } catch (error) {
       const normalized = normalizeDeliveryHubError(error)
@@ -936,4 +937,11 @@ function requireString(value: string | null | undefined, field: string) {
 
 function normalizeNullableText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
+function sanitizeStoreQuote(quote: DeliveryQuote): DeliveryQuote {
+  return {
+    ...quote,
+    raw_reference: {},
+  }
 }

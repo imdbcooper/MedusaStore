@@ -197,6 +197,66 @@ describe("Delivery Hub store routes", () => {
       },
     })
   })
+
+  it("returns controlled 400 for malformed items JSON", async () => {
+    const quoteSpy = jest.spyOn(DeliveryHubService.prototype, "listStoreQuotes")
+    const res = createMockResponse()
+
+    await deliveryQuotesRoute.GET(
+      createMockRequest({
+        validatedQuery: {
+          mode_code: "warehouse_to_pickup_point",
+          warehouse_id: "wh_1",
+          destination_point_id: "pvz_1",
+          items: "{bad json",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(quoteSpy).not.toHaveBeenCalled()
+    expect(res.status).toHaveBeenCalledWith(400)
+    expect(res.json).toHaveBeenCalledWith({
+      ok: false,
+      error: {
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: 'Query parameter "items" must be valid JSON',
+        details: {
+          field: "items",
+        },
+      },
+    })
+  })
+
+  it("returns controlled 400 for malformed interval JSON", async () => {
+    const quoteSpy = jest.spyOn(DeliveryHubService.prototype, "listStoreQuotes")
+    const res = createMockResponse()
+
+    await deliveryQuotesRoute.GET(
+      createMockRequest({
+        validatedQuery: {
+          mode_code: "warehouse_to_pickup_point",
+          warehouse_id: "wh_1",
+          destination_point_id: "pvz_1",
+          interval_utc: "{bad json",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(quoteSpy).not.toHaveBeenCalled()
+    expect(res.status).toHaveBeenCalledWith(400)
+    expect(res.json).toHaveBeenCalledWith({
+      ok: false,
+      error: {
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: 'Query parameter "interval_utc" must be valid JSON',
+        details: {
+          field: "interval_utc",
+        },
+      },
+    })
+  })
 })
 
 function createMockRequest(input?: Partial<any>) {
