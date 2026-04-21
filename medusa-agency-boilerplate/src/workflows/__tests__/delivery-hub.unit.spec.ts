@@ -236,6 +236,102 @@ describe("Delivery Hub service", () => {
     expect(providers[0].code).toBe(DELIVERY_HUB_PROVIDER_YANDEX)
   })
 
+  it("lists warehouses and embeds default warehouse into public connection payload", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_1",
+      name: "Main warehouse",
+      provider_warehouse_id: "ya-wh-1",
+    })
+    const connection = createConnectionRecord({
+      config: {
+        default_warehouse_id: warehouse.id,
+      },
+    })
+    const pg = createMockPg([connection], [], [warehouse])
+    const service = new DeliveryHubService(pg as any)
+
+    const [publicConnection] = await service.listConnections()
+    const listedWarehouses = await service.listWarehouses()
+
+    expect(listedWarehouses).toHaveLength(1)
+    expect(listedWarehouses[0]).toMatchObject({
+      id: warehouse.id,
+      provider_warehouse_id: "ya-wh-1",
+    })
+    expect(publicConnection.config).toMatchObject({
+      default_warehouse_id: warehouse.id,
+      default_warehouse: {
+        id: warehouse.id,
+        name: "Main warehouse",
+        provider_warehouse_id: "ya-wh-1",
+      },
+    })
+  })
+
+  it("uses materialized warehouse mapping for warehouse quote flow", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_1",
+      provider_code: "yandex",
+      provider_warehouse_id: "ya-wh-1",
+    })
+    const connection = createConnectionRecord({
+      provider_code: "yandex",
+      config: {
+        default_warehouse_id: warehouse.id,
+      },
+    })
+    const pg = createMockPg([connection], [], [warehouse])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+    const quoteSpy = jest
+      .spyOn(adapter, "quoteWarehouseToPickupPoint")
+      .mockResolvedValue([])
+
+    const response = await service.testQuote({
+      connection_id: connection.id,
+      mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+      warehouse_id: warehouse.id,
+      destination_point_id: "pvz_1",
+      currency_code: "RUB",
+    })
+
+    expect(response.ok).toBe(true)
+    expect(quoteSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connection,
+      }),
+      expect.objectContaining({
+        warehouse_id: "ya-wh-1",
+        destination_point_id: "pvz_1",
+      })
+    )
+
+    quoteSpy.mockRestore()
+  })
+
+  it("rejects binding disabled warehouse as connection default", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_1",
+      enabled: false,
+    })
+    const pg = createMockPg([], [], [warehouse])
+    const service = new DeliveryHubService(pg as any)
+
+    await expect(
+      service.createConnection({
+        provider_code: "yandex",
+        name: "Yandex test",
+        mode: "test",
+        config: {
+          default_warehouse_id: warehouse.id,
+        },
+      })
+    ).rejects.toMatchObject({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      status: 400,
+    })
+  })
+
   it("lists event logs with filters and keeps summaries sanitized", async () => {
     const connection = createConnectionRecord()
     const pg = createMockPg([connection], [
@@ -369,8 +465,28 @@ function createConnectionRecord(input?: Partial<any>) {
   }
 }
 
-function createMockPg(initialConnections: any[], initialEventLogs: any[] = []) {
-  const state = new Map(initialConnections.map((connection) => [connection.id, connection]))
+function createWarehouseRecord(input?: Partial<any>) {
+  return {
+    id: "wh_1",
+    name: "Warehouse",
+    enabled: true,
+    country_code: "RU",
+    city: "Moscow",
+    address_line_1: "Tverskaya 1",
+    contact_name: null,
+    contact_phone: null,
+    provider_code: "yandex",
+    provider_warehouse_id: "ya-wh-1",
+    metadata: {},
+    created_at: "2026-04-20T00:00:00.000Z",
+    updated_at: "2026-04-20T00:00:00.000Z",
+    ...input,
+  }
+}
+
+function createMockPg(initialConnections: any[], initialEventLogs: any[] = [], initialWarehouses: any[] = []) {
+  const connectionState = new Map(initialConnections.map((connection) => [connection.id, connection]))
+  const warehouseState = new Map(initialWarehouses.map((warehouse) => [warehouse.id, warehouse]))
   const eventLogs = [...initialEventLogs]
   const calls: Array<{ sql: string; params: unknown[] }> = []
 
@@ -383,15 +499,35 @@ function createMockPg(initialConnections: any[], initialEventLogs: any[] = []) {
 
       if (normalizedSql.includes("select * from delivery_connections where id = ? limit 1")) {
         const id = String(normalizedParams[0] ?? "")
-        const row = state.get(id)
+        const row = connectionState.get(id)
         return {
           rows: row ? [row] : [],
         }
       }
 
+      if (normalizedSql.includes("select * from delivery_warehouses where id = ? limit 1")) {
+        const id = String(normalizedParams[0] ?? "")
+        const row = warehouseState.get(id)
+        return {
+          rows: row ? [row] : [],
+        }
+      }
+
+      if (normalizedSql.includes("from delivery_connections order by created_at desc, id desc")) {
+        return {
+          rows: Array.from(connectionState.values()),
+        }
+      }
+
+      if (normalizedSql.includes("from delivery_warehouses order by created_at desc, id desc")) {
+        return {
+          rows: Array.from(warehouseState.values()),
+        }
+      }
+
       if (normalizedSql.includes("insert into delivery_connections")) {
         const nextRecord = {
-          ...(state.get(String(normalizedParams[0])) ?? {}),
+          ...(connectionState.get(String(normalizedParams[0])) ?? {}),
           id: String(normalizedParams[0]),
           provider_code: normalizedParams[1],
           name: normalizedParams[2],
@@ -409,11 +545,37 @@ function createMockPg(initialConnections: any[], initialEventLogs: any[] = []) {
           config: JSON.parse(String(normalizedParams[12] ?? "{}")),
           metadata: JSON.parse(String(normalizedParams[13] ?? "{}")),
           created_at:
-            state.get(String(normalizedParams[0]))?.created_at ?? "2026-04-20T00:00:00.000Z",
+            connectionState.get(String(normalizedParams[0]))?.created_at ?? "2026-04-20T00:00:00.000Z",
           updated_at: "2026-04-20T00:00:00.000Z",
         }
 
-        state.set(nextRecord.id, nextRecord)
+        connectionState.set(nextRecord.id, nextRecord)
+
+        return {
+          rows: [nextRecord],
+        }
+      }
+
+      if (normalizedSql.includes("insert into delivery_warehouses")) {
+        const nextRecord = {
+          ...(warehouseState.get(String(normalizedParams[0])) ?? {}),
+          id: String(normalizedParams[0]),
+          name: normalizedParams[1],
+          enabled: normalizedParams[2],
+          country_code: normalizedParams[3],
+          city: normalizedParams[4],
+          address_line_1: normalizedParams[5],
+          contact_name: normalizedParams[6],
+          contact_phone: normalizedParams[7],
+          provider_code: normalizedParams[8],
+          provider_warehouse_id: normalizedParams[9],
+          metadata: JSON.parse(String(normalizedParams[10] ?? "{}")),
+          created_at:
+            warehouseState.get(String(normalizedParams[0]))?.created_at ?? "2026-04-20T00:00:00.000Z",
+          updated_at: "2026-04-20T00:00:00.000Z",
+        }
+
+        warehouseState.set(nextRecord.id, nextRecord)
 
         return {
           rows: [nextRecord],
@@ -464,7 +626,8 @@ function createMockPg(initialConnections: any[], initialEventLogs: any[] = []) {
 
       if (
         normalizedSql.includes("create table if not exists delivery_connections") ||
-        normalizedSql.includes("create table if not exists delivery_event_logs")
+        normalizedSql.includes("create table if not exists delivery_event_logs") ||
+        normalizedSql.includes("create table if not exists delivery_warehouses")
       ) {
         return {
           rows: [],

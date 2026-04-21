@@ -29,10 +29,27 @@ type DeliveryConnection = {
   updated_at: string
 }
 
+type DeliveryWarehouse = {
+  id: string
+  name: string
+  enabled: boolean
+  country_code: string
+  city: string | null
+  address_line_1: string | null
+  contact_name: string | null
+  contact_phone: string | null
+  provider_code: string | null
+  provider_warehouse_id: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 type DeliveryConfig = {
   auto_confirm?: boolean
   label_format?: string
   default_warehouse_id?: string
+  default_warehouse?: DeliveryWarehouse
 }
 
 type DeliveryConnectionForm = {
@@ -45,6 +62,18 @@ type DeliveryConnectionForm = {
   auto_confirm: boolean
   label_format: string
   default_warehouse_id: string
+}
+
+type DeliveryWarehouseForm = {
+  name: string
+  enabled: boolean
+  country_code: string
+  city: string
+  address_line_1: string
+  contact_name: string
+  contact_phone: string
+  provider_code: string
+  provider_warehouse_id: string
 }
 
 type DeliveryTestConnectionResult = {
@@ -121,6 +150,18 @@ const defaultConnectionForm: DeliveryConnectionForm = {
   auto_confirm: false,
   label_format: "",
   default_warehouse_id: "",
+}
+
+const defaultWarehouseForm: DeliveryWarehouseForm = {
+  name: "",
+  enabled: true,
+  country_code: "RU",
+  city: "",
+  address_line_1: "",
+  contact_name: "",
+  contact_phone: "",
+  provider_code: "yandex",
+  provider_warehouse_id: "",
 }
 
 const defaultTestQuoteForm: DeliveryTestQuoteForm = {
@@ -209,6 +250,27 @@ const connectionToForm = (connection: DeliveryConnection): DeliveryConnectionFor
   }
 }
 
+const warehouseToForm = (warehouse: DeliveryWarehouse): DeliveryWarehouseForm => {
+  return {
+    name: warehouse.name,
+    enabled: warehouse.enabled,
+    country_code: warehouse.country_code,
+    city: warehouse.city || "",
+    address_line_1: warehouse.address_line_1 || "",
+    contact_name: warehouse.contact_name || "",
+    contact_phone: warehouse.contact_phone || "",
+    provider_code: warehouse.provider_code || "yandex",
+    provider_warehouse_id: warehouse.provider_warehouse_id || "",
+  }
+}
+
+const getWarehouseOptionLabel = (warehouse: DeliveryWarehouse) => {
+  const location = [warehouse.city, warehouse.address_line_1].filter(Boolean).join(", ")
+  const providerRef = warehouse.provider_warehouse_id ? ` · provider: ${warehouse.provider_warehouse_id}` : ""
+
+  return `${warehouse.name}${location ? ` · ${location}` : ""}${providerRef}`
+}
+
 const getApiError = async (response: Response): Promise<ApiErrorPayload> => {
   let payload: unknown = null
 
@@ -272,14 +334,20 @@ const logSuccessToneClass = (success: boolean) => {
 const DeliverySettingsPage = () => {
   const [providers, setProviders] = useState<DeliveryProviderDefinition[]>([])
   const [connections, setConnections] = useState<DeliveryConnection[]>([])
+  const [warehouses, setWarehouses] = useState<DeliveryWarehouse[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isSavingWarehouse, setIsSavingWarehouse] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null)
+  const [activeWarehouseId, setActiveWarehouseId] = useState<string | null>(null)
   const [connectionForm, setConnectionForm] = useState<DeliveryConnectionForm>(defaultConnectionForm)
+  const [warehouseForm, setWarehouseForm] = useState<DeliveryWarehouseForm>(defaultWarehouseForm)
   const [formNotice, setFormNotice] = useState<string | null>(null)
+  const [warehouseFormNotice, setWarehouseFormNotice] = useState<string | null>(null)
   const [pageError, setPageError] = useState<ApiErrorPayload | null>(null)
   const [formError, setFormError] = useState<ApiErrorPayload | null>(null)
+  const [warehouseFormError, setWarehouseFormError] = useState<ApiErrorPayload | null>(null)
   const [testConnectionResult, setTestConnectionResult] =
     useState<DeliveryTestConnectionResult | null>(null)
   const [testConnectionError, setTestConnectionError] = useState<ApiErrorPayload | null>(null)
@@ -298,6 +366,14 @@ const DeliverySettingsPage = () => {
 
     return connections.find((connection) => connection.id === activeConnectionId) || null
   }, [activeConnectionId, connections])
+
+  const activeWarehouse = useMemo(() => {
+    if (!activeWarehouseId) {
+      return null
+    }
+
+    return warehouses.find((warehouse) => warehouse.id === activeWarehouseId) || null
+  }, [activeWarehouseId, warehouses])
 
   const yandexProvider = useMemo(
     () => providers.find((provider) => provider.code === "yandex") || null,
@@ -318,6 +394,11 @@ const DeliverySettingsPage = () => {
     [connections]
   )
 
+  const yandexWarehouses = useMemo(
+    () => warehouses.filter((warehouse) => !warehouse.provider_code || warehouse.provider_code === "yandex"),
+    [warehouses]
+  )
+
   const filteredEventLogs = useMemo(() => {
     if (!activeConnectionId) {
       return eventLogs
@@ -334,11 +415,14 @@ const DeliverySettingsPage = () => {
     }
 
     try {
-      const [providersPayload, connectionsPayload, logsPayload] = await Promise.all([
+      const [providersPayload, connectionsPayload, warehousesPayload, logsPayload] = await Promise.all([
         requestJson<{ providers: DeliveryProviderDefinition[] }>("/admin/delivery/providers", {
           method: "GET",
         }),
         requestJson<{ connections: DeliveryConnection[] }>("/admin/delivery/connections", {
+          method: "GET",
+        }),
+        requestJson<{ warehouses: DeliveryWarehouse[] }>("/admin/delivery/warehouses", {
           method: "GET",
         }),
         requestJson<{ logs: DeliveryEventLog[] }>("/admin/delivery/logs?provider_code=yandex&limit=20", {
@@ -348,6 +432,7 @@ const DeliverySettingsPage = () => {
 
       setProviders(providersPayload.providers || [])
       setConnections(connectionsPayload.connections || [])
+      setWarehouses(warehousesPayload.warehouses || [])
       setEventLogs(logsPayload.logs || [])
       setPageError(null)
 
@@ -355,6 +440,12 @@ const DeliverySettingsPage = () => {
 
       if (activeConnectionId && !nextConnections.some((connection) => connection.id === activeConnectionId)) {
         setActiveConnectionId(null)
+      }
+
+      const nextWarehouses = warehousesPayload.warehouses || []
+
+      if (activeWarehouseId && !nextWarehouses.some((warehouse) => warehouse.id === activeWarehouseId)) {
+        setActiveWarehouseId(null)
       }
 
       setTestQuoteForm((current) => {
@@ -395,6 +486,25 @@ const DeliverySettingsPage = () => {
     setConnectionForm(defaultConnectionForm)
   }, [activeConnection])
 
+  useEffect(() => {
+    if (activeWarehouse) {
+      setWarehouseForm(warehouseToForm(activeWarehouse))
+      setTestQuoteForm((current) => {
+        if (current.warehouse_id === activeWarehouse.id) {
+          return current
+        }
+
+        return {
+          ...current,
+          warehouse_id: current.warehouse_id || activeWarehouse.id,
+        }
+      })
+      return
+    }
+
+    setWarehouseForm(defaultWarehouseForm)
+  }, [activeWarehouse])
+
   const handleFormField = <K extends keyof DeliveryConnectionForm>(
     key: K,
     value: DeliveryConnectionForm[K]
@@ -415,6 +525,16 @@ const DeliverySettingsPage = () => {
     }))
   }
 
+  const handleWarehouseField = <K extends keyof DeliveryWarehouseForm>(
+    key: K,
+    value: DeliveryWarehouseForm[K]
+  ) => {
+    setWarehouseForm((current) => ({
+      ...current,
+      [key]: value,
+    }))
+  }
+
   const startCreate = () => {
     setActiveConnectionId(null)
     setConnectionForm(defaultConnectionForm)
@@ -422,6 +542,13 @@ const DeliverySettingsPage = () => {
     setFormNotice(null)
     setTestConnectionError(null)
     setTestConnectionResult(null)
+  }
+
+  const startCreateWarehouse = () => {
+    setActiveWarehouseId(null)
+    setWarehouseForm(defaultWarehouseForm)
+    setWarehouseFormError(null)
+    setWarehouseFormNotice(null)
   }
 
   const handleSave = async () => {
@@ -467,6 +594,48 @@ const DeliverySettingsPage = () => {
       setFormError(error as ApiErrorPayload)
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleSaveWarehouse = async () => {
+    setIsSavingWarehouse(true)
+    setWarehouseFormError(null)
+    setWarehouseFormNotice(null)
+
+    try {
+      const payload = {
+        name: warehouseForm.name.trim(),
+        enabled: warehouseForm.enabled,
+        country_code: warehouseForm.country_code.trim().toUpperCase(),
+        city: warehouseForm.city.trim() || undefined,
+        address_line_1: warehouseForm.address_line_1.trim() || undefined,
+        contact_name: warehouseForm.contact_name.trim() || undefined,
+        contact_phone: warehouseForm.contact_phone.trim() || undefined,
+        provider_code: warehouseForm.provider_code.trim() || undefined,
+        provider_warehouse_id: warehouseForm.provider_warehouse_id.trim() || undefined,
+      }
+
+      const result = activeWarehouseId
+        ? await requestJson<{ warehouse: DeliveryWarehouse }>(
+            `/admin/delivery/warehouses/${activeWarehouseId}`,
+            {
+              method: "PUT",
+              body: JSON.stringify(payload),
+            }
+          )
+        : await requestJson<{ warehouse: DeliveryWarehouse }>("/admin/delivery/warehouses", {
+            method: "POST",
+            body: JSON.stringify(payload),
+          })
+
+      setActiveWarehouseId(result.warehouse.id)
+      setWarehouseForm(warehouseToForm(result.warehouse))
+      setWarehouseFormNotice(activeWarehouseId ? "Warehouse updated" : "Warehouse created")
+      await loadData(true)
+    } catch (error) {
+      setWarehouseFormError(error as ApiErrorPayload)
+    } finally {
+      setIsSavingWarehouse(false)
     }
   }
 
@@ -807,13 +976,24 @@ const DeliverySettingsPage = () => {
             </div>
 
             <div>
-              <Label htmlFor="delivery-warehouse">Default warehouse id</Label>
-              <Input
+              <Label htmlFor="delivery-warehouse">Default warehouse</Label>
+              <select
                 id="delivery-warehouse"
                 value={connectionForm.default_warehouse_id}
                 onChange={(event) => handleFormField("default_warehouse_id", event.target.value)}
                 disabled={isLoading || isSaving}
-              />
+                className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active h-10 w-full rounded-md px-3 outline-none"
+              >
+                <option value="">No default warehouse</option>
+                {yandexWarehouses.map((warehouse) => (
+                  <option key={warehouse.id} value={warehouse.id}>
+                    {getWarehouseOptionLabel(warehouse)}
+                  </option>
+                ))}
+              </select>
+              <Text className="text-ui-fg-subtle mt-2 text-sm">
+                Stored as a materialized warehouse entity and resolved to provider warehouse id on backend.
+              </Text>
             </div>
 
             <div className="rounded-md border p-3 md:col-span-2">
@@ -867,6 +1047,18 @@ const DeliverySettingsPage = () => {
                 <Label>Last credentials error</Label>
                 <Input readOnly value={activeConnection.credentials_last_error_code || "—"} />
               </div>
+              <div className="md:col-span-2">
+                <Label>Default warehouse binding</Label>
+                <Input
+                  readOnly
+                  value={
+                    activeConnection.config.default_warehouse &&
+                    typeof activeConnection.config.default_warehouse === "object"
+                      ? getWarehouseOptionLabel(activeConnection.config.default_warehouse as DeliveryWarehouse)
+                      : activeConnection.config.default_warehouse_id?.toString() || "—"
+                  }
+                />
+              </div>
             </div>
           ) : null}
 
@@ -917,6 +1109,186 @@ const DeliverySettingsPage = () => {
                 </div>
               </div>
             ) : null}
+          </div>
+        </div>
+
+        <div className="rounded-lg border p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Heading level="h2">Warehouses</Heading>
+              <Text className="text-ui-fg-subtle mt-2">
+                Minimal admin-managed warehouse surface for diagnostics and connection default binding.
+              </Text>
+            </div>
+            <Button type="button" variant="secondary" onClick={startCreateWarehouse}>
+              New warehouse
+            </Button>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            {yandexWarehouses.length ? (
+              yandexWarehouses.map((warehouse) => {
+                const isActive = warehouse.id === activeWarehouseId
+
+                return (
+                  <button
+                    key={warehouse.id}
+                    type="button"
+                    onClick={() => setActiveWarehouseId(warehouse.id)}
+                    className={`rounded-md border p-4 text-left transition-colors ${
+                      isActive ? "border-ui-border-interactive bg-ui-bg-subtle" : "hover:bg-ui-bg-subtle"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <Text className="font-medium">{warehouse.name}</Text>
+                        <Text className="text-ui-fg-subtle text-sm">
+                          {warehouse.country_code}
+                          {warehouse.city ? ` · ${warehouse.city}` : ""}
+                          {warehouse.address_line_1 ? ` · ${warehouse.address_line_1}` : ""}
+                        </Text>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="rounded-full border border-ui-border-base px-2 py-1 text-xs">
+                          {warehouse.enabled ? "enabled" : "disabled"}
+                        </span>
+                        {warehouse.provider_warehouse_id ? (
+                          <span className="rounded-full border border-ui-border-base px-2 py-1 text-xs">
+                            provider: {warehouse.provider_warehouse_id}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </button>
+                )
+              })
+            ) : (
+              <Text className="text-ui-fg-subtle">No warehouses yet.</Text>
+            )}
+          </div>
+
+          <div className="mt-6 border-t pt-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Heading level="h3">Warehouse editor</Heading>
+                <Text className="text-ui-fg-subtle mt-1 text-sm">
+                  Minimal local warehouse record with optional provider warehouse mapping.
+                </Text>
+              </div>
+              <Text className="text-ui-fg-subtle text-sm">
+                {activeWarehouseId ? `Editing ${activeWarehouseId}` : "Creating new warehouse"}
+              </Text>
+            </div>
+
+            {warehouseFormNotice ? <Text className="mt-4 text-ui-fg-interactive">{warehouseFormNotice}</Text> : null}
+            {warehouseFormError ? (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+                <Text className="text-ui-fg-error font-medium">{warehouseFormError.message}</Text>
+                <Text className="text-ui-fg-subtle mt-1">{warehouseFormError.code}</Text>
+              </div>
+            ) : null}
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <Label htmlFor="warehouse-name">Warehouse name</Label>
+                <Input
+                  id="warehouse-name"
+                  value={warehouseForm.name}
+                  onChange={(event) => handleWarehouseField("name", event.target.value)}
+                  disabled={isLoading || isSavingWarehouse}
+                />
+              </div>
+              <div>
+                <Label htmlFor="warehouse-country">Country</Label>
+                <Input
+                  id="warehouse-country"
+                  value={warehouseForm.country_code}
+                  onChange={(event) => handleWarehouseField("country_code", event.target.value)}
+                  disabled={isLoading || isSavingWarehouse}
+                  maxLength={2}
+                />
+              </div>
+              <div>
+                <Label htmlFor="warehouse-city">City</Label>
+                <Input
+                  id="warehouse-city"
+                  value={warehouseForm.city}
+                  onChange={(event) => handleWarehouseField("city", event.target.value)}
+                  disabled={isLoading || isSavingWarehouse}
+                />
+              </div>
+              <div>
+                <Label htmlFor="warehouse-address">Address</Label>
+                <Input
+                  id="warehouse-address"
+                  value={warehouseForm.address_line_1}
+                  onChange={(event) => handleWarehouseField("address_line_1", event.target.value)}
+                  disabled={isLoading || isSavingWarehouse}
+                />
+              </div>
+              <div>
+                <Label htmlFor="warehouse-contact-name">Contact name</Label>
+                <Input
+                  id="warehouse-contact-name"
+                  value={warehouseForm.contact_name}
+                  onChange={(event) => handleWarehouseField("contact_name", event.target.value)}
+                  disabled={isLoading || isSavingWarehouse}
+                />
+              </div>
+              <div>
+                <Label htmlFor="warehouse-contact-phone">Contact phone</Label>
+                <Input
+                  id="warehouse-contact-phone"
+                  value={warehouseForm.contact_phone}
+                  onChange={(event) => handleWarehouseField("contact_phone", event.target.value)}
+                  disabled={isLoading || isSavingWarehouse}
+                />
+              </div>
+              <div>
+                <Label htmlFor="warehouse-provider-code">Provider</Label>
+                <Input
+                  id="warehouse-provider-code"
+                  value={warehouseForm.provider_code}
+                  onChange={(event) => handleWarehouseField("provider_code", event.target.value)}
+                  disabled={isLoading || isSavingWarehouse}
+                />
+              </div>
+              <div>
+                <Label htmlFor="warehouse-provider-id">Provider warehouse id</Label>
+                <Input
+                  id="warehouse-provider-id"
+                  value={warehouseForm.provider_warehouse_id}
+                  onChange={(event) => handleWarehouseField("provider_warehouse_id", event.target.value)}
+                  disabled={isLoading || isSavingWarehouse}
+                />
+              </div>
+              <div className="rounded-md border p-3 md:col-span-2">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <Label>Enabled</Label>
+                    <Text className="text-ui-fg-subtle mt-1 text-sm">
+                      Disabled warehouses cannot be selected as default connection warehouse or used in test quote.
+                    </Text>
+                  </div>
+                  <Switch
+                    checked={warehouseForm.enabled}
+                    onCheckedChange={(checked) => handleWarehouseField("enabled", checked)}
+                    disabled={isLoading || isSavingWarehouse}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button
+                type="button"
+                onClick={handleSaveWarehouse}
+                isLoading={isSavingWarehouse}
+                disabled={isLoading}
+              >
+                {activeWarehouseId ? "Save warehouse" : "Create warehouse"}
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -1051,12 +1423,20 @@ const DeliverySettingsPage = () => {
             {testQuoteForm.mode_code === "warehouse_to_pickup_point" ? (
               <>
                 <div>
-                  <Label htmlFor="quote-warehouse-id">Warehouse id</Label>
-                  <Input
+                  <Label htmlFor="quote-warehouse-id">Warehouse</Label>
+                  <select
                     id="quote-warehouse-id"
                     value={testQuoteForm.warehouse_id}
                     onChange={(event) => handleQuoteField("warehouse_id", event.target.value)}
-                  />
+                    className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active h-10 w-full rounded-md px-3 outline-none"
+                  >
+                    <option value="">Select warehouse</option>
+                    {yandexWarehouses.filter((warehouse) => warehouse.enabled).map((warehouse) => (
+                      <option key={warehouse.id} value={warehouse.id}>
+                        {getWarehouseOptionLabel(warehouse)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <Label htmlFor="quote-interval-from">Interval from (UTC ISO)</Label>

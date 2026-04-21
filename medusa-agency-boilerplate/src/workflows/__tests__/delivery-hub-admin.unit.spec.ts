@@ -4,6 +4,8 @@ import * as deliveryConnectionTestRoute from "../../api/admin/delivery/connectio
 import * as deliveryLogsRoute from "../../api/admin/delivery/logs/route"
 import * as deliveryShared from "../../api/admin/delivery/shared"
 import * as deliveryTestQuoteRoute from "../../api/admin/delivery/test-quote/route"
+import * as deliveryWarehousesRoute from "../../api/admin/delivery/warehouses/route"
+import * as deliveryWarehouseRoute from "../../api/admin/delivery/warehouses/[id]/route"
 import { DeliveryHubError } from "../../modules/delivery-hub/errors"
 import { DeliveryHubService } from "../../modules/delivery-hub/service"
 
@@ -135,6 +137,122 @@ describe("Delivery Hub admin routes", () => {
     })
   })
 
+  it("returns warehouse list payload for admin delivery warehouses GET", async () => {
+    const warehouses = [
+      {
+        id: "wh_1",
+        name: "Main warehouse",
+        enabled: true,
+        country_code: "RU",
+        city: "Moscow",
+        address_line_1: "Tverskaya 1",
+        contact_name: "Ops",
+        contact_phone: "+79990000000",
+        provider_code: "yandex",
+        provider_warehouse_id: "ya-wh-1",
+        metadata: {},
+        created_at: "2026-04-20T00:00:00.000Z",
+        updated_at: "2026-04-20T00:00:00.000Z",
+      },
+    ]
+
+    jest
+      .spyOn(DeliveryHubService.prototype, "listWarehouses")
+      .mockResolvedValue(warehouses as any)
+
+    const res = createMockResponse()
+
+    await deliveryWarehousesRoute.GET(createMockRequest() as any, res as any)
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      warehouses,
+    })
+  })
+
+  it("creates warehouse and returns admin contract payload", async () => {
+    const body = {
+      name: "Main warehouse",
+      enabled: true,
+      country_code: "RU",
+      city: "Moscow",
+      address_line_1: "Tverskaya 1",
+      provider_code: "yandex",
+      provider_warehouse_id: "ya-wh-1",
+    }
+    const warehouse = {
+      id: "wh_1",
+      ...body,
+      contact_name: null,
+      contact_phone: null,
+      metadata: {},
+      created_at: "2026-04-20T00:00:00.000Z",
+      updated_at: "2026-04-20T00:00:00.000Z",
+    }
+
+    const createSpy = jest
+      .spyOn(DeliveryHubService.prototype, "createWarehouse")
+      .mockResolvedValue(warehouse as any)
+
+    const res = createMockResponse()
+
+    await deliveryWarehousesRoute.POST(
+      createMockRequest({ validatedBody: body }) as any,
+      res as any
+    )
+
+    expect(createSpy).toHaveBeenCalledWith(body)
+    expect(res.status).toHaveBeenCalledWith(201)
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      warehouse,
+    })
+  })
+
+  it("updates warehouse using route id", async () => {
+    const body = {
+      name: "Updated warehouse",
+      provider_warehouse_id: "ya-wh-2",
+    }
+    const warehouse = {
+      id: "wh_1",
+      name: "Updated warehouse",
+      enabled: true,
+      country_code: "RU",
+      city: "Moscow",
+      address_line_1: "Tverskaya 2",
+      contact_name: null,
+      contact_phone: null,
+      provider_code: "yandex",
+      provider_warehouse_id: "ya-wh-2",
+      metadata: {},
+      created_at: "2026-04-20T00:00:00.000Z",
+      updated_at: "2026-04-20T00:00:00.000Z",
+    }
+
+    const updateSpy = jest
+      .spyOn(DeliveryHubService.prototype, "updateWarehouse")
+      .mockResolvedValue(warehouse as any)
+
+    const res = createMockResponse()
+
+    await deliveryWarehouseRoute.PUT(
+      createMockRequest({
+        url: "/admin/delivery/warehouses/wh_1",
+        validatedBody: body,
+      }) as any,
+      res as any
+    )
+
+    expect(updateSpy).toHaveBeenCalledWith("wh_1", body)
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      warehouse,
+    })
+  })
+
   it("returns admin delivery logs list payload", async () => {
     const logs = [
       {
@@ -227,7 +345,7 @@ describe("Delivery Hub admin routes", () => {
 })
 
 describe("Delivery Hub admin shared helpers", () => {
-  it("extracts connection id from params or route path", () => {
+  it("extracts connection or warehouse id from params or route path", () => {
     expect(
       deliveryShared.getRouteParam(
         createMockRequest({
@@ -236,6 +354,15 @@ describe("Delivery Hub admin shared helpers", () => {
         "id"
       )
     ).toBe("conn_from_path")
+
+    expect(
+      deliveryShared.getRouteParam(
+        createMockRequest({
+          url: "/admin/delivery/warehouses/wh_from_path",
+        }) as any,
+        "id"
+      )
+    ).toBe("wh_from_path")
 
     expect(
       deliveryShared.getRouteParam(
@@ -318,28 +445,22 @@ describe("Delivery Hub admin shared helpers", () => {
   })
 })
 
-function createMockRequest(input?: {
-  url?: string
-  validatedBody?: Record<string, unknown>
-  validatedQuery?: Record<string, unknown>
-  params?: Record<string, string>
-}) {
+function createMockRequest(input?: Record<string, unknown>) {
   return {
+    url: "/admin/delivery/connections",
+    validatedBody: {},
+    validatedQuery: {},
+    params: {},
     scope: {
-      resolve: jest.fn(() => ({
-        raw: async () => ({ rows: [] }),
-      })),
+      resolve: jest.fn(() => ({ raw: jest.fn() })),
     },
-    url: input?.url ?? "/admin/delivery",
-    validatedBody: input?.validatedBody ?? {},
-    validatedQuery: input?.validatedQuery ?? {},
-    params: input?.params,
+    ...input,
   }
 }
 
 function createMockResponse() {
   return {
     status: jest.fn().mockReturnThis(),
-    json: jest.fn().mockReturnThis(),
+    json: jest.fn(),
   }
 }

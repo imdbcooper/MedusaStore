@@ -23,9 +23,32 @@ export const DeliveryHubCreateConnectionSchema = z.object({
 
 export const DeliveryHubUpdateConnectionSchema = DeliveryHubCreateConnectionSchema.extend({
   id: z.string().min(1).optional(),
-}).partial().extend({
-  name: z.string().min(1),
 })
+  .partial()
+  .extend({
+    name: z.string().min(1),
+  })
+
+export const DeliveryHubCreateWarehouseSchema = z.object({
+  name: z.string().min(1),
+  enabled: z.boolean().optional(),
+  country_code: z.string().min(2).max(2).optional(),
+  city: z.string().optional(),
+  address_line_1: z.string().optional(),
+  contact_name: z.string().optional(),
+  contact_phone: z.string().optional(),
+  provider_code: z.string().optional(),
+  provider_warehouse_id: z.string().optional(),
+  metadata: z.record(z.any()).optional(),
+})
+
+export const DeliveryHubUpdateWarehouseSchema = DeliveryHubCreateWarehouseSchema.extend({
+  id: z.string().min(1).optional(),
+})
+  .partial()
+  .extend({
+    name: z.string().min(1),
+  })
 
 export const DeliveryHubConnectionTestSchema = z.object({
   include_pickup_points: z.boolean().optional(),

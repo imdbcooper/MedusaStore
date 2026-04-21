@@ -4,6 +4,7 @@ import {
   DELIVERY_HUB_CREDENTIALS_STATE,
   DELIVERY_HUB_LOG_KIND,
   DELIVERY_HUB_MODE_CODE,
+  DELIVERY_HUB_PROVIDER_YANDEX,
 } from "./constants"
 import type {
   DeliveryConnectionPublic,
@@ -11,6 +12,11 @@ import type {
   DeliveryConnectionUpsertInput,
 } from "./domain/connection"
 import type { DeliveryTestQuoteInput } from "./domain/test-dto"
+import type {
+  DeliveryWarehousePublic,
+  DeliveryWarehouseRecord,
+  DeliveryWarehouseUpsertInput,
+} from "./domain/warehouse"
 import { DeliveryHubError, isDeliveryHubError } from "./errors"
 import { getDeliveryHubAdapter, listDeliveryHubProviders } from "./registry"
 import {
@@ -30,7 +36,15 @@ import {
   type DeliveryHubEventLogRecord,
 } from "./storage/event-log-repository"
 import { type DeliveryHubPgConnection } from "./storage/pg"
-import { serializeDeliveryConnectionPublic } from "./storage/serializers"
+import {
+  serializeDeliveryConnectionPublic,
+  serializeDeliveryWarehousePublic,
+} from "./storage/serializers"
+import {
+  getDeliveryWarehouseById,
+  listDeliveryWarehouses,
+  upsertDeliveryWarehouse,
+} from "./storage/warehouses-repository"
 
 export type DeliveryHubEventLogListInput = {
   connection_id?: string | null
@@ -49,7 +63,15 @@ export class DeliveryHubService {
 
   async listConnections(): Promise<DeliveryConnectionPublic[]> {
     const records = await listDeliveryConnections(this.pg)
-    return records.map(serializeDeliveryConnectionPublic)
+    const warehouses = await listDeliveryWarehouses(this.pg)
+    const warehouseMap = new Map(warehouses.map((warehouse) => [warehouse.id, warehouse]))
+
+    return records.map((record) => serializeDeliveryConnectionPublic(record, warehouseMap))
+  }
+
+  async listWarehouses(): Promise<DeliveryWarehousePublic[]> {
+    const records = await listDeliveryWarehouses(this.pg)
+    return records.map(serializeDeliveryWarehousePublic)
   }
 
   async listEventLogs(input: DeliveryHubEventLogListInput = {}): Promise<DeliveryHubEventLogPublic[]> {
@@ -88,6 +110,28 @@ export class DeliveryHubService {
       },
       current
     )
+  }
+
+  async createWarehouse(input: DeliveryWarehouseUpsertInput) {
+    return this.saveWarehouse(input)
+  }
+
+  async updateWarehouse(id: string, input: Partial<DeliveryWarehouseUpsertInput>) {
+    const current = await this.requireWarehouse(id)
+
+    return this.saveWarehouse({
+      id: current.id,
+      name: input.name ?? current.name,
+      enabled: input.enabled ?? current.enabled,
+      country_code: input.country_code ?? current.country_code,
+      city: input.city ?? current.city,
+      address_line_1: input.address_line_1 ?? current.address_line_1,
+      contact_name: input.contact_name ?? current.contact_name,
+      contact_phone: input.contact_phone ?? current.contact_phone,
+      provider_code: input.provider_code ?? current.provider_code,
+      provider_warehouse_id: input.provider_warehouse_id ?? current.provider_warehouse_id,
+      metadata: input.metadata ?? current.metadata,
+    })
   }
 
   async testConnection(id: string, input?: { include_pickup_points?: boolean }) {
@@ -180,6 +224,10 @@ export class DeliveryHubService {
     const connection = await this.requireConnection(input.connection_id)
     const adapter = getDeliveryHubAdapter(connection.provider_code)
     const correlationId = crypto.randomUUID()
+    const resolvedWarehouseId =
+      input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
+        ? await this.resolveWarehouseProviderRef(connection, input.warehouse_id)
+        : null
 
     try {
       const quotes =
@@ -187,7 +235,7 @@ export class DeliveryHubService {
           ? await adapter.quoteWarehouseToPickupPoint(
               this.buildAdapterContext(connection, correlationId),
               {
-                warehouse_id: requireString(input.warehouse_id, "warehouse_id"),
+                warehouse_id: requireString(resolvedWarehouseId, "warehouse_id"),
                 destination_point_id: input.destination_point_id,
                 interval_utc: input.interval_utc ?? null,
                 currency_code: input.currency_code,
@@ -214,6 +262,7 @@ export class DeliveryHubService {
           destination_point_id: input.destination_point_id,
           origin_point_id: input.origin_point_id ?? null,
           warehouse_id: input.warehouse_id ?? null,
+          provider_warehouse_id: resolvedWarehouseId,
           interval_utc: input.interval_utc ?? null,
         }),
         response_summary: {
@@ -242,6 +291,7 @@ export class DeliveryHubService {
           destination_point_id: input.destination_point_id,
           origin_point_id: input.origin_point_id ?? null,
           warehouse_id: input.warehouse_id ?? null,
+          provider_warehouse_id: resolvedWarehouseId,
         }),
         response_summary: {
           message: normalized.message,
@@ -250,7 +300,7 @@ export class DeliveryHubService {
       })
 
       await this.materializeConnectionFailure(connection, normalized)
- 
+
       throw normalized
     }
   }
@@ -261,6 +311,7 @@ export class DeliveryHubService {
   ) {
     getDeliveryHubAdapter(input.provider_code)
 
+    const sanitizedConfig = await this.sanitizeConnectionConfig(input.config ?? current?.config ?? {})
     const encryptionState = getDeliveryHubEncryptionState()
     const hasNewCredentials = !!input.credentials?.token?.trim()
 
@@ -287,7 +338,7 @@ export class DeliveryHubService {
       mode: input.mode,
       enabled: input.enabled ?? current?.enabled ?? false,
       country_code: input.country_code ?? current?.country_code,
-      config: input.config ?? current?.config ?? {},
+      config: sanitizedConfig,
       metadata: input.metadata ?? current?.metadata ?? {},
       credentials_envelope: credentialsEnvelope,
       credentials_state: credentialsState,
@@ -317,7 +368,32 @@ export class DeliveryHubService {
       })
     }
 
-    return serializeDeliveryConnectionPublic(record)
+    const warehouseMap = await this.getWarehouseMap()
+    return serializeDeliveryConnectionPublic(record, warehouseMap)
+  }
+
+  private async saveWarehouse(input: DeliveryWarehouseUpsertInput) {
+    const providerCode = normalizeNullableText(input.provider_code)
+
+    if (providerCode) {
+      getDeliveryHubAdapter(providerCode)
+    }
+
+    const record = await upsertDeliveryWarehouse(this.pg, {
+      id: input.id,
+      name: input.name,
+      enabled: input.enabled ?? true,
+      country_code: input.country_code,
+      city: input.city,
+      address_line_1: input.address_line_1,
+      contact_name: input.contact_name,
+      contact_phone: input.contact_phone,
+      provider_code: providerCode,
+      provider_warehouse_id: input.provider_warehouse_id,
+      metadata: input.metadata ?? {},
+    })
+
+    return serializeDeliveryWarehousePublic(record)
   }
 
   private async requireConnection(id: string): Promise<DeliveryConnectionRecord> {
@@ -343,6 +419,31 @@ export class DeliveryHubService {
     }
 
     return connection
+  }
+
+  private async requireWarehouse(id: string): Promise<DeliveryWarehouseRecord> {
+    const normalizedId = id?.trim()
+
+    if (!normalizedId) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: 'Field "id" is required',
+        status: 400,
+        details: { field: "id" },
+      })
+    }
+
+    const warehouse = await getDeliveryWarehouseById(this.pg, normalizedId)
+
+    if (!warehouse) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_NOT_FOUND",
+        message: `Delivery Hub warehouse "${normalizedId}" was not found`,
+        status: 404,
+      })
+    }
+
+    return warehouse
   }
 
   private buildAdapterContext(connection: DeliveryConnectionRecord, correlation_id: string) {
@@ -423,6 +524,93 @@ export class DeliveryHubService {
       credentials_last_error_code: error.code,
     })
   }
+
+  private async sanitizeConnectionConfig(config: Record<string, unknown>) {
+    const nextConfig = { ...config }
+    const rawDefaultWarehouseId = normalizeNullableText(config.default_warehouse_id)
+
+    if (!rawDefaultWarehouseId) {
+      delete nextConfig.default_warehouse_id
+      return nextConfig
+    }
+
+    const warehouse = await this.requireWarehouse(rawDefaultWarehouseId)
+
+    if (!warehouse.enabled) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: "Default warehouse must be enabled",
+        status: 400,
+        details: {
+          field: "config.default_warehouse_id",
+          warehouse_id: warehouse.id,
+        },
+      })
+    }
+
+    nextConfig.default_warehouse_id = warehouse.id
+    return nextConfig
+  }
+
+  private async resolveWarehouseProviderRef(
+    connection: DeliveryConnectionRecord,
+    warehouseId: string | null | undefined
+  ) {
+    const explicitWarehouseId = normalizeNullableText(warehouseId)
+    const configDefaultWarehouseId = normalizeNullableText(connection.config.default_warehouse_id)
+    const selectedWarehouseId = explicitWarehouseId ?? configDefaultWarehouseId
+
+    if (!selectedWarehouseId) {
+      return null
+    }
+
+    const warehouse = await this.requireWarehouse(selectedWarehouseId)
+
+    if (!warehouse.enabled) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: "Selected warehouse is disabled",
+        status: 400,
+        details: {
+          field: explicitWarehouseId ? "warehouse_id" : "config.default_warehouse_id",
+          warehouse_id: warehouse.id,
+        },
+      })
+    }
+
+    if (warehouse.provider_code && warehouse.provider_code !== connection.provider_code) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: "Warehouse provider does not match connection provider",
+        status: 400,
+        details: {
+          field: explicitWarehouseId ? "warehouse_id" : "config.default_warehouse_id",
+          warehouse_id: warehouse.id,
+          warehouse_provider_code: warehouse.provider_code,
+          connection_provider_code: connection.provider_code,
+        },
+      })
+    }
+
+    if (connection.provider_code === DELIVERY_HUB_PROVIDER_YANDEX && !warehouse.provider_warehouse_id) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: "Warehouse provider mapping is required for this connection",
+        status: 400,
+        details: {
+          field: explicitWarehouseId ? "warehouse_id" : "config.default_warehouse_id",
+          warehouse_id: warehouse.id,
+        },
+      })
+    }
+
+    return warehouse.provider_warehouse_id ?? warehouse.id
+  }
+
+  private async getWarehouseMap() {
+    const warehouses = await listDeliveryWarehouses(this.pg)
+    return new Map(warehouses.map((warehouse) => [warehouse.id, warehouse]))
+  }
 }
 
 export function createDeliveryHubService(pg: DeliveryHubPgConnection) {
@@ -450,8 +638,10 @@ function requireString(value: string | null | undefined, field: string) {
     code: "DELIVERY_HUB_VALIDATION_ERROR",
     message: `Field "${field}" is required`,
     status: 400,
-    details: {
-      field,
-    },
+    details: { field },
   })
+}
+
+function normalizeNullableText(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null
 }

@@ -10,6 +10,8 @@ import { AdminUpdateDeliveryConnectionSchema } from "./admin/delivery/connection
 import { AdminDeliveryConnectionTestSchema } from "./admin/delivery/connections/[id]/test/route"
 import { AdminDeliveryEventLogsQuerySchema } from "./admin/delivery/logs/route"
 import { AdminDeliveryTestQuoteSchema } from "./admin/delivery/test-quote/route"
+import { AdminCreateDeliveryWarehouseSchema } from "./admin/delivery/warehouses/route"
+import { AdminUpdateDeliveryWarehouseSchema } from "./admin/delivery/warehouses/[id]/route"
 import { AdminNotificationSmokeSchema } from "./admin/notifications/smoke/route"
 import { AdminSmsNotificationSmokeSchema } from "./admin/notifications/smoke/sms/route"
 import { AdminVkNotificationSmokeSchema } from "./admin/notifications/smoke/vk/route"
@@ -65,6 +67,21 @@ export default defineMiddlewares({
       matcher: "/admin/delivery/test-quote",
       methods: ["POST"],
       middlewares: [adminAuth, validateAndTransformBody(AdminDeliveryTestQuoteSchema)],
+    },
+    {
+      matcher: "/admin/delivery/warehouses",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/delivery/warehouses",
+      methods: ["POST"],
+      middlewares: [adminAuth, validateAndTransformBody(AdminCreateDeliveryWarehouseSchema)],
+    },
+    {
+      matcher: "/admin/delivery/warehouses/:id",
+      methods: ["PUT"],
+      middlewares: [adminAuth, validateAndTransformBody(AdminUpdateDeliveryWarehouseSchema)],
     },
     {
       matcher: "/admin/marketing/campaigns",

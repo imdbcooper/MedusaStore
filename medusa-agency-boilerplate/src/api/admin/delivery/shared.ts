@@ -23,10 +23,19 @@ export function getRouteParam(req: AuthenticatedMedusaRequest, key: string) {
 
   const path = req.url?.split("?")[0] || ""
   const segments = path.split("/").filter(Boolean)
-  const connectionsIndex = segments.findIndex((segment) => segment === "connections")
 
-  if (connectionsIndex >= 0 && key === "id") {
-    return segments[connectionsIndex + 1] || ""
+  if (key === "id") {
+    const connectionsIndex = segments.findIndex((segment) => segment === "connections")
+
+    if (connectionsIndex >= 0) {
+      return segments[connectionsIndex + 1] || ""
+    }
+
+    const warehousesIndex = segments.findIndex((segment) => segment === "warehouses")
+
+    if (warehousesIndex >= 0) {
+      return segments[warehousesIndex + 1] || ""
+    }
   }
 
   return ""
