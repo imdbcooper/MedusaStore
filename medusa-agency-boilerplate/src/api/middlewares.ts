@@ -5,6 +5,7 @@ import {
   validateAndTransformQuery,
 } from "@medusajs/framework/http"
 
+import { AdminUpdateApiShipSettingsSchema } from "./admin/apiship/settings/route"
 import { AdminCreateDeliveryConnectionSchema } from "./admin/delivery/connections/route"
 import { AdminUpdateDeliveryConnectionSchema } from "./admin/delivery/connections/[id]/route"
 import { AdminDeliveryConnectionTestSchema } from "./admin/delivery/connections/[id]/test/route"
@@ -12,12 +13,19 @@ import { AdminDeliveryEventLogsQuerySchema } from "./admin/delivery/logs/route"
 import { AdminDeliveryTestQuoteSchema } from "./admin/delivery/test-quote/route"
 import { AdminCreateDeliveryWarehouseSchema } from "./admin/delivery/warehouses/route"
 import { AdminUpdateDeliveryWarehouseSchema } from "./admin/delivery/warehouses/[id]/route"
+import {
+  AdminCreateMarketingCampaignSchema,
+  AdminUpdateCustomerMarketingPreferencesSchema,
+} from "./admin/marketing/campaigns/route"
 import { AdminNotificationSmokeSchema } from "./admin/notifications/smoke/route"
 import { AdminSmsNotificationSmokeSchema } from "./admin/notifications/smoke/sms/route"
 import { AdminVkNotificationSmokeSchema } from "./admin/notifications/smoke/vk/route"
+import { StoreApiShipPointsSchema } from "./store/apiship/points/route"
 import { StoreApiShipRatesSchema } from "./store/apiship/rates/route"
-import { AdminCreateMarketingCampaignSchema, AdminUpdateCustomerMarketingPreferencesSchema } from "./admin/marketing/campaigns/route"
 import { StoreCustomerMarketingPreferencesSchema } from "./store/customers/me/marketing-preferences/route"
+import { StoreDeliveryPickupPointsQuerySchema } from "./store/delivery/pickup-points/route"
+import { StoreDeliveryPickupWindowsQuerySchema } from "./store/delivery/pickup-windows/route"
+import { StoreDeliveryQuotesQuerySchema } from "./store/delivery/quotes/route"
 import { StoreVkIdStartLinkSchema } from "./store/customers/me/vk-id/start/route"
 import { StoreYooKassaPaymentStatusSchema } from "./store/payment/yookassa/route"
 import { StoreYooKassaReturnSchema } from "./store/payment/yookassa/return/route"
@@ -27,6 +35,16 @@ const adminAuth = authenticate("user", ["session", "bearer", "api-key"])
 
 export default defineMiddlewares({
   routes: [
+    {
+      matcher: "/admin/apiship/settings",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/apiship/settings",
+      methods: ["POST"],
+      middlewares: [adminAuth, validateAndTransformBody(AdminUpdateApiShipSettingsSchema)],
+    },
     {
       matcher: "/admin/delivery/providers",
       methods: ["GET"],
@@ -86,57 +104,42 @@ export default defineMiddlewares({
     {
       matcher: "/admin/marketing/campaigns",
       methods: ["GET"],
-      middlewares: [authenticate("user", ["session", "bearer", "api-key"])],
+      middlewares: [adminAuth],
     },
     {
       matcher: "/admin/marketing/campaigns",
       methods: ["POST"],
-      middlewares: [
-        authenticate("user", ["session", "bearer", "api-key"]),
-        validateAndTransformBody(AdminCreateMarketingCampaignSchema),
-      ],
+      middlewares: [adminAuth, validateAndTransformBody(AdminCreateMarketingCampaignSchema)],
     },
     {
       matcher: "/admin/marketing/campaigns",
       methods: ["PUT"],
-      middlewares: [
-        authenticate("user", ["session", "bearer", "api-key"]),
-        validateAndTransformBody(AdminUpdateCustomerMarketingPreferencesSchema),
-      ],
+      middlewares: [adminAuth, validateAndTransformBody(AdminUpdateCustomerMarketingPreferencesSchema)],
     },
     {
       matcher: "/admin/marketing/campaigns/:id",
       methods: ["GET"],
-      middlewares: [authenticate("user", ["session", "bearer", "api-key"])],
+      middlewares: [adminAuth],
     },
     {
       matcher: "/admin/marketing/campaigns/:id",
       methods: ["POST"],
-      middlewares: [authenticate("user", ["session", "bearer", "api-key"])],
+      middlewares: [adminAuth],
     },
     {
       matcher: "/admin/notifications/smoke",
       methods: ["POST"],
-      middlewares: [
-        authenticate("user", ["session", "bearer", "api-key"]),
-        validateAndTransformBody(AdminNotificationSmokeSchema),
-      ],
+      middlewares: [adminAuth, validateAndTransformBody(AdminNotificationSmokeSchema)],
     },
     {
       matcher: "/admin/notifications/smoke/vk",
       methods: ["POST"],
-      middlewares: [
-        authenticate("user", ["session", "bearer", "api-key"]),
-        validateAndTransformBody(AdminVkNotificationSmokeSchema),
-      ],
+      middlewares: [adminAuth, validateAndTransformBody(AdminVkNotificationSmokeSchema)],
     },
     {
       matcher: "/admin/notifications/smoke/sms",
       methods: ["POST"],
-      middlewares: [
-        authenticate("user", ["session", "bearer", "api-key"]),
-        validateAndTransformBody(AdminSmsNotificationSmokeSchema),
-      ],
+      middlewares: [adminAuth, validateAndTransformBody(AdminSmsNotificationSmokeSchema)],
     },
     {
       matcher: "/store/customers/me/marketing-preferences",
@@ -174,6 +177,46 @@ export default defineMiddlewares({
       methods: ["GET"],
       middlewares: [
         validateAndTransformQuery(StoreApiShipRatesSchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/store/apiship/points",
+      methods: ["GET"],
+      middlewares: [
+        validateAndTransformQuery(StoreApiShipPointsSchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/store/delivery/quotes",
+      methods: ["GET"],
+      middlewares: [
+        validateAndTransformQuery(StoreDeliveryQuotesQuerySchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/store/delivery/pickup-points",
+      methods: ["GET"],
+      middlewares: [
+        validateAndTransformQuery(StoreDeliveryPickupPointsQuerySchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/store/delivery/pickup-windows",
+      methods: ["GET"],
+      middlewares: [
+        validateAndTransformQuery(StoreDeliveryPickupWindowsQuerySchema, {
           defaults: [],
           isList: false,
         }),

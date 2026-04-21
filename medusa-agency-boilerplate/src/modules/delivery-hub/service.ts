@@ -305,6 +305,224 @@ export class DeliveryHubService {
     }
   }
 
+  async listStorePickupPoints(input: {
+    connection_id?: string | null
+    city?: string | null
+    country_code?: string | null
+  }) {
+    const connection = await this.resolveStoreConnection(input.connection_id)
+    const adapter = getDeliveryHubAdapter(connection.provider_code)
+    const correlationId = crypto.randomUUID()
+    const countryCode = normalizeNullableText(input.country_code) ?? connection.country_code
+    const city = normalizeNullableText(input.city)
+
+    try {
+      const points = await adapter.listPickupPoints(this.buildAdapterContext(connection, correlationId), {
+        city,
+        country_code: countryCode,
+      })
+
+      await this.appendLog({
+        connection,
+        kind: DELIVERY_HUB_LOG_KIND.pickupPoints,
+        correlation_id: correlationId,
+        success: true,
+        request_summary: {
+          city,
+          country_code: countryCode,
+        },
+        response_summary: {
+          pickup_points_count: points.length,
+        },
+      })
+
+      return {
+        ok: true,
+        points,
+      }
+    } catch (error) {
+      const normalized = normalizeDeliveryHubError(error)
+
+      await this.appendLog({
+        connection,
+        kind: DELIVERY_HUB_LOG_KIND.pickupPoints,
+        correlation_id: correlationId,
+        success: false,
+        error_code: normalized.code,
+        request_summary: {
+          city,
+          country_code: countryCode,
+        },
+        response_summary: {
+          message: normalized.message,
+          details: normalized.details ?? {},
+        },
+      })
+
+      await this.materializeConnectionFailure(connection, normalized)
+
+      throw normalized
+    }
+  }
+
+  async listStorePickupWindows(input: {
+    connection_id?: string | null
+    warehouse_id?: string | null
+  }) {
+    const connection = await this.resolveStoreConnection(input.connection_id)
+    const adapter = getDeliveryHubAdapter(connection.provider_code)
+    const correlationId = crypto.randomUUID()
+    const resolvedWarehouseId = await this.resolveWarehouseProviderRef(connection, input.warehouse_id)
+    const providerWarehouseId = requireString(resolvedWarehouseId, "warehouse_id")
+
+    try {
+      const windows = await adapter.listPickupWindows(this.buildAdapterContext(connection, correlationId), {
+        warehouse_id: providerWarehouseId,
+      })
+
+      await this.appendLog({
+        connection,
+        kind: DELIVERY_HUB_LOG_KIND.pickupWindows,
+        correlation_id: correlationId,
+        success: true,
+        request_summary: {
+          warehouse_id: input.warehouse_id ?? null,
+          provider_warehouse_id: providerWarehouseId,
+        },
+        response_summary: {
+          pickup_windows_count: windows.length,
+        },
+      })
+
+      return {
+        ok: true,
+        pickup_windows: windows,
+      }
+    } catch (error) {
+      const normalized = normalizeDeliveryHubError(error)
+
+      await this.appendLog({
+        connection,
+        kind: DELIVERY_HUB_LOG_KIND.pickupWindows,
+        correlation_id: correlationId,
+        success: false,
+        error_code: normalized.code,
+        request_summary: {
+          warehouse_id: input.warehouse_id ?? null,
+          provider_warehouse_id: providerWarehouseId,
+        },
+        response_summary: {
+          message: normalized.message,
+          details: normalized.details ?? {},
+        },
+      })
+
+      await this.materializeConnectionFailure(connection, normalized)
+
+      throw normalized
+    }
+  }
+
+  async listStoreQuotes(input: {
+    connection_id?: string | null
+    mode_code: string
+    currency_code?: string | null
+    destination_point_id: string
+    origin_point_id?: string | null
+    warehouse_id?: string | null
+    interval_utc?: {
+      from: string
+      to: string
+    } | null
+    items?: Array<{
+      quantity?: number
+      weight_grams?: number
+      price?: number
+    }>
+  }) {
+    const connection = await this.resolveStoreConnection(input.connection_id)
+    const adapter = getDeliveryHubAdapter(connection.provider_code)
+    const correlationId = crypto.randomUUID()
+    const resolvedWarehouseId =
+      input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
+        ? await this.resolveWarehouseProviderRef(connection, input.warehouse_id)
+        : null
+
+    try {
+      const quotes =
+        input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
+          ? await adapter.quoteWarehouseToPickupPoint(
+              this.buildAdapterContext(connection, correlationId),
+              {
+                warehouse_id: requireString(resolvedWarehouseId, "warehouse_id"),
+                destination_point_id: input.destination_point_id,
+                interval_utc: input.interval_utc ?? null,
+                currency_code: input.currency_code ?? undefined,
+                items: input.items,
+              }
+            )
+          : await adapter.quoteDropoffPointToPickupPoint(
+              this.buildAdapterContext(connection, correlationId),
+              {
+                origin_point_id: requireString(input.origin_point_id, "origin_point_id"),
+                destination_point_id: input.destination_point_id,
+                currency_code: input.currency_code ?? undefined,
+                items: input.items,
+              }
+            )
+
+      await this.appendLog({
+        connection,
+        kind: DELIVERY_HUB_LOG_KIND.quote,
+        correlation_id: correlationId,
+        success: true,
+        request_summary: {
+          mode_code: input.mode_code,
+          destination_point_id: input.destination_point_id,
+          origin_point_id: input.origin_point_id ?? null,
+          warehouse_id: input.warehouse_id ?? null,
+          provider_warehouse_id: resolvedWarehouseId,
+          interval_utc: input.interval_utc ?? null,
+        },
+        response_summary: {
+          quotes_count: quotes.length,
+          quote_keys: quotes.map((quote) => quote.quote_key),
+        },
+      })
+
+      return {
+        ok: true,
+        quotes,
+      }
+    } catch (error) {
+      const normalized = normalizeDeliveryHubError(error)
+
+      await this.appendLog({
+        connection,
+        kind: DELIVERY_HUB_LOG_KIND.quote,
+        correlation_id: correlationId,
+        success: false,
+        error_code: normalized.code,
+        request_summary: {
+          mode_code: input.mode_code,
+          destination_point_id: input.destination_point_id,
+          origin_point_id: input.origin_point_id ?? null,
+          warehouse_id: input.warehouse_id ?? null,
+          provider_warehouse_id: resolvedWarehouseId,
+          interval_utc: input.interval_utc ?? null,
+        },
+        response_summary: {
+          message: normalized.message,
+          details: normalized.details ?? {},
+        },
+      })
+
+      await this.materializeConnectionFailure(connection, normalized)
+
+      throw normalized
+    }
+  }
+
   private async saveConnection(
     input: DeliveryConnectionUpsertInput,
     current?: DeliveryConnectionRecord | null
@@ -394,6 +612,80 @@ export class DeliveryHubService {
     })
 
     return serializeDeliveryWarehousePublic(record)
+  }
+
+  private async resolveStoreConnection(connectionId: string | null | undefined) {
+    const explicitConnectionId = normalizeNullableText(connectionId)
+
+    if (explicitConnectionId) {
+      const connection = await this.requireConnection(explicitConnectionId)
+      this.assertStoreConnectionReady(connection)
+      return connection
+    }
+
+    const connections = await listDeliveryConnections(this.pg)
+    const activeConnections = connections.filter(
+      (connection) =>
+        connection.enabled &&
+        connection.status === DELIVERY_HUB_CONNECTION_STATUS.active &&
+        connection.credentials_state === DELIVERY_HUB_CREDENTIALS_STATE.sealed
+    )
+
+    if (activeConnections.length === 1) {
+      return activeConnections[0]
+    }
+
+    if (!activeConnections.length) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_NOT_FOUND",
+        message: "No active public delivery connection is available",
+        status: 404,
+      })
+    }
+
+    throw new DeliveryHubError({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      message: 'Field "connection_id" is required',
+      status: 400,
+      details: {
+        field: "connection_id",
+      },
+    })
+  }
+
+  private assertStoreConnectionReady(connection: DeliveryConnectionRecord) {
+    if (!connection.enabled) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: "Delivery connection is disabled for store/public use",
+        status: 409,
+        details: {
+          field: "connection_id",
+        },
+      })
+    }
+
+    if (connection.status !== DELIVERY_HUB_CONNECTION_STATUS.active) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: "Delivery connection is not active for store/public use",
+        status: 409,
+        details: {
+          field: "connection_id",
+        },
+      })
+    }
+
+    if (connection.credentials_state !== DELIVERY_HUB_CREDENTIALS_STATE.sealed) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: "Delivery connection credentials are not ready for store/public use",
+        status: 409,
+        details: {
+          field: "connection_id",
+        },
+      })
+    }
   }
 
   private async requireConnection(id: string): Promise<DeliveryConnectionRecord> {

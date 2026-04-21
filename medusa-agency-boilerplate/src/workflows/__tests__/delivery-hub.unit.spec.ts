@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, jest } from "@jest/globals"
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals"
 import {
   DELIVERY_HUB_CREDENTIALS_STATE,
   DELIVERY_HUB_MODE_CODE,
@@ -27,6 +27,10 @@ afterEach(() => {
   }
 
   delete process.env.DELIVERY_HUB_ENCRYPTION_KEY
+})
+
+beforeEach(() => {
+  jest.restoreAllMocks()
 })
 
 describe("Delivery Hub registry", () => {
@@ -426,6 +430,193 @@ describe("Delivery Hub service", () => {
     }
     expect(responseSummary.message).toBe("Delivery Hub credentials cannot be decrypted")
     expect(responseSummary.details ?? {}).toEqual({})
+  })
+  it("lists store pickup points through neutral public contract", async () => {
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+    })
+    const pg = createMockPg([connection])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+    const pickupSpy = jest.spyOn(adapter, "listPickupPoints").mockResolvedValue([
+      {
+        provider_point_id: "pvz_1",
+        provider_point_code: "code_1",
+        name: "PVZ 1",
+        address: "Tverskaya 1",
+        city: "Moscow",
+        region: "Moscow",
+        postal_code: "101000",
+        lat: 55.75,
+        lng: 37.61,
+        is_origin_dropoff_allowed: false,
+        is_destination_pickup_allowed: true,
+        payment_methods: ["card"],
+        metadata: {},
+      },
+    ])
+
+    const result = await service.listStorePickupPoints({
+      city: "Moscow",
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      points: [
+        expect.objectContaining({
+          provider_point_id: "pvz_1",
+        }),
+      ],
+    })
+    expect(pickupSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ connection }),
+      {
+        city: "Moscow",
+        country_code: "RU",
+      }
+    )
+  })
+
+  it("lists store pickup windows using default warehouse mapping", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_1",
+      provider_code: "yandex",
+      provider_warehouse_id: "ya-wh-1",
+    })
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      config: {
+        default_warehouse_id: warehouse.id,
+      },
+    })
+    const pg = createMockPg([connection], [], [warehouse])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+    const windowsSpy = jest.spyOn(adapter, "listPickupWindows").mockResolvedValue([
+      {
+        date: "2026-04-22",
+        time_from: "10:00",
+        time_to: "14:00",
+        interval_utc: {
+          from: "2026-04-22T07:00:00.000Z",
+          to: "2026-04-22T11:00:00.000Z",
+        },
+        label: "22 Apr, 10:00-14:00",
+        metadata: {},
+      },
+    ])
+
+    const result = await service.listStorePickupWindows({})
+
+    expect(result).toEqual({
+      ok: true,
+      pickup_windows: [
+        expect.objectContaining({
+          date: "2026-04-22",
+        }),
+      ],
+    })
+    expect(windowsSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ connection }),
+      {
+        warehouse_id: "ya-wh-1",
+      }
+    )
+  })
+
+  it("requires explicit connection_id when multiple public connections are active", async () => {
+    const first = createConnectionRecord({
+      id: "conn_1",
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+    })
+    const second = createConnectionRecord({
+      id: "conn_2",
+      name: "Second connection",
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+    })
+    const pg = createMockPg([first, second])
+    const service = new DeliveryHubService(pg as any)
+
+    await expect(
+      service.listStorePickupPoints({
+        city: "Moscow",
+      })
+    ).rejects.toMatchObject({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      status: 400,
+      details: {
+        field: "connection_id",
+      },
+    })
+  })
+
+  it("lists store quotes for warehouse-to-pickup-point flow", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_1",
+      provider_code: "yandex",
+      provider_warehouse_id: "ya-wh-1",
+    })
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      config: {
+        default_warehouse_id: warehouse.id,
+      },
+    })
+    const pg = createMockPg([connection], [], [warehouse])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+    const quoteSpy = jest.spyOn(adapter, "quoteWarehouseToPickupPoint").mockResolvedValue([
+      {
+        carrier_code: "yandex",
+        carrier_label: "Yandex Delivery",
+        mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+        quote_key: "quote_1",
+        amount: 499,
+        currency_code: "RUB",
+        delivery_eta_min: 1,
+        delivery_eta_max: 2,
+        pickup_point_required: true,
+        pickup_point_ids: ["pvz_1"],
+        pickup_points_embedded: [],
+        pickup_window_required: false,
+        pickup_window_options: [],
+        raw_reference: {},
+      },
+    ])
+
+    const result = await service.listStoreQuotes({
+      mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+      destination_point_id: "pvz_1",
+      currency_code: "RUB",
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      quotes: [
+        expect.objectContaining({
+          quote_key: "quote_1",
+          amount: 499,
+        }),
+      ],
+    })
+    expect(quoteSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ connection }),
+      expect.objectContaining({
+        warehouse_id: "ya-wh-1",
+        destination_point_id: "pvz_1",
+        currency_code: "RUB",
+      })
+    )
   })
 })
 
