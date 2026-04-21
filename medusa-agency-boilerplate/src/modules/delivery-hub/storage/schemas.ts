@@ -103,3 +103,62 @@ export const DeliveryHubStorePickupWindowsQuerySchema = z.object({
   connection_id: z.string().trim().min(1).optional(),
   warehouse_id: z.string().trim().min(1).optional(),
 })
+
+export const DeliveryHubStoreCartSelectionQuerySchema = z.object({
+  cart_id: z.string().trim().min(1),
+})
+
+export const DeliveryHubStoreCartSelectionQuoteSchema = z.object({
+  carrier_code: z.string().trim().min(1),
+  carrier_label: z.string().trim().min(1),
+  amount: z.number().finite(),
+  currency_code: z.string().trim().min(1),
+  delivery_eta_min: z.number().int().nonnegative().nullable(),
+  delivery_eta_max: z.number().int().nonnegative().nullable(),
+  pickup_point_required: z.boolean(),
+  pickup_window_required: z.boolean(),
+})
+
+export const DeliveryHubStoreCartSelectionPickupPointSchema = z
+  .object({
+    provider_point_id: z.string().trim().min(1),
+    provider_point_code: z.string().trim().min(1).nullable().optional(),
+    name: z.string().trim().min(1),
+    address: z.string().trim().min(1),
+    city: z.string().trim().min(1).nullable().optional(),
+    region: z.string().trim().min(1).nullable().optional(),
+    postal_code: z.string().trim().min(1).nullable().optional(),
+    lat: z.number().finite().nullable().optional(),
+    lng: z.number().finite().nullable().optional(),
+    is_origin_dropoff_allowed: z.boolean(),
+    is_destination_pickup_allowed: z.boolean(),
+    payment_methods: z.array(z.string().trim().min(1)).optional(),
+  })
+  .strict()
+
+export const DeliveryHubStoreCartSelectionPickupWindowSchema = z
+  .object({
+    date: z.string().trim().min(1),
+    time_from: z.string().trim().min(1).nullable().optional(),
+    time_to: z.string().trim().min(1).nullable().optional(),
+    interval_utc: z.object({
+      from: z.string().trim().min(1),
+      to: z.string().trim().min(1),
+    }),
+    label: z.string().trim().min(1),
+  })
+  .strict()
+
+export const DeliveryHubStoreUpsertCartSelectionBodySchema = z.object({
+  cart_id: z.string().trim().min(1),
+  connection_id: z.string().trim().min(1),
+  quote_type: z.enum(["warehouse_to_pickup_point", "dropoff_point_to_pickup_point"]),
+  quote_key: z.string().trim().min(1),
+  quote: DeliveryHubStoreCartSelectionQuoteSchema,
+  pickup_point: DeliveryHubStoreCartSelectionPickupPointSchema,
+  pickup_window: DeliveryHubStoreCartSelectionPickupWindowSchema.nullable().optional(),
+})
+
+export const DeliveryHubStoreDeleteCartSelectionBodySchema = z.object({
+  cart_id: z.string().trim().min(1),
+})

@@ -187,6 +187,33 @@ Operational:
 - `is_destination_pickup_allowed`
 - `payment_methods[]`
 
+### 6.5. Truthful tranche-safe cart delivery selection contract
+
+Дополнительно к read-only shopper/store surface в текущем состоянии materialized минимальный backend-only neutral contract выбранной доставки на cart.
+
+Что уже есть truthfully:
+
+- store endpoints [`GET /store/delivery/selection`](../medusa-agency-boilerplate/src/api/store/delivery/selection/route.ts), [`POST /store/delivery/selection`](../medusa-agency-boilerplate/src/api/store/delivery/selection/route.ts), [`DELETE /store/delivery/selection`](../medusa-agency-boilerplate/src/api/store/delivery/selection/route.ts);
+- хранение selection в `cart.metadata.delivery_hub.selection` через [`updateCartWorkflow()`](../medusa-agency-boilerplate/src/modules/delivery-hub/cart-selection.ts:286), без fork/core patch и без новых env;
+- публичный response остается neutral и не раскрывает provider-specific raw payload.
+
+Текущая публичная модель selection содержит:
+
+- `version`
+- `connection_id`
+- `quote_type`
+- `quote_reference { id, version }`
+- `quote { carrier_code, carrier_label, amount, currency_code, delivery_eta_min, delivery_eta_max, pickup_point_required, pickup_window_required }`
+- `pickup_point`
+- `pickup_window | null`
+- `updated_at`
+
+Truthful backend-only nuance текущего шага:
+
+- backend сохраняет `quote_key` только внутри metadata namespaced backend segment, чтобы follow-up backend logic могла безопасно переиспользовать reference без раскрытия этого поля в store/public ответе;
+- `quote_reference.id` сейчас является безопасным deterministic hash от `connection_id + quote_type + quote_key + version`, а не raw provider payload;
+- этот шаг **не** делает full checkout rewrite, не привязывает selection к shipping method/order placement и не materializes shipment creation pipeline; это остается следующими tranche'ами.
+
 ## 7. Merchant UX в админке
 
 ### 7.1. Общая идея

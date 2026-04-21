@@ -26,6 +26,11 @@ import { StoreCustomerMarketingPreferencesSchema } from "./store/customers/me/ma
 import { StoreDeliveryPickupPointsQuerySchema } from "./store/delivery/pickup-points/route"
 import { StoreDeliveryPickupWindowsQuerySchema } from "./store/delivery/pickup-windows/route"
 import { StoreDeliveryQuotesQuerySchema } from "./store/delivery/quotes/route"
+import {
+  StoreDeliveryCartSelectionQuerySchema,
+  StoreDeliveryDeleteCartSelectionBodySchema,
+  StoreDeliveryUpsertCartSelectionBodySchema,
+} from "./store/delivery/selection/route"
 import { StoreVkIdStartLinkSchema } from "./store/customers/me/vk-id/start/route"
 import { StoreYooKassaPaymentStatusSchema } from "./store/payment/yookassa/route"
 import { StoreYooKassaReturnSchema } from "./store/payment/yookassa/return/route"
@@ -221,6 +226,26 @@ export default defineMiddlewares({
           isList: false,
         }),
       ],
+    },
+    {
+      matcher: "/store/delivery/selection",
+      methods: ["GET"],
+      middlewares: [
+        validateAndTransformQuery(StoreDeliveryCartSelectionQuerySchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/store/delivery/selection",
+      methods: ["POST"],
+      middlewares: [validateAndTransformBody(StoreDeliveryUpsertCartSelectionBodySchema)],
+    },
+    {
+      matcher: "/store/delivery/selection",
+      methods: ["DELETE"],
+      middlewares: [validateAndTransformBody(StoreDeliveryDeleteCartSelectionBodySchema)],
     },
     {
       matcher: "/store/payment/yookassa",

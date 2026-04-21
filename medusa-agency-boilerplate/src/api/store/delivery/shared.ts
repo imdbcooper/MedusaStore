@@ -1,4 +1,5 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { z } from "@medusajs/framework/zod"
 import {
   createDeliveryHubService,
@@ -11,6 +12,10 @@ import { redactRecord } from "../../../modules/delivery-hub/security/redaction"
 export function getStoreDeliveryHubService(req: MedusaRequest) {
   const pg = getDeliveryHubPgConnection(req.scope)
   return createDeliveryHubService(pg)
+}
+
+export function getStoreQuery(req: MedusaRequest) {
+  return req.scope.resolve(ContainerRegistrationKeys.QUERY)
 }
 
 export function handleStoreDeliveryHubError(res: MedusaResponse, error: unknown) {
