@@ -1,33 +1,48 @@
 "use client"
 
 import { Radio, RadioGroup } from "@headlessui/react"
+import {
+  getApiShipStorefrontSettings,
+  listApiShipPoints,
+  listApiShipRates,
+} from "@lib/data/apiship"
 import { setShippingMethod } from "@lib/data/cart"
-import { listApiShipCourierRates } from "@lib/data/apiship"
 import { calculatePriceForShippingOption } from "@lib/data/fulfillment"
 import { storefrontConfig } from "@lib/storefront-config"
+import {
+  apiShipSelectionsEqual,
+  buildApiShipAddressFingerprint,
+  buildApiShipShippingSelectionData,
+  formatApiShipEtaLabel,
+  getApiShipPointLabel,
+  getApiShipQuoteTitle,
+  getApiShipShippingOptionLabel,
+  getApiShipStorefrontModeSettings,
+  isApiShipSelectionFresh,
+  isApiShipShippingOption,
+  quoteMatchesApiShipSelection,
+  readApiShipShippingSelectionData,
+  type ApiShipPoint,
+  type ApiShipRateGroup,
+  type ApiShipRateQuote,
+  type ApiShipShopperModeKey,
+  type ApiShipStorefrontSettings,
+} from "@lib/util/apiship"
 import { convertToLocale } from "@lib/util/money"
 import { CheckCircleSolid, Loader } from "@medusajs/icons"
 import { HttpTypes } from "@medusajs/types"
 import { Button, clx, Heading, Text } from "@medusajs/ui"
 import ErrorMessage from "@modules/checkout/components/error-message"
+import ShippingSummary from "@modules/checkout/components/shipping-summary"
 import Divider from "@modules/common/components/divider"
 import MedusaRadio from "@modules/common/components/radio"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 
-const PICKUP_OPTION_ON = "__PICKUP_ON"
-const PICKUP_OPTION_OFF = "__PICKUP_OFF"
-
-type ApiShipQuote = {
-  amount: number
-  currency_code: string
-  shipping_option_id: string
-  shipping_option_name: string
-  provider_key: string | null
-  tariff_id: number | null
-  provider_label: string
-  estimated_days_min: number | null
-  estimated_days_max: number | null
+type CheckoutShippingOption = HttpTypes.StoreCartShippingOption & {
+  provider?: {
+    is_enabled?: boolean
+  } | null
 }
 
 type ShippingProps = {
@@ -35,30 +50,238 @@ type ShippingProps = {
   availableShippingMethods: HttpTypes.StoreCartShippingOption[] | null
 }
 
-function formatAddress(address: HttpTypes.StoreCartAddress) {
-  if (!address) {
-    return ""
+type ApiShipSettingsState = {
+  status: "idle" | "loading" | "ready" | "error"
+  settings: ApiShipStorefrontSettings | null
+}
+
+type ApiShipRatesState = {
+  status: "idle" | "loading" | "ready" | "error"
+  groupedQuotes: ApiShipRateGroup[]
+  selectedProviderKey: string | null
+  selectedQuoteKey: string | null
+  requestKey: string | null
+  code: string | null
+  message: string | null
+}
+
+type ApiShipPointsState = {
+  status: "idle" | "loading" | "ready" | "error"
+  points: ApiShipPoint[]
+  selectedPointId: number | null
+  requestKey: string | null
+  code: string | null
+  message: string | null
+}
+
+function isCheckoutEligibleShippingOption(
+  option: HttpTypes.StoreCartShippingOption
+) {
+  return (option as CheckoutShippingOption).provider?.is_enabled !== false
+}
+
+function formatPrice(
+  amount: number,
+  currencyCode: string | null | undefined
+): string {
+  if (!currencyCode) {
+    return String(amount)
   }
 
-  let ret = ""
+  return convertToLocale({
+    amount,
+    currency_code: currencyCode,
+  })
+}
 
-  if (address.address_1) {
-    ret += ` ${address.address_1}`
+function resolveApiShipRatesMessage(code: string | null, fallback: string) {
+  switch (code) {
+    case "shipping_address_incomplete":
+      return "Заполните страну, город и адрес доставки, чтобы получить тарифы ApiShip."
+    case "apiship_disabled":
+      return "Доставка ApiShip сейчас недоступна."
+    case "apiship_calculation_unavailable":
+      return "Не удалось получить тарифы ApiShip для текущего адреса. Попробуйте ещё раз чуть позже."
+    case "apiship_quotes_unavailable":
+      return "Для текущего адреса и корзины не найдено доступных тарифов ApiShip по этому способу доставки."
+    case "apiship_option_not_found":
+      return "Вариант доставки ApiShip сейчас недоступен."
+    case "request_failed":
+      return "Не удалось связаться с ApiShip. Попробуйте ещё раз чуть позже."
+    default:
+      return fallback
+  }
+}
+
+function resolveApiShipPointsMessage(code: string | null, fallback: string) {
+  switch (code) {
+    case "shipping_address_incomplete":
+      return "Заполните адрес доставки, чтобы загрузить пункты выдачи."
+    case "apiship_calculation_unavailable":
+      return "Не удалось подготовить список пунктов выдачи для выбранного тарифа. Попробуйте обновить адрес или выбрать другой тариф."
+    case "apiship_points_unavailable":
+      return "Для выбранного тарифа сейчас нет доступных пунктов выдачи по этому адресу."
+    case "request_failed":
+      return "Не удалось загрузить пункты выдачи. Попробуйте ещё раз чуть позже."
+    default:
+      return fallback
+  }
+}
+
+function getDefaultProviderKey(groups: ApiShipRateGroup[]) {
+  return groups[0]?.provider_key ?? null
+}
+
+function getApiShipModeKeyFromOption(
+  option: HttpTypes.StoreCartShippingOption | null | undefined,
+  settings?: ApiShipStorefrontSettings | null
+): ApiShipShopperModeKey | null {
+  const configuredMode = getApiShipStorefrontModeSettings(settings, option)
+
+  if (configuredMode?.mode_key) {
+    return configuredMode.mode_key
   }
 
-  if (address.address_2) {
-    ret += `, ${address.address_2}`
+  const dataId =
+    typeof option?.data?.id === "string" && option.data.id.trim()
+      ? option.data.id.trim()
+      : null
+
+  if (dataId === "apiship_to_door" || dataId === "apiship_to_point") {
+    return dataId
   }
 
-  if (address.postal_code) {
-    ret += `, ${address.postal_code} ${address.city}`
+  if (option?.id === "apiship_to_door" || option?.id === "apiship_to_point") {
+    return option.id
   }
 
-  if (address.country_code) {
-    ret += `, ${address.country_code.toUpperCase()}`
+  return null
+}
+
+function findApiShipOptionByModeKey(
+  options: HttpTypes.StoreCartShippingOption[],
+  modeKey: ApiShipShopperModeKey | null | undefined,
+  settings?: ApiShipStorefrontSettings | null
+) {
+  if (!modeKey) {
+    return null
   }
 
-  return ret
+  return (
+    options.find((option) => getApiShipModeKeyFromOption(option, settings) === modeKey) ??
+    null
+  )
+}
+
+function resolvePreferredShippingMethodId(input: {
+  shippingMethods: HttpTypes.StoreCartShippingOption[]
+  shippingMethod: HttpTypes.StoreCartShippingMethod | undefined
+  selection: ReturnType<typeof readApiShipShippingSelectionData>
+  settings?: ApiShipStorefrontSettings | null
+}) {
+  const { shippingMethods, shippingMethod, selection, settings } = input
+  const persistedShippingOptionId = shippingMethod?.shipping_option_id ?? null
+
+  if (
+    persistedShippingOptionId &&
+    shippingMethods.some((option) => option.id === persistedShippingOptionId)
+  ) {
+    return persistedShippingOptionId
+  }
+
+  if (selection?.shipping_option_id) {
+    const matchingSelectionOption = shippingMethods.find(
+      (option) => option.id === selection.shipping_option_id
+    )
+
+    if (matchingSelectionOption) {
+      return matchingSelectionOption.id
+    }
+  }
+
+  if (selection?.mode_key) {
+    return findApiShipOptionByModeKey(shippingMethods, selection.mode_key, settings)?.id ?? null
+  }
+
+  return persistedShippingOptionId
+}
+
+function findQuoteByQuoteKey(
+  groups: ApiShipRateGroup[],
+  quoteKey: string | null
+): ApiShipRateQuote | null {
+  if (!quoteKey) {
+    return null
+  }
+
+  for (const group of groups) {
+    const quote = group.tariffs.find((entry) => entry.quote_key === quoteKey)
+
+    if (quote) {
+      return quote
+    }
+  }
+
+  return null
+}
+
+function findQuoteBySelection(
+  groups: ApiShipRateGroup[],
+  shippingMethod: HttpTypes.StoreCartShippingMethod | undefined
+) {
+  const selection = readApiShipShippingSelectionData(shippingMethod)
+
+  if (!selection) {
+    return null
+  }
+
+  for (const group of groups) {
+    const quote = group.tariffs.find((entry) =>
+      quoteMatchesApiShipSelection(entry, selection)
+    )
+
+    if (quote) {
+      return quote
+    }
+  }
+
+  return null
+}
+
+function findPointBySelection(
+  points: ApiShipPoint[],
+  shippingMethod: HttpTypes.StoreCartShippingMethod | undefined
+) {
+  const selection = readApiShipShippingSelectionData(shippingMethod)
+
+  if (!selection?.point_out_id) {
+    return null
+  }
+
+  return points.find((point) => point.id === selection.point_out_id) ?? null
+}
+
+function filterApiShipGroupedQuotes(groups: ApiShipRateGroup[]) {
+  return groups
+    .map((group) => {
+      const tariffs = group.tariffs.filter((quote) => {
+        if (quote.delivery_type !== 2) {
+          return true
+        }
+
+        return quote.point_ids.length > 0
+      })
+
+      if (!tariffs.length) {
+        return null
+      }
+
+      return {
+        ...group,
+        tariffs,
+      }
+    })
+    .filter((group): group is ApiShipRateGroup => group !== null)
 }
 
 const Shipping: React.FC<ShippingProps> = ({
@@ -67,89 +290,395 @@ const Shipping: React.FC<ShippingProps> = ({
 }) => {
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingPrices, setIsLoadingPrices] = useState(true)
-
-  const [showPickupOptions, setShowPickupOptions] =
-    useState<string>(PICKUP_OPTION_OFF)
   const [calculatedPricesMap, setCalculatedPricesMap] = useState<
     Record<string, number>
   >({})
-  const [apishipQuotesMap, setApishipQuotesMap] = useState<
-    Record<string, ApiShipQuote[]>
+  const [apiShipSettingsState, setApiShipSettingsState] =
+    useState<ApiShipSettingsState>({
+      status: "idle",
+      settings: null,
+    })
+  const [apiShipRatesMap, setApiShipRatesMap] = useState<
+    Record<string, ApiShipRatesState>
+  >({})
+  const [apiShipPointsMap, setApiShipPointsMap] = useState<
+    Record<string, ApiShipPointsState>
   >({})
   const [error, setError] = useState<string | null>(null)
-  const [shippingMethodId, setShippingMethodId] = useState<string | null>(
-    cart.shipping_methods?.at(-1)?.shipping_option_id || null
-  )
 
   const searchParams = useSearchParams()
   const router = useRouter()
   const pathname = usePathname()
-
   const isOpen = searchParams.get("step") === "delivery"
 
-  const shippingMethods = useMemo(
-    () => availableShippingMethods ?? [],
-    [availableShippingMethods]
-  )
-  const pickupMethods = useMemo<HttpTypes.StoreCartShippingOption[]>(() => [], [])
-
-  const hasPickupOptions = false
   const checkoutCopy = storefrontConfig.copy.checkout
   const commonCopy = storefrontConfig.copy.common
+  const cartShippingMethod = cart.shipping_methods?.at(-1)
+  const cartApiShipSelection = readApiShipShippingSelectionData(cartShippingMethod)
+  const addressFingerprint = useMemo(
+    () => buildApiShipAddressFingerprint(cart.shipping_address),
+    [
+      cart.shipping_address?.address_1,
+      cart.shipping_address?.city,
+      cart.shipping_address?.country_code,
+      cart.shipping_address?.postal_code,
+      cart.shipping_address?.province,
+    ]
+  )
+
+  const shippingMethods = useMemo(
+    () => (availableShippingMethods ?? []).filter(isCheckoutEligibleShippingOption),
+    [availableShippingMethods]
+  )
+  const standardMethods = useMemo(
+    () => shippingMethods.filter((option) => !isApiShipShippingOption(option)),
+    [shippingMethods]
+  )
+  const apiShipMethods = useMemo(
+    () => shippingMethods.filter(isApiShipShippingOption),
+    [shippingMethods]
+  )
+  const hasFreshCartApiShipSelection = useMemo(
+    () => isApiShipSelectionFresh(cartApiShipSelection, addressFingerprint),
+    [cartApiShipSelection, addressFingerprint]
+  )
+  const preferredCartShippingMethodId = useMemo(
+    () =>
+      resolvePreferredShippingMethodId({
+        shippingMethods,
+        shippingMethod: cartShippingMethod,
+        selection: cartApiShipSelection,
+        settings: apiShipSettingsState.settings,
+      }),
+    [
+      shippingMethods,
+      cartShippingMethod,
+      cartApiShipSelection,
+      apiShipSettingsState.settings,
+    ]
+  )
+  const [shippingMethodId, setShippingMethodId] = useState<string | null>(
+    preferredCartShippingMethodId
+  )
+
+  useEffect(() => {
+    setApiShipSettingsState({
+      status: "loading",
+      settings: null,
+    })
+
+    getApiShipStorefrontSettings()
+      .then((settings) => {
+        setApiShipSettingsState({
+          status: settings ? "ready" : "error",
+          settings,
+        })
+      })
+      .catch(() => {
+        setApiShipSettingsState({
+          status: "error",
+          settings: null,
+        })
+      })
+  }, [])
+
+  useEffect(() => {
+    setShippingMethodId((current) =>
+      current === preferredCartShippingMethodId ? current : preferredCartShippingMethodId
+    )
+  }, [preferredCartShippingMethodId])
 
   useEffect(() => {
     setIsLoadingPrices(true)
 
-    if (shippingMethods.length) {
-      const pricePromises = shippingMethods
-        .filter((shippingMethod) => shippingMethod.price_type === "calculated")
-        .map((shippingMethod) =>
-          calculatePriceForShippingOption(shippingMethod.id, cart.id)
-        )
-
-      const apishipPromises = shippingMethods
-        .filter(
-          (shippingMethod) =>
-            shippingMethod.price_type === "calculated" &&
-            shippingMethod.provider_id === "apiship_apiship"
-        )
-        .map(async (shippingMethod) => ({
-          optionId: shippingMethod.id,
-          quotes: await listApiShipCourierRates(cart.id, shippingMethod.id),
-        }))
-
-      Promise.allSettled(pricePromises).then((results) => {
-        const pricesMap: Record<string, number> = {}
-
-        results
-          .filter((result) => result.status === "fulfilled")
-          .forEach((result) => {
-            pricesMap[result.value?.id || ""] = result.value?.amount!
-          })
-
-        setCalculatedPricesMap(pricesMap)
-        setIsLoadingPrices(false)
-      })
-
-      Promise.allSettled(apishipPromises).then((results) => {
-        const quotesMap: Record<string, ApiShipQuote[]> = {}
-
-        results
-          .filter((result) => result.status === "fulfilled")
-          .forEach((result) => {
-            quotesMap[result.value.optionId] = result.value.quotes ?? []
-          })
-
-        setApishipQuotesMap(quotesMap)
-      })
-    } else {
+    if (!standardMethods.length) {
+      setCalculatedPricesMap({})
       setIsLoadingPrices(false)
+      return
     }
 
-    if (pickupMethods.find((method) => method.id === shippingMethodId)) {
-      setShowPickupOptions(PICKUP_OPTION_ON)
+    Promise.allSettled(
+      standardMethods
+        .filter((option) => option.price_type === "calculated")
+        .map((option) => calculatePriceForShippingOption(option.id, cart.id))
+    ).then((results) => {
+      const pricesMap: Record<string, number> = {}
+
+      results.forEach((result) => {
+        if (result.status !== "fulfilled") {
+          return
+        }
+
+        if (result.value?.id && typeof result.value.amount === "number") {
+          pricesMap[result.value.id] = result.value.amount
+        }
+      })
+
+      setCalculatedPricesMap(pricesMap)
+      setIsLoadingPrices(false)
+    })
+  }, [cart.id, standardMethods])
+
+  useEffect(() => {
+    if (!apiShipMethods.length || apiShipSettingsState.status !== "ready") {
+      return
     }
-  }, [availableShippingMethods, cart.id, shippingMethodId, shippingMethods, pickupMethods])
+
+    apiShipMethods.forEach((option) => {
+      const modeSettings = getApiShipStorefrontModeSettings(
+        apiShipSettingsState.settings,
+        option
+      )
+
+      if (!modeSettings?.enabled) {
+        setApiShipRatesMap((current) => ({
+          ...current,
+          [option.id]: {
+            status: "error",
+            groupedQuotes: [],
+            selectedProviderKey: null,
+            selectedQuoteKey: null,
+            requestKey: null,
+            code: "apiship_disabled",
+            message: "Этот способ доставки сейчас отключен продавцом.",
+          },
+        }))
+        return
+      }
+
+      const requestKey = `${cart.id}:${option.id}:${addressFingerprint ?? "no-address"}`
+
+      setApiShipRatesMap((current) => ({
+        ...current,
+        [option.id]: {
+          status: "loading",
+          groupedQuotes: [],
+          selectedProviderKey: null,
+          selectedQuoteKey: null,
+          requestKey,
+          code: null,
+          message: null,
+        },
+      }))
+
+      listApiShipRates(cart.id, option.id)
+        .then((response) => {
+          if (response?.settings) {
+            setApiShipSettingsState((current) =>
+              current.settings
+                ? current
+                : {
+                    status: "ready",
+                    settings: response.settings ?? null,
+                  }
+            )
+          }
+
+          const groupedQuotes = filterApiShipGroupedQuotes(
+            response?.grouped_quotes ?? []
+          )
+          const cartSelectedQuote =
+            preferredCartShippingMethodId === option.id && hasFreshCartApiShipSelection
+              ? findQuoteBySelection(groupedQuotes, cartShippingMethod)
+              : null
+          const code = response?.code ?? (groupedQuotes.length ? null : "apiship_quotes_unavailable")
+          const message =
+            groupedQuotes.length > 0 && !code
+              ? null
+              : resolveApiShipRatesMessage(
+                  code,
+                  "Тарифы ApiShip сейчас недоступны."
+                )
+
+          setApiShipRatesMap((current) => {
+            if (current[option.id]?.requestKey !== requestKey) {
+              return current
+            }
+
+            return {
+              ...current,
+              [option.id]: {
+                status: groupedQuotes.length > 0 && !code ? "ready" : "error",
+                groupedQuotes,
+                selectedProviderKey:
+                  cartSelectedQuote?.provider_key ?? getDefaultProviderKey(groupedQuotes),
+                selectedQuoteKey: cartSelectedQuote?.quote_key ?? null,
+                requestKey,
+                code,
+                message,
+              },
+            }
+          })
+        })
+        .catch(() => {
+          setApiShipRatesMap((current) => {
+            if (current[option.id]?.requestKey !== requestKey) {
+              return current
+            }
+
+            return {
+              ...current,
+              [option.id]: {
+                status: "error",
+                groupedQuotes: [],
+                selectedProviderKey: null,
+                selectedQuoteKey: null,
+                requestKey,
+                code: "request_failed",
+                message: resolveApiShipRatesMessage(
+                  "request_failed",
+                  "Тарифы ApiShip сейчас недоступны."
+                ),
+              },
+            }
+          })
+        })
+    })
+  }, [
+    apiShipMethods,
+    apiShipSettingsState.settings,
+    apiShipSettingsState.status,
+    addressFingerprint,
+    cart.id,
+    cartShippingMethod,
+    hasFreshCartApiShipSelection,
+    preferredCartShippingMethodId,
+  ])
+
+  useEffect(() => {
+    apiShipMethods.forEach((option) => {
+      const ratesState = apiShipRatesMap[option.id]
+      const currentPointsState = apiShipPointsMap[option.id]
+      const selectedProviderGroup =
+        ratesState?.groupedQuotes.find(
+          (group) => group.provider_key === ratesState.selectedProviderKey
+        ) ?? ratesState?.groupedQuotes[0]
+      const selectedQuote = findQuoteByQuoteKey(
+        ratesState?.groupedQuotes ?? [],
+        ratesState?.selectedQuoteKey ?? null
+      )
+      const quoteForPoints = selectedQuote ?? selectedProviderGroup?.tariffs[0] ?? null
+
+      if (!quoteForPoints || quoteForPoints.delivery_type !== 2) {
+        if (
+          currentPointsState?.status === "idle" &&
+          currentPointsState.requestKey === null &&
+          currentPointsState.points.length === 0 &&
+          currentPointsState.selectedPointId === null
+        ) {
+          return
+        }
+
+        setApiShipPointsMap((current) => ({
+          ...current,
+          [option.id]: {
+            status: "idle",
+            points: [],
+            selectedPointId: null,
+            requestKey: null,
+            code: null,
+            message: null,
+          },
+        }))
+        return
+      }
+
+      const requestKey = `${cart.id}:${option.id}:${addressFingerprint ?? "no-address"}:${quoteForPoints.quote_key}`
+
+      if (currentPointsState?.requestKey === requestKey) {
+        return
+      }
+
+      setApiShipPointsMap((current) => ({
+        ...current,
+        [option.id]: {
+          status: "loading",
+          points: [],
+          selectedPointId: null,
+          requestKey,
+          code: null,
+          message: null,
+        },
+      }))
+
+      listApiShipPoints({
+        cartId: cart.id,
+        shippingOptionId: option.id,
+        providerKey: quoteForPoints.provider_key,
+        tariffId: quoteForPoints.tariff_id,
+        pickupType: quoteForPoints.pickup_type,
+        deliveryType: quoteForPoints.delivery_type,
+      })
+        .then((response) => {
+          const points = response?.points ?? []
+          const cartPoint =
+            preferredCartShippingMethodId === option.id && hasFreshCartApiShipSelection
+              ? findPointBySelection(points, cartShippingMethod)
+              : null
+          const code = response?.code ?? (points.length ? null : "apiship_points_unavailable")
+          const message =
+            points.length > 0 && !code
+              ? null
+              : resolveApiShipPointsMessage(
+                  code,
+                  "Пункты выдачи сейчас недоступны."
+                )
+
+          setApiShipPointsMap((current) => {
+            if (current[option.id]?.requestKey !== requestKey) {
+              return current
+            }
+
+            return {
+              ...current,
+              [option.id]: {
+                status: points.length > 0 && !code ? "ready" : "error",
+                points,
+                selectedPointId: cartPoint?.id ?? null,
+                requestKey,
+                code,
+                message,
+              },
+            }
+          })
+        })
+        .catch(() => {
+          setApiShipPointsMap((current) => {
+            if (current[option.id]?.requestKey !== requestKey) {
+              return current
+            }
+
+            return {
+              ...current,
+              [option.id]: {
+                status: "error",
+                points: [],
+                selectedPointId: null,
+                requestKey,
+                code: "request_failed",
+                message: resolveApiShipPointsMessage(
+                  "request_failed",
+                  "Пункты выдачи сейчас недоступны."
+                ),
+              },
+            }
+          })
+        })
+    })
+  }, [
+    apiShipMethods,
+    apiShipPointsMap,
+    apiShipRatesMap,
+    addressFingerprint,
+    cart.id,
+    cartShippingMethod,
+    hasFreshCartApiShipSelection,
+    preferredCartShippingMethodId,
+  ])
+
+  useEffect(() => {
+    setError(null)
+  }, [isOpen])
 
   const handleEdit = () => {
     router.push(pathname + "?step=delivery", { scroll: false })
@@ -159,29 +688,25 @@ const Shipping: React.FC<ShippingProps> = ({
     router.push(pathname + "?step=payment", { scroll: false })
   }
 
-  const handleSetShippingMethod = async (
+  const commitShippingMethod = async (
     id: string,
-    variant: "shipping" | "pickup",
-    data?: Record<string, unknown>
+    data?: Record<string, unknown>,
+    shopperModeKey?: ApiShipShopperModeKey | null
   ) => {
     setError(null)
-
-    if (variant === "pickup") {
-      setShowPickupOptions(PICKUP_OPTION_ON)
-    } else {
-      setShowPickupOptions(PICKUP_OPTION_OFF)
-    }
-
-    let currentId: string | null = null
     setIsLoading(true)
-    setShippingMethodId((prev) => {
-      currentId = prev
-      return id
-    })
+    const previousId = shippingMethodId
+    setShippingMethodId(id)
 
-    await setShippingMethod({ cartId: cart.id, shippingMethodId: id, data })
+    await setShippingMethod({
+      cartId: cart.id,
+      shippingMethodId: id,
+      shopperModeKey,
+      addressFingerprint,
+      data,
+    })
       .catch((err) => {
-        setShippingMethodId(currentId)
+        setShippingMethodId(previousId)
         setError(err.message)
       })
       .finally(() => {
@@ -189,79 +714,251 @@ const Shipping: React.FC<ShippingProps> = ({
       })
   }
 
-  useEffect(() => {
+  const handleSelectApiShipProvider = (optionId: string, providerKey: string) => {
+    setShippingMethodId(optionId)
+    setApiShipRatesMap((current) => {
+      const state = current[optionId]
+      const providerGroup = state?.groupedQuotes.find(
+        (group) => group.provider_key === providerKey
+      )
+      const firstQuote = providerGroup?.tariffs[0] ?? null
+
+      if (!state) {
+        return current
+      }
+
+      return {
+        ...current,
+        [optionId]: {
+          ...state,
+          selectedProviderKey: providerKey,
+          selectedQuoteKey: firstQuote?.quote_key ?? null,
+        },
+      }
+    })
     setError(null)
-  }, [isOpen])
+  }
+
+  const handleSelectApiShipQuote = async (
+    optionId: string,
+    quote: ApiShipRateQuote
+  ) => {
+    setShippingMethodId(optionId)
+    setApiShipRatesMap((current) => ({
+      ...current,
+      [optionId]: {
+        ...(current[optionId] ?? {
+          status: "ready",
+          groupedQuotes: [],
+          selectedProviderKey: null,
+          selectedQuoteKey: null,
+          requestKey: null,
+          code: null,
+          message: null,
+        }),
+        selectedProviderKey: quote.provider_key,
+        selectedQuoteKey: quote.quote_key,
+      },
+    }))
+    setApiShipPointsMap((current) => ({
+      ...current,
+      [optionId]: {
+        ...(current[optionId] ?? {
+          status: "idle",
+          points: [],
+          selectedPointId: null,
+          requestKey: null,
+          code: null,
+          message: null,
+        }),
+        selectedPointId: null,
+      },
+    }))
+    setError(null)
+
+    if (quote.delivery_type === 1) {
+      await commitShippingMethod(
+        optionId,
+        buildApiShipShippingSelectionData(quote, null, {
+          shippingOptionId: optionId,
+          addressFingerprint,
+        }),
+        quote.mode_key
+      )
+    }
+  }
+
+  const handleSelectApiShipPoint = async (optionId: string, point: ApiShipPoint) => {
+    const quote = findQuoteByQuoteKey(
+      apiShipRatesMap[optionId]?.groupedQuotes ?? [],
+      apiShipRatesMap[optionId]?.selectedQuoteKey ?? null
+    )
+
+    if (!quote) {
+      setError("Сначала выберите службу доставки и тариф.")
+      return
+    }
+
+    setApiShipPointsMap((current) => ({
+      ...current,
+      [optionId]: {
+        ...(current[optionId] ?? {
+          status: "ready",
+          points: [],
+          selectedPointId: null,
+          requestKey: null,
+          code: null,
+          message: null,
+        }),
+        selectedPointId: point.id,
+      },
+    }))
+
+    await commitShippingMethod(
+      optionId,
+      buildApiShipShippingSelectionData(quote, point, {
+        shippingOptionId: optionId,
+        addressFingerprint,
+      }),
+      quote.mode_key
+    )
+  }
 
   const getOptionPriceLabel = (option: HttpTypes.StoreCartShippingOption) => {
+    if (isApiShipShippingOption(option)) {
+      const ratesState = apiShipRatesMap[option.id]
+      const selectedQuote = findQuoteByQuoteKey(
+        ratesState?.groupedQuotes ?? [],
+        ratesState?.selectedQuoteKey ?? null
+      )
+      const previewQuote = selectedQuote ?? ratesState?.groupedQuotes?.[0]?.tariffs?.[0]
+
+      if (ratesState?.status === "loading" || apiShipSettingsState.status === "loading") {
+        return <Loader />
+      }
+
+      return previewQuote
+        ? formatPrice(previewQuote.amount, cart.currency_code)
+        : checkoutCopy.shippingRateUnavailable
+    }
+
     if (option.price_type === "flat") {
       return convertToLocale({
         amount: option.amount!,
-        currency_code: cart?.currency_code,
+        currency_code: cart.currency_code,
       })
     }
 
     if (typeof calculatedPricesMap[option.id] === "number") {
       return convertToLocale({
         amount: calculatedPricesMap[option.id],
-        currency_code: cart?.currency_code,
+        currency_code: cart.currency_code,
       })
     }
 
-    if (isLoadingPrices) {
-      return <Loader />
-    }
-
-    return checkoutCopy.shippingRateUnavailable
+    return isLoadingPrices ? <Loader /> : checkoutCopy.shippingRateUnavailable
   }
 
-  const getApiShipHint = (optionId: string) => {
-    const quote = apishipQuotesMap[optionId]?.[0]
-
-    if (!quote) {
-      return null
+  const visibleShippingMethods = shippingMethods.filter((option) => {
+    if (!isApiShipShippingOption(option)) {
+      return true
     }
 
-    const deliveryWindow = quote.estimated_days_min
-      ? ` · ${quote.estimated_days_min}-${quote.estimated_days_max ?? quote.estimated_days_min} дн.`
-      : ""
+    const modeSettings = getApiShipStorefrontModeSettings(
+      apiShipSettingsState.settings,
+      option
+    )
 
-    return `${quote.provider_label}${deliveryWindow} · ${checkoutCopy.apishipCheapestTariff}`
-  }
+    if (apiShipSettingsState.status === "loading") {
+      return true
+    }
+
+    return modeSettings?.enabled !== false
+  })
+
+  const selectedShippingOption = shippingMethodId
+    ? shippingMethods.find((option) => option.id === shippingMethodId) ??
+      (cartApiShipSelection
+        ? findApiShipOptionByModeKey(
+            shippingMethods,
+            cartApiShipSelection.mode_key,
+            apiShipSettingsState.settings
+          )
+        : null)
+    : null
+  const selectedApiShipModeKey =
+    getApiShipModeKeyFromOption(selectedShippingOption, apiShipSettingsState.settings) ??
+    (shippingMethodId === preferredCartShippingMethodId ? cartApiShipSelection?.mode_key ?? null : null)
+  const selectedApiShipOptionId =
+    selectedShippingOption && isApiShipShippingOption(selectedShippingOption)
+      ? selectedShippingOption.id
+      : findApiShipOptionByModeKey(
+          apiShipMethods,
+          selectedApiShipModeKey,
+          apiShipSettingsState.settings
+        )?.id ?? null
+  const selectedShippingOptionIsApiShip = Boolean(selectedApiShipOptionId)
+  const selectedQuote = selectedApiShipOptionId
+    ? findQuoteByQuoteKey(
+        apiShipRatesMap[selectedApiShipOptionId]?.groupedQuotes ?? [],
+        apiShipRatesMap[selectedApiShipOptionId]?.selectedQuoteKey ?? null
+      )
+    : null
+  const selectedPoint =
+    selectedApiShipOptionId && apiShipPointsMap[selectedApiShipOptionId]?.selectedPointId
+      ? apiShipPointsMap[selectedApiShipOptionId].points.find(
+          (point) =>
+            point.id === apiShipPointsMap[selectedApiShipOptionId].selectedPointId
+        ) ?? null
+      : null
+  const currentApiShipSelection =
+    selectedApiShipOptionId && selectedShippingOptionIsApiShip && selectedQuote
+      ? selectedQuote.delivery_type === 2
+        ? selectedPoint
+          ? buildApiShipShippingSelectionData(selectedQuote, selectedPoint, {
+              shippingOptionId: selectedApiShipOptionId,
+              addressFingerprint,
+            })
+          : null
+        : buildApiShipShippingSelectionData(selectedQuote, null, {
+            shippingOptionId: selectedApiShipOptionId,
+            addressFingerprint,
+          })
+      : null
+  const isSelectionCommitted = shippingMethodId
+    ? selectedShippingOptionIsApiShip && selectedApiShipOptionId
+      ? preferredCartShippingMethodId === selectedApiShipOptionId &&
+        hasFreshCartApiShipSelection &&
+        apiShipSelectionsEqual(currentApiShipSelection, cartApiShipSelection)
+      : cartShippingMethod?.shipping_option_id === shippingMethodId
+    : false
 
   return (
     <div className="bg-white">
-      <div className="flex flex-row items-center justify-between mb-6">
+      <div className="mb-6 flex flex-row items-center justify-between">
         <Heading
           level="h2"
-          className={clx(
-            "flex flex-row text-3xl-regular gap-x-2 items-baseline",
-            {
-              "opacity-50 pointer-events-none select-none":
-                !isOpen && cart.shipping_methods?.length === 0,
-            }
-          )}
+          className={clx("flex flex-row items-baseline gap-x-2 text-3xl-regular", {
+            "pointer-events-none select-none opacity-50":
+              !isOpen && cart.shipping_methods?.length === 0,
+          })}
         >
           {checkoutCopy.delivery}
-          {!isOpen && (cart.shipping_methods?.length ?? 0) > 0 && (
-            <CheckCircleSolid />
-          )}
+          {!isOpen && (cart.shipping_methods?.length ?? 0) > 0 && <CheckCircleSolid />}
         </Heading>
-        {!isOpen &&
-          cart?.shipping_address &&
-          cart?.billing_address &&
-          cart?.email && (
-            <Text>
-              <button
-                onClick={handleEdit}
-                className="text-ui-fg-interactive hover:text-ui-fg-interactive-hover"
-                data-testid="edit-delivery-button"
-              >
-                {commonCopy.edit}
-              </button>
-            </Text>
-          )}
+        {!isOpen && cart.shipping_address && cart.billing_address && cart.email && (
+          <Text>
+            <button
+              onClick={handleEdit}
+              className="text-ui-fg-interactive hover:text-ui-fg-interactive-hover"
+              data-testid="edit-delivery-button"
+            >
+              {commonCopy.edit}
+            </button>
+          </Text>
+        )}
       </div>
+
       {isOpen ? (
         <>
           <div className="grid">
@@ -273,177 +970,336 @@ const Shipping: React.FC<ShippingProps> = ({
                 {checkoutCopy.deliveryMethodHint}
               </span>
             </div>
-            <div data-testid="delivery-options-container">
-              <div className="pb-8 md:pt-0 pt-2">
-                {hasPickupOptions && (
-                  <RadioGroup
-                    value={showPickupOptions}
-                    onChange={() => {
-                      const id = pickupMethods.find(
-                        (option) => !option.insufficient_inventory
-                      )?.id
 
-                      if (id) {
-                        handleSetShippingMethod(id, "pickup")
-                      }
-                    }}
-                  >
-                    <Radio
-                      value={PICKUP_OPTION_ON}
-                      data-testid="delivery-option-radio"
-                      className={clx(
-                        "flex items-center justify-between text-small-regular cursor-pointer py-4 border rounded-rounded px-8 mb-2 hover:shadow-borders-interactive-with-active",
-                        {
-                          "border-ui-border-interactive":
-                            showPickupOptions === PICKUP_OPTION_ON,
-                        }
-                      )}
-                    >
-                      <div className="flex items-center gap-x-4">
-                        <MedusaRadio
-                          checked={showPickupOptions === PICKUP_OPTION_ON}
-                        />
-                        <span className="text-base-regular">
-                          {checkoutCopy.pickupYourOrder}
-                        </span>
-                      </div>
-                      <span className="justify-self-end text-ui-fg-base">-</span>
-                    </Radio>
-                  </RadioGroup>
-                )}
+            <div data-testid="delivery-options-container">
+              <div className="pb-8 pt-2 md:pt-0">
                 <RadioGroup
                   value={shippingMethodId}
                   onChange={(value) => {
-                    if (value) {
-                      const apishipQuote = apishipQuotesMap[value]?.[0]
-
-                      return handleSetShippingMethod(
-                        value,
-                        "shipping",
-                        apishipQuote
-                          ? {
-                              apishipData: {
-                                tariff: {
-                                  providerKey: apishipQuote.provider_key,
-                                  tariffId: apishipQuote.tariff_id,
-                                  deliveryCost: apishipQuote.amount,
-                                },
-                              },
-                            }
-                          : undefined
-                      )
+                    if (!value) {
+                      return
                     }
+
+                    const option = visibleShippingMethods.find((entry) => entry.id === value)
+
+                    if (!option) {
+                      return
+                    }
+
+                    if (isApiShipShippingOption(option)) {
+                      setShippingMethodId(option.id)
+                      setError(null)
+                      return
+                    }
+
+                    void commitShippingMethod(option.id)
                   }}
                 >
-                  {shippingMethods.map((option) => {
-                    const isDisabled =
-                      option.price_type === "calculated" &&
-                      !isLoadingPrices &&
-                      typeof calculatedPricesMap[option.id] !== "number"
-
-                    const apishipHint =
-                      option.provider_id === "apiship_apiship"
-                        ? getApiShipHint(option.id)
-                        : null
+                  {visibleShippingMethods.map((option) => {
+                    const isApiShip = isApiShipShippingOption(option)
+                    const ratesState = apiShipRatesMap[option.id]
+                    const pointsState = apiShipPointsMap[option.id]
+                    const selectedProviderGroup =
+                      ratesState?.groupedQuotes.find(
+                        (group) => group.provider_key === ratesState.selectedProviderKey
+                      ) ?? ratesState?.groupedQuotes[0]
+                    const optionModeKey = getApiShipModeKeyFromOption(
+                      option,
+                      apiShipSettingsState.settings
+                    )
+                    const optionLabel = isApiShip
+                      ? getApiShipShippingOptionLabel(
+                          option,
+                          apiShipSettingsState.settings
+                        )
+                      : option.name
 
                     return (
-                      <Radio
-                        key={option.id}
-                        value={option.id}
-                        data-testid="delivery-option-radio"
-                        disabled={isDisabled}
-                        className={clx(
-                          "flex items-center justify-between text-small-regular cursor-pointer py-4 border rounded-rounded px-8 mb-2 hover:shadow-borders-interactive-with-active",
-                          {
-                            "border-ui-border-interactive":
-                              option.id === shippingMethodId,
-                            "hover:shadow-brders-none cursor-not-allowed":
-                              isDisabled,
-                          }
-                        )}
-                      >
-                        <div className="flex items-center gap-x-4">
-                          <MedusaRadio checked={option.id === shippingMethodId} />
-                          <span className="text-base-regular">{option.name}</span>
-                        </div>
-                        <span className="justify-self-end text-ui-fg-base text-right">
-                          {getOptionPriceLabel(option)}
-                          {apishipHint && (
-                            <div className="text-ui-fg-muted text-xs mt-1">
-                              {apishipHint}
-                            </div>
+                      <div key={option.id} className="mb-2">
+                        <Radio
+                          value={option.id}
+                          data-testid="delivery-option-radio"
+                          className={clx(
+                            "flex cursor-pointer items-center justify-between rounded-rounded border px-8 py-4 text-small-regular hover:shadow-borders-interactive-with-active",
+                            {
+                              "border-ui-border-interactive": option.id === shippingMethodId,
+                            }
                           )}
-                        </span>
-                      </Radio>
+                        >
+                          <div className="flex items-center gap-x-4">
+                            <MedusaRadio checked={option.id === shippingMethodId} />
+                            <div className="flex flex-col">
+                              <span className="text-base-regular">{optionLabel}</span>
+                              {isApiShip && (
+                                <span className="mt-1 text-ui-fg-muted txt-small">
+                                  {optionModeKey === "apiship_to_point"
+                                    ? "Выберите службу, тариф и конкретный пункт выдачи."
+                                    : "Выберите службу доставки и тариф ApiShip."}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <span className="justify-self-end text-right text-ui-fg-base">
+                            {getOptionPriceLabel(option)}
+                          </span>
+                        </Radio>
+
+                        {isApiShip && option.id === shippingMethodId && (
+                          <div className="rounded-b-rounded border border-t-0 bg-ui-bg-subtle px-6 py-5">
+                            {(apiShipSettingsState.status === "loading" ||
+                              ratesState?.status === "loading") && (
+                              <div className="flex items-center gap-x-2 text-ui-fg-muted txt-small">
+                                <Loader />
+                                <span>Загружаем варианты ApiShip…</span>
+                              </div>
+                            )}
+
+                            {apiShipSettingsState.status === "error" && (
+                              <Text className="txt-small text-ui-fg-subtle">
+                                Не удалось загрузить shopper-настройки ApiShip.
+                              </Text>
+                            )}
+
+                            {ratesState?.status === "ready" && selectedProviderGroup && (
+                              <div className="flex flex-col gap-y-5">
+                                <Text className="text-ui-fg-muted txt-small">
+                                  {selectedProviderGroup.mode_label}
+                                  {isSelectionCommitted &&
+                                  selectedApiShipOptionId === option.id
+                                    ? " · Выбрано"
+                                    : ""}
+                                </Text>
+                                {!hasFreshCartApiShipSelection &&
+                                  preferredCartShippingMethodId === option.id &&
+                                  cartApiShipSelection && (
+                                    <Text className="rounded-rounded border border-ui-border-base bg-ui-bg-base px-3 py-2 text-ui-fg-muted txt-small">
+                                      Адрес доставки изменился. Выберите тариф и, при необходимости, пункт выдачи заново для нового адреса.
+                                    </Text>
+                                  )}
+                                <div>
+                                  <Text className="mb-3 text-ui-fg-base txt-medium-plus">
+                                    Служба доставки
+                                  </Text>
+                                  <RadioGroup
+                                    value={ratesState.selectedProviderKey}
+                                    onChange={(providerKey) => {
+                                      if (providerKey) {
+                                        handleSelectApiShipProvider(option.id, providerKey)
+                                      }
+                                    }}
+                                  >
+                                    <div className="grid gap-2">
+                                      {ratesState.groupedQuotes.map((group) => {
+                                        const cheapestQuote = group.tariffs[0]
+                                        const etaLabel = formatApiShipEtaLabel(
+                                          cheapestQuote.eta.min,
+                                          cheapestQuote.eta.max
+                                        )
+
+                                        return (
+                                          <Radio
+                                            key={group.provider_key}
+                                            value={group.provider_key}
+                                            className={clx(
+                                              "cursor-pointer rounded-rounded border bg-white px-4 py-3",
+                                              {
+                                                "border-ui-border-interactive":
+                                                  group.provider_key ===
+                                                  ratesState.selectedProviderKey,
+                                              }
+                                            )}
+                                          >
+                                            <div className="flex items-center justify-between gap-4">
+                                              <div className="flex items-center gap-x-3">
+                                                <MedusaRadio
+                                                  checked={
+                                                    group.provider_key ===
+                                                    ratesState.selectedProviderKey
+                                                  }
+                                                />
+                                                <div className="flex flex-col">
+                                                  <span className="text-base-regular">
+                                                    {group.provider_label}
+                                                  </span>
+                                                  <span className="text-ui-fg-muted txt-small">
+                                                    от {formatPrice(cheapestQuote.amount, cart.currency_code)}
+                                                    {etaLabel ? ` · ${etaLabel}` : ""}
+                                                  </span>
+                                                </div>
+                                              </div>
+                                              <span className="text-ui-fg-muted txt-small">
+                                                {group.tariffs.length} тариф.
+                                              </span>
+                                            </div>
+                                          </Radio>
+                                        )
+                                      })}
+                                    </div>
+                                  </RadioGroup>
+                                </div>
+
+                                <div>
+                                  <Text className="mb-3 text-ui-fg-base txt-medium-plus">
+                                    Тариф
+                                  </Text>
+                                  <RadioGroup
+                                    value={ratesState.selectedQuoteKey}
+                                    onChange={(quoteKey) => {
+                                      const quote = selectedProviderGroup.tariffs.find(
+                                        (entry) => entry.quote_key === quoteKey
+                                      )
+
+                                      if (quote) {
+                                        void handleSelectApiShipQuote(option.id, quote)
+                                      }
+                                    }}
+                                  >
+                                    <div className="grid gap-2">
+                                      {selectedProviderGroup.tariffs.map((quote) => {
+                                        const etaLabel = formatApiShipEtaLabel(
+                                          quote.eta.min,
+                                          quote.eta.max
+                                        )
+                                        const isSelected =
+                                          quote.quote_key === ratesState.selectedQuoteKey
+
+                                        return (
+                                          <Radio
+                                            key={quote.quote_key}
+                                            value={quote.quote_key}
+                                            className={clx(
+                                              "cursor-pointer rounded-rounded border bg-white px-4 py-3",
+                                              {
+                                                "border-ui-border-interactive": isSelected,
+                                              }
+                                            )}
+                                          >
+                                            <div className="flex items-center justify-between gap-4">
+                                              <div className="flex items-center gap-x-3">
+                                                <MedusaRadio checked={isSelected} />
+                                                <div className="flex flex-col">
+                                                  <span className="text-base-regular">
+                                                    {getApiShipQuoteTitle(quote)}
+                                                  </span>
+                                                  <span className="text-ui-fg-muted txt-small">
+                                                    {etaLabel ?? "Срок уточняется"}
+                                                  </span>
+                                                </div>
+                                              </div>
+                                              <span className="text-base-regular text-right">
+                                                {formatPrice(quote.amount, cart.currency_code)}
+                                              </span>
+                                            </div>
+                                          </Radio>
+                                        )
+                                      })}
+                                    </div>
+                                  </RadioGroup>
+                                </div>
+
+                                {selectedProviderGroup.delivery_type === 2 && (
+                                  <div>
+                                    <Text className="mb-3 text-ui-fg-base txt-medium-plus">
+                                      Пункт выдачи
+                                    </Text>
+
+                                    {pointsState?.status === "loading" && (
+                                      <div className="flex items-center gap-x-2 text-ui-fg-muted txt-small">
+                                        <Loader />
+                                        <span>Загружаем пункты выдачи…</span>
+                                      </div>
+                                    )}
+
+                                    {pointsState?.status === "error" && (
+                                      <Text className="txt-small text-ui-fg-subtle">
+                                        {pointsState.message}
+                                      </Text>
+                                    )}
+
+                                    {pointsState?.status === "ready" && (
+                                      <div className="grid gap-2">
+                                        <Text className="mb-1 text-ui-fg-muted txt-small">
+                                          Выберите конкретный пункт выдачи, чтобы сохранить способ доставки.
+                                        </Text>
+                                        {!ratesState.selectedQuoteKey && (
+                                          <Text className="text-ui-fg-muted txt-small">
+                                            Список пунктов уже обновлён для текущего адреса. Чтобы сохранить доставку, сначала подтвердите тариф.
+                                          </Text>
+                                        )}
+                                        {pointsState.selectedPointId && (
+                                          <Text className="text-ui-fg-muted txt-small">
+                                            Выбранный пункт будет сохранён в заказе вместе с тарифом ApiShip.
+                                          </Text>
+                                        )}
+                                        {pointsState.points.map((point) => {
+                                          const isSelected =
+                                            point.id === pointsState.selectedPointId
+
+                                          return (
+                                            <button
+                                              key={point.id}
+                                              type="button"
+                                              onClick={() =>
+                                                void handleSelectApiShipPoint(option.id, point)
+                                              }
+                                              className={clx(
+                                                "rounded-rounded border bg-white px-4 py-3 text-left",
+                                                {
+                                                  "border-ui-border-interactive": isSelected,
+                                                }
+                                              )}
+                                            >
+                                              <div className="flex items-start gap-x-3">
+                                                <MedusaRadio checked={isSelected} />
+                                                <div className="flex flex-col gap-y-1">
+                                                  <span className="text-base-regular">
+                                                    {getApiShipPointLabel(point)}
+                                                  </span>
+                                                  {point.address && (
+                                                    <span className="text-ui-fg-muted txt-small">
+                                                      {point.address}
+                                                    </span>
+                                                  )}
+                                                  {point.timetable && (
+                                                    <span className="text-ui-fg-muted txt-small">
+                                                      {point.timetable}
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </button>
+                                          )
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {ratesState?.status === "error" && (
+                              <div className="flex flex-col gap-y-2">
+                                <Text className="txt-small text-ui-fg-subtle">
+                                  {ratesState.message ?? checkoutCopy.shippingRateUnavailable}
+                                </Text>
+                                {!hasFreshCartApiShipSelection &&
+                                  preferredCartShippingMethodId === option.id &&
+                                  cartApiShipSelection && (
+                                    <Text className="txt-small text-ui-fg-muted">
+                                      Предыдущий тариф для старого адреса больше не считается выбранным. После обновления адреса нужно выбрать новый доступный вариант.
+                                    </Text>
+                                  )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )
                   })}
                 </RadioGroup>
               </div>
             </div>
           </div>
-
-          {showPickupOptions === PICKUP_OPTION_ON && (
-            <div className="grid">
-              <div className="flex flex-col">
-                <span className="font-medium txt-medium text-ui-fg-base">
-                  {checkoutCopy.store}
-                </span>
-                <span className="mb-4 text-ui-fg-muted txt-medium">
-                  {checkoutCopy.pickupHint}
-                </span>
-              </div>
-              <div data-testid="delivery-options-container">
-                <div className="pb-8 md:pt-0 pt-2">
-                  <RadioGroup
-                    value={shippingMethodId}
-                    onChange={(value) => {
-                      if (value) {
-                        return handleSetShippingMethod(value, "pickup")
-                      }
-                    }}
-                  >
-                    {pickupMethods.map((option) => {
-                      return (
-                        <Radio
-                          key={option.id}
-                          value={option.id}
-                          disabled={option.insufficient_inventory}
-                          data-testid="delivery-option-radio"
-                          className={clx(
-                            "flex items-center justify-between text-small-regular cursor-pointer py-4 border rounded-rounded px-8 mb-2 hover:shadow-borders-interactive-with-active",
-                            {
-                              "border-ui-border-interactive":
-                                option.id === shippingMethodId,
-                              "hover:shadow-brders-none cursor-not-allowed":
-                                option.insufficient_inventory,
-                            }
-                          )}
-                        >
-                          <div className="flex items-start gap-x-4">
-                            <MedusaRadio checked={option.id === shippingMethodId} />
-                            <div className="flex flex-col">
-                              <span className="text-base-regular">
-                                {option.name}
-                              </span>
-                              <span className="text-base-regular text-ui-fg-muted">
-                                {formatAddress(undefined as never)}
-                              </span>
-                            </div>
-                          </div>
-                          <span className="justify-self-end text-ui-fg-base">
-                            {convertToLocale({
-                              amount: option.amount!,
-                              currency_code: cart?.currency_code,
-                            })}
-                          </span>
-                        </Radio>
-                      )
-                    })}
-                  </RadioGroup>
-                </div>
-              </div>
-            </div>
-          )}
 
           <div>
             <ErrorMessage
@@ -455,7 +1311,7 @@ const Shipping: React.FC<ShippingProps> = ({
               className="mt"
               onClick={handleSubmit}
               isLoading={isLoading}
-              disabled={!cart.shipping_methods?.[0]}
+              disabled={!isSelectionCommitted}
               data-testid="submit-delivery-option-button"
             >
               {checkoutCopy.continueToPayment}
@@ -463,23 +1319,15 @@ const Shipping: React.FC<ShippingProps> = ({
           </div>
         </>
       ) : (
-        <div>
-          <div className="text-small-regular">
-            {cart && (cart.shipping_methods?.length ?? 0) > 0 && (
-              <div className="flex flex-col w-1/3">
-                <Text className="txt-medium-plus text-ui-fg-base mb-1">
-                  {checkoutCopy.method}
-                </Text>
-                <Text className="txt-medium text-ui-fg-subtle">
-                  {cart.shipping_methods!.at(-1)!.name}{" "}
-                  {convertToLocale({
-                    amount: cart.shipping_methods!.at(-1)!.amount!,
-                    currency_code: cart?.currency_code,
-                  })}
-                </Text>
-              </div>
-            )}
-          </div>
+        <div className="text-small-regular">
+          {cart && (cart.shipping_methods?.length ?? 0) > 0 && (
+            <div className="flex w-full flex-col gap-y-1 small:w-1/3">
+              <Text className="mb-1 text-ui-fg-base txt-medium-plus">
+                {checkoutCopy.method}
+              </Text>
+              <ShippingSummary cart={cart} availableShippingMethods={shippingMethods} />
+            </div>
+          )}
         </div>
       )}
       <Divider className="mt-8" />
