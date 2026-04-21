@@ -2,11 +2,20 @@ import { afterEach, describe, expect, it, jest } from "@jest/globals"
 import * as deliveryPickupPointsRoute from "../../api/store/delivery/pickup-points/route"
 import * as deliveryPickupWindowsRoute from "../../api/store/delivery/pickup-windows/route"
 import * as deliveryQuotesRoute from "../../api/store/delivery/quotes/route"
+import * as deliveryReadinessRoute from "../../api/store/delivery/readiness/route"
 import { DeliveryHubError } from "../../modules/delivery-hub/errors"
 import { DeliveryHubService } from "../../modules/delivery-hub/service"
 
+const originalStoreDeliverySelectionReadinessDeps = {
+  ...deliveryReadinessRoute.storeDeliverySelectionReadinessDeps,
+}
+
 describe("Delivery Hub store routes", () => {
   afterEach(() => {
+    Object.assign(
+      deliveryReadinessRoute.storeDeliverySelectionReadinessDeps,
+      originalStoreDeliverySelectionReadinessDeps
+    )
     jest.restoreAllMocks()
   })
 
@@ -167,6 +176,174 @@ describe("Delivery Hub store routes", () => {
     })
     expect(res.status).toHaveBeenCalledWith(200)
     expect(res.json).toHaveBeenCalledWith(result)
+  })
+
+  it("returns neutral readiness payload", async () => {
+    const result = {
+      ok: true,
+      cart_id: "cart_1",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 1,
+        connection_id: "conn_1",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_123",
+          version: 1,
+        },
+        quote: {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: true,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_1",
+          provider_point_code: "code_1",
+          name: "PVZ 1",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: {
+          date: "2026-04-22",
+          time_from: "10:00",
+          time_to: "14:00",
+          interval_utc: {
+            from: "2026-04-22T07:00:00.000Z",
+            to: "2026-04-22T11:00:00.000Z",
+          },
+          label: "22 Apr, 10:00-14:00",
+        },
+        updated_at: "2026-04-21T03:00:00.000Z",
+      },
+      quote_context: {
+        connection: {
+          connection_id: "conn_1",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_123",
+          version: 1,
+        },
+        pickup_point_required: true,
+        pickup_window_required: true,
+        updated_at: "2026-04-21T03:00:00.000Z",
+      },
+    }
+
+    const readinessSpy = jest
+      .spyOn(DeliveryHubService.prototype, "getStoreSelectionReadiness")
+      .mockResolvedValue(result as any)
+    deliveryReadinessRoute.storeDeliverySelectionReadinessDeps.getDeliveryHubCartById =
+      jest.fn(async () => ({
+        id: "cart_1",
+        metadata: {
+          keep: true,
+        },
+      })) as any
+    deliveryReadinessRoute.storeDeliverySelectionReadinessDeps.requireDeliveryHubCart =
+      jest.fn((cart) => cart) as any
+
+    const res = createMockResponse()
+
+    await deliveryReadinessRoute.GET(
+      createMockRequest({
+        validatedQuery: {
+          cart_id: "cart_1",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(readinessSpy).toHaveBeenCalledWith({
+      cart_id: "cart_1",
+      metadata: {
+        keep: true,
+      },
+    })
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith(result)
+  })
+
+  it("does not expose internal connection fragments in readiness route payload", async () => {
+    const result = {
+      ok: true,
+      cart_id: "cart_1",
+      status: "not_ready",
+      issues: [
+        {
+          code: "connection_credentials_not_ready",
+          message: "Delivery connection credentials are not ready for shopper-facing use",
+          field: "connection_id",
+        },
+      ],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_1",
+          state: "credentials_not_ready",
+          ready: false,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_123",
+          version: 1,
+        },
+        pickup_point_required: true,
+        pickup_window_required: false,
+        updated_at: "2026-04-21T03:00:00.000Z",
+      },
+    }
+
+    jest
+      .spyOn(DeliveryHubService.prototype, "getStoreSelectionReadiness")
+      .mockResolvedValue(result as any)
+    deliveryReadinessRoute.storeDeliverySelectionReadinessDeps.getDeliveryHubCartById =
+      jest.fn(async () => ({
+        id: "cart_1",
+        metadata: {
+          keep: true,
+        },
+      })) as any
+    deliveryReadinessRoute.storeDeliverySelectionReadinessDeps.requireDeliveryHubCart =
+      jest.fn((cart) => cart) as any
+
+    const res = createMockResponse()
+
+    await deliveryReadinessRoute.GET(
+      createMockRequest({
+        validatedQuery: {
+          cart_id: "cart_1",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(res.json).toHaveBeenCalledWith(result)
+    const payload = (res.json as jest.Mock).mock.calls[0][0] as any
+    expect(payload.quote_context.connection).toEqual({
+      connection_id: "conn_1",
+      state: "credentials_not_ready",
+      ready: false,
+    })
+    expect(payload.quote_context.connection).not.toHaveProperty("provider_code")
+    expect(payload.quote_context.connection).not.toHaveProperty("enabled")
+    expect(payload.quote_context.connection).not.toHaveProperty("status")
+    expect(payload.quote_context.connection).not.toHaveProperty("credentials_state")
   })
 
   it("returns controlled error payload for store route failures", async () => {

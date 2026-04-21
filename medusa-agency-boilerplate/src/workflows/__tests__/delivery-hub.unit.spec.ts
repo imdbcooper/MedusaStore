@@ -558,6 +558,275 @@ describe("Delivery Hub service", () => {
     })
   })
 
+  it("returns neutral selection readiness from cart metadata and connection state", async () => {
+    const connection = createConnectionRecord({
+      id: "conn_1",
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+    })
+    const pg = createMockPg([connection])
+    const service = new DeliveryHubService(pg as any)
+
+    const result = await service.getStoreSelectionReadiness({
+      cart_id: "cart_1",
+      metadata: {
+        delivery_hub: {
+          selection: {
+            version: 1,
+            connection_id: "conn_1",
+            quote_type: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+            quote_reference: {
+              id: "dhsel_123",
+              version: 1,
+            },
+            quote: {
+              carrier_code: "yandex",
+              carrier_label: "Yandex Delivery",
+              amount: 499,
+              currency_code: "RUB",
+              delivery_eta_min: 1,
+              delivery_eta_max: 2,
+              pickup_point_required: true,
+              pickup_window_required: false,
+            },
+            pickup_point: {
+              provider_point_id: "pvz_1",
+              provider_point_code: "code_1",
+              name: "PVZ 1",
+              address: "Tverskaya 1",
+              city: "Moscow",
+              region: "Moscow",
+              postal_code: "101000",
+              lat: 55.75,
+              lng: 37.61,
+              is_origin_dropoff_allowed: false,
+              is_destination_pickup_allowed: true,
+              payment_methods: ["card"],
+            },
+            pickup_window: null,
+            updated_at: "2026-04-21T03:00:00.000Z",
+            backend: {
+              quote_key: "offer_123",
+            },
+          },
+        },
+      },
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      cart_id: "cart_1",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 1,
+        connection_id: "conn_1",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_123",
+          version: 1,
+        },
+        quote: {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_1",
+          provider_point_code: "code_1",
+          name: "PVZ 1",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-21T03:00:00.000Z",
+      },
+      quote_context: {
+        connection: {
+          connection_id: "conn_1",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_123",
+          version: 1,
+        },
+        pickup_point_required: true,
+        pickup_window_required: false,
+        updated_at: "2026-04-21T03:00:00.000Z",
+      },
+    })
+  })
+
+  it("returns not_ready readiness when referenced connection is disabled", async () => {
+    const connection = createConnectionRecord({
+      id: "conn_1",
+      enabled: false,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+    })
+    const pg = createMockPg([connection])
+    const service = new DeliveryHubService(pg as any)
+
+    const result = await service.getStoreSelectionReadiness({
+      cart_id: "cart_1",
+      metadata: {
+        delivery_hub: {
+          selection: {
+            version: 1,
+            connection_id: "conn_1",
+            quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+            quote_reference: {
+              id: "dhsel_123",
+              version: 1,
+            },
+            quote: {
+              carrier_code: "yandex",
+              carrier_label: "Yandex Delivery",
+              amount: 499,
+              currency_code: "RUB",
+              delivery_eta_min: 1,
+              delivery_eta_max: 2,
+              pickup_point_required: true,
+              pickup_window_required: false,
+            },
+            pickup_point: {
+              provider_point_id: "pvz_1",
+              provider_point_code: "code_1",
+              name: "PVZ 1",
+              address: "Tverskaya 1",
+              city: "Moscow",
+              region: "Moscow",
+              postal_code: "101000",
+              lat: 55.75,
+              lng: 37.61,
+              is_origin_dropoff_allowed: true,
+              is_destination_pickup_allowed: true,
+              payment_methods: ["card"],
+            },
+            pickup_window: null,
+            updated_at: "2026-04-21T03:00:00.000Z",
+            backend: {
+              quote_key: "offer_123",
+            },
+          },
+        },
+      },
+    })
+
+    expect(result.status).toBe("not_ready")
+    expect(result.issues).toEqual([
+      {
+        code: "connection_disabled",
+        message: "Delivery connection is disabled for shopper-facing use",
+        field: "connection_id",
+      },
+    ])
+    expect(result.selection).toEqual(
+      expect.objectContaining({
+        connection_id: "conn_1",
+      })
+    )
+    expect(result.quote_context?.connection).toEqual({
+      connection_id: "conn_1",
+      state: "disabled",
+      ready: false,
+    })
+    expect(result.quote_context?.connection).not.toHaveProperty("provider_code")
+    expect(result.quote_context?.connection).not.toHaveProperty("enabled")
+    expect(result.quote_context?.connection).not.toHaveProperty("status")
+    expect(result.quote_context?.connection).not.toHaveProperty("credentials_state")
+  })
+
+  it("returns neutral readiness connection summary for credentials-not-ready store case", async () => {
+    const connection = createConnectionRecord({
+      id: "conn_1",
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.invalid,
+    })
+    const pg = createMockPg([connection])
+    const service = new DeliveryHubService(pg as any)
+
+    const result = await service.getStoreSelectionReadiness({
+      cart_id: "cart_1",
+      metadata: {
+        delivery_hub: {
+          selection: {
+            version: 1,
+            connection_id: "conn_1",
+            quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+            quote_reference: {
+              id: "dhsel_123",
+              version: 1,
+            },
+            quote: {
+              carrier_code: "yandex",
+              carrier_label: "Yandex Delivery",
+              amount: 499,
+              currency_code: "RUB",
+              delivery_eta_min: 1,
+              delivery_eta_max: 2,
+              pickup_point_required: true,
+              pickup_window_required: false,
+            },
+            pickup_point: {
+              provider_point_id: "pvz_1",
+              provider_point_code: "code_1",
+              name: "PVZ 1",
+              address: "Tverskaya 1",
+              city: "Moscow",
+              region: "Moscow",
+              postal_code: "101000",
+              lat: 55.75,
+              lng: 37.61,
+              is_origin_dropoff_allowed: true,
+              is_destination_pickup_allowed: true,
+              payment_methods: ["card"],
+            },
+            pickup_window: null,
+            updated_at: "2026-04-21T03:00:00.000Z",
+            backend: {
+              quote_key: "offer_123",
+            },
+          },
+        },
+      },
+    })
+
+    expect(result.status).toBe("not_ready")
+    expect(result.issues).toEqual([
+      {
+        code: "connection_credentials_not_ready",
+        message: "Delivery connection credentials are not ready for shopper-facing use",
+        field: "connection_id",
+      },
+    ])
+    expect(result.quote_context?.connection).toEqual({
+      connection_id: "conn_1",
+      state: "credentials_not_ready",
+      ready: false,
+    })
+    expect(result.quote_context?.connection).not.toHaveProperty("provider_code")
+    expect(result.quote_context?.connection).not.toHaveProperty("enabled")
+    expect(result.quote_context?.connection).not.toHaveProperty("status")
+    expect(result.quote_context?.connection).not.toHaveProperty("credentials_state")
+  })
+
   it("lists store quotes for warehouse-to-pickup-point flow", async () => {
     const warehouse = createWarehouseRecord({
       id: "wh_1",

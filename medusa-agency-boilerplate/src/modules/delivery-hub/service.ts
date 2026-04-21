@@ -6,6 +6,7 @@ import {
   DELIVERY_HUB_MODE_CODE,
   DELIVERY_HUB_PROVIDER_YANDEX,
 } from "./constants"
+import { readDeliveryHubCartSelection } from "./cart-selection"
 import type {
   DeliveryConnectionPublic,
   DeliveryConnectionRecord,
@@ -19,6 +20,11 @@ import type {
   DeliveryWarehouseUpsertInput,
 } from "./domain/warehouse"
 import { DeliveryHubError, isDeliveryHubError } from "./errors"
+import {
+  buildDeliveryHubStoreSelectionConnectionSummary,
+  buildDeliveryHubStoreSelectionReadiness,
+  createMissingDeliveryHubSelectionConnectionSummary,
+} from "./selection-readiness"
 import { getDeliveryHubAdapter, listDeliveryHubProviders } from "./registry"
 import {
   createCredentialsFingerprint,
@@ -524,6 +530,35 @@ export class DeliveryHubService {
     }
   }
 
+  async getStoreSelectionReadiness(input: {
+    cart_id: string
+    metadata?: unknown
+  }) {
+    const cartId = requireString(input.cart_id, "cart_id")
+    const selection = readDeliveryHubCartSelection(input.metadata)
+
+    if (!selection) {
+      return {
+        ok: true,
+        cart_id: cartId,
+        ...buildDeliveryHubStoreSelectionReadiness({
+          metadata: input.metadata,
+        }),
+      }
+    }
+
+    const connection = await this.getStoreSelectionConnectionSummary(selection.connection_id)
+
+    return {
+      ok: true,
+      cart_id: cartId,
+      ...buildDeliveryHubStoreSelectionReadiness({
+        metadata: input.metadata,
+        connection,
+      }),
+    }
+  }
+
   private async saveConnection(
     input: DeliveryConnectionUpsertInput,
     current?: DeliveryConnectionRecord | null
@@ -687,6 +722,27 @@ export class DeliveryHubService {
         },
       })
     }
+  }
+
+  private async getStoreSelectionConnectionSummary(connectionId: string) {
+    const normalizedId = normalizeNullableText(connectionId)
+
+    if (!normalizedId) {
+      return createMissingDeliveryHubSelectionConnectionSummary(null, "missing")
+    }
+
+    const connection = await getDeliveryConnectionById(this.pg, normalizedId)
+
+    if (!connection) {
+      return createMissingDeliveryHubSelectionConnectionSummary(normalizedId, "not_found")
+    }
+
+    return buildDeliveryHubStoreSelectionConnectionSummary({
+      id: connection.id,
+      enabled: connection.enabled,
+      status: connection.status,
+      credentials_state: connection.credentials_state,
+    })
   }
 
   private async requireConnection(id: string): Promise<DeliveryConnectionRecord> {

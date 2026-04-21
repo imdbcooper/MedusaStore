@@ -26,6 +26,7 @@ import { StoreCustomerMarketingPreferencesSchema } from "./store/customers/me/ma
 import { StoreDeliveryPickupPointsQuerySchema } from "./store/delivery/pickup-points/route"
 import { StoreDeliveryPickupWindowsQuerySchema } from "./store/delivery/pickup-windows/route"
 import { StoreDeliveryQuotesQuerySchema } from "./store/delivery/quotes/route"
+import { StoreDeliverySelectionReadinessQuerySchema } from "./store/delivery/readiness/route"
 import {
   StoreDeliveryCartSelectionQuerySchema,
   StoreDeliveryDeleteCartSelectionBodySchema,
@@ -232,6 +233,16 @@ export default defineMiddlewares({
       methods: ["GET"],
       middlewares: [
         validateAndTransformQuery(StoreDeliveryCartSelectionQuerySchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/store/delivery/readiness",
+      methods: ["GET"],
+      middlewares: [
+        validateAndTransformQuery(StoreDeliverySelectionReadinessQuerySchema, {
           defaults: [],
           isList: false,
         }),

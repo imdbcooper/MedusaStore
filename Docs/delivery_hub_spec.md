@@ -194,7 +194,8 @@ Operational:
 Что уже есть truthfully:
 
 - store endpoints [`GET /store/delivery/selection`](../medusa-agency-boilerplate/src/api/store/delivery/selection/route.ts), [`POST /store/delivery/selection`](../medusa-agency-boilerplate/src/api/store/delivery/selection/route.ts), [`DELETE /store/delivery/selection`](../medusa-agency-boilerplate/src/api/store/delivery/selection/route.ts);
-- хранение selection в `cart.metadata.delivery_hub.selection` через [`updateCartWorkflow()`](../medusa-agency-boilerplate/src/modules/delivery-hub/cart-selection.ts:286), без fork/core patch и без новых env;
+- readiness endpoint [`GET /store/delivery/readiness`](../medusa-agency-boilerplate/src/api/store/delivery/readiness/route.ts), который читает cart + persisted selection и возвращает минимальный neutral validation result для storefront;
+- хранение selection в `cart.metadata.delivery_hub.selection` через [`updateCartWorkflow()`](../medusa-agency-boilerplate/src/modules/delivery-hub/cart-selection.ts:295), без fork/core patch и без новых env;
 - публичный response остается neutral и не раскрывает provider-specific raw payload.
 
 Текущая публичная модель selection содержит:
@@ -212,7 +213,9 @@ Truthful backend-only nuance текущего шага:
 
 - backend сохраняет `quote_key` только внутри metadata namespaced backend segment, чтобы follow-up backend logic могла безопасно переиспользовать reference без раскрытия этого поля в store/public ответе;
 - `quote_reference.id` сейчас является безопасным deterministic hash от `connection_id + quote_type + quote_key + version`, а не raw provider payload;
-- этот шаг **не** делает full checkout rewrite, не привязывает selection к shipping method/order placement и не materializes shipment creation pipeline; это остается следующими tranche'ами.
+- readiness logic materialized как минимальный bridge между persisted selection и текущим cart context: [`buildDeliveryHubStoreSelectionReadiness()`](../medusa-agency-boilerplate/src/modules/delivery-hub/selection-readiness.ts:102) возвращает `status`, `issues[]`, `selection` и `quote_context`, где `quote_context.connection` intentionally ограничен нейтральным summary `connection_id + state + ready` без provider-facing или internal connection fragments;
+- readiness status сейчас intentionally ограничен neutral состояниями `missing_selection | invalid_selection | not_ready | ready`, а issues покрывают только tranche-safe инварианты: presence/shape of persisted selection, connection shopper-readiness, required pickup point / pickup window presence; cart existence валидируется самим store route boundary до вызова readiness helper и не является отдельной semantic guarantee helper-level контракта;
+- readiness step **не** делает live re-quote, не подтверждает shipping-method compatibility, не проверяет актуальность offer у провайдера, не интерпретирует pickup-point issues шире факта отсутствия обязательного persisted point/window и не materializes shipment/order lifecycle; эти проверки остаются следующими tranche'ами.
 
 ## 7. Merchant UX в админке
 
@@ -405,6 +408,7 @@ Materialized в текущем tranche-safe backend/store contract-first scope:
 - `GET /store/delivery/quotes`
 - `GET /store/delivery/pickup-points`
 - `GET /store/delivery/pickup-windows`
+- `GET /store/delivery/readiness`
 
 Пока planned и не materialized в коде:
 
@@ -711,7 +715,7 @@ Store API всё ещё intentionally узкий:
 - current public contract опирается на materialized `Yandex Delivery` connection и minimal warehouse mapping;
 - если в системе ровно одно `enabled + active + sealed` public-ready connection, оно выбирается автоматически; иначе caller обязан передать `connection_id`;
 - `pickup-windows` поддержан только для warehouse-origin flow через materialized warehouse/default-warehouse mapping;
-- public responses не возвращают provider diagnostics, credentials или correlation metadata.
+- public responses не возвращают provider diagnostics, credentials, correlation metadata или внутренние connection-state fragments beyond neutral readiness summary (`connection_id`, neutral `state`, `ready`).
 
 Все admin роуты делают `AuthenticatedMedusaRequest` (Medusa default admin auth). Никакого отдельного RBAC поверх Medusa в v1 не вводится; merchant считается одним actor.
 
