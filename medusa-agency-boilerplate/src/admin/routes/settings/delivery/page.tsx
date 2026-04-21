@@ -77,6 +77,19 @@ type DeliveryTestQuoteResponse = {
   correlation_id: string
 }
 
+type DeliveryEventLog = {
+  id: string
+  connection_id: string | null
+  provider_code: string
+  kind: string
+  correlation_id: string
+  success: boolean
+  request_summary: Record<string, unknown>
+  response_summary: Record<string, unknown>
+  error_code: string | null
+  created_at: string
+}
+
 type DeliveryTestQuoteForm = {
   connection_id: string
   mode_code: "warehouse_to_pickup_point" | "dropoff_point_to_pickup_point"
@@ -250,6 +263,12 @@ const statusToneClass = (value: string) => {
   return "border-ui-border-base bg-ui-bg-subtle text-ui-fg-subtle"
 }
 
+const logSuccessToneClass = (success: boolean) => {
+  return success
+    ? "border-green-200 bg-green-50 text-green-700"
+    : "border-red-200 bg-red-50 text-red-700"
+}
+
 const DeliverySettingsPage = () => {
   const [providers, setProviders] = useState<DeliveryProviderDefinition[]>([])
   const [connections, setConnections] = useState<DeliveryConnection[]>([])
@@ -270,6 +289,7 @@ const DeliverySettingsPage = () => {
   const [testQuoteResult, setTestQuoteResult] = useState<DeliveryTestQuoteResponse | null>(null)
   const [testQuoteError, setTestQuoteError] = useState<ApiErrorPayload | null>(null)
   const [isTestingQuote, setIsTestingQuote] = useState(false)
+  const [eventLogs, setEventLogs] = useState<DeliveryEventLog[]>([])
 
   const activeConnection = useMemo(() => {
     if (!activeConnectionId) {
@@ -298,6 +318,14 @@ const DeliverySettingsPage = () => {
     [connections]
   )
 
+  const filteredEventLogs = useMemo(() => {
+    if (!activeConnectionId) {
+      return eventLogs
+    }
+
+    return eventLogs.filter((log) => log.connection_id === activeConnectionId)
+  }, [activeConnectionId, eventLogs])
+
   const loadData = async (silent = false) => {
     if (silent) {
       setIsRefreshing(true)
@@ -306,17 +334,21 @@ const DeliverySettingsPage = () => {
     }
 
     try {
-      const [providersPayload, connectionsPayload] = await Promise.all([
+      const [providersPayload, connectionsPayload, logsPayload] = await Promise.all([
         requestJson<{ providers: DeliveryProviderDefinition[] }>("/admin/delivery/providers", {
           method: "GET",
         }),
         requestJson<{ connections: DeliveryConnection[] }>("/admin/delivery/connections", {
           method: "GET",
         }),
+        requestJson<{ logs: DeliveryEventLog[] }>("/admin/delivery/logs?provider_code=yandex&limit=20", {
+          method: "GET",
+        }),
       ])
 
       setProviders(providersPayload.providers || [])
       setConnections(connectionsPayload.connections || [])
+      setEventLogs(logsPayload.logs || [])
       setPageError(null)
 
       const nextConnections = connectionsPayload.connections || []
@@ -885,6 +917,67 @@ const DeliverySettingsPage = () => {
                 </div>
               </div>
             ) : null}
+          </div>
+        </div>
+
+        <div className="rounded-lg border p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Heading level="h2">Event logs</Heading>
+              <Text className="text-ui-fg-subtle mt-2">
+                Read-only recent Delivery Hub diagnostic events. Payloads stay sanitized and filtered to Yandex.
+              </Text>
+            </div>
+            <Text className="text-ui-fg-subtle text-sm">
+              {activeConnectionId ? `Filtered by connection ${activeConnectionId}` : "Showing all Yandex connections"}
+            </Text>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            {filteredEventLogs.length ? (
+              filteredEventLogs.map((log) => (
+                <div key={log.id} className="rounded-md border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <Text className="font-medium">{log.kind}</Text>
+                      <Text className="text-ui-fg-subtle text-sm">
+                        {log.provider_code} · {log.connection_id || "unscoped"}
+                      </Text>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className={`rounded-full border px-2 py-1 text-xs ${logSuccessToneClass(log.success)}`}>
+                        {log.success ? "success" : "failure"}
+                      </span>
+                      <span className="rounded-full border border-ui-border-base px-2 py-1 text-xs">
+                        {formatTimestamp(log.created_at)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-1 text-sm text-ui-fg-subtle">
+                    <Text>Correlation id: {log.correlation_id}</Text>
+                    <Text>Error code: {log.error_code || "—"}</Text>
+                  </div>
+
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div>
+                      <Label>Request summary</Label>
+                      <pre className="mt-2 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
+                        {JSON.stringify(log.request_summary, null, 2)}
+                      </pre>
+                    </div>
+                    <div>
+                      <Label>Response summary</Label>
+                      <pre className="mt-2 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
+                        {JSON.stringify(log.response_summary, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <Text className="text-ui-fg-subtle">No delivery-hub event logs found for the current filter.</Text>
+            )}
           </div>
         </div>
 

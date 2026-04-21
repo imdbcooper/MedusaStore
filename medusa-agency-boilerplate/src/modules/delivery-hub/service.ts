@@ -24,9 +24,21 @@ import {
   listDeliveryConnections,
   upsertDeliveryConnection,
 } from "./storage/connections-repository"
-import { appendDeliveryEventLog } from "./storage/event-log-repository"
+import {
+  appendDeliveryEventLog,
+  listDeliveryEventLogs,
+  type DeliveryHubEventLogRecord,
+} from "./storage/event-log-repository"
 import { type DeliveryHubPgConnection } from "./storage/pg"
 import { serializeDeliveryConnectionPublic } from "./storage/serializers"
+
+export type DeliveryHubEventLogListInput = {
+  connection_id?: string | null
+  provider_code?: string | null
+  limit?: number | null
+}
+
+export type DeliveryHubEventLogPublic = DeliveryHubEventLogRecord
 
 export class DeliveryHubService {
   constructor(private readonly pg: DeliveryHubPgConnection) {}
@@ -38,6 +50,20 @@ export class DeliveryHubService {
   async listConnections(): Promise<DeliveryConnectionPublic[]> {
     const records = await listDeliveryConnections(this.pg)
     return records.map(serializeDeliveryConnectionPublic)
+  }
+
+  async listEventLogs(input: DeliveryHubEventLogListInput = {}): Promise<DeliveryHubEventLogPublic[]> {
+    const logs = await listDeliveryEventLogs(this.pg, {
+      connection_id: input.connection_id,
+      provider_code: input.provider_code,
+      limit: input.limit,
+    })
+
+    return logs.map((log) => ({
+      ...log,
+      request_summary: redactRecord(log.request_summary),
+      response_summary: redactRecord(log.response_summary),
+    }))
   }
 
   async createConnection(input: DeliveryConnectionUpsertInput) {

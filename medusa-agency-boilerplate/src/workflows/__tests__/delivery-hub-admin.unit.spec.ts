@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals"
 import * as deliveryConnectionsRoute from "../../api/admin/delivery/connections/route"
 import * as deliveryConnectionTestRoute from "../../api/admin/delivery/connections/[id]/test/route"
+import * as deliveryLogsRoute from "../../api/admin/delivery/logs/route"
 import * as deliveryShared from "../../api/admin/delivery/shared"
 import * as deliveryTestQuoteRoute from "../../api/admin/delivery/test-quote/route"
 import { DeliveryHubError } from "../../modules/delivery-hub/errors"
@@ -131,6 +132,54 @@ describe("Delivery Hub admin routes", () => {
     expect(res.json).toHaveBeenCalledWith({
       ok: true,
       result,
+    })
+  })
+
+  it("returns admin delivery logs list payload", async () => {
+    const logs = [
+      {
+        id: "log_1",
+        connection_id: "conn_1",
+        provider_code: "yandex",
+        kind: "connection_test",
+        correlation_id: "corr-log-1",
+        success: true,
+        request_summary: {
+          include_pickup_points: true,
+        },
+        response_summary: {
+          pickup_points_count: 3,
+        },
+        error_code: null,
+        created_at: "2026-04-20T00:00:00.000Z",
+      },
+    ]
+
+    const listLogsSpy = jest
+      .spyOn(DeliveryHubService.prototype, "listEventLogs")
+      .mockResolvedValue(logs as any)
+
+    const res = createMockResponse()
+
+    await deliveryLogsRoute.GET(
+      createMockRequest({
+        url: "/admin/delivery/logs?provider_code=yandex&limit=20",
+        validatedQuery: {
+          provider_code: "yandex",
+          limit: 20,
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(listLogsSpy).toHaveBeenCalledWith({
+      provider_code: "yandex",
+      limit: 20,
+    })
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      logs,
     })
   })
 
@@ -272,6 +321,7 @@ describe("Delivery Hub admin shared helpers", () => {
 function createMockRequest(input?: {
   url?: string
   validatedBody?: Record<string, unknown>
+  validatedQuery?: Record<string, unknown>
   params?: Record<string, string>
 }) {
   return {
@@ -282,6 +332,7 @@ function createMockRequest(input?: {
     },
     url: input?.url ?? "/admin/delivery",
     validatedBody: input?.validatedBody ?? {},
+    validatedQuery: input?.validatedQuery ?? {},
     params: input?.params,
   }
 }

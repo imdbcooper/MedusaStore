@@ -209,9 +209,9 @@ Operational:
 
 Truthful status на текущую tranche-1 реализацию `Settings -> Delivery`:
 
-- реализованы разделы `Providers`, `Connections`, `Yandex connection`, `Connection diagnostics`, `Test Quote`;
-- `Warehouses`, отдельный экран `Delivery Modes` и `Logs` в UI этой tranche еще не реализованы;
-- страница работает поверх backend endpoints `GET /admin/delivery/providers`, `GET /admin/delivery/connections`, `POST /admin/delivery/connections`, `PUT /admin/delivery/connections/:id`, `POST /admin/delivery/connections/:id/test`, `POST /admin/delivery/test-quote`.
+- реализованы разделы `Providers`, `Connections`, `Yandex connection`, `Connection diagnostics`, `Test Quote`, read-only `Event logs`;
+- `Warehouses` и отдельный экран `Delivery Modes` в UI этой tranche еще не реализованы; logs surface уже materialized как встроенный read-only блок на странице `Settings -> Delivery`, а не как отдельная log console;
+- страница работает поверх backend endpoints `GET /admin/delivery/providers`, `GET /admin/delivery/connections`, `POST /admin/delivery/connections`, `PUT /admin/delivery/connections/:id`, `POST /admin/delivery/connections/:id/test`, `POST /admin/delivery/test-quote`, `GET /admin/delivery/logs`.
 
 Страница подключения `Yandex` в текущем состоянии содержит:
 
@@ -236,7 +236,7 @@ Merchant UX в текущем состоянии поддерживает дей
 
 Успешный `Test quote` response в текущем контракте возвращает `correlation_id` top-level, а не внутри `diagnostics`; для `Test connection` correlation context приходит внутри `diagnostics`.
 
-`Fetch provider metadata`, UI для складов и отдельное лог-окно остаются следующими шагами и не должны считаться уже реализованными.
+`Fetch provider metadata`, UI для складов, отдельная `Delivery Modes` surface и более развитая log console остаются следующими шагами и не должны считаться уже реализованными сверх текущего встроенного read-only logs блока.
 
 ### 7.3. Складской экран
 
@@ -654,12 +654,12 @@ Admin API v1 (materialized):
 - `PUT /admin/delivery/connections/:id` — см. [`connections/[id]/route.ts`](../medusa-agency-boilerplate/src/api/admin/delivery/connections/[id]/route.ts).
 - `POST /admin/delivery/connections/:id/test` — см. [`connections/[id]/test/route.ts`](../medusa-agency-boilerplate/src/api/admin/delivery/connections/[id]/test/route.ts).
 - `POST /admin/delivery/test-quote` — см. [`test-quote/route.ts`](../medusa-agency-boilerplate/src/api/admin/delivery/test-quote/route.ts).
+- `GET /admin/delivery/logs` — см. [`logs/route.ts`](../medusa-agency-boilerplate/src/api/admin/delivery/logs/route.ts); current surface intentionally остаётся read-only и узким.
 
 Admin API v1.x (planned, остаются в §9.1 как целевая поверхность, но в коде ещё нет):
 
 - `POST /admin/delivery/connections/:id/disable` — может быть реализован как частный случай `PUT /admin/delivery/connections/:id` с `enabled=false` и `status=disabled`. Пока merchant disable выполняется через общий PUT.
 - `GET /admin/delivery/warehouses`, `POST /admin/delivery/warehouses`, `PUT /admin/delivery/warehouses/:id` — этап B/E (warehouse domain, см. §16.4).
-- `GET /admin/delivery/logs` — этап C (планируется отдельная страница; читает таблицу `delivery_event_logs`).
 
 Store API (planned, нет в коде):
 
@@ -785,7 +785,21 @@ Event log:
 - не содержит raw upstream body, только sanitized summaries;
 - может агрессивно truncation'ить `response_summary` для больших payload'ов (лимит фиксируется в реализации, не в spec, но не выше 16 KiB per record).
 
-`GET /admin/delivery/logs` (planned, §16.5) читает эту таблицу и отдаёт отсортированный по `created_at desc` список.
+`GET /admin/delivery/logs` уже materialized и читает эту таблицу. Текущий контракт intentionally narrow:
+
+- read-only list endpoint без mutation paths;
+- optional filters: `connection_id`, `provider_code`, `limit`;
+- `limit` ограничен диапазоном `1..100`;
+- список возвращается flat-массивом, отсортированным по `created_at desc`;
+- текущий admin UI materializes это как встроенный read-only блок `Event logs` в `Settings -> Delivery`, без отдельной страницы.
+
+Явные ограничения текущего logs surface:
+
+- нет pagination;
+- нет отдельного record detail view;
+- нет export;
+- нет replay/re-run;
+- нет delete/cleanup action из admin UI или admin API.
 
 ### 16.12. Environment contract для delivery-hub
 

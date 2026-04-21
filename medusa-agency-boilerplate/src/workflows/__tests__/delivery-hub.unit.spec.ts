@@ -236,6 +236,59 @@ describe("Delivery Hub service", () => {
     expect(providers[0].code).toBe(DELIVERY_HUB_PROVIDER_YANDEX)
   })
 
+  it("lists event logs with filters and keeps summaries sanitized", async () => {
+    const connection = createConnectionRecord()
+    const pg = createMockPg([connection], [
+      {
+        id: "log_1",
+        connection_id: connection.id,
+        provider_code: "yandex",
+        kind: "connection_test",
+        correlation_id: "corr-log-1",
+        success: false,
+        request_summary: {
+          Authorization: "Bearer secret-token-123",
+        },
+        response_summary: {
+          payload: '{"access_token":"secret-token-123"}',
+        },
+        error_code: "DELIVERY_HUB_PROVIDER_ERROR",
+        created_at: "2026-04-20T00:00:00.000Z",
+      },
+    ])
+    const service = new DeliveryHubService(pg as any)
+
+    const logs = await service.listEventLogs({
+      connection_id: connection.id,
+      provider_code: "yandex",
+      limit: 20,
+    })
+
+    expect(logs).toEqual([
+      {
+        id: "log_1",
+        connection_id: connection.id,
+        provider_code: "yandex",
+        kind: "connection_test",
+        correlation_id: "corr-log-1",
+        success: false,
+        request_summary: {
+          Authorization: "***",
+        },
+        response_summary: {
+          payload: '{"access_token":"***"}',
+        },
+        error_code: "DELIVERY_HUB_PROVIDER_ERROR",
+        created_at: "2026-04-20T00:00:00.000Z",
+      },
+    ])
+
+    const listCall = pg.calls.find((call) =>
+      call.sql.includes("from delivery_event_logs where connection_id = ? and provider_code = ? order by created_at desc, id desc limit ?")
+    )
+    expect(listCall?.params).toEqual([connection.id, "yandex", 20])
+  })
+
   it("materializes invalid credentials state and redacts persisted diagnostics on decrypt failure", async () => {
     process.env.DELIVERY_HUB_ENCRYPTION_KEY = Buffer.alloc(32, 4).toString("base64")
 
@@ -316,8 +369,9 @@ function createConnectionRecord(input?: Partial<any>) {
   }
 }
 
-function createMockPg(initialConnections: any[]) {
+function createMockPg(initialConnections: any[], initialEventLogs: any[] = []) {
   const state = new Map(initialConnections.map((connection) => [connection.id, connection]))
+  const eventLogs = [...initialEventLogs]
   const calls: Array<{ sql: string; params: unknown[] }> = []
 
   return {
@@ -367,21 +421,44 @@ function createMockPg(initialConnections: any[]) {
       }
 
       if (normalizedSql.includes("insert into delivery_event_logs")) {
+        const record = {
+          id: "log_1",
+          connection_id: normalizedParams[1],
+          provider_code: normalizedParams[2],
+          kind: normalizedParams[3],
+          correlation_id: normalizedParams[4],
+          success: normalizedParams[5],
+          request_summary: JSON.parse(String(normalizedParams[6] ?? "{}")),
+          response_summary: JSON.parse(String(normalizedParams[7] ?? "{}")),
+          error_code: normalizedParams[8] ?? null,
+          created_at: "2026-04-20T00:00:00.000Z",
+        }
+
+        eventLogs.unshift(record)
+
         return {
-          rows: [
-            {
-              id: "log_1",
-              connection_id: normalizedParams[1],
-              provider_code: normalizedParams[2],
-              kind: normalizedParams[3],
-              correlation_id: normalizedParams[4],
-              success: normalizedParams[5],
-              request_summary: JSON.parse(String(normalizedParams[6] ?? "{}")),
-              response_summary: JSON.parse(String(normalizedParams[7] ?? "{}")),
-              error_code: normalizedParams[8] ?? null,
-              created_at: "2026-04-20T00:00:00.000Z",
-            },
-          ],
+          rows: [record],
+        }
+      }
+
+      if (normalizedSql.includes("from delivery_event_logs")) {
+        let rows = [...eventLogs]
+
+        if (normalizedSql.includes("where connection_id = ? and provider_code = ?")) {
+          rows = rows.filter(
+            (row) =>
+              row.connection_id === normalizedParams[0] && row.provider_code === normalizedParams[1]
+          )
+        } else if (normalizedSql.includes("where connection_id = ?")) {
+          rows = rows.filter((row) => row.connection_id === normalizedParams[0])
+        } else if (normalizedSql.includes("where provider_code = ?")) {
+          rows = rows.filter((row) => row.provider_code === normalizedParams[0])
+        }
+
+        const limit = Number(normalizedParams[normalizedParams.length - 1] ?? rows.length)
+
+        return {
+          rows: rows.slice(0, limit),
         }
       }
 

@@ -8,6 +8,7 @@ import {
 import { AdminCreateDeliveryConnectionSchema } from "./admin/delivery/connections/route"
 import { AdminUpdateDeliveryConnectionSchema } from "./admin/delivery/connections/[id]/route"
 import { AdminDeliveryConnectionTestSchema } from "./admin/delivery/connections/[id]/test/route"
+import { AdminDeliveryEventLogsQuerySchema } from "./admin/delivery/logs/route"
 import { AdminDeliveryTestQuoteSchema } from "./admin/delivery/test-quote/route"
 import { AdminNotificationSmokeSchema } from "./admin/notifications/smoke/route"
 import { AdminSmsNotificationSmokeSchema } from "./admin/notifications/smoke/sms/route"
@@ -48,6 +49,17 @@ export default defineMiddlewares({
       matcher: "/admin/delivery/connections/:id/test",
       methods: ["POST"],
       middlewares: [adminAuth, validateAndTransformBody(AdminDeliveryConnectionTestSchema)],
+    },
+    {
+      matcher: "/admin/delivery/logs",
+      methods: ["GET"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformQuery(AdminDeliveryEventLogsQuerySchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
     },
     {
       matcher: "/admin/delivery/test-quote",
