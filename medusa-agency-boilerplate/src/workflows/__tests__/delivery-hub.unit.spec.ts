@@ -17,16 +17,23 @@ import {
   redactSensitiveText,
 } from "../../modules/delivery-hub/security/redaction"
 import { DeliveryHubService } from "../../modules/delivery-hub/service"
+import { DELIVERY_HUB_FULFILLMENT_PROVIDER_ID } from "../../modules/delivery-hub/shipping-option-contract"
 
 const originalEncryptionKey = process.env.DELIVERY_HUB_ENCRYPTION_KEY
+const originalExecutionEnabled = process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED
 
 afterEach(() => {
   if (typeof originalEncryptionKey === "string") {
     process.env.DELIVERY_HUB_ENCRYPTION_KEY = originalEncryptionKey
-    return
+  } else {
+    delete process.env.DELIVERY_HUB_ENCRYPTION_KEY
   }
 
-  delete process.env.DELIVERY_HUB_ENCRYPTION_KEY
+  if (typeof originalExecutionEnabled === "string") {
+    process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = originalExecutionEnabled
+  } else {
+    delete process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED
+  }
 })
 
 beforeEach(() => {
@@ -389,6 +396,151 @@ describe("Delivery Hub service", () => {
     expect(listCall?.params).toEqual([connection.id, "yandex", 20])
   })
 
+  it("builds execution-plan observability preview with persistence and audit seam via service", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_1",
+      provider_warehouse_id: "ya-wh-1",
+    })
+    const connection = createConnectionRecord({
+      id: "conn_ready",
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      config: {
+        default_warehouse_id: warehouse.id,
+      },
+    })
+    const pg = createMockPg([connection], [], [warehouse])
+    const service = new DeliveryHubService(pg as any)
+    delete process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED
+
+    const preview = await service.buildExecutionPlanObservabilityPreview([])
+    const readyMode = preview.execution_plan_preview.mode_previews.find(
+      (mode) => mode.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
+    )
+
+    expect(preview.provider_code).toBe("deliveryhub")
+    expect(preview.provider_id).toBe(DELIVERY_HUB_FULFILLMENT_PROVIDER_ID)
+    expect(preview.summary.ready_mode_count).toBeGreaterThan(0)
+    expect(readyMode).toBeDefined()
+    expect(readyMode).toMatchObject({
+      status: "ready",
+      repository_assembly_summary: {
+        repository_status: "pg_repository_implementation_available",
+        persistence_readiness_contour: {
+          current_stage: "activation_blocked",
+        },
+        missing_activation_prerequisites: expect.arrayContaining([
+          "migration_or_table_creation",
+          "transaction_runner",
+          "explicit_runtime_wiring",
+          "operational_runbook",
+          "safety_review",
+        ]),
+      },
+      preflight_eligibility: {
+        redacted: true,
+        current_mode: "preview_only",
+        decision: "eligible_when_enabled",
+        real_execution_enabled: false,
+        future_execution_flag: {
+          name: "DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED",
+          status: "future_inert_not_read",
+        },
+        confirmations: {
+          shipment_execution_disabled: true,
+          provider_calls_disabled: true,
+          persistence_writes_disabled: true,
+          checkout_cutover_disabled: true,
+        },
+      },
+      persistence_audit_preview: {
+        redacted: true,
+        status: "ready",
+        execution_record: {
+          ready: true,
+          connection_id: expect.stringMatching(/^preview_/),
+          initial_status: "planned",
+        },
+        idempotency_reservation: {
+          ready: true,
+          dedupe_scope: "deliveryhub:create_shipment",
+        },
+        blocked: expect.arrayContaining([
+          expect.objectContaining({ key: "metadata_commit" }),
+          expect.objectContaining({ key: "provider_dispatch" }),
+        ]),
+      },
+      shipment_result_preview: {
+        redacted: true,
+        current_mode: "preview_only",
+        result_decision: "projected_for_future_execution",
+        projected_result_status: "projected_for_future_execution",
+        normalization_target: "deliveryhub_shipment_result",
+        provider_normalization_target: "create_shipment_response",
+        artifact_summary: {
+          external_shipment_reference_present: true,
+          tracking_reference_present: true,
+          label_document_present: true,
+          pickup_booking_present: true,
+          pickup_interval_present: true,
+          status_timeline_present: true,
+          failure_placeholder_present: true,
+          rollback_placeholder_present: true,
+        },
+        confirmations: {
+          provider_response_fetch_disabled: true,
+          adapter_invocation_disabled: true,
+          shipment_creation_disabled: true,
+          label_persistence_disabled: true,
+          order_mutation_disabled: true,
+          fulfillment_persistence_disabled: true,
+          checkout_cutover_disabled: true,
+        },
+      },
+      fulfillment_application_preview: {
+        redacted: true,
+        current_mode: "preview_only",
+        application_decision: "projected_for_future_application",
+        projected_application_status: "projected_for_future_application",
+        application_target: "medusa_fulfillment_mutation_plan",
+        application_scope: "backend_admin_only",
+        mutation_semantics: {
+          fulfillment_data_patch_present: true,
+          shipment_reference_linkage_present: true,
+          tracking_projection_present: true,
+          label_document_reference_linkage_present: true,
+          status_transition_application_present: true,
+          audit_linkage_present: true,
+        },
+        persistence_linkage: {
+          execution_reference_present: true,
+          idempotency_reservation_present: true,
+          audit_log_reference_present: true,
+        },
+        confirmations: {
+          order_mutation_disabled: true,
+          fulfillment_persistence_disabled: true,
+          shipment_persistence_disabled: true,
+          label_persistence_disabled: true,
+          event_persistence_disabled: true,
+          checkout_cutover_disabled: true,
+        },
+      },
+    })
+    expect(readyMode?.steps.some((step) => step.key === "preflight_eligibility")).toBe(true)
+    expect(readyMode?.preflight_eligibility.reasons.map((reason) => reason.code)).toEqual([
+      "EXECUTION_PREVIEW_ONLY",
+      "FUTURE_EXECUTION_FLAG_INERT",
+      "LIVE_EXECUTION_DISABLED",
+      "PROVIDER_EXECUTION_ADAPTER_DISABLED",
+    ])
+    expect(readyMode?.shipment_execution.materialized).toBe(false)
+    expect(
+      JSON.stringify(readyMode?.persistence_audit_preview.audit_log_entries ?? [])
+    ).not.toContain("delivery-hub-provider-credential")
+  })
+ 
   it("materializes invalid credentials state and redacts persisted diagnostics on decrypt failure", async () => {
     process.env.DELIVERY_HUB_ENCRYPTION_KEY = Buffer.alloc(32, 4).toString("base64")
 
@@ -876,12 +1028,16 @@ describe("Delivery Hub service", () => {
       ok: true,
       quotes: [
         expect.objectContaining({
-          quote_key: "quote_1",
           amount: 499,
-          raw_reference: {},
+          quote_reference: expect.objectContaining({
+            id: expect.any(String),
+            version: 1,
+          }),
         }),
       ],
     })
+    expect(result.quotes[0]).not.toHaveProperty("quote_key")
+    expect(result.quotes[0]).not.toHaveProperty("raw_reference")
     expect(quoteSpy).toHaveBeenCalledWith(
       expect.objectContaining({ connection }),
       expect.objectContaining({
@@ -960,6 +1116,21 @@ function createMockPg(initialConnections: any[], initialEventLogs: any[] = [], i
       const normalizedSql = sql.replace(/\s+/g, " ").trim()
       const normalizedParams = Array.isArray(params) ? params : []
       calls.push({ sql: normalizedSql, params: normalizedParams })
+
+      if (normalizedSql.includes("select to_regclass(?) as table_name")) {
+        const tableName = String(normalizedParams[0] ?? "")
+
+        return {
+          rows: [
+            {
+              table_name:
+                tableName === "delivery_connections" || tableName === "delivery_warehouses"
+                  ? tableName
+                  : null,
+            },
+          ],
+        }
+      }
 
       if (normalizedSql.includes("select * from delivery_connections where id = ? limit 1")) {
         const id = String(normalizedParams[0] ?? "")

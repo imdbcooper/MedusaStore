@@ -2,6 +2,7 @@ import { describe, expect, it } from "@jest/globals"
 import {
   DELIVERY_HUB_CART_METADATA_NAMESPACE,
   buildDeliveryHubCartSelectionMetadata,
+  createDeliveryHubQuoteReference,
 } from "../../modules/delivery-hub/cart-selection"
 import {
   buildDeliveryHubStoreSelectionConnectionSummary,
@@ -64,7 +65,11 @@ describe("Delivery Hub selection readiness", () => {
       {
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
-        quote_key: "offer_123",
+        quote_reference: createDeliveryHubQuoteReference({
+          connection_id: "conn_1",
+          quote_type: "warehouse_to_pickup_point",
+          quote_key: "offer_123",
+        }),
         quote: {
           carrier_code: "yandex",
           carrier_label: "Yandex Delivery",
@@ -149,7 +154,11 @@ describe("Delivery Hub selection readiness", () => {
       {
         connection_id: "conn_missing",
         quote_type: "dropoff_point_to_pickup_point",
-        quote_key: "offer_123",
+        quote_reference: createDeliveryHubQuoteReference({
+          connection_id: "conn_missing",
+          quote_type: "dropoff_point_to_pickup_point",
+          quote_key: "offer_123",
+        }),
         quote: {
           carrier_code: "yandex",
           carrier_label: "Yandex Delivery",
@@ -206,7 +215,11 @@ describe("Delivery Hub selection readiness", () => {
       {
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
-        quote_key: "offer_123",
+        quote_reference: createDeliveryHubQuoteReference({
+          connection_id: "conn_1",
+          quote_type: "warehouse_to_pickup_point",
+          quote_key: "offer_123",
+        }),
         quote: {
           carrier_code: "yandex",
           carrier_label: "Yandex Delivery",
@@ -289,7 +302,11 @@ describe("Delivery Hub selection readiness", () => {
       {
         connection_id: "conn_1",
         quote_type: "dropoff_point_to_pickup_point",
-        quote_key: "offer_123",
+        quote_reference: createDeliveryHubQuoteReference({
+          connection_id: "conn_1",
+          quote_type: "dropoff_point_to_pickup_point",
+          quote_key: "offer_123",
+        }),
         quote: {
           carrier_code: "yandex",
           carrier_label: "Yandex Delivery",

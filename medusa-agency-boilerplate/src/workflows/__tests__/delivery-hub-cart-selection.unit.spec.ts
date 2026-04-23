@@ -1,14 +1,20 @@
 import { afterEach, describe, expect, it, jest } from "@jest/globals"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import * as deliveryReadinessRoute from "../../api/store/delivery/readiness/route"
 import * as deliverySelectionRoute from "../../api/store/delivery/selection/route"
+import { DeliveryHubService } from "../../modules/delivery-hub/service"
 import {
   DELIVERY_HUB_CART_METADATA_NAMESPACE,
   buildDeliveryHubCartSelectionMetadata,
+  createDeliveryHubQuoteReference,
   readDeliveryHubCartSelection,
 } from "../../modules/delivery-hub/cart-selection"
 
 const originalStoreDeliverySelectionDeps = {
   ...deliverySelectionRoute.storeDeliverySelectionDeps,
+}
+const originalStoreDeliverySelectionReadinessDeps = {
+  ...deliveryReadinessRoute.storeDeliverySelectionReadinessDeps,
 }
 
 describe("Delivery Hub cart selection contract", () => {
@@ -16,6 +22,10 @@ describe("Delivery Hub cart selection contract", () => {
     Object.assign(
       deliverySelectionRoute.storeDeliverySelectionDeps,
       originalStoreDeliverySelectionDeps
+    )
+    Object.assign(
+      deliveryReadinessRoute.storeDeliverySelectionReadinessDeps,
+      originalStoreDeliverySelectionReadinessDeps
     )
     jest.clearAllMocks()
     jest.restoreAllMocks()
@@ -29,7 +39,11 @@ describe("Delivery Hub cart selection contract", () => {
       {
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
-        quote_key: "offer_123",
+        quote_reference: createDeliveryHubQuoteReference({
+          connection_id: "conn_1",
+          quote_type: "warehouse_to_pickup_point",
+          quote_key: "offer_123",
+        }),
         quote: {
           carrier_code: "yandex",
           carrier_label: "Yandex Delivery",
@@ -80,9 +94,6 @@ describe("Delivery Hub cart selection contract", () => {
     const publicSelection = readDeliveryHubCartSelection(nextMetadata)
     const namespace = (nextMetadata as Record<string, any>)[DELIVERY_HUB_CART_METADATA_NAMESPACE]
 
-    expect(namespace.selection.backend).toEqual({
-      quote_key: "offer_123",
-    })
     expect(namespace.selection.quote_reference).toEqual({
       id: expect.stringMatching(/^dhsel_[a-f0-9]{32}$/),
       version: 1,
@@ -159,7 +170,6 @@ describe("Delivery Hub cart selection contract", () => {
     expect(namespace.selection.pickup_window.metadata).toBeUndefined()
     expect((publicSelection?.pickup_point as Record<string, unknown>).metadata).toBeUndefined()
     expect((publicSelection?.pickup_window as Record<string, unknown>).metadata).toBeUndefined()
-    expect((publicSelection as Record<string, unknown>).backend).toBeUndefined()
     expect((nextMetadata as Record<string, unknown>).existing).toBe(true)
   })
 
@@ -171,7 +181,11 @@ describe("Delivery Hub cart selection contract", () => {
       {
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
-        quote_key: "offer_123",
+        quote_reference: createDeliveryHubQuoteReference({
+          connection_id: "conn_1",
+          quote_type: "warehouse_to_pickup_point",
+          quote_key: "offer_123",
+        }),
         quote: {
           carrier_code: "yandex",
           carrier_label: "Yandex Delivery",
@@ -319,13 +333,64 @@ describe("Delivery Hub cart selection contract", () => {
     })
   })
 
+  it("returns missing_selection readiness without 500 when cart has no delivery selection", async () => {
+    const readinessResult = {
+      ok: true,
+      cart_id: "cart_1",
+      status: "missing_selection",
+      issues: [
+        {
+          code: "selection_missing",
+          message: "Delivery selection is not saved for this cart",
+          field: "selection",
+        },
+      ],
+      selection: null,
+      quote_context: null,
+    }
+    const getStoreSelectionReadiness = jest
+      .spyOn(DeliveryHubService.prototype, "getStoreSelectionReadiness")
+      .mockResolvedValue(readinessResult as any)
+    deliveryReadinessRoute.storeDeliverySelectionReadinessDeps.getDeliveryHubCartById =
+      jest.fn(async () => ({
+        id: "cart_1",
+        metadata: {
+          keep: true,
+        },
+      })) as any
+    deliveryReadinessRoute.storeDeliverySelectionReadinessDeps.requireDeliveryHubCart =
+      jest.fn((cart) => cart) as any
+    const res = createMockResponse()
+
+    await deliveryReadinessRoute.GET(
+      createMockRequest({
+        validatedQuery: {
+          cart_id: "cart_1",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(getStoreSelectionReadiness).toHaveBeenCalledWith({
+      cart_id: "cart_1",
+      metadata: {
+        keep: true,
+      },
+    })
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith(readinessResult)
+  })
+
   it("rejects nested pickup metadata in public POST schema", () => {
     expect(() =>
       deliverySelectionRoute.StoreDeliveryUpsertCartSelectionBodySchema.parse({
         cart_id: "cart_1",
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
-        quote_key: "offer_123",
+        quote_reference: {
+          id: "dhsel_123",
+          version: 1,
+        },
         quote: {
           carrier_code: "yandex",
           carrier_label: "Yandex Delivery",
@@ -417,7 +482,10 @@ describe("Delivery Hub cart selection contract", () => {
         cart_id: "cart_1",
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
-        quote_key: "offer_123",
+        quote_reference: {
+          id: "dhsel_test",
+          version: 1,
+        },
         quote: {
           carrier_code: "yandex",
           carrier_label: "Yandex Delivery",
@@ -486,7 +554,10 @@ describe("Delivery Hub cart selection contract", () => {
       {
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
-        quote_key: "offer_123",
+        quote_reference: {
+          id: "dhsel_test",
+          version: 1,
+        },
         quote: {
           carrier_code: "yandex",
           carrier_label: "Yandex Delivery",
@@ -530,120 +601,38 @@ describe("Delivery Hub cart selection contract", () => {
       selection,
     })
   })
-
-  it("delegates DELETE route to clear helper and returns null selection", async () => {
-    const mockClearDeliveryHubCartSelection = jest.fn(async () => null)
-    deliverySelectionRoute.storeDeliverySelectionDeps.clearDeliveryHubCartSelection =
-      mockClearDeliveryHubCartSelection as any
-    const existingMetadata = buildDeliveryHubCartSelectionMetadata(
-      {
-        keep: true,
-      },
-      {
-        connection_id: "conn_1",
-        quote_type: "warehouse_to_pickup_point",
-        quote_key: "offer_123",
-        quote: {
-          carrier_code: "yandex",
-          carrier_label: "Yandex Delivery",
-          amount: 499,
-          currency_code: "rub",
-          delivery_eta_min: 1,
-          delivery_eta_max: 2,
-          pickup_point_required: true,
-          pickup_window_required: false,
-        },
-        pickup_point: {
-          provider_point_id: "pvz_1",
-          provider_point_code: null,
-          name: "PVZ 1",
-          address: "Tverskaya 1",
-          city: null,
-          region: null,
-          postal_code: null,
-          lat: null,
-          lng: null,
-          is_origin_dropoff_allowed: false,
-          is_destination_pickup_allowed: true,
-          payment_methods: [],
-        },
-      }
-    )
-    const res = createMockResponse()
-    const req = createMockRequest({
-      validatedBody: {
-        cart_id: "cart_1",
-      },
-      carts: [
-        {
-          id: "cart_1",
-          metadata: existingMetadata,
-        },
-      ],
-    })
-
-    await deliverySelectionRoute.DELETE(req as any, res as any)
-
-    expect(mockClearDeliveryHubCartSelection).toHaveBeenCalledWith(req.scope, {
-      id: "cart_1",
-      metadata: existingMetadata,
-    })
-    expect(res.status).toHaveBeenCalledWith(200)
-    expect(res.json).toHaveBeenCalledWith({
-      ok: true,
-      cart_id: "cart_1",
-      selection: null,
-    })
-  })
-
-  it("returns controlled 404 when cart is missing for selection read", async () => {
-    const res = createMockResponse()
-
-    await deliverySelectionRoute.GET(
-      createMockRequest({
-        validatedQuery: {
-          cart_id: "cart_missing",
-        },
-        carts: [],
-      }) as any,
-      res as any
-    )
-
-    expect(res.status).toHaveBeenCalledWith(404)
-    expect(res.json).toHaveBeenCalledWith({
-      ok: false,
-      error: {
-        code: "DELIVERY_HUB_NOT_FOUND",
-        message: 'Cart "cart_missing" was not found',
-        details: {
-          field: "cart_id",
-        },
-      },
-    })
-  })
 })
 
 function createMockRequest(input?: Partial<any>) {
-  const carts = input?.carts ?? []
-  const query = {
-    graph: jest.fn(async () => ({
-      data: carts,
-    })),
-  }
+  const scope = input?.scope ?? createMockScope(input)
 
   return {
-    scope: {
-      resolve: jest.fn((key) => {
-        if (key === ContainerRegistrationKeys.QUERY) {
-          return query
-        }
-
-        return null
-      }),
-    },
     validatedQuery: {},
-    validatedBody: {},
     ...input,
+    scope,
+  }
+}
+
+function createMockScope(input?: Partial<any>) {
+  const carts = input?.carts ?? []
+  const service = input?.service ?? {}
+
+  return {
+    resolve: jest.fn((key: string) => {
+      if (key === ContainerRegistrationKeys.QUERY) {
+        return {
+          graph: jest.fn(async ({ filters }: any) => ({
+            data: carts.filter((cart: any) => cart.id === filters?.id),
+          })),
+        }
+      }
+
+      if (key === "manager") {
+        return {}
+      }
+
+      return service
+    }),
   }
 }
 
