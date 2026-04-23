@@ -17,7 +17,7 @@ type SecretApiKeyRecord = {
 }
 
 const DEFAULT_SECRET_API_KEY_TITLE = "Local Admin Smoke Secret Key"
-const OUTPUT_ENV_NAME = "ROOT_LOCAL_ADMIN_SECRET_API_KEY"
+const DEFAULT_OUTPUT_ENV_NAME = "ROOT_LOCAL_ADMIN_SECRET_API_KEY"
 
 export default async function createSecretAdminApiKey({
   container,
@@ -94,7 +94,11 @@ function logSecretApiKeyUsage(
     process.env.NOTIFICATION_SMOKE_MESSAGE?.trim() ||
     DEFAULT_NOTIFICATION_SMOKE_MESSAGE
 
-  logger.info(`${OUTPUT_ENV_NAME}=${token}`)
+  const outputEnvName =
+    process.env.ADMIN_SECRET_API_KEY_OUTPUT_ENV_NAME?.trim() ||
+    DEFAULT_OUTPUT_ENV_NAME
+
+  logger.info(`${outputEnvName}=${token}`)
   logger.info(
     `Smoke route URL: ${getNotificationSmokeUrl(backendUrl)}`
   )
