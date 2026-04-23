@@ -10,6 +10,8 @@ medusa-dump.sql
 # Local verification artifacts
 .phase2-*
 .playwright-mcp/
+playwright-*.md
+playwright-*.txt
 medusa-agency-boilerplate-storefront/.middleware-check.log
 
 # Generated app/runtime artifacts
