@@ -7,6 +7,14 @@ import {
   listApiShipRates,
 } from "@lib/data/apiship"
 import { setShippingMethod } from "@lib/data/cart"
+import {
+  listDeliveryHubPickupPoints,
+  listDeliveryHubPickupWindows,
+  listDeliveryHubQuotes,
+  retrieveDeliveryHubReadiness,
+  retrieveDeliveryHubSelection,
+  retrieveDeliveryHubSettings,
+} from "@lib/data/delivery-hub"
 import { calculatePriceForShippingOption } from "@lib/data/fulfillment"
 import { storefrontConfig } from "@lib/storefront-config"
 import {
@@ -28,6 +36,11 @@ import {
   type ApiShipShopperModeKey,
   type ApiShipStorefrontSettings,
 } from "@lib/util/apiship"
+import {
+  buildDeliveryHubNeutralSelectionRehearsalModel,
+  evaluateDeliveryHubNeutralSelectionRehearsalActionability,
+  type DeliveryHubNeutralSelectionRehearsalModel,
+} from "@lib/util/delivery-hub"
 import { convertToLocale } from "@lib/util/money"
 import { CheckCircleSolid, Loader } from "@medusajs/icons"
 import { HttpTypes } from "@medusajs/types"
@@ -72,6 +85,12 @@ type ApiShipPointsState = {
   requestKey: string | null
   code: string | null
   message: string | null
+}
+
+type DeliveryHubRehearsalState = {
+  status: "idle" | "loading" | "ready" | "error"
+  model: DeliveryHubNeutralSelectionRehearsalModel
+  issue_message: string | null
 }
 
 function isCheckoutEligibleShippingOption(
@@ -304,6 +323,20 @@ const Shipping: React.FC<ShippingProps> = ({
   const [apiShipPointsMap, setApiShipPointsMap] = useState<
     Record<string, ApiShipPointsState>
   >({})
+  const [deliveryHubRehearsalState, setDeliveryHubRehearsalState] =
+    useState<DeliveryHubRehearsalState>({
+      status: "idle",
+      model: buildDeliveryHubNeutralSelectionRehearsalModel({
+        legacy_context: {
+          active_commit_path: "legacy_apiship",
+          legacy_is_committed: false,
+          legacy_flow_kind: null,
+          legacy_selection_fresh: false,
+          legacy_method_label: null,
+        },
+      }),
+      issue_message: null,
+    })
   const [error, setError] = useState<string | null>(null)
 
   const searchParams = useSearchParams()
@@ -677,6 +710,109 @@ const Shipping: React.FC<ShippingProps> = ({
   ])
 
   useEffect(() => {
+    let cancelled = false
+
+    setDeliveryHubRehearsalState((current) => ({
+      ...current,
+      status: "loading",
+      issue_message: null,
+    }))
+
+    Promise.allSettled([
+      retrieveDeliveryHubSettings(),
+      retrieveDeliveryHubSelection(cart.id),
+      retrieveDeliveryHubReadiness(cart.id),
+      listDeliveryHubPickupPoints({
+        city: cart.shipping_address?.city,
+        country_code: cart.shipping_address?.country_code,
+      }),
+      listDeliveryHubPickupWindows(),
+    ])
+      .then(async (results) => {
+        if (cancelled) {
+          return
+        }
+
+        const settings = results[0].status === "fulfilled" ? results[0].value : null
+        const selection = results[1].status === "fulfilled" ? results[1].value : null
+        const readiness = results[2].status === "fulfilled" ? results[2].value : null
+        const pickupPoints = results[3].status === "fulfilled" ? results[3].value : null
+        const pickupWindows = results[4].status === "fulfilled" ? results[4].value : null
+        const destinationPoint =
+          pickupPoints?.points.find((point) => point.is_destination_pickup_allowed) ??
+          pickupPoints?.points[0] ??
+          null
+        const modeCode =
+          readiness?.quote_context?.quote_type ??
+          selection?.selection?.quote_type ??
+          "warehouse_to_pickup_point"
+        const quotes = destinationPoint
+          ? await listDeliveryHubQuotes({
+              mode_code: modeCode,
+              currency_code: cart.currency_code,
+              destination_point_id: destinationPoint.provider_point_id,
+            })
+          : null
+
+        if (cancelled) {
+          return
+        }
+
+        setDeliveryHubRehearsalState({
+          status: "ready",
+          model: buildDeliveryHubNeutralSelectionRehearsalModel({
+            settings,
+            quotes,
+            pickup_points: pickupPoints,
+            pickup_windows: pickupWindows,
+            persisted_selection: selection,
+            readiness,
+            legacy_context: {
+              active_commit_path: "legacy_apiship",
+              legacy_is_committed: Boolean(preferredCartShippingMethodId),
+              legacy_flow_kind: cartApiShipSelection?.mode_key === "apiship_to_point" ? "pickup_point" : cartApiShipSelection?.mode_key === "apiship_to_door" ? "door_delivery" : null,
+              legacy_selection_fresh: hasFreshCartApiShipSelection,
+              legacy_method_label: cartShippingMethod?.name ?? null,
+            },
+          }),
+          issue_message: null,
+        })
+      })
+      .catch(() => {
+        if (cancelled) {
+          return
+        }
+
+        setDeliveryHubRehearsalState({
+          status: "error",
+          model: buildDeliveryHubNeutralSelectionRehearsalModel({
+            legacy_context: {
+              active_commit_path: "legacy_apiship",
+              legacy_is_committed: Boolean(preferredCartShippingMethodId),
+              legacy_flow_kind: cartApiShipSelection?.mode_key === "apiship_to_point" ? "pickup_point" : cartApiShipSelection?.mode_key === "apiship_to_door" ? "door_delivery" : null,
+              legacy_selection_fresh: hasFreshCartApiShipSelection,
+              legacy_method_label: cartShippingMethod?.name ?? null,
+            },
+          }),
+          issue_message: "Delivery Hub rehearsal preview is currently unavailable.",
+        })
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    cart.currency_code,
+    cart.id,
+    cart.shipping_address?.city,
+    cart.shipping_address?.country_code,
+    cartApiShipSelection?.mode_key,
+    cartShippingMethod?.name,
+    hasFreshCartApiShipSelection,
+    preferredCartShippingMethodId,
+  ])
+
+  useEffect(() => {
     setError(null)
   }, [isOpen])
 
@@ -932,6 +1068,11 @@ const Shipping: React.FC<ShippingProps> = ({
         apiShipSelectionsEqual(currentApiShipSelection, cartApiShipSelection)
       : cartShippingMethod?.shipping_option_id === shippingMethodId
     : false
+
+  const deliveryHubRehearsalActionability =
+    evaluateDeliveryHubNeutralSelectionRehearsalActionability(
+      deliveryHubRehearsalState.model
+    )
 
   return (
     <div className="bg-white">
@@ -1298,6 +1439,60 @@ const Shipping: React.FC<ShippingProps> = ({
                   })}
                 </RadioGroup>
               </div>
+            </div>
+          </div>
+
+          <div className="mb-6 rounded-rounded border border-ui-border-base bg-ui-bg-subtle px-5 py-4">
+            <div className="flex flex-col gap-y-2">
+              <Text className="text-ui-fg-base txt-medium-plus">
+                Delivery Hub neutral selection rehearsal
+              </Text>
+              <Text className="text-ui-fg-muted txt-small">
+                Pre-cutin rehearsal/read-only only. The active commit path remains legacy ApiShip; no shopper action is performed here.
+              </Text>
+              {deliveryHubRehearsalState.status === "loading" && (
+                <div className="flex items-center gap-x-2 text-ui-fg-muted txt-small">
+                  <Loader />
+                  <span>Loading read-only neutral preview…</span>
+                </div>
+              )}
+              {deliveryHubRehearsalState.issue_message && (
+                <Text className="text-ui-fg-subtle txt-small">
+                  {deliveryHubRehearsalState.issue_message}
+                </Text>
+              )}
+              <div className="grid gap-y-1 text-ui-fg-muted txt-small">
+                <span>{deliveryHubRehearsalState.model.status_label}</span>
+                <span>{deliveryHubRehearsalState.model.active_commit_path_label}</span>
+                <span>Dry-run guard: {deliveryHubRehearsalActionability.verdict}</span>
+                {deliveryHubRehearsalState.model.modality_label && (
+                  <span>Neutral modality: {deliveryHubRehearsalState.model.modality_label}</span>
+                )}
+                {deliveryHubRehearsalState.model.quote_amount !== null && (
+                  <span>
+                    Quote preview: {formatPrice(
+                      deliveryHubRehearsalState.model.quote_amount,
+                      deliveryHubRehearsalState.model.currency_code
+                    )}
+                    {deliveryHubRehearsalState.model.quote_eta_label
+                      ? ` · ${deliveryHubRehearsalState.model.quote_eta_label}`
+                      : ""}
+                  </span>
+                )}
+                {deliveryHubRehearsalState.model.pickup_point_label && (
+                  <span>Pickup point preview: {deliveryHubRehearsalState.model.pickup_point_label}</span>
+                )}
+                {deliveryHubRehearsalState.model.pickup_window_label && (
+                  <span>Pickup window preview: {deliveryHubRehearsalState.model.pickup_window_label}</span>
+                )}
+              </div>
+              {deliveryHubRehearsalState.model.hint_messages.length > 0 && (
+                <ul className="list-disc pl-4 text-ui-fg-muted txt-small">
+                  {deliveryHubRehearsalState.model.hint_messages.slice(0, 3).map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
 

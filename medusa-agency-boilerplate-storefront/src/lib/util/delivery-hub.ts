@@ -1603,6 +1603,79 @@ export type DeliveryHubShadowCutoverChecklistPreviewModel = {
   hint_messages: string[]
 }
 
+export type DeliveryHubNeutralSelectionRehearsalStatus =
+  | "candidate_available"
+  | "blocked"
+  | "insufficient_data"
+  | "legacy_only"
+
+export type DeliveryHubNeutralSelectionRehearsalBlockerCode =
+  | "settings_unavailable"
+  | "readiness_blocked"
+  | "missing_quote_reference"
+  | "missing_quote"
+  | "missing_pickup_point"
+  | "missing_pickup_window"
+  | "legacy_parity_mismatch"
+  | "legacy_context_missing"
+
+export type DeliveryHubNeutralSelectionLegacyContext = {
+  active_commit_path: "legacy_apiship" | "other_legacy" | null
+  legacy_is_committed: boolean
+  legacy_flow_kind: "pickup_point" | "door_delivery" | null
+  legacy_selection_fresh: boolean
+  legacy_method_label: string | null
+}
+
+export type DeliveryHubNeutralSelectionRehearsalInput = {
+  settings?: DeliveryHubStoreSettingsResponse | null
+  catalog?: DeliveryHubCatalogResponse | null
+  quotes?: DeliveryHubQuotesResponse | null
+  pickup_points?: DeliveryHubPickupPointsResponse | null
+  pickup_windows?: DeliveryHubPickupWindowsResponse | null
+  persisted_selection?: DeliveryHubSelectionResponse | null
+  readiness?: DeliveryHubReadinessResponse | null
+  shipping_option_parity?: DeliveryHubShadowShippingOptionParityPreviewModel | null
+  selection_parity?: DeliveryHubShadowSelectionParityPreviewModel | null
+  legacy_context?: DeliveryHubNeutralSelectionLegacyContext | null
+}
+
+export type DeliveryHubNeutralSelectionRehearsalModel = {
+  tone: "neutral" | "positive" | "warning"
+  status: DeliveryHubNeutralSelectionRehearsalStatus
+  status_label: string
+  active_commit_path_label: string
+  rehearsal_label: string
+  modality_label: string | null
+  quote_amount: number | null
+  currency_code: string | null
+  quote_eta_label: string | null
+  quote_reference: DeliveryHubQuoteReference | null
+  quote_reference_label: string | null
+  pickup_point_label: string | null
+  pickup_point_address_label: string | null
+  pickup_window_label: string | null
+  readiness_label: string | null
+  legacy_method_label: string | null
+  blocker_codes: DeliveryHubNeutralSelectionRehearsalBlockerCode[]
+  hint_messages: string[]
+}
+
+export type DeliveryHubNeutralSelectionRehearsalActionabilityVerdict =
+  | "dry_run_shape_available"
+  | "dry_run_blocked"
+  | "dry_run_insufficient_data"
+  | "dry_run_legacy_only"
+
+export type DeliveryHubNeutralSelectionRehearsalActionabilityModel = {
+  verdict: DeliveryHubNeutralSelectionRehearsalActionabilityVerdict
+  can_shape_future_selection_body: boolean
+  dry_run_only: true
+  mutation_intent: false
+  blocker_codes: DeliveryHubNeutralSelectionRehearsalBlockerCode[]
+  hint_messages: string[]
+}
+
 export function getDeliveryHubReadinessStatusLabel(
   status: DeliveryHubSelectionReadinessStatus
 ) {
@@ -3073,6 +3146,286 @@ export function buildDeliveryHubShadowSelectionActionabilityPreviewModel(
     hint_messages: uniqueDeliveryHubMessages([
       "Current neutral preview constellation is informational only and does not yet imply a committed checkout selection.",
       preview.quote_issue_message,
+    ]),
+  }
+}
+
+function getDeliveryHubNeutralQuoteReference(
+  input: DeliveryHubNeutralSelectionRehearsalInput,
+  quote: DeliveryHubQuote | null,
+  selection: DeliveryHubSelection | null
+) {
+  return (
+    selection?.quote_reference ??
+    quote?.quote_reference ??
+    input.readiness?.quote_context?.quote_reference ??
+    null
+  )
+}
+
+function getDeliveryHubNeutralRehearsalCandidate(
+  input: DeliveryHubNeutralSelectionRehearsalInput
+) {
+  const selection =
+    input.persisted_selection?.selection ?? input.readiness?.selection ?? null
+  const quote = input.quotes?.quotes[0] ?? null
+  const pickupPoint =
+    selection?.pickup_point ??
+    input.pickup_points?.points.find((point) => point.is_destination_pickup_allowed) ??
+    input.pickup_points?.points[0] ??
+    null
+  const pickupWindow = selection?.pickup_window ?? input.pickup_windows?.pickup_windows[0] ?? null
+  const quoteReference = getDeliveryHubNeutralQuoteReference(input, quote, selection)
+  const quoteType =
+    selection?.quote_type ?? quote?.mode_code ?? input.readiness?.quote_context?.quote_type ?? null
+  const quoteSummary = selection?.quote ?? quote ?? null
+  const pickupPointRequired =
+    selection?.quote.pickup_point_required ??
+    quote?.pickup_point_required ??
+    input.readiness?.quote_context?.pickup_point_required ??
+    false
+  const pickupWindowRequired =
+    selection?.quote.pickup_window_required ??
+    quote?.pickup_window_required ??
+    input.readiness?.quote_context?.pickup_window_required ??
+    false
+
+  return {
+    selection,
+    quote,
+    pickupPoint,
+    pickupWindow,
+    quoteReference,
+    quoteType,
+    quoteSummary,
+    pickupPointRequired,
+    pickupWindowRequired,
+  }
+}
+
+function getDeliveryHubNeutralRehearsalBlockers(
+  input: DeliveryHubNeutralSelectionRehearsalInput
+) {
+  const candidate = getDeliveryHubNeutralRehearsalCandidate(input)
+  const blockers: DeliveryHubNeutralSelectionRehearsalBlockerCode[] = []
+  const readiness = input.readiness ?? null
+  const settings = input.settings ?? null
+  const legacyContext = input.legacy_context ?? null
+  const parityMismatch =
+    input.shipping_option_parity?.parity_state === "divergent" ||
+    input.selection_parity?.parity_status === "modality_mismatch" ||
+    input.selection_parity?.parity_status === "reference_mismatch"
+
+  const pushBlocker = (code: DeliveryHubNeutralSelectionRehearsalBlockerCode) => {
+    if (!blockers.includes(code)) {
+      blockers.push(code)
+    }
+  }
+
+  if (
+    settings &&
+    (!settings.settings.enabled ||
+      settings.settings.status === "unavailable" ||
+      settings.settings.summary.ready_connection_count === 0)
+  ) {
+    pushBlocker("settings_unavailable")
+  }
+
+  if (
+    readiness &&
+    readiness.status !== "ready" &&
+    readiness.status !== "missing_selection"
+  ) {
+    pushBlocker("readiness_blocked")
+  }
+
+  if (!candidate.quoteSummary) {
+    pushBlocker("missing_quote")
+  }
+
+  if (!candidate.quoteReference) {
+    pushBlocker("missing_quote_reference")
+  }
+
+  if (candidate.pickupPointRequired && !candidate.pickupPoint) {
+    pushBlocker("missing_pickup_point")
+  }
+
+  if (candidate.pickupWindowRequired && !candidate.pickupWindow) {
+    pushBlocker("missing_pickup_window")
+  }
+
+  if (parityMismatch) {
+    pushBlocker("legacy_parity_mismatch")
+  }
+
+  if (
+    legacyContext &&
+    legacyContext.legacy_is_committed &&
+    !legacyContext.legacy_selection_fresh
+  ) {
+    pushBlocker("legacy_parity_mismatch")
+  }
+
+  return blockers
+}
+
+function getDeliveryHubNeutralRehearsalBlockerLabel(
+  code: DeliveryHubNeutralSelectionRehearsalBlockerCode
+) {
+  switch (code) {
+    case "settings_unavailable":
+      return "Neutral Delivery Hub settings do not expose a ready shopper path."
+    case "readiness_blocked":
+      return "Readiness currently blocks the neutral selection candidate."
+    case "missing_quote_reference":
+      return "Backend-issued quote reference is missing, so a future selection body cannot be shaped."
+    case "missing_quote":
+      return "Neutral quote preview is missing."
+    case "missing_pickup_point":
+      return "Pickup point is required but missing from the read-only preview context."
+    case "missing_pickup_window":
+      return "Pickup window is required but missing from the read-only preview context."
+    case "legacy_parity_mismatch":
+      return "Legacy checkout parity does not currently align with the neutral preview."
+    case "legacy_context_missing":
+      return "Legacy checkout context is missing, so rehearsal stays informational."
+  }
+}
+
+export function buildDeliveryHubNeutralSelectionRehearsalModel(
+  input: DeliveryHubNeutralSelectionRehearsalInput = {}
+): DeliveryHubNeutralSelectionRehearsalModel {
+  const candidate = getDeliveryHubNeutralRehearsalCandidate(input)
+  const blockers = getDeliveryHubNeutralRehearsalBlockers(input)
+  const readinessLabel = input.readiness
+    ? getDeliveryHubReadinessStatusLabel(input.readiness.status)
+    : null
+  const hasAnyNeutralInput = Boolean(
+    input.settings ||
+      input.catalog ||
+      input.quotes ||
+      input.pickup_points ||
+      input.pickup_windows ||
+      input.persisted_selection ||
+      input.readiness
+  )
+  const legacyOnly = !hasAnyNeutralInput
+  const insufficient =
+    !legacyOnly &&
+    (!candidate.quoteSummary ||
+      !candidate.quoteReference ||
+      blockers.includes("missing_pickup_point") ||
+      blockers.includes("missing_pickup_window"))
+  const blocked =
+    !legacyOnly &&
+    (blockers.includes("settings_unavailable") ||
+      blockers.includes("readiness_blocked") ||
+      blockers.includes("legacy_parity_mismatch"))
+  const status: DeliveryHubNeutralSelectionRehearsalStatus = legacyOnly
+    ? "legacy_only"
+    : blocked
+      ? "blocked"
+      : insufficient
+        ? "insufficient_data"
+        : "candidate_available"
+  const statusLabel =
+    status === "candidate_available"
+      ? "Pre-cutin neutral selection candidate available"
+      : status === "blocked"
+        ? "Pre-cutin neutral selection rehearsal blocked"
+        : status === "legacy_only"
+          ? "Legacy ApiShip remains the only active checkout path"
+          : "Pre-cutin neutral selection rehearsal needs more data"
+  const quoteSummary = candidate.quoteSummary
+  const pickupPointLabel = candidate.pickupPoint
+    ? candidate.pickupPoint.name || candidate.pickupPoint.address
+    : null
+  const hintMessages = uniqueDeliveryHubMessages([
+    "Pre-cutin rehearsal/read-only only: this model does not save, clear, submit, or switch checkout state.",
+    "The active checkout commit path remains legacy ApiShip.",
+    candidate.quoteReference
+      ? "Only backend-issued quote_reference is used; no provider-specific reference is computed in storefront."
+      : null,
+    ...blockers.map(getDeliveryHubNeutralRehearsalBlockerLabel),
+    ...(input.readiness?.issues.map((issue) => issue.message) ?? []),
+  ]).slice(0, 6)
+
+  return {
+    tone:
+      status === "candidate_available"
+        ? "positive"
+        : status === "blocked"
+          ? "warning"
+          : "neutral",
+    status,
+    status_label: statusLabel,
+    active_commit_path_label: "Active checkout commit path: legacy ApiShip",
+    rehearsal_label: "Delivery Hub pre-cutin rehearsal · read-only · no shopper action",
+    modality_label: getDeliveryHubQuoteTypeLabel(candidate.quoteType),
+    quote_amount: quoteSummary?.amount ?? null,
+    currency_code: quoteSummary?.currency_code ?? null,
+    quote_eta_label: quoteSummary
+      ? formatDeliveryHubEtaLabel(
+          quoteSummary.delivery_eta_min,
+          quoteSummary.delivery_eta_max
+        )
+      : null,
+    quote_reference: candidate.quoteReference,
+    quote_reference_label: candidate.quoteReference
+      ? `backend quote reference v${candidate.quoteReference.version}`
+      : null,
+    pickup_point_label: pickupPointLabel,
+    pickup_point_address_label: candidate.pickupPoint?.address ?? null,
+    pickup_window_label: candidate.pickupWindow?.label ?? null,
+    readiness_label: readinessLabel,
+    legacy_method_label: input.legacy_context?.legacy_method_label ?? null,
+    blocker_codes: blockers,
+    hint_messages: hintMessages,
+  }
+}
+
+export function evaluateDeliveryHubNeutralSelectionRehearsalActionability(
+  modelOrInput:
+    | DeliveryHubNeutralSelectionRehearsalModel
+    | DeliveryHubNeutralSelectionRehearsalInput = {}
+): DeliveryHubNeutralSelectionRehearsalActionabilityModel {
+  const model =
+    "status" in modelOrInput && "rehearsal_label" in modelOrInput
+      ? modelOrInput
+      : buildDeliveryHubNeutralSelectionRehearsalModel(modelOrInput)
+  const requiredBlockers = model.blocker_codes.filter((code) =>
+    [
+      "settings_unavailable",
+      "readiness_blocked",
+      "missing_quote_reference",
+      "missing_quote",
+      "missing_pickup_point",
+      "missing_pickup_window",
+      "legacy_parity_mismatch",
+    ].includes(code)
+  )
+  const canShape = model.status === "candidate_available" && requiredBlockers.length === 0
+  const verdict: DeliveryHubNeutralSelectionRehearsalActionabilityVerdict = canShape
+    ? "dry_run_shape_available"
+    : model.status === "legacy_only"
+      ? "dry_run_legacy_only"
+      : model.status === "insufficient_data"
+        ? "dry_run_insufficient_data"
+        : "dry_run_blocked"
+
+  return {
+    verdict,
+    can_shape_future_selection_body: canShape,
+    dry_run_only: true,
+    mutation_intent: false,
+    blocker_codes: requiredBlockers,
+    hint_messages: uniqueDeliveryHubMessages([
+      canShape
+        ? "Dry-run verdict only: a future neutral selection body appears technically shapeable from shopper-safe preview fields."
+        : "Dry-run verdict only: future neutral selection body shaping is blocked or lacks required preview context.",
+      "No mutation helper is called or implied by this guard.",
+      ...requiredBlockers.map(getDeliveryHubNeutralRehearsalBlockerLabel),
     ]),
   }
 }

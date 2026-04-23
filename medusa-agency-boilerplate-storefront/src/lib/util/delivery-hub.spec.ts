@@ -3,7 +3,9 @@
 import assert from "node:assert/strict"
 // @ts-ignore -- runtime uses Node 24 test runner via --experimental-strip-types
 import test from "node:test"
+import { readFileSync } from "node:fs"
 import {
+  buildDeliveryHubNeutralSelectionRehearsalModel,
   buildDeliveryHubPersistedSelectionPreviewModel,
   buildDeliveryHubReadinessPreviewModel,
   buildDeliveryHubShadowCatalogPreviewModel,
@@ -25,6 +27,7 @@ import {
   buildDeliveryHubShadowCutoverDecisionPreviewModel,
   buildDeliveryHubShadowSettingsPreviewModel,
   buildDeliveryHubShadowShippingOptionParityPreviewModel,
+  evaluateDeliveryHubNeutralSelectionRehearsalActionability,
   normalizeDeliveryHubCatalogResponse,
   normalizeDeliveryHubPickupPointsResponse,
   normalizeDeliveryHubQuotesResponse,
@@ -6284,4 +6287,294 @@ test("buildDeliveryHubShadowCutoverChecklistPreviewModel reports ready, pending,
       "Read-only shadow cutover gate preview only. Each gate below simply restates already materialized parity, readiness, blocker, recommendation, evidence, and rollout previews for future cutover decision-making only.",
     ],
   })
+})
+
+test("buildDeliveryHubNeutralSelectionRehearsalModel reports aligned candidate without mutation intent", () => {
+  const model = buildDeliveryHubNeutralSelectionRehearsalModel({
+    settings: {
+      ok: true,
+      settings: {
+        enabled: true,
+        status: "available",
+        summary: {
+          enabled_connection_count: 1,
+          ready_connection_count: 1,
+          default_connection_label: "Primary",
+          modality_codes: ["warehouse_to_pickup_point"],
+          supports_pickup_points: true,
+          supports_pickup_windows: true,
+          supports_dropoff: false,
+        },
+        preview_visibility: {
+          shadow_settings: true,
+          readiness: true,
+          persisted_selection: true,
+          shadow_catalog: true,
+          shadow_pickup_points: true,
+          shadow_quotes: true,
+          shadow_pickup_windows: true,
+        },
+        hints: [],
+      },
+    },
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "quote_ref_1", version: 2 },
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_point_ids: ["point_1"],
+          pickup_window_required: true,
+        },
+      ],
+    },
+    pickup_points: {
+      ok: true,
+      points: [
+        {
+          provider_point_id: "point_1",
+          provider_point_code: "code_1",
+          name: "North pickup point",
+          address: "Main street 1",
+          city: "Moscow",
+          region: null,
+          postal_code: null,
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      ],
+    },
+    pickup_windows: {
+      ok: true,
+      pickup_windows: [
+        {
+          date: "2026-04-22",
+          time_from: "10:00",
+          time_to: "14:00",
+          interval_utc: {
+            from: "2026-04-22T07:00:00.000Z",
+            to: "2026-04-22T11:00:00.000Z",
+          },
+          label: "22 Apr · 10:00–14:00",
+        },
+      ],
+    },
+    readiness: {
+      ok: true,
+      cart_id: "cart_1",
+      status: "ready",
+      issues: [],
+      selection: null,
+      quote_context: null,
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+  const guard = evaluateDeliveryHubNeutralSelectionRehearsalActionability(model)
+
+  assert.equal(model.status, "candidate_available")
+  assert.equal(model.tone, "positive")
+  assert.deepEqual(model.quote_reference, { id: "quote_ref_1", version: 2 })
+  assert.equal(model.quote_reference_label, "backend quote reference v2")
+  assert.equal(model.pickup_point_label, "North pickup point")
+  assert.equal(model.pickup_window_label, "22 Apr · 10:00–14:00")
+  assert.equal(guard.can_shape_future_selection_body, true)
+  assert.equal(guard.dry_run_only, true)
+  assert.equal(guard.mutation_intent, false)
+})
+
+test("neutral selection rehearsal blocks missing quote reference, pickup point, pickup window, readiness, and legacy mismatch", () => {
+  const missingQuote = buildDeliveryHubNeutralSelectionRehearsalModel({
+    pickup_points: { ok: true, points: [] },
+    readiness: {
+      ok: true,
+      cart_id: "cart_1",
+      status: "missing_selection",
+      issues: [],
+      selection: null,
+      quote_context: null,
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+  assert.equal(missingQuote.status, "insufficient_data")
+  assert.ok(missingQuote.blocker_codes.includes("missing_quote"))
+  assert.ok(missingQuote.blocker_codes.includes("missing_quote_reference"))
+
+  const missingPickupPoint = buildDeliveryHubNeutralSelectionRehearsalModel({
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "quote_ref_pickup", version: 1 },
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: null,
+          delivery_eta_max: null,
+          pickup_point_required: true,
+          pickup_point_ids: [],
+          pickup_window_required: false,
+        },
+      ],
+    },
+    pickup_points: { ok: true, points: [] },
+  })
+  assert.equal(missingPickupPoint.status, "insufficient_data")
+  assert.ok(missingPickupPoint.blocker_codes.includes("missing_pickup_point"))
+
+  const missingPickupWindow = buildDeliveryHubNeutralSelectionRehearsalModel({
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "quote_ref_window", version: 1 },
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: null,
+          delivery_eta_max: null,
+          pickup_point_required: false,
+          pickup_point_ids: [],
+          pickup_window_required: true,
+        },
+      ],
+    },
+    pickup_windows: { ok: true, pickup_windows: [] },
+  })
+  assert.equal(missingPickupWindow.status, "insufficient_data")
+  assert.ok(missingPickupWindow.blocker_codes.includes("missing_pickup_window"))
+
+  const degradedReadiness = buildDeliveryHubNeutralSelectionRehearsalModel({
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "quote_ref_blocked", version: 1 },
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: null,
+          delivery_eta_max: null,
+          pickup_point_required: false,
+          pickup_point_ids: [],
+          pickup_window_required: false,
+        },
+      ],
+    },
+    readiness: {
+      ok: true,
+      cart_id: "cart_1",
+      status: "invalid_selection",
+      issues: [{ code: "selection_invalid", message: "Selection invalid", field: null }],
+      selection: null,
+      quote_context: null,
+    },
+  })
+  assert.equal(degradedReadiness.status, "blocked")
+  assert.ok(degradedReadiness.blocker_codes.includes("readiness_blocked"))
+
+  const legacyMismatch = buildDeliveryHubNeutralSelectionRehearsalModel({
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "quote_ref_mismatch", version: 1 },
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: null,
+          delivery_eta_max: null,
+          pickup_point_required: false,
+          pickup_point_ids: [],
+          pickup_window_required: false,
+        },
+      ],
+    },
+    selection_parity: {
+      tone: "warning",
+      parity_status: "reference_mismatch",
+      status_label: "Mismatch",
+      legacy_method_label: "ApiShip pickup",
+      legacy_modality_label: "Pickup point",
+      neutral_modality_label: "Pickup point",
+      legacy_reference_label: "A",
+      neutral_reference_label: "B",
+      readiness_label: "Selection ready",
+      hint_messages: [],
+    },
+  })
+  assert.equal(legacyMismatch.status, "blocked")
+  assert.ok(legacyMismatch.blocker_codes.includes("legacy_parity_mismatch"))
+})
+
+test("neutral selection rehearsal reports legacy-only and preserves no-leak guarantees", () => {
+  const model = buildDeliveryHubNeutralSelectionRehearsalModel({
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: false,
+      legacy_flow_kind: null,
+      legacy_selection_fresh: false,
+      legacy_method_label: null,
+    },
+  })
+  const serialized = JSON.stringify(model).toLowerCase()
+
+  assert.equal(model.status, "legacy_only")
+  assert.equal(evaluateDeliveryHubNeutralSelectionRehearsalActionability(model).verdict, "dry_run_legacy_only")
+  for (const forbidden of [
+    "provider_code",
+    "raw_reference",
+    "quote_key",
+    "credentials",
+    "credential",
+    "secret",
+    "token",
+    "yandex",
+  ]) {
+    assert.equal(serialized.includes(forbidden), false, forbidden)
+  }
+})
+
+test("delivery hub rehearsal path does not import or call selection mutation helpers", () => {
+  const shippingSource = readFileSync(
+    "src/modules/checkout/components/shipping/index.tsx",
+    "utf8"
+  )
+  const utilSource = readFileSync("src/lib/util/delivery-hub.ts", "utf8")
+
+  assert.equal(/saveDeliveryHubSelection\s*[,(]/.test(shippingSource), false)
+  assert.equal(/clearDeliveryHubSelection\s*[,(]/.test(shippingSource), false)
+  assert.equal(/saveDeliveryHubSelection\s*\(/.test(utilSource), false)
+  assert.equal(/clearDeliveryHubSelection\s*\(/.test(utilSource), false)
+  assert.equal(/setShippingMethod\s*\(/.test(utilSource), false)
+  assert.equal(/mutation_intent:\s*true/.test(utilSource), false)
 })
