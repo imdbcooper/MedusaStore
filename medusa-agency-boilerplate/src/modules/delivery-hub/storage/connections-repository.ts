@@ -98,6 +98,31 @@ export async function listDeliveryConnectionsReadOnly(pg: DeliveryHubPgConnectio
   return rows.map(normalizeDeliveryConnectionRow)
 }
 
+export async function getDeliveryConnectionByIdReadOnly(
+  pg: DeliveryHubPgConnection,
+  id: string
+) {
+  const hasTable = await hasDeliveryConnectionsTable(pg)
+
+  if (!hasTable) {
+    return null
+  }
+
+  const rows = getRawRows<DeliveryConnectionRow>(
+    await pg.raw(
+      `
+        select *
+        from ${DELIVERY_HUB_CONNECTIONS_TABLE}
+        where id = ?
+        limit 1
+      `,
+      [id]
+    )
+  )
+
+  return rows[0] ? normalizeDeliveryConnectionRow(rows[0]) : null
+}
+
 export async function getDeliveryConnectionById(
   pg: DeliveryHubPgConnection,
   id: string

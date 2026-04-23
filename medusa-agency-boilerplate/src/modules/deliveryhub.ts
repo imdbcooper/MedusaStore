@@ -20,25 +20,31 @@ import {
   buildDeliveryHubFulfillmentHandoffSnapshot,
   buildDeliveryHubShipmentExecutionPlanPreview,
 } from "./delivery-hub/fulfillment-provider-bridge"
+import { buildDeliveryHubControlledFulfillmentExecutionResult } from "./delivery-hub/fulfillment-execution-seam"
 import {
   DELIVERY_HUB_FULFILLMENT_OPTION_DEFINITIONS,
   DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,
   normalizeDeliveryHubFulfillmentOptionData,
 } from "./delivery-hub/provider-surface"
+import { getDeliveryConnectionByIdReadOnly } from "./delivery-hub/storage/connections-repository"
+import { getDeliveryHubPgConnection } from "./delivery-hub/storage/pg"
 
 type InjectedDependencies = {
   logger: Logger
+  [key: string]: unknown
 }
 
 export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderService {
   static identifier = DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE
 
   protected readonly logger_: Logger
+  protected readonly container_: Record<string, unknown>
 
-  constructor({ logger }: InjectedDependencies) {
+  constructor({ logger, ...container }: InjectedDependencies) {
     super()
 
     this.logger_ = logger
+    this.container_ = container as Record<string, unknown>
   }
 
   static validateOptions() {
@@ -191,10 +197,60 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       )
     }
 
-    throw new MedusaError(
-      MedusaError.Types.NOT_ALLOWED,
-      "Delivery Hub shipment automation is not materialized in the current provider scaffold; order-side diagnostics validate backend bridge input only."
+    const pgConnection = this.resolvePgConnection()
+    const committedConnectionId = fulfillmentHandoff?.connection_id ?? null
+    let committedConnection = null
+    let connectionLookupAvailable = pgConnection !== null
+
+    if (pgConnection && committedConnectionId) {
+      try {
+        committedConnection = await getDeliveryConnectionByIdReadOnly(
+          pgConnection,
+          committedConnectionId
+        )
+      } catch {
+        connectionLookupAvailable = false
+      }
+    }
+
+    const controlledExecution = buildDeliveryHubControlledFulfillmentExecutionResult({
+      execution_plan_preview: executionPlanPreview,
+      handoff: fulfillmentHandoff,
+      execution_ledger_evidence: executionLedgerEvidence,
+      connection: committedConnection,
+      connection_lookup_available: connectionLookupAvailable,
+    })
+
+    this.logger_.info(
+      `Delivery Hub createFulfillment controlled execution seam evaluated: ${JSON.stringify({
+        status: controlledExecution.status,
+        result_decision: controlledExecution.result_decision,
+        blocking_stage: controlledExecution.blocking_stage,
+        blocked_reason_code: controlledExecution.blocked_reason_code,
+        handoff: {
+          available: controlledExecution.handoff.available,
+          connection_id: controlledExecution.handoff.connection_id,
+          quote_type: controlledExecution.handoff.quote_type,
+          quote_reference_summary: controlledExecution.handoff.quote_reference_summary,
+          references: controlledExecution.handoff.references,
+          correlation_id: controlledExecution.handoff.correlation_id,
+        },
+        connection: controlledExecution.connection,
+        dispatch_preparation: controlledExecution.dispatch_preparation,
+        execution_identity: controlledExecution.execution_identity,
+        evidence: controlledExecution.evidence,
+        contour: controlledExecution.contour,
+        anti_leak_confirmations: controlledExecution.anti_leak_confirmations,
+      })}`
     )
+
+    return {
+      data: {
+        provider_code: DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,
+        controlled_execution: controlledExecution,
+      },
+      labels: [],
+    }
   }
 
   async cancelFulfillment(): Promise<Record<string, never>> {
@@ -222,6 +278,13 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
 
   async retrieveDocuments(): Promise<void> {
     return
+  }
+  protected resolvePgConnection() {
+    try {
+      return getDeliveryHubPgConnection(this.container_)
+    } catch {
+      return null
+    }
   }
 }
 

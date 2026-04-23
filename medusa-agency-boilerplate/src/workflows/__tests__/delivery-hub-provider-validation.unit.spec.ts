@@ -19,7 +19,7 @@ beforeEach(() => {
 })
 
 describe("Delivery Hub provider validation seam", () => {
-  it("keeps validateFulfillmentData and createFulfillment aligned for valid input while preserving execution block", async () => {
+  it("keeps validateFulfillmentData and createFulfillment aligned for valid input while returning a truthful controlled execution block", async () => {
     const provider = buildProvider()
     const optionData = buildValidOptionData()
     const fulfillmentData = buildValidFulfillmentData()
@@ -50,22 +50,39 @@ describe("Delivery Hub provider validation seam", () => {
           location_id: "sloc_1",
         }
       )
-    ).rejects.toThrow(
-      "Delivery Hub shipment automation is not materialized in the current provider scaffold; order-side diagnostics validate backend bridge input only."
-    )
+    ).resolves.toEqual({
+      data: {
+        provider_code: "deliveryhub",
+        controlled_execution: expect.objectContaining({
+          status: "blocked",
+          result_decision: "blocked_before_preparation",
+          blocking_stage: "handoff_preflight",
+          blocked_reason_code: "delivery_hub_handoff_missing",
+          anti_leak_confirmations: {
+            credentials_included: false,
+            raw_provider_payloads_included: false,
+            raw_offer_ids_included: false,
+          },
+        }),
+      },
+      labels: [],
+    })
     const executionPreviewLog = logger.info.mock.calls.find((call) =>
       String(call[0]).includes("execution-plan preview seam evaluated")
     )
+    const controlledExecutionLog = logger.info.mock.calls.find((call) =>
+      String(call[0]).includes("controlled execution seam evaluated")
+    )
 
     await expect(executionPreviewLog).toBeDefined()
+    await expect(controlledExecutionLog).toBeDefined()
     expect(String(executionPreviewLog?.[0])).toContain('"execution_status":"blocked"')
     expect(String(executionPreviewLog?.[0])).toContain('"readiness_status":"ready"')
     expect(String(executionPreviewLog?.[0])).toContain('"handoff_ready":false')
-    await expect(
-      logger.info.mock.calls.some((call) =>
-        String(call[0]).includes("execution-plan preview seam evaluated")
-      )
-    ).toBe(true)
+    expect(String(controlledExecutionLog?.[0])).toContain('"blocked_reason_code":"delivery_hub_handoff_missing"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"credentials_included":false')
+    expect(String(controlledExecutionLog?.[0])).not.toContain("secret-token")
+    expect(String(controlledExecutionLog?.[0])).not.toContain("raw-offer-id")
   })
  
   it("blocks missing required fulfillment fragment through the same validation verdict", async () => {
@@ -107,8 +124,29 @@ describe("Delivery Hub provider validation seam", () => {
     )
   })
 
-  it("keeps createFulfillment blocked after handoff preflight assembly when committed option is present", async () => {
-    const provider = buildProvider()
+  it("returns dispatch-prepared-but-blocked controlled execution when committed option and active Yandex connection are present", async () => {
+    const provider = buildProvider({
+      resolvedPgConnection: buildReadOnlyLookupPgConnection([
+        {
+          id: "conn_ready",
+          provider_code: "yandex",
+          name: "Yandex Live",
+          status: "active",
+          mode: "live",
+          enabled: true,
+          country_code: "RU",
+          credentials_envelope: { ciphertext: "sealed" },
+          credentials_state: "sealed",
+          credentials_fingerprint: "fp_ready",
+          credentials_last_validated_at: "2026-04-23T06:50:00.000Z",
+          credentials_last_error_code: null,
+          config: {},
+          metadata: {},
+          created_at: "2026-04-23T06:00:00.000Z",
+          updated_at: "2026-04-23T06:50:00.000Z",
+        },
+      ]),
+    })
     const fulfillmentData = {
       ...buildValidFulfillmentData(),
       cart_id: "cart_1",
@@ -116,6 +154,12 @@ describe("Delivery Hub provider validation seam", () => {
       shipping_option_type_id: "deliveryhub_deliveryhub",
       correlation_id: "corr_handoff_provider",
       updated_at: "2026-04-23T07:00:00.000Z",
+      credentials: {
+        token: "secret-token",
+      },
+      raw_response: {
+        offer_id: "raw-offer-id",
+      },
     }
 
     await expect(
@@ -137,19 +181,205 @@ describe("Delivery Hub provider validation seam", () => {
           location_id: "sloc_1",
         }
       )
-    ).rejects.toThrow(
-      "Delivery Hub shipment automation is not materialized in the current provider scaffold; order-side diagnostics validate backend bridge input only."
-    )
+    ).resolves.toEqual({
+      data: {
+        provider_code: "deliveryhub",
+        controlled_execution: expect.objectContaining({
+          status: "dispatch_prepared",
+          result_decision: "dispatch_prepared_but_blocked",
+          blocking_stage: "provider_dispatch_contract",
+          blocked_reason_code: "provider_execution_reference_unavailable",
+          handoff: expect.objectContaining({
+            available: true,
+            connection_id: "conn_ready",
+            quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+            correlation_id: "corr_handoff_provider",
+          }),
+          connection: expect.objectContaining({
+            lookup_available: true,
+            id: "conn_ready",
+            provider_code: "yandex",
+            mode: "live",
+            status: "active",
+            enabled: true,
+            credentials_ready: true,
+          }),
+          dispatch_preparation: expect.objectContaining({
+            provider_code: "yandex",
+            operation: "create_shipment",
+            mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+            mode_supported: true,
+            provider_execution_reference_present: false,
+            live_adapter_call_performed: false,
+            persisted_execution_ledger_write_performed: false,
+          }),
+          anti_leak_confirmations: {
+            credentials_included: false,
+            raw_provider_payloads_included: false,
+            raw_offer_ids_included: false,
+          },
+        }),
+      },
+      labels: [],
+    })
 
     const executionPreviewLog = [...logger.info.mock.calls]
       .reverse()
       .find((call) => String(call[0]).includes("execution-plan preview seam evaluated"))
+    const controlledExecutionLog = [...logger.info.mock.calls]
+      .reverse()
+      .find((call) => String(call[0]).includes("controlled execution seam evaluated"))
 
     expect(String(executionPreviewLog?.[0])).toContain('"handoff_ready":true')
     expect(String(executionPreviewLog?.[0])).toContain('"handoff_contour":{"contract_status":"ready","execution_status":"blocked","handoff_target":"manual_external"')
     expect(String(executionPreviewLog?.[0])).toContain('"execution_ledger_evidence_status":"ready"')
     expect(String(executionPreviewLog?.[0])).toContain('"artifact_kind":"deliveryhub_execution_ledger_evidence"')
     expect(String(executionPreviewLog?.[0])).toContain('"ledger_persistence_enabled":false')
+    expect(String(controlledExecutionLog?.[0])).toContain('"status":"dispatch_prepared"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"blocked_reason_code":"provider_execution_reference_unavailable"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"live_adapter_call_performed":false')
+    expect(String(controlledExecutionLog?.[0])).not.toContain("secret-token")
+    expect(String(controlledExecutionLog?.[0])).not.toContain("raw-offer-id")
+  })
+  it("blocks controlled execution when Delivery Hub connection lookup seam is unavailable", async () => {
+    const provider = buildProvider()
+    const fulfillmentData = {
+      ...buildValidFulfillmentData(),
+      cart_id: "cart_1",
+      shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+      shipping_option_type_id: "deliveryhub_deliveryhub",
+      correlation_id: "corr_lookup_missing",
+      updated_at: "2026-04-23T07:00:00.000Z",
+    }
+
+    await expect(
+      provider.createFulfillment(
+        fulfillmentData,
+        [{ line_item_id: "item_1", quantity: 1 }],
+        { id: "order_1", display_id: 42, currency_code: "RUB" },
+        { id: "ful_1", location_id: "sloc_1" }
+      )
+    ).resolves.toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          controlled_execution: expect.objectContaining({
+            status: "blocked",
+            blocking_stage: "connection_readiness",
+            blocked_reason_code: "delivery_connection_lookup_unavailable",
+          }),
+        }),
+      })
+    )
+  })
+
+  it("gracefully degrades to blocked result when read-only connection lookup throws at order time", async () => {
+    const provider = buildProvider({
+      resolvedPgConnection: {
+        raw: async () => {
+          throw new Error("lookup query failed")
+        },
+      },
+    })
+    const fulfillmentData = {
+      ...buildValidFulfillmentData(),
+      cart_id: "cart_1",
+      shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+      shipping_option_type_id: "deliveryhub_deliveryhub",
+      correlation_id: "corr_lookup_throw",
+      updated_at: "2026-04-23T07:00:00.000Z",
+    }
+
+    await expect(
+      provider.createFulfillment(
+        fulfillmentData,
+        [{ line_item_id: "item_1", quantity: 1 }],
+        { id: "order_1", display_id: 42, currency_code: "RUB" },
+        { id: "ful_1", location_id: "sloc_1" }
+      )
+    ).resolves.toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          controlled_execution: expect.objectContaining({
+            status: "blocked",
+            result_decision: "blocked_before_preparation",
+            blocking_stage: "connection_readiness",
+            blocked_reason_code: "delivery_connection_lookup_unavailable",
+            handoff: expect.objectContaining({
+              available: true,
+              connection_id: "conn_ready",
+            }),
+            connection: expect.objectContaining({
+              lookup_available: false,
+              id: null,
+            }),
+          }),
+        }),
+      })
+    )
+  })
+
+  it("blocks controlled execution when committed Delivery Hub connection is missing or not ready", async () => {
+    const baseFulfillmentData = {
+      ...buildValidFulfillmentData(),
+      cart_id: "cart_1",
+      shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+      shipping_option_type_id: "deliveryhub_deliveryhub",
+      correlation_id: "corr_conn_state",
+      updated_at: "2026-04-23T07:00:00.000Z",
+    }
+
+    const scenarios = [
+      {
+        name: "missing",
+        rows: [],
+        blocked_reason_code: "delivery_connection_missing",
+      },
+      {
+        name: "disabled",
+        rows: [buildConnectionRow({ enabled: false })],
+        blocked_reason_code: "delivery_connection_disabled",
+      },
+      {
+        name: "not_active",
+        rows: [buildConnectionRow({ status: "draft" })],
+        blocked_reason_code: "delivery_connection_not_active",
+      },
+      {
+        name: "credentials_not_ready",
+        rows: [buildConnectionRow({ credentials_state: "invalid" })],
+        blocked_reason_code: "delivery_connection_credentials_not_ready",
+      },
+      {
+        name: "provider_not_supported",
+        rows: [buildConnectionRow({ provider_code: "cdek" })],
+        blocked_reason_code: "delivery_connection_provider_not_supported",
+      },
+    ] as const
+
+    for (const scenario of scenarios) {
+      const provider = buildProvider({
+        resolvedPgConnection: buildReadOnlyLookupPgConnection(scenario.rows),
+      })
+
+      await expect(
+        provider.createFulfillment(
+          baseFulfillmentData,
+          [{ line_item_id: "item_1", quantity: 1 }],
+          { id: "order_1", display_id: 42, currency_code: "RUB" },
+          { id: "ful_1", location_id: "sloc_1" }
+        )
+      ).resolves.toEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            controlled_execution: expect.objectContaining({
+              status: "blocked",
+              blocking_stage: "connection_readiness",
+              blocked_reason_code: scenario.blocked_reason_code,
+            }),
+          }),
+        })
+      )
+    }
   })
 
   it("blocks provider and shape drift through the same normalized diagnostic seam", async () => {
@@ -206,10 +436,61 @@ describe("Delivery Hub provider validation seam", () => {
   })
 })
 
-function buildProvider() {
+function buildProvider(input?: { resolvedPgConnection?: { raw: (...args: unknown[]) => Promise<unknown> } }) {
   return new DeliveryHubFulfillmentProvider({
     logger: logger as never,
+    resolve: jest.fn((key: string | symbol) => {
+      if (input?.resolvedPgConnection) {
+        return input.resolvedPgConnection
+      }
+
+      throw new Error(`pg connection unavailable for ${String(key)}`)
+    }),
   })
+}
+function buildReadOnlyLookupPgConnection(rows: readonly unknown[]) {
+  return {
+    raw: async (query: unknown) => {
+      const sql = typeof query === "string" ? query : String(query ?? "")
+
+      if (sql.includes("select to_regclass")) {
+        return {
+          rows: [{ table_name: "delivery_hub_connections" }],
+        }
+      }
+
+      return { rows }
+    },
+  }
+}
+
+function buildConnectionRow(
+  overrides?: Partial<{
+    provider_code: string
+    status: string
+    mode: string
+    enabled: boolean
+    credentials_state: string
+  }>
+) {
+  return {
+    id: "conn_ready",
+    provider_code: overrides?.provider_code ?? "yandex",
+    name: "Yandex Ready",
+    status: overrides?.status ?? "active",
+    mode: overrides?.mode ?? "live",
+    enabled: overrides?.enabled ?? true,
+    country_code: "RU",
+    credentials_envelope: { ciphertext: "sealed" },
+    credentials_state: overrides?.credentials_state ?? "sealed",
+    credentials_fingerprint: "fp_ready",
+    credentials_last_validated_at: "2026-04-23T06:50:00.000Z",
+    credentials_last_error_code: null,
+    config: {},
+    metadata: {},
+    created_at: "2026-04-23T06:00:00.000Z",
+    updated_at: "2026-04-23T06:50:00.000Z",
+  }
 }
 
 function buildValidOptionData() {
