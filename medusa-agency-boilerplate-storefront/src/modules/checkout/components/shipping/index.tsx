@@ -40,6 +40,7 @@ import {
   buildDeliveryHubHandoffContractMatrixPreviewModel,
   buildDeliveryHubHandoffPreviewModel,
   buildDeliveryHubNeutralSelectionRehearsalModel,
+  buildDeliveryHubPersistedSelectionContractParityPreviewModel,
   buildDeliveryHubShippingOptionParityPreviewModel,
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
   type DeliveryHubNeutralSelectionRehearsalInput,
@@ -1110,6 +1111,10 @@ const Shipping: React.FC<ShippingProps> = ({
     buildDeliveryHubShippingOptionParityPreviewModel(
       deliveryHubRehearsalState.preview_input
     )
+  const deliveryHubPersistedSelectionContractParityPreview =
+    buildDeliveryHubPersistedSelectionContractParityPreviewModel(
+      deliveryHubRehearsalState.preview_input
+    )
   const deliveryHubHandoffContractMatrixPreview =
     buildDeliveryHubHandoffContractMatrixPreviewModel(
       deliveryHubRehearsalState.preview_input
@@ -1591,6 +1596,75 @@ const Shipping: React.FC<ShippingProps> = ({
                           <li key={message}>{message}</li>
                         ))}
                     </ul>
+                  )}
+                </div>
+              </div>
+
+              <div className="border-t border-ui-border-base pt-4">
+                <div className="flex flex-col gap-y-2">
+                  <Text className="text-ui-fg-base txt-medium-plus">
+                    Delivery Hub persisted selection contract parity preview
+                  </Text>
+                  <Text className="text-ui-fg-muted txt-small">
+                    Preview-only persisted contract seam. This block compares the current neutral selection surfaces with a future persisted contract artifact using shopper-safe diagnostic fields only.
+                  </Text>
+                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
+                    <span>{deliveryHubPersistedSelectionContractParityPreview.verdict_label}</span>
+                    <span>{deliveryHubPersistedSelectionContractParityPreview.summary_label}</span>
+                    <span>{deliveryHubPersistedSelectionContractParityPreview.projected_contract_label}</span>
+                    <span>
+                      Preview verdict: {deliveryHubPersistedSelectionContractParityPreview.verdict}
+                    </span>
+                    <span>
+                      matched fields: {deliveryHubPersistedSelectionContractParityPreview.matched_field_count}
+                      {` · mismatched fields: ${deliveryHubPersistedSelectionContractParityPreview.mismatched_field_count}`}
+                    </span>
+                    <span>
+                      connection_id: {deliveryHubPersistedSelectionContractParityPreview.connection_id ?? "missing"}
+                    </span>
+                    <span>
+                      mode_code: {deliveryHubPersistedSelectionContractParityPreview.mode_code ?? "missing"}
+                    </span>
+                    {deliveryHubPersistedSelectionContractParityPreview.mode_label && (
+                      <span>
+                        Mode label: {deliveryHubPersistedSelectionContractParityPreview.mode_label}
+                      </span>
+                    )}
+                    <span>
+                      quote_reference: {deliveryHubPersistedSelectionContractParityPreview.quote_reference_present ? "present" : "missing"}
+                    </span>
+                    <span>
+                      pickup point: {deliveryHubPersistedSelectionContractParityPreview.pickup_point_present ? "present" : "missing"}
+                      {deliveryHubPersistedSelectionContractParityPreview.pickup_point_required
+                        ? " · required"
+                        : " · not required"}
+                    </span>
+                    <span>
+                      pickup window: {deliveryHubPersistedSelectionContractParityPreview.pickup_window_present ? "present" : "missing"}
+                      {deliveryHubPersistedSelectionContractParityPreview.pickup_window_required
+                        ? " · required"
+                        : " · not required"}
+                    </span>
+                    {deliveryHubPersistedSelectionContractParityPreview.fields.map((field) => (
+                      <span key={field.key}>
+                        {field.label}: {field.status} · {field.detail_label}
+                      </span>
+                    ))}
+                  </div>
+                  {deliveryHubPersistedSelectionContractParityPreview.mismatch_reasons.length > 0 && (
+                    <div className="text-ui-fg-muted txt-small">
+                      Mismatch reasons: {deliveryHubPersistedSelectionContractParityPreview.mismatch_reasons.join(" | ")}
+                    </div>
+                  )}
+                  {deliveryHubPersistedSelectionContractParityPreview.blocked_readiness_codes.length > 0 && (
+                    <div className="text-ui-fg-muted txt-small">
+                      Readiness blockers: shopper-safe preview remains unavailable until the current delivery selection context is ready.
+                    </div>
+                  )}
+                  {deliveryHubPersistedSelectionContractParityPreview.blocked_parity_codes.length > 0 && (
+                    <div className="text-ui-fg-muted txt-small">
+                      Parity blockers: shopper-safe preview remains unavailable until the current delivery option aligns with the committed checkout context.
+                    </div>
                   )}
                 </div>
               </div>

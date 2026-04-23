@@ -8,6 +8,7 @@ import {
   buildDeliveryHubHandoffContractMatrixPreviewModel,
   buildDeliveryHubHandoffPreviewModel,
   buildDeliveryHubNeutralSelectionRehearsalModel,
+  buildDeliveryHubPersistedSelectionContractParityPreviewModel,
   buildDeliveryHubPersistedSelectionPreviewModel,
   buildDeliveryHubReadinessPreviewModel,
   buildDeliveryHubShadowCatalogPreviewModel,
@@ -1652,6 +1653,377 @@ test("buildDeliveryHubHandoffContractMatrixPreviewModel reports complete contrac
   assert.deepEqual(preview.blocked_readiness_codes, [])
   assert.deepEqual(preview.blocked_parity_codes, [])
   assert.equal(preview.fragments.every((fragment) => fragment.status === "present"), true)
+})
+
+test("buildDeliveryHubPersistedSelectionContractParityPreviewModel reports matched projected contract parity", () => {
+  const preview = buildDeliveryHubPersistedSelectionContractParityPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_contract_parity_match",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 1,
+        connection_id: "conn_contract_parity_match",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_contract_parity_match", version: 2 },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: true,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_contract_parity_match",
+          provider_point_code: null,
+          name: "Contract PVZ",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: {
+          date: "2026-04-22",
+          time_from: "10:00",
+          time_to: "14:00",
+          interval_utc: {
+            from: "2026-04-22T07:00:00.000Z",
+            to: "2026-04-22T11:00:00.000Z",
+          },
+          label: "22 Apr · 10:00–14:00",
+        },
+        updated_at: "2026-04-22T10:30:00.000Z",
+      },
+      quote_context: {
+        connection: {
+          connection_id: "conn_contract_parity_match",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_contract_parity_match", version: 2 },
+        pickup_point_required: true,
+        pickup_window_required: true,
+        updated_at: "2026-04-22T10:30:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  assert.equal(preview.verdict, "contract_matched")
+  assert.equal(preview.matched_field_count, 5)
+  assert.equal(preview.mismatched_field_count, 0)
+  assert.deepEqual(preview.blocked_readiness_codes, [])
+  assert.deepEqual(preview.blocked_parity_codes, [])
+  assert.equal(preview.fields.every((field) => ["matched", "not_required"].includes(field.status)), true)
+})
+
+test("buildDeliveryHubPersistedSelectionContractParityPreviewModel reports mismatch for missing connection_id", () => {
+  const preview = buildDeliveryHubPersistedSelectionContractParityPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_contract_missing_connection",
+      status: "ready",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: null as never,
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_contract_missing_connection", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T10:40:00.000Z",
+      },
+    } as any,
+  })
+
+  assert.equal(preview.verdict, "contract_mismatched")
+  assert.ok(preview.mismatch_reasons.some((reason) => reason.includes("connection_id")))
+  assert.equal(preview.fields.find((field) => field.key === "connection_id")?.status, "mismatched")
+})
+
+test("buildDeliveryHubPersistedSelectionContractParityPreviewModel reports mismatch for missing quote_reference", () => {
+  const preview = buildDeliveryHubPersistedSelectionContractParityPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_contract_missing_quote_reference",
+      status: "ready",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_contract_missing_quote_reference",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: null as never,
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T10:45:00.000Z",
+      },
+    } as any,
+  })
+
+  assert.equal(preview.verdict, "contract_mismatched")
+  assert.equal(preview.quote_reference_present, false)
+  assert.equal(preview.fields.find((field) => field.key === "quote_reference")?.status, "mismatched")
+})
+
+test("buildDeliveryHubPersistedSelectionContractParityPreviewModel reports pickup point mismatch when required and absent", () => {
+  const preview = buildDeliveryHubPersistedSelectionContractParityPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_contract_missing_pickup_point",
+      status: "ready",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_contract_missing_pickup_point",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_contract_missing_pickup_point", version: 1 },
+        pickup_point_required: true,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T10:50:00.000Z",
+      },
+    },
+    pickup_points: { ok: true, points: [] },
+  })
+
+  assert.equal(preview.verdict, "contract_mismatched")
+  assert.equal(preview.pickup_point_required, true)
+  assert.equal(preview.pickup_point_present, false)
+  assert.equal(preview.fields.find((field) => field.key === "pickup_point")?.status, "mismatched")
+})
+
+test("buildDeliveryHubPersistedSelectionContractParityPreviewModel reports pickup window mismatch when required and absent", () => {
+  const preview = buildDeliveryHubPersistedSelectionContractParityPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_contract_missing_pickup_window",
+      status: "ready",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_contract_missing_pickup_window",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_contract_missing_pickup_window", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: true,
+        updated_at: "2026-04-22T10:55:00.000Z",
+      },
+    },
+    pickup_windows: { ok: true, pickup_windows: [] },
+  })
+
+  assert.equal(preview.verdict, "contract_mismatched")
+  assert.equal(preview.pickup_window_required, true)
+  assert.equal(preview.pickup_window_present, false)
+  assert.equal(preview.fields.find((field) => field.key === "pickup_window")?.status, "mismatched")
+})
+
+test("buildDeliveryHubPersistedSelectionContractParityPreviewModel reports sanitized readiness blockers for blocked projected contract", () => {
+  const preview = buildDeliveryHubPersistedSelectionContractParityPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_contract_parity_blocked",
+      status: "not_ready",
+      issues: [
+        {
+          code: "connection_credentials_not_ready",
+          message: "Connection credentials are not ready",
+          field: "connection_id",
+        },
+      ],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_contract_parity_blocked",
+          state: "credentials_not_ready",
+          ready: false,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_contract_parity_blocked", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T11:00:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+  const serialized = JSON.stringify(preview).toLowerCase()
+
+  assert.equal(preview.verdict, "blocked")
+  assert.deepEqual(preview.blocked_readiness_codes, ["connection_unavailable"])
+  assert.equal(preview.fields.find((field) => field.key === "connection_id")?.status, "blocked")
+  assert.equal(serialized.includes("credentials"), false)
+  assert.equal(serialized.includes("connection_credentials_not_ready"), false)
+})
+
+test("buildDeliveryHubPersistedSelectionContractParityPreviewModel reports sanitized parity blockers for blocked projected contract", () => {
+  const preview = buildDeliveryHubPersistedSelectionContractParityPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_contract_parity_parity_blocked",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 1,
+        connection_id: "conn_contract_parity_parity_blocked",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_contract_parity_parity_blocked", version: 1 },
+        quote: {
+          carrier_code: "carrier_contract_parity_parity_blocked",
+          carrier_label: "Carrier parity blocked",
+          amount: 500,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: false,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "point_contract_parity_parity_blocked",
+          provider_point_code: null,
+          name: "Pickup point parity blocked",
+          address: "Parity blocked street 1",
+          city: "Moscow",
+          region: null,
+          postal_code: null,
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-22T11:05:00.000Z",
+      },
+      quote_context: {
+        connection: {
+          connection_id: "conn_contract_parity_parity_blocked",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_contract_parity_parity_blocked", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T11:05:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "door_delivery",
+      legacy_selection_fresh: false,
+      legacy_method_label: "ApiShip courier",
+    },
+  })
+  const serialized = JSON.stringify(preview).toLowerCase()
+
+  assert.equal(preview.verdict, "blocked")
+  assert.deepEqual(preview.blocked_parity_codes, ["selection_alignment_unavailable"])
+  assert.equal(preview.fields.find((field) => field.key === "mode_code")?.status, "blocked")
+  assert.equal(serialized.includes("legacy_context_stale"), false)
+})
+
+test("buildDeliveryHubPersistedSelectionContractParityPreviewModel stays shopper-safe and preview-only", () => {
+  const preview = buildDeliveryHubPersistedSelectionContractParityPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_contract_parity_safe_preview",
+      status: "not_ready",
+      issues: [
+        {
+          code: "connection_credentials_not_ready",
+          message: "Connection credentials are not ready",
+          field: "connection_id",
+        },
+      ],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_contract_parity_safe_preview",
+          state: "credentials_not_ready",
+          ready: false,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_contract_parity_safe_preview", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T11:10:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "door_delivery",
+      legacy_selection_fresh: false,
+      legacy_method_label: "ApiShip courier",
+    },
+  }) as Record<string, unknown>
+  const serialized = JSON.stringify(preview).toLowerCase()
+
+  assert.equal(preview.mutation_intent, false)
+  assert.equal(preview.dry_run_only, true)
+  assert.equal(serialized.includes("activation"), false)
+  assert.equal(serialized.includes("save"), false)
+  assert.equal(serialized.includes("submit"), false)
+  for (const forbidden of [
+    "provider_code",
+    "quote_key",
+    "raw_reference",
+    "token",
+    "secret",
+    "credentials",
+    "connection_credentials_not_ready",
+    "legacy_context_stale",
+    "yandex",
+  ]) {
+    assert.equal(serialized.includes(forbidden), false, forbidden)
+  }
+})
+
+test("delivery-hub util preview stack remains no-network only for persisted contract parity seam", () => {
+  const source = readFileSync(new URL("./delivery-hub.ts", import.meta.url), "utf8")
+
+  assert.equal(source.includes("fetch("), false)
+  assert.equal(source.includes("axios"), false)
+  assert.equal(source.includes("XMLHttpRequest"), false)
 })
 
 test("buildDeliveryHubHandoffContractMatrixPreviewModel marks missing quote reference", () => {

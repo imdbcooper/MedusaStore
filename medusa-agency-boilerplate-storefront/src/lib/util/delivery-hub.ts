@@ -1710,6 +1710,65 @@ export type DeliveryHubHandoffPreviewModel = {
   mutation_intent: false
 }
 
+export type DeliveryHubPersistedSelectionContractParityPreviewVerdict =
+  | "informational_only"
+  | "contract_matched"
+  | "contract_mismatched"
+  | "blocked"
+
+export type DeliveryHubPersistedSelectionContractParityPreviewFieldKey =
+  | "connection_id"
+  | "mode_code"
+  | "quote_reference"
+  | "pickup_point"
+  | "pickup_window"
+
+export type DeliveryHubPersistedSelectionContractParityPreviewFieldStatus =
+  | "matched"
+  | "mismatched"
+  | "blocked"
+  | "informational_only"
+  | "not_required"
+
+export type DeliveryHubPersistedSelectionContractParityPreviewField = {
+  key: DeliveryHubPersistedSelectionContractParityPreviewFieldKey
+  label: string
+  status: DeliveryHubPersistedSelectionContractParityPreviewFieldStatus
+  detail_label: string
+}
+
+export type DeliveryHubPersistedSelectionContractParityPreviewReadinessBlocker =
+  | "selection_unavailable"
+  | "connection_unavailable"
+
+export type DeliveryHubPersistedSelectionContractParityPreviewParityBlocker =
+  | "delivery_option_unavailable"
+  | "selection_alignment_unavailable"
+
+export type DeliveryHubPersistedSelectionContractParityPreviewModel = {
+  tone: "neutral" | "positive" | "warning"
+  verdict: DeliveryHubPersistedSelectionContractParityPreviewVerdict
+  verdict_label: string
+  summary_label: string
+  projected_contract_label: string
+  connection_id: string | null
+  mode_code: DeliveryHubQuoteType | null
+  mode_label: string | null
+  quote_reference_present: boolean
+  pickup_point_required: boolean
+  pickup_point_present: boolean
+  pickup_window_required: boolean
+  pickup_window_present: boolean
+  matched_field_count: number
+  mismatched_field_count: number
+  fields: DeliveryHubPersistedSelectionContractParityPreviewField[]
+  mismatch_reasons: string[]
+  blocked_readiness_codes: DeliveryHubPersistedSelectionContractParityPreviewReadinessBlocker[]
+  blocked_parity_codes: DeliveryHubPersistedSelectionContractParityPreviewParityBlocker[]
+  dry_run_only: true
+  mutation_intent: false
+}
+
 export type DeliveryHubShippingOptionParityPreviewVerdict =
   | "informational_only"
   | "parity_partial"
@@ -1905,6 +1964,71 @@ function formatDeliveryHubCountLabel(
 
 function formatDeliveryHubPreviewCodeLabel(value: string) {
   return value.replace(/_/g, " ")
+}
+
+function getDeliveryHubPersistedSelectionReadinessBlockerLabel(
+  blocker: DeliveryHubPersistedSelectionContractParityPreviewReadinessBlocker
+) {
+  switch (blocker) {
+    case "selection_unavailable":
+      return "selection unavailable"
+    case "connection_unavailable":
+      return "connection unavailable"
+  }
+}
+
+function getDeliveryHubPersistedSelectionParityBlockerLabel(
+  blocker: DeliveryHubPersistedSelectionContractParityPreviewParityBlocker
+) {
+  switch (blocker) {
+    case "delivery_option_unavailable":
+      return "delivery option unavailable"
+    case "selection_alignment_unavailable":
+      return "selection alignment unavailable"
+  }
+}
+
+function sanitizeDeliveryHubPersistedSelectionReadinessBlockers(
+  blockers: DeliveryHubSelectionReadinessIssueCode[]
+): DeliveryHubPersistedSelectionContractParityPreviewReadinessBlocker[] {
+  return Array.from(
+    new Set(
+      blockers.flatMap((blocker) => {
+        switch (blocker) {
+          case "selection_invalid":
+            return ["selection_unavailable"]
+          case "connection_missing":
+          case "connection_not_found":
+          case "connection_disabled":
+          case "connection_inactive":
+          case "connection_credentials_not_ready":
+            return ["connection_unavailable"]
+          default:
+            return []
+        }
+      })
+    )
+  )
+}
+
+function sanitizeDeliveryHubPersistedSelectionParityBlockers(
+  blockers: DeliveryHubShippingOptionParityPreviewGapCode[]
+): DeliveryHubPersistedSelectionContractParityPreviewParityBlocker[] {
+  return Array.from(
+    new Set(
+      blockers.flatMap((blocker) => {
+        switch (blocker) {
+          case "connection_not_ready":
+            return ["delivery_option_unavailable"]
+          case "mode_mismatch":
+          case "legacy_context_stale":
+            return ["selection_alignment_unavailable"]
+          default:
+            return []
+        }
+      })
+    )
+  )
 }
 
 function formatDeliveryHubEtaLabel(
@@ -4238,6 +4362,213 @@ export function buildDeliveryHubHandoffContractMatrixPreviewModel(
         ? `Missing fragments: ${missingFragmentKeys.map(formatDeliveryHubPreviewCodeLabel).join(", ")}.`
         : null,
     ]).slice(0, 6),
+    dry_run_only: true,
+    mutation_intent: false,
+  }
+}
+
+function buildDeliveryHubPersistedSelectionContractParityPreviewField(input: {
+  key: DeliveryHubPersistedSelectionContractParityPreviewFieldKey
+  label: string
+  status: DeliveryHubPersistedSelectionContractParityPreviewFieldStatus
+  detail_label: string
+}): DeliveryHubPersistedSelectionContractParityPreviewField {
+  return input
+}
+
+export function buildDeliveryHubPersistedSelectionContractParityPreviewModel(
+  input: DeliveryHubNeutralSelectionRehearsalInput = {}
+): DeliveryHubPersistedSelectionContractParityPreviewModel {
+  const candidate = getDeliveryHubNeutralRehearsalCandidate(input)
+  const readiness = input.readiness ?? null
+  const parityPreview = buildDeliveryHubShippingOptionParityPreviewModel(input)
+  const readinessBlockedCodes = sanitizeDeliveryHubPersistedSelectionReadinessBlockers(
+    (readiness?.issues ?? [])
+      .map((issue) => issue.code)
+      .filter((code) =>
+        [
+          "selection_invalid",
+          "connection_missing",
+          "connection_not_found",
+          "connection_disabled",
+          "connection_inactive",
+          "connection_credentials_not_ready",
+        ].includes(code)
+      )
+  )
+  const parityBlockedCodes = sanitizeDeliveryHubPersistedSelectionParityBlockers(
+    parityPreview.gap_codes.filter((code) =>
+      ["connection_not_ready", "mode_mismatch", "legacy_context_stale"].includes(code)
+    )
+  )
+  const candidatePresent = Boolean(
+    candidate.quoteSummary ||
+      candidate.quoteReference ||
+      candidate.quoteType ||
+      candidate.connection.connection_id
+  )
+  const blocked = readinessBlockedCodes.length > 0 || parityBlockedCodes.length > 0
+
+  const fields: DeliveryHubPersistedSelectionContractParityPreviewField[] = [
+    buildDeliveryHubPersistedSelectionContractParityPreviewField({
+      key: "connection_id",
+      label: "connection_id",
+      status: !candidatePresent
+        ? "informational_only"
+        : blocked
+          ? candidate.connection.connection_id
+            ? "blocked"
+            : "mismatched"
+          : candidate.connection.connection_id
+            ? "matched"
+            : "mismatched",
+      detail_label: !candidatePresent
+        ? "Projected persisted contract stays informational until a neutral candidate is visible."
+        : candidate.connection.connection_id
+          ? `Projected persisted contract would currently carry connection_id ${candidate.connection.connection_id}.`
+          : "Projected persisted contract still lacks connection_id.",
+    }),
+    buildDeliveryHubPersistedSelectionContractParityPreviewField({
+      key: "mode_code",
+      label: "mode_code",
+      status: !candidatePresent
+        ? "informational_only"
+        : parityBlockedCodes.includes("selection_alignment_unavailable")
+          ? "blocked"
+          : candidate.quoteType
+            ? "matched"
+            : "mismatched",
+      detail_label: !candidatePresent
+        ? "Projected persisted contract stays informational until a neutral candidate is visible."
+        : parityBlockedCodes.includes("selection_alignment_unavailable")
+          ? "Projected persisted contract mode_code remains preview-only while selection alignment is unavailable."
+          : candidate.quoteType
+            ? `Projected persisted contract would currently carry mode_code ${candidate.quoteType}.`
+            : "Projected persisted contract still lacks mode_code.",
+    }),
+    buildDeliveryHubPersistedSelectionContractParityPreviewField({
+      key: "quote_reference",
+      label: "quote_reference",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.quoteReference
+          ? "matched"
+          : "mismatched",
+      detail_label: !candidatePresent
+        ? "Projected persisted contract stays informational until a neutral candidate is visible."
+        : candidate.quoteReference
+          ? "Projected persisted contract would currently carry a backend-issued quote_reference."
+          : "Projected persisted contract still lacks a backend-issued quote_reference.",
+    }),
+    buildDeliveryHubPersistedSelectionContractParityPreviewField({
+      key: "pickup_point",
+      label: "pickup_point",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.pickupPointRequired
+          ? candidate.pickupPoint
+            ? "matched"
+            : "mismatched"
+          : candidate.pickupPoint
+            ? "matched"
+            : "not_required",
+      detail_label: !candidatePresent
+        ? "Projected persisted contract stays informational until a neutral candidate is visible."
+        : candidate.pickupPointRequired
+          ? candidate.pickupPoint
+            ? "Projected persisted contract currently has the required pickup_point fragment."
+            : "Projected persisted contract still lacks a required pickup_point fragment."
+          : candidate.pickupPoint
+            ? "Projected persisted contract already includes an optional pickup_point fragment."
+            : "Projected persisted contract does not currently require pickup_point.",
+    }),
+    buildDeliveryHubPersistedSelectionContractParityPreviewField({
+      key: "pickup_window",
+      label: "pickup_window",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.pickupWindowRequired
+          ? candidate.pickupWindow
+            ? "matched"
+            : "mismatched"
+          : candidate.pickupWindow
+            ? "matched"
+            : "not_required",
+      detail_label: !candidatePresent
+        ? "Projected persisted contract stays informational until a neutral candidate is visible."
+        : candidate.pickupWindowRequired
+          ? candidate.pickupWindow
+            ? "Projected persisted contract currently has the required pickup_window fragment."
+            : "Projected persisted contract still lacks a required pickup_window fragment."
+          : candidate.pickupWindow
+            ? "Projected persisted contract already includes an optional pickup_window fragment."
+            : "Projected persisted contract does not currently require pickup_window.",
+    }),
+  ]
+
+  const mismatchedFieldCount = fields.filter((field) => field.status === "mismatched").length
+  const matchedFieldCount = fields.filter((field) =>
+    ["matched", "not_required"].includes(field.status)
+  ).length
+  const mismatchReasons = uniqueDeliveryHubMessages([
+    ...fields
+      .filter((field) => field.status === "mismatched")
+      .map((field) => field.detail_label),
+    blocked
+      ? `Preview blockers remain visible from readiness/parity surfaces: ${[
+          ...readinessBlockedCodes.map(getDeliveryHubPersistedSelectionReadinessBlockerLabel),
+          ...parityBlockedCodes.map(getDeliveryHubPersistedSelectionParityBlockerLabel),
+        ].join(", ")}.`
+      : null,
+  ])
+  const verdict: DeliveryHubPersistedSelectionContractParityPreviewVerdict = !candidatePresent
+    ? "informational_only"
+    : blocked
+      ? "blocked"
+      : mismatchedFieldCount > 0
+        ? "contract_mismatched"
+        : "contract_matched"
+
+  return {
+    tone:
+      verdict === "contract_matched"
+        ? "positive"
+        : verdict === "blocked"
+          ? "warning"
+          : "neutral",
+    verdict,
+    verdict_label:
+      verdict === "contract_matched"
+        ? "Projected persisted contract parity looks structurally matched"
+        : verdict === "blocked"
+          ? "Projected persisted contract parity is blocked"
+          : verdict === "contract_mismatched"
+            ? "Projected persisted contract parity still has shopper-safe mismatches"
+            : "Projected persisted contract parity is informational only",
+    summary_label:
+      verdict === "contract_matched"
+        ? "Current neutral preview already resembles the future persisted contract artifact on shopper-safe fields."
+        : verdict === "blocked"
+          ? "Projected persisted contract parity remains diagnostic-only because readiness or parity blockers are still visible."
+          : verdict === "contract_mismatched"
+            ? "Current neutral preview exposes comparable shopper-safe structure, but some persisted-contract fragments are still missing."
+            : "Projected persisted contract parity remains diagnostic-only until enough neutral preview context is available.",
+    projected_contract_label:
+      "Future persisted contract artifact preview · shopper-safe only · no write path · no network path",
+    connection_id: candidate.connection.connection_id,
+    mode_code: candidate.quoteType,
+    mode_label: getDeliveryHubQuoteTypeLabel(candidate.quoteType),
+    quote_reference_present: Boolean(candidate.quoteReference),
+    pickup_point_required: candidate.pickupPointRequired,
+    pickup_point_present: Boolean(candidate.pickupPoint),
+    pickup_window_required: candidate.pickupWindowRequired,
+    pickup_window_present: Boolean(candidate.pickupWindow),
+    matched_field_count: matchedFieldCount,
+    mismatched_field_count: mismatchedFieldCount,
+    fields,
+    mismatch_reasons: mismatchReasons,
+    blocked_readiness_codes: readinessBlockedCodes,
+    blocked_parity_codes: parityBlockedCodes,
     dry_run_only: true,
     mutation_intent: false,
   }
