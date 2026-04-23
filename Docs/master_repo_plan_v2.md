@@ -68,7 +68,7 @@
 - все core-решения первой версии по умолчанию выбираются для типового интернет-магазина в РФ;
 - пригодность для российского рынка важнее, чем наличие у Medusa более подробно задокументированного или более удобного first-party примера;
 - для payment track текущим направлением v1 считается **YooKassa-first path**;
-- для shipping track целевым следующим направлением v1 считается **ApiShip-first path**, пока не доказано обратное;
+- исторический `ApiShip-first` slice остается подтвержденным промежуточным результатом, но для долгосрочного shipping track целевым следующим направлением теперь считается **собственный `delivery-hub` с первым adapter `Yandex Delivery`**;
 - нецелевые для РФ решения можно изучать как reference pattern для архитектуры Medusa, но нельзя выбирать как `default v1 choice`, если пользователь явно не сменил рынок проекта.
 
 ---
@@ -205,7 +205,7 @@ Payload CMS рассматривается как **отдельный headless 
 - если решение не подходит для российского рынка, оно не может считаться default path для этого репозитория;
 - Stripe и другие нецелевые для РФ payment providers допустимо использовать как reference implementation паттерна Medusa, но не как шаблонный payment choice по умолчанию;
 - для текущего payment track не переоткрываем выбор в сторону нецелевых для РФ провайдеров, пока пользователь явно не меняет market scope;
-- для следующего shipping track по умолчанию исследуется **ApiShip-first** направление как наиболее соответствующее цели шаблона для РФ-магазинов.
+- для следующего shipping track по умолчанию строится **собственный delivery-layer**; первым adapter в нём должен быть **`Yandex Delivery`**, а не новый агрегатор по умолчанию.
 
 ---
 
@@ -1025,6 +1025,16 @@ Truthfully closed after valid reopen and remediation: all sanctioned base slices
 - следующий logical workstream после tranche 1 truthfully materialized как markdown-only packaging slice в [`Docs/template_release_handoff.md`](./template_release_handoff.md);
 - этот tranche 2 intentionally ограничен release checklist, onboarding path и clean package contour и не делает claim'ов о CI, staging, prod hardening или release automation из `Фазы 8`.
 
+### Статус после closure-check `tranche 3`
+
+- `Phase 7 / tranche 3` теперь truthfully закрыт runtime-backed closure-check `2026-04-20`;
+- repeat RC path `bootstrap → preflight → dev` прошёл после environment normalization без repo-level blocker по `8000`;
+- docs/runtime expectation defect для [`smoke:backend`](../package.json:33) остаётся закрытым как probe-only semantics для уже поднятого backend runtime;
+- найденный repo-level blocker оказался в helper harness [`scripts/notification-smoke.sh`](../scripts/notification-smoke.sh): local `medusa exec` наследовал root orchestration `DATABASE_URL` и `REDIS_URL` с docker-network hostnames вместо backend-local env;
+- targeted remediation закрыла этот blocker через явный `env -u DATABASE_URL -u REDIS_URL` и bounded timeout в helper, после чего authenticated notification smoke снова стал reproducible в canonical root path;
+- `Phase 8 / tranche 1` baseline integrity contour после этой remediation подтверждён локально как PASS по static gate [`integrity:baseline:static`](../package.json:37) и runtime gate [`integrity:baseline:runtime-smoke`](../package.json:38);
+- truthful verdict теперь такой: **`Фаза 7` закрыта**, а следующий открытый roadmap stage уже лежит только в `Фазе 8`.
+
 ### Контрольные риски
 
 - не считать шаблонизацией обычный `cp -R`;
@@ -1033,6 +1043,16 @@ Truthfully closed after valid reopen and remediation: all sanctioned base slices
 ---
 
 ### Фаза 8. Автоматические проверки, staging и production readiness
+
+### Статус на 2026-04-20
+
+Фаза активна.
+
+`tranche 1` уже materialized и подтверждён как baseline integrity contour:
+- root aggregate scripts [`lint`](../package.json:31), [`typecheck`](../package.json:32), [`smoke:browser`](../package.json:36), [`integrity:baseline:static`](../package.json:37), [`integrity:baseline:runtime-smoke`](../package.json:38) и [`integrity:baseline`](../package.json:39) materialized;
+- GitHub Actions workflow [`integrity-baseline.yml`](../.github/workflows/integrity-baseline.yml) materialized как минимальный CI boundary;
+- local static pass и local runtime smoke pass подтверждены `2026-04-20`;
+- remaining open scope `Фазы 8` теперь truthfully ограничен staging, deploy path, rollback, backup/restore, monitoring и broader production-readiness contour.
 
 ### Цель
 

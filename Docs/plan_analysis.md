@@ -15,7 +15,14 @@
 - template-ready backend baseline вместо demo-oriented bootstrap.
 
 Простыми словами:
-репозиторий уже не находится в статусе `поднимается только как демо-заготовка`, notification slice как первый integration slice Фазы 3 уже подтвержден, notification hardening v1 тоже закрыт и проверен, payment path v1 по YooKassa ранее подтвержден end-to-end для текущего scope, shipping track v1 подтвержден в рамках текущего slice: ApiShip `cheapest_only_v1` прошёл runtime validation `2026-04-18`, provider активирован, route path подтверждён, rates из ApiShip/Yandex возвращаются. **Checkout end-to-end validation v1** закрыт, **bootstrap idempotency hardening v1** подтвержден runtime validation, `storefront core baseline v1`, `VK ID v1`, `MTS Exolve`, `marketing layer v1`, `Payload CMS v1`, [`preset-driven-global-shell-contract-v1.md`](../plans/preset-driven-global-shell-contract-v1.md) и [`preset-driven-catalog-shell-contract-v1.md`](../plans/preset-driven-catalog-shell-contract-v1.md) уже закрыты как materialized workstreams. Template-readiness regression-pack уже формализован и больше не является следующим шагом. Финальный cross-preset regression pass по storefront browse matrix теперь тоже завершён verdict **PASS**, так что roadmap reality больше не читается как `Phase 6 started, broader customization still pending`: truthfully зафиксировано, что sanctioned **Фаза 6 storefront customization** закрыла весь preset-driven stack от [`NEXT_PUBLIC_STOREFRONT_PRESET`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:21) до typed [`landingSurfaces`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:317), adjacent [`productSurfaces.supportHighlights`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:323), [`listingSurfaces.productCard`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:324), typed global shell contract [`StorefrontShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:74) и typed catalog shell contract [`StorefrontCatalogShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:298), а readiness verdict для этой фазы уже = готово к следующему roadmap stage.
+репозиторий уже не находится в статусе `поднимается только как демо-заготовка`, notification slice как первый integration slice Фазы 3 уже подтвержден, notification hardening v1 тоже закрыт и проверен, payment path v1 по YooKassa ранее подтвержден end-to-end для текущего scope, shipping track v1 подтвержден в рамках текущего slice: ApiShip `provider_aware_v1` прошёл runtime validation `2026-04-20`, provider активирован, route path подтверждён, grouped rates из ApiShip/Yandex возвращаются, storefront сохраняет provider/tariff selection в cart shipping method data, а live multi-provider switching на одном тестовом адресе пока не подтверждено. **Checkout end-to-end validation v1** закрыт, **bootstrap idempotency hardening v1** подтвержден runtime validation, `storefront core baseline v1`, `VK ID v1`, `MTS Exolve`, `marketing layer v1`, `Payload CMS v1`, [`preset-driven-global-shell-contract-v1.md`](../plans/preset-driven-global-shell-contract-v1.md) и [`preset-driven-catalog-shell-contract-v1.md`](../plans/preset-driven-catalog-shell-contract-v1.md) уже закрыты как materialized workstreams. Template-readiness regression-pack уже формализован и больше не является следующим шагом. Финальный cross-preset regression pass по storefront browse matrix теперь тоже завершён verdict **PASS**, так что roadmap reality больше не читается как `Phase 6 started, broader customization still pending`: truthfully зафиксировано, что sanctioned **Фаза 6 storefront customization** закрыла весь preset-driven stack от [`NEXT_PUBLIC_STOREFRONT_PRESET`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:21) до typed [`landingSurfaces`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:317), adjacent [`productSurfaces.supportHighlights`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:323), [`listingSurfaces.productCard`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:324), typed global shell contract [`StorefrontShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:74) и typed catalog shell contract [`StorefrontCatalogShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:298), а readiness verdict для этой фазы уже = готово к следующему roadmap stage. Дополнительно closure-check `2026-04-20` truthfully закрыл и **Фазу 7**: tranche 3 больше не находится в docs-remediation состоянии, потому что repeat RC smoke pass прошёл после targeted fix в [`scripts/notification-smoke.sh`](../scripts/notification-smoke.sh), а активная реальность roadmap теперь уже = стартовавшая **Фаза 8** с materialized baseline integrity contour.
+
+Новый audit update `2026-04-21`:
+
+- это не отменяет подтвержденный исторический ApiShip slice;
+- но direct Yandex investigation показал, что `Yandex Delivery` API умеет `warehouse -> PVZ` и `dropoff point -> PVZ` напрямую, а значит долгосрочный shipping direction truthfully смещается от агрегатор-зависимой архитектуры к собственному `delivery-hub`;
+- новый целевой foundation step для shipping теперь = свой расширяемый слой доставки с первым adapter `Yandex Delivery`, merchant-managed настройкой через admin extensions и без форка official admin;
+- source-of-truth спецификация зафиксирована в [delivery_hub_spec.md](./delivery_hub_spec.md).
 
 
 ## Обновление статуса после подтверждения Фазы 2
@@ -49,7 +56,7 @@
 - **первый шаг Фазы 3 подтвержден**: notification slice v1 реализован и проверен как первый integration slice;
 - **notification hardening v1 подтвержден как завершенный delivery result**;
 - **payment track v1 подтвержден для текущего scope**: YooKassa-first path ранее прошел end-to-end verification;
-- **shipping track v1 подтвержден для текущего scope**: в репо реализован и runtime-проверкой подтверждён backend-first **ApiShip-first rate-selection slice `cheapest_only_v1`**; provider активирован, route path подтверждён, rates из ApiShip/Yandex возвращаются, а прежний blocker закрыт targeted code fixes.
+- **shipping track v1 подтвержден для текущего scope**: в репо реализован и runtime-проверкой подтверждён backend-first **ApiShip-first rate-selection slice `provider_aware_v1`**; provider активирован, route path подтверждён, grouped rates из ApiShip/Yandex возвращаются, storefront сохраняет выбранный provider/tariff в cart shipping method data, а прежний blocker закрыт targeted code fixes.
 
 Отдельные notes после notification, payment и первого shipping slice:
 - повторный `npm run bootstrap` поверх уже заполненной БД подтвержден runtime validation как idempotent и больше не является неидемпотентным сценарием;
@@ -76,7 +83,7 @@
 Сейчас репозиторий уже выглядит как осмысленная стартовая база будущего master template, а не как просто слегка подправленный Medusa demo bootstrap.
 
 Простыми словами:
-фундамент и template-ready backend baseline уже подтверждены, notification path v1 подтвержден и дополнительно доведен до закрытого notification hardening v1, payment path v1 уже подтвержден для текущего YooKassa-first scope, shipping path v1 уже подтвержден как работающий ApiShip-first rate-selection slice `cheapest_only_v1`, а checkout path теперь тоже подтвержден сквозным runtime/E2E pass до confirmed order page. Bootstrap idempotency hardening v1 подтвержден runtime validation и больше не является открытым concern. Sequencing после закрытых storefront slices тоже стал уже не theoretical: `Фаза 6` была доведена от sanctioned selector [`NEXT_PUBLIC_STOREFRONT_PRESET`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:21) к typed landing, adjacent product, listing/card, global-shell и catalog-shell surfaces, а финальный cross-preset regression pass зафиксировал весь этот stack как **PASS** и готовый к следующему roadmap stage.
+фундамент и template-ready backend baseline уже подтверждены, notification path v1 подтвержден и дополнительно доведен до закрытого notification hardening v1, payment path v1 уже подтвержден для текущего YooKassa-first scope, shipping path v1 уже подтвержден как работающий ApiShip-first rate-selection slice `provider_aware_v1`, а checkout path теперь тоже подтвержден сквозным runtime/E2E pass до confirmed order page. Bootstrap idempotency hardening v1 подтвержден runtime validation и больше не является открытым concern. Sequencing после закрытых storefront slices тоже стал уже not theoretical: `Фаза 6` была доведена от sanctioned selector [`NEXT_PUBLIC_STOREFRONT_PRESET`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:21) к typed landing, adjacent product, listing/card, global-shell и catalog-shell surfaces, а финальный cross-preset regression pass зафиксировал весь этот stack как **PASS** и готовый к следующему roadmap stage.
 
 ---
 
@@ -139,7 +146,7 @@
 
 ### Этап 3: Подключение РФ-пакета
 
-**Вердикт:** ключевые integration slices подтверждены для текущего scope; notifications закрыты как первый slice и доведены до notification hardening v1, payments подтверждены для текущего YooKassa-first scope, shipping подтвержден как работающий ApiShip-first slice `cheapest_only_v1`, checkout end-to-end validation v1 закрыт, `UniSender email migration v1` реализован и подтвержден, `post-UniSender cleanup-step` закрыт, `VK Community Messaging v1 foundation` уже реализован, `storefront core baseline v1` уже закрыт, `VK ID v1` уже реализован, повторно reviewed и закоммичен, а `MTS Exolve` уже реализован, повторно провалидирован и закоммичен. Следующий шаг по sequencing — не storefront core, не новый VK linking pass и не повторный SMS rollout, а отдельный `marketing layer`.
+**Вердикт:** ключевые integration slices подтверждены для текущего scope; notifications закрыты как первый slice и доведены до notification hardening v1, payments подтверждены для текущего YooKassa-first scope, shipping подтвержден как работающий ApiShip-first slice `provider_aware_v1`, checkout end-to-end validation v1 закрыт, `UniSender email migration v1` реализован и подтвержден, `post-UniSender cleanup-step` закрыт, `VK Community Messaging v1 foundation` уже реализован, `storefront core baseline v1` уже закрыт, `VK ID v1` уже реализован, повторно reviewed и закоммичен, а `MTS Exolve` уже реализован, повторно провалидирован и закоммичен. Следующий шаг по sequencing — не storefront core, не новый VK linking pass и не повторный SMS rollout, а отдельный `marketing layer`.
 
 Что уже подтверждено:
 - notifications были выбраны первым vertical slice Фазы 3;
@@ -388,21 +395,21 @@ notification slice уже собран и hardened, payment slice подтвер
 Простыми словами:
 основной путь покупки уже работает, но весь привод реальных продаж вместе с post-order реакциями все еще не собран целиком.
 
-### 5. Нет productized storefront, marketing layer и release-контура
+### 5. Нет полного release-grade контура шаблона
 
 Что это значит технически:
-storefront все еще требует отдельной productization-фазы, marketing orchestration layer еще не собран, а шаблон не упакован в staging and prod-ready процесс тиражирования.
+storefront customization уже truthfully закрыт как `Фаза 6`, marketing layer уже materialized и закрыт, а `Фаза 7` теперь тоже закрыта после RC closure-check. Открытым остаётся не storefront или marketing architecture, а именно release-grade contour `Фазы 8`: staging, deploy path, rollback, backup/restore, monitoring и broader production-readiness automation.
 
 Простыми словами:
-ядро стало честнее, но витрина, маркетинговая машина и выпуск нового клиентского проекта пока не превращены в конвейер.
+ядро, клиентская упаковка и handoff path уже собраны заметно лучше, но полноценный конвейер релизной эксплуатации ещё не достроен.
 
-### 6. Content layer для marketing pages и news еще не реализован
+### 6. Phase 8 уже стартовала, но пока только узким tranche 1
 
 Что это значит технически:
-Payload CMS уже имеет смысл как отдельный headless content service, но сам контур `payload-cms + storefront block renderer + publish and revalidate flow` пока еще не собран.
+baseline integrity contour уже materialized: root aggregate gates, browser smoke и minimal CI workflow существуют, static pass и runtime smoke pass подтверждены `2026-04-20`. Но это пока не staging/prod contour и не полный release automation surface.
 
 Простыми словами:
-идея для маркетинговых страниц уже понятна, но сам редакторский слой пока еще не стал частью рабочей платформы.
+автоматические проверки уже начались по-настоящему, но до production-grade шаблона ещё не хватает второй половины `Фазы 8`.
 
 ---
 
@@ -418,8 +425,9 @@ Payload CMS уже имеет смысл как отдельный headless cont
 7. **implementation `VK Community Messaging v1 foundation` теперь тоже реализован** как opt-in Notification Module expansion, а не остаётся design-only шагом;
 8. `VK Community Messaging v1` материализован как новый channel track поверх existing Notification Module architecture, sibling smoke path и post-order service slices `order.placed`, `shipment.created`, `order.canceled`;
 9. communication stack на roadmap уже зафиксирован так: `UniSender` для email, `VK Community Messaging` + optional `VK ID` для VK и `MTS Exolve` для SMS, а marketing orchestration должен идти отдельным слоем без `Sendsay`;
-10. Фаза 4 читается как следующий крупный слой интеграционного контура уже после VK foundation implementation, а не как повод заново спорить о payment/shipping выборе;
-11. Фазы 5-5.5 — пока не начинать как основные, пока не подтверждены ближайшие post-order tracks Фазы 4.
+10. Фазы 5, 5.5 и 6 уже truthfully закрыты как materialized workstreams;
+11. Фаза 7 тоже truthfully закрыта после repeat RC smoke/closure-check `2026-04-20`;
+12. активный следующий шаг roadmap теперь = `Фаза 8`, где tranche 1 baseline integrity contour уже materialized и validated, а remaining scope лежит в staging/deploy/rollback/backup/restore/monitoring.
 
 Простыми словами:
 план больше не нужно корректировать так, будто стабилизация и baseline еще не сделаны, будто Фаза 3 еще только начинается, будто notification hardening все еще открыт, будто payment track существует только как решение на бумаге, будто shipping остается на чистом decision stage, будто ApiShip blocker еще pending, будто checkout E2E ещё не закрыт, будто `order.placed` slice ещё только планируется, или будто bootstrap idempotency остается незакрытым hardening concern. Теперь нужно использовать уже реализованный order placement path как опору для validation первого post-order notification slice и только потом двигаться дальше по более широким storefront и release-направлениям.
