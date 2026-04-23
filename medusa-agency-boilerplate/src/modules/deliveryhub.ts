@@ -238,6 +238,7 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       connection: committedConnection,
       connection_lookup_available: connectionLookupAvailable,
       persisted_execution_reference: persistedExecutionReference,
+      shipment_execution_enabled: isDeliveryHubShipmentExecutionEnabled(),
     })
 
     this.logger_.info(
@@ -360,4 +361,8 @@ function formatDeliveryHubFulfillmentOptionName(modeCode: string) {
     default:
       return `Delivery Hub ${modeCode}`
   }
+}
+
+function isDeliveryHubShipmentExecutionEnabled() {
+  return process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED?.trim().toLowerCase() === "true"
 }

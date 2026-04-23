@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals"
+import { afterAll, beforeEach, describe, expect, it, jest } from "@jest/globals"
 import { MedusaError } from "@medusajs/framework/utils"
 import { DeliveryHubFulfillmentProvider } from "../../modules/deliveryhub"
 import { DELIVERY_HUB_MODE_CODE } from "../../modules/delivery-hub/constants"
@@ -15,6 +15,7 @@ const logger = {
 }
 
 const originalEncryptionKey = process.env.DELIVERY_HUB_ENCRYPTION_KEY
+const originalShipmentExecutionEnabled = process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED
 
 beforeEach(() => {
   logger.info.mockClear()
@@ -22,6 +23,7 @@ beforeEach(() => {
   logger.error.mockClear()
   logger.debug.mockClear()
   process.env.DELIVERY_HUB_ENCRYPTION_KEY = "test-delivery-hub-key"
+  delete process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED
 })
 
 describe("Delivery Hub provider validation seam", () => {
@@ -268,6 +270,7 @@ describe("Delivery Hub provider validation seam", () => {
             mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
             mode_supported: true,
             provider_execution_reference_present: true,
+            shipment_execution_enabled: false,
             live_adapter_call_performed: false,
             persisted_execution_ledger_write_performed: false,
           }),
@@ -295,11 +298,202 @@ describe("Delivery Hub provider validation seam", () => {
     expect(String(executionPreviewLog?.[0])).toContain('"ledger_persistence_enabled":false')
     expect(String(controlledExecutionLog?.[0])).toContain('"status":"dispatch_prepared"')
     expect(String(controlledExecutionLog?.[0])).toContain('"blocked_reason_code":"provider_dispatch_not_materialized"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"shipment_execution_enabled":false')
     expect(String(controlledExecutionLog?.[0])).toContain('"live_adapter_call_performed":false')
     expect(String(controlledExecutionLog?.[0])).not.toContain("secret-token")
     expect(String(controlledExecutionLog?.[0])).not.toContain("raw-offer-id")
   })
 
+  it("keeps dispatch blocked behind the shipment execution gate even when the contour is otherwise ready", async () => {
+    const provider = buildProvider({
+      resolvedPgConnection: buildReadOnlyLookupPgConnection([buildConnectionRow()]),
+      carts: [
+        {
+          id: "cart_1",
+          metadata: {
+            delivery_hub: {
+              selection: {
+                version: 1,
+                provider_code: "yandex",
+                connection_id: "conn_ready",
+                quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                quote_reference: createDeliveryHubQuoteReference({
+                  connection_id: "conn_ready",
+                  quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                  quote_key: "quote_provider_validation",
+                }),
+                backend_execution_reference: createDeliveryHubProviderExecutionReference({
+                  connection_id: "conn_ready",
+                  quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                  quote_key: "quote_provider_validation",
+                }),
+                quote: {
+                  carrier_code: "yandex",
+                  carrier_label: "Yandex Delivery",
+                  amount: 299,
+                  currency_code: "RUB",
+                  delivery_eta_min: 1,
+                  delivery_eta_max: 1,
+                  pickup_point_required: true,
+                  pickup_window_required: false,
+                },
+                pickup_point: {
+                  provider_point_id: "pvz_1",
+                  provider_point_code: null,
+                  name: "PVZ 1",
+                  address: "Tverskaya 1",
+                  city: "Moscow",
+                  region: null,
+                  postal_code: null,
+                  lat: null,
+                  lng: null,
+                  is_origin_dropoff_allowed: false,
+                  is_destination_pickup_allowed: true,
+                  payment_methods: [],
+                },
+                pickup_window: null,
+                correlation_id: "corr_gate_disabled",
+                updated_at: "2026-04-23T07:00:00.000Z",
+              },
+            },
+          },
+        },
+      ],
+    })
+
+    await expect(
+      provider.createFulfillment(
+        {
+          ...buildValidFulfillmentData(),
+          cart_id: "cart_1",
+          shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+          shipping_option_type_id: "deliveryhub_deliveryhub",
+          correlation_id: "corr_gate_disabled",
+          updated_at: "2026-04-23T07:00:00.000Z",
+        },
+        [{ line_item_id: "item_1", quantity: 1 }],
+        { id: "order_1", display_id: 42, currency_code: "RUB" },
+        { id: "ful_1", location_id: "sloc_1" }
+      )
+    ).resolves.toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          controlled_execution: expect.objectContaining({
+            status: "dispatch_prepared",
+            blocked_reason_code: "provider_dispatch_not_materialized",
+            blocked_reason: expect.stringContaining("DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED is not enabled"),
+            dispatch_preparation: expect.objectContaining({
+              provider_execution_reference_present: true,
+              shipment_execution_enabled: false,
+            }),
+          }),
+        }),
+      })
+    )
+  })
+
+  it("truthfully records the last direct Yandex blocker when the shipment execution gate is enabled", async () => {
+    process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
+
+    const provider = buildProvider({
+      resolvedPgConnection: buildReadOnlyLookupPgConnection([buildConnectionRow()]),
+      carts: [
+        {
+          id: "cart_1",
+          metadata: {
+            delivery_hub: {
+              selection: {
+                version: 1,
+                provider_code: "yandex",
+                connection_id: "conn_ready",
+                quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                quote_reference: createDeliveryHubQuoteReference({
+                  connection_id: "conn_ready",
+                  quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                  quote_key: "quote_provider_validation",
+                }),
+                backend_execution_reference: createDeliveryHubProviderExecutionReference({
+                  connection_id: "conn_ready",
+                  quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                  quote_key: "quote_provider_validation",
+                }),
+                quote: {
+                  carrier_code: "yandex",
+                  carrier_label: "Yandex Delivery",
+                  amount: 299,
+                  currency_code: "RUB",
+                  delivery_eta_min: 1,
+                  delivery_eta_max: 1,
+                  pickup_point_required: true,
+                  pickup_window_required: false,
+                },
+                pickup_point: {
+                  provider_point_id: "pvz_1",
+                  provider_point_code: null,
+                  name: "PVZ 1",
+                  address: "Tverskaya 1",
+                  city: "Moscow",
+                  region: null,
+                  postal_code: null,
+                  lat: null,
+                  lng: null,
+                  is_origin_dropoff_allowed: false,
+                  is_destination_pickup_allowed: true,
+                  payment_methods: [],
+                },
+                pickup_window: null,
+                correlation_id: "corr_enabled_boundary",
+                updated_at: "2026-04-23T07:00:00.000Z",
+              },
+            },
+          },
+        },
+      ],
+    })
+
+    await expect(
+      provider.createFulfillment(
+        {
+          ...buildValidFulfillmentData(),
+          cart_id: "cart_1",
+          shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+          shipping_option_type_id: "deliveryhub_deliveryhub",
+          correlation_id: "corr_enabled_boundary",
+          updated_at: "2026-04-23T07:00:00.000Z",
+        },
+        [{ line_item_id: "item_1", quantity: 1 }],
+        { id: "order_1", display_id: 42, currency_code: "RUB" },
+        { id: "ful_1", location_id: "sloc_1" }
+      )
+    ).resolves.toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          controlled_execution: expect.objectContaining({
+            status: "dispatch_prepared",
+            blocked_reason_code: "provider_dispatch_not_materialized",
+            blocked_reason: expect.stringContaining("origin_point_id required"),
+            dispatch_preparation: expect.objectContaining({
+              provider_execution_reference_present: true,
+              shipment_execution_enabled: true,
+            }),
+            anti_leak_confirmations: {
+              credentials_included: false,
+              raw_provider_payloads_included: false,
+              raw_offer_ids_included: false,
+            },
+          }),
+        }),
+      })
+    )
+
+    const controlledExecutionLog = [...logger.info.mock.calls]
+      .reverse()
+      .find((call) => String(call[0]).includes("controlled execution seam evaluated"))
+
+    expect(String(controlledExecutionLog?.[0])).toContain('"shipment_execution_enabled":true')
+    expect(String(controlledExecutionLog?.[0])).not.toContain("quote_provider_validation")
+  })
+ 
   it("keeps the old blocker when backend execution reference cannot materialize without encryption key", async () => {
     delete process.env.DELIVERY_HUB_ENCRYPTION_KEY
 
@@ -662,6 +856,20 @@ describe("Delivery Hub provider validation seam", () => {
       message: expect.stringContaining('Delivery Hub option_data.provider_code expected "deliveryhub" but received "foreign_provider".'),
     })
   })
+})
+
+afterAll(() => {
+  if (typeof originalEncryptionKey === "string") {
+    process.env.DELIVERY_HUB_ENCRYPTION_KEY = originalEncryptionKey
+  } else {
+    delete process.env.DELIVERY_HUB_ENCRYPTION_KEY
+  }
+
+  if (typeof originalShipmentExecutionEnabled === "string") {
+    process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = originalShipmentExecutionEnabled
+  } else {
+    delete process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED
+  }
 })
 
 function buildProvider(input?: {

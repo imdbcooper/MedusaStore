@@ -67,6 +67,7 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
     mode_code: DeliveryHubFulfillmentModeCode | null
     mode_supported: boolean
     provider_execution_reference_present: boolean
+    shipment_execution_enabled: boolean
     live_adapter_call_performed: false
     persisted_execution_ledger_write_performed: false
   }
@@ -102,6 +103,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
   connection: DeliveryConnectionRecord | null
   connection_lookup_available: boolean
   persisted_execution_reference: DeliveryHubProviderExecutionReference | null
+  shipment_execution_enabled: boolean
 }): DeliveryHubControlledFulfillmentExecutionResult {
   const modeCode = input.handoff?.quote_type ?? null
   const modeSupported = isDirectYandexModeSupported(modeCode)
@@ -121,6 +123,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection: input.connection,
       connection_lookup_available: input.connection_lookup_available,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
       blocked_reason_code: "delivery_hub_handoff_missing",
@@ -140,6 +143,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection: null,
       connection_lookup_available: false,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
       blocked_reason_code: "delivery_connection_lookup_unavailable",
@@ -159,6 +163,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
       blocked_reason_code: "delivery_connection_missing",
@@ -178,6 +183,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
       blocked_reason_code: "delivery_connection_disabled",
@@ -197,6 +203,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
       blocked_reason_code: "delivery_connection_not_active",
@@ -216,6 +223,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
       blocked_reason_code: "delivery_connection_credentials_not_ready",
@@ -235,6 +243,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
       blocked_reason_code: "delivery_connection_provider_not_supported",
@@ -254,6 +263,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: false,
       blocked_reason_code: "delivery_mode_not_supported",
@@ -273,6 +283,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: false,
+      shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: true,
       blocked_reason_code: "provider_execution_reference_unavailable",
@@ -286,6 +297,26 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
     })
   }
 
+  if (!input.shipment_execution_enabled) {
+    return buildBlockedResult({
+      execution_plan_preview: input.execution_plan_preview,
+      handoff: input.handoff,
+      execution_ledger_evidence: input.execution_ledger_evidence,
+      connection,
+      connection_lookup_available: true,
+      persisted_execution_reference_present: true,
+      shipment_execution_enabled: false,
+      mode_code: modeCode,
+      mode_supported: true,
+      blocked_reason_code: "provider_dispatch_not_materialized",
+      blocked_reason:
+        "Direct Yandex create-shipment dispatch remains blocked because DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED is not enabled, so createFulfillment() must stay on the no-network controlled seam.",
+      status: "dispatch_prepared",
+      result_decision: "dispatch_prepared_but_blocked",
+      blocking_stage: "provider_dispatch_contract",
+    })
+  }
+
   return buildBlockedResult({
     execution_plan_preview: input.execution_plan_preview,
     handoff: input.handoff,
@@ -293,11 +324,11 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
     connection,
     connection_lookup_available: true,
     persisted_execution_reference_present: true,
+    shipment_execution_enabled: true,
     mode_code: modeCode,
     mode_supported: true,
     blocked_reason_code: "provider_dispatch_not_materialized",
-    blocked_reason:
-      "Direct Yandex create-shipment dispatch now has a backend-only persisted execution reference, but the live provider dispatch adapter path is still intentionally not materialized in createFulfillment().",
+    blocked_reason: resolveDirectYandexDispatchMaterializationBoundary(modeCode),
     status: "dispatch_prepared",
     result_decision: "dispatch_prepared_but_blocked",
     blocking_stage: "provider_dispatch_contract",
@@ -313,6 +344,7 @@ type BuildBlockedResultInput = {
   mode_code: DeliveryHubFulfillmentModeCode | null
   mode_supported: boolean
   persisted_execution_reference_present: boolean
+  shipment_execution_enabled: boolean
   blocked_reason_code: DeliveryHubControlledFulfillmentExecutionBlockReasonCode
   blocked_reason: string
   status: DeliveryHubControlledFulfillmentExecutionResult["status"]
@@ -360,6 +392,7 @@ function buildBlockedResult(
       mode_code: input.handoff?.quote_type ?? input.mode_code,
       mode_supported: input.mode_supported,
       provider_execution_reference_present: input.persisted_execution_reference_present,
+      shipment_execution_enabled: input.shipment_execution_enabled,
       live_adapter_call_performed: false,
       persisted_execution_ledger_write_performed: false,
     },
@@ -398,4 +431,18 @@ function isDirectYandexModeSupported(modeCode: DeliveryHubFulfillmentModeCode | 
     modeCode === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint ||
     modeCode === DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint
   )
+}
+
+function resolveDirectYandexDispatchMaterializationBoundary(
+  modeCode: DeliveryHubFulfillmentModeCode | null
+) {
+  if (modeCode === DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint) {
+    return "Direct Yandex create-shipment dispatch remains blocked because the committed backend-only handoff does not persist the origin_point_id required to truthfully materialize dropoff-point-to-pickup-point provider dispatch."
+  }
+
+  if (modeCode === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint) {
+    return "Direct Yandex create-shipment dispatch remains blocked because the committed backend-only handoff does not resolve the provider warehouse reference required to truthfully materialize warehouse-to-pickup-point provider dispatch."
+  }
+
+  return "Direct Yandex create-shipment dispatch remains blocked because the committed backend-only handoff still lacks the provider-origin dispatch context required to truthfully materialize a live adapter call."
 }
