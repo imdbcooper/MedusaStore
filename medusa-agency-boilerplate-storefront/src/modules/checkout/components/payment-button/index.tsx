@@ -117,6 +117,10 @@ const YooKassaPaymentButton = ({
 
       window.location.assign(confirmationUrl)
     } catch (err: any) {
+      if (err?.message === "NEXT_REDIRECT") {
+        return
+      }
+
       console.error("[YooKassa checkout] Failed to continue checkout", {
         cartId: cart.id,
         message: err?.message,

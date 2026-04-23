@@ -1,9 +1,9 @@
 import { HttpTypes } from "@medusajs/types"
 import { Container } from "@medusajs/ui"
 import { storefrontConfig } from "@lib/storefront-config"
+import { ComparableAddress } from "@lib/util/compare-addresses"
 import Checkbox from "@modules/common/components/checkbox"
 import Input from "@modules/common/components/input"
-import { mapKeys } from "lodash"
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import AddressSelect from "../address-select"
 import CountrySelect from "../country-select"
@@ -87,6 +87,21 @@ const ShippingAddress = ({
         (a) => a.country_code && countriesInRegion?.includes(a.country_code)
       ),
     [customer?.addresses, countriesInRegion]
+  )
+
+  const comparableAddressInput = useMemo<ComparableAddress>(
+    () => ({
+      first_name: formData["shipping_address.first_name"],
+      last_name: formData["shipping_address.last_name"],
+      address_1: formData["shipping_address.address_1"],
+      company: formData["shipping_address.company"],
+      postal_code: formData["shipping_address.postal_code"],
+      city: formData["shipping_address.city"],
+      country_code: formData["shipping_address.country_code"],
+      province: formData["shipping_address.province"],
+      phone: formData["shipping_address.phone"],
+    }),
+    [formData]
   )
 
   const setFormAddress = (
@@ -200,11 +215,7 @@ const ShippingAddress = ({
           </p>
           <AddressSelect
             addresses={customer.addresses}
-            addressInput={
-              mapKeys(formData, (_, key) =>
-                key.replace("shipping_address.", "")
-              ) as HttpTypes.StoreCartAddress
-            }
+            addressInput={comparableAddressInput}
             onSelect={setFormAddress}
           />
         </Container>

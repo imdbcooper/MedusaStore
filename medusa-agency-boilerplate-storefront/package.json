@@ -8,10 +8,11 @@
     "medusa-storefront"
   ],
   "scripts": {
-    "dev": "next dev --turbopack -p ${STOREFRONT_PORT:-8000}",
+    "dev": "next dev -p ${STOREFRONT_PORT:-8000}",
     "build": "next build",
     "start": "next start -p ${STOREFRONT_PORT:-8000}",
     "lint": "next lint",
+    "typecheck": "tsc --noEmit",
     "analyze": "ANALYZE=true next build"
   },
   "dependencies": {
