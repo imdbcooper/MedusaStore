@@ -1906,6 +1906,74 @@ export type DeliveryHubSelectionWriteSeamPreviewModel = {
   mutation_intent: false
 }
 
+export type DeliveryHubWriteIntentContractPreviewStatus =
+  | "informational_only"
+  | "intent_shape_available"
+  | "intent_incomplete"
+  | "blocked"
+
+export type DeliveryHubWriteIntentContractPreviewPrerequisiteKey =
+  | "cart_id"
+  | "connection_id"
+  | "quote_type"
+  | "quote_reference"
+  | "quote"
+  | "pickup_point"
+  | "pickup_window"
+  | "selection_version"
+  | "shipping_option_parity"
+  | "projected_commit_parity"
+  | "selection_write_seam"
+
+export type DeliveryHubWriteIntentContractPreviewPrerequisiteStatus =
+  | "satisfied"
+  | "missing"
+  | "blocked"
+  | "informational_only"
+  | "not_required"
+
+export type DeliveryHubWriteIntentContractPreviewPrerequisite = {
+  key: DeliveryHubWriteIntentContractPreviewPrerequisiteKey
+  label: string
+  status: DeliveryHubWriteIntentContractPreviewPrerequisiteStatus
+  detail_label: string
+}
+
+export type DeliveryHubWriteIntentContractPreviewDisabledAction =
+  | "selection_action"
+  | "persist_selection"
+  | "clear_selection"
+  | "set_shipping_method"
+  | "network_request"
+
+export type DeliveryHubWriteIntentContractPreviewBlockedReason =
+  | DeliveryHubSelectionWriteSeamPreviewBlocker
+  | "quote_reference_missing"
+  | "pickup_point_missing"
+  | "pickup_window_missing"
+
+export type DeliveryHubWriteIntentContractPreviewModel = {
+  tone: "neutral" | "positive" | "warning"
+  status: DeliveryHubWriteIntentContractPreviewStatus
+  status_label: string
+  summary_label: string
+  intent_target_label: string
+  preview_label: string
+  shopper_safe_intent_target: "POST /store/delivery/selection"
+  required_prerequisite_count: number
+  satisfied_prerequisite_count: number
+  missing_prerequisite_count: number
+  blocked_prerequisite_count: number
+  prerequisites: DeliveryHubWriteIntentContractPreviewPrerequisite[]
+  blocked_reasons: DeliveryHubWriteIntentContractPreviewBlockedReason[]
+  disabled_actions: DeliveryHubWriteIntentContractPreviewDisabledAction[]
+  hint_messages: string[]
+  mutation_intent: false
+  submit_enabled: false
+  network_required_now: false
+  dry_run_only: true
+}
+
 export type DeliveryHubShippingOptionParityPreviewVerdict =
   | "informational_only"
   | "parity_partial"
@@ -5021,6 +5089,15 @@ function buildDeliveryHubSelectionWriteSeamPreviewField(input: {
   return input
 }
 
+function buildDeliveryHubWriteIntentContractPreviewPrerequisite(input: {
+  key: DeliveryHubWriteIntentContractPreviewPrerequisiteKey
+  label: string
+  status: DeliveryHubWriteIntentContractPreviewPrerequisiteStatus
+  detail_label: string
+}): DeliveryHubWriteIntentContractPreviewPrerequisite {
+  return input
+}
+
 export function buildDeliveryHubSelectionWriteSeamPreviewModel(
   input: DeliveryHubNeutralSelectionRehearsalInput = {}
 ): DeliveryHubSelectionWriteSeamPreviewModel {
@@ -5326,6 +5403,330 @@ export function buildDeliveryHubSelectionWriteSeamPreviewModel(
     mismatch_reasons: mismatchReasons,
     dry_run_only: true,
     mutation_intent: false,
+  }
+}
+
+export function buildDeliveryHubWriteIntentContractPreviewModel(
+  input: DeliveryHubNeutralSelectionRehearsalInput = {}
+): DeliveryHubWriteIntentContractPreviewModel {
+  const candidate = getDeliveryHubNeutralRehearsalCandidate(input)
+  const shippingOptionParity = buildDeliveryHubShippingOptionParityPreviewModel(input)
+  const projectedCommitParity = buildDeliveryHubProjectedCommitParityPreviewModel(input)
+  const selectionWriteSeam = buildDeliveryHubSelectionWriteSeamPreviewModel(input)
+  const candidatePresent = Boolean(
+    input.cart_id ||
+      candidate.quoteSummary ||
+      candidate.quoteReference ||
+      candidate.quoteType ||
+      candidate.connection.connection_id
+  )
+  const blockedReasons = Array.from(
+    new Set<DeliveryHubWriteIntentContractPreviewBlockedReason>([
+      ...selectionWriteSeam.blocked_codes,
+      ...(candidate.quoteReference ? [] : (["quote_reference_missing"] as const)),
+      ...(candidate.pickupPointRequired && !candidate.pickupPoint
+        ? (["pickup_point_missing"] as const)
+        : []),
+      ...(candidate.pickupWindowRequired && !candidate.pickupWindow
+        ? (["pickup_window_missing"] as const)
+        : []),
+    ])
+  )
+  const blocked = selectionWriteSeam.verdict === "blocked"
+  const prerequisites: DeliveryHubWriteIntentContractPreviewPrerequisite[] = [
+    buildDeliveryHubWriteIntentContractPreviewPrerequisite({
+      key: "cart_id",
+      label: "cart_id",
+      status: !candidatePresent
+        ? "informational_only"
+        : input.cart_id?.trim()
+          ? blocked
+            ? "blocked"
+            : "satisfied"
+          : "missing",
+      detail_label: !candidatePresent
+        ? "Write-intent contract preview stays informational until shopper-safe neutral context is visible."
+        : input.cart_id?.trim()
+          ? `Intent preview can scope to cart_id ${input.cart_id.trim()} from the existing preview stack.`
+          : "Intent preview still lacks cart_id context.",
+    }),
+    buildDeliveryHubWriteIntentContractPreviewPrerequisite({
+      key: "connection_id",
+      label: "connection_id",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.connection.connection_id
+          ? blocked
+            ? "blocked"
+            : "satisfied"
+          : "missing",
+      detail_label: !candidatePresent
+        ? "Write-intent contract preview stays informational until shopper-safe neutral context is visible."
+        : candidate.connection.connection_id
+          ? `Intent preview can derive connection_id ${candidate.connection.connection_id} from existing neutral surfaces.`
+          : "Intent preview still lacks connection_id.",
+    }),
+    buildDeliveryHubWriteIntentContractPreviewPrerequisite({
+      key: "quote_type",
+      label: "quote_type",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.quoteType
+          ? blocked
+            ? "blocked"
+            : "satisfied"
+          : "missing",
+      detail_label: !candidatePresent
+        ? "Write-intent contract preview stays informational until shopper-safe neutral context is visible."
+        : candidate.quoteType
+          ? `Intent preview can derive quote_type ${candidate.quoteType} from existing neutral surfaces.`
+          : "Intent preview still lacks quote_type.",
+    }),
+    buildDeliveryHubWriteIntentContractPreviewPrerequisite({
+      key: "quote_reference",
+      label: "quote_reference",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.quoteReference
+          ? blocked
+            ? "blocked"
+            : "satisfied"
+          : "missing",
+      detail_label: !candidatePresent
+        ? "Write-intent contract preview stays informational until shopper-safe neutral context is visible."
+        : candidate.quoteReference
+          ? "Intent preview can reuse the backend-issued quote_reference already visible in neutral preview surfaces."
+          : "Intent preview still lacks a backend-issued quote_reference.",
+    }),
+    buildDeliveryHubWriteIntentContractPreviewPrerequisite({
+      key: "quote",
+      label: "quote",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.quoteSummary
+          ? blocked
+            ? "blocked"
+            : "satisfied"
+          : "missing",
+      detail_label: !candidatePresent
+        ? "Write-intent contract preview stays informational until shopper-safe neutral context is visible."
+        : candidate.quoteSummary
+          ? "Intent preview can reuse shopper-safe quote summary fields already visible in neutral preview surfaces."
+          : "Intent preview still lacks shopper-safe quote summary fields.",
+    }),
+    buildDeliveryHubWriteIntentContractPreviewPrerequisite({
+      key: "pickup_point",
+      label: "pickup_point",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.pickupPointRequired
+          ? candidate.pickupPoint
+            ? blocked
+              ? "blocked"
+              : "satisfied"
+            : "missing"
+          : candidate.pickupPoint
+            ? blocked
+              ? "blocked"
+              : "satisfied"
+            : "not_required",
+      detail_label: !candidatePresent
+        ? "Write-intent contract preview stays informational until shopper-safe neutral context is visible."
+        : candidate.pickupPointRequired
+          ? candidate.pickupPoint
+            ? "Intent preview already has the required pickup_point fragment."
+            : "Intent preview still lacks a required pickup_point fragment."
+          : candidate.pickupPoint
+            ? "Intent preview already includes an optional pickup_point fragment."
+            : "Intent preview does not currently require pickup_point.",
+    }),
+    buildDeliveryHubWriteIntentContractPreviewPrerequisite({
+      key: "pickup_window",
+      label: "pickup_window",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.pickupWindowRequired
+          ? candidate.pickupWindow
+            ? blocked
+              ? "blocked"
+              : "satisfied"
+            : "missing"
+          : candidate.pickupWindow
+            ? blocked
+              ? "blocked"
+              : "satisfied"
+            : "not_required",
+      detail_label: !candidatePresent
+        ? "Write-intent contract preview stays informational until shopper-safe neutral context is visible."
+        : candidate.pickupWindowRequired
+          ? candidate.pickupWindow
+            ? "Intent preview already has the required pickup_window fragment."
+            : "Intent preview still lacks a required pickup_window fragment."
+          : candidate.pickupWindow
+            ? "Intent preview already includes an optional pickup_window fragment."
+            : "Intent preview does not currently require pickup_window.",
+    }),
+    buildDeliveryHubWriteIntentContractPreviewPrerequisite({
+      key: "selection_version",
+      label: "selection_version",
+      status: !candidatePresent
+        ? "informational_only"
+        : selectionWriteSeam.selection_version !== null
+          ? blocked
+            ? "blocked"
+            : "satisfied"
+          : "missing",
+      detail_label: !candidatePresent
+        ? "Write-intent contract preview stays informational until shopper-safe neutral context is visible."
+        : selectionWriteSeam.selection_version !== null
+          ? `Intent preview can anchor to neutral selection version ${selectionWriteSeam.selection_version}.`
+          : "Intent preview still lacks a stable neutral selection version anchor.",
+    }),
+    buildDeliveryHubWriteIntentContractPreviewPrerequisite({
+      key: "shipping_option_parity",
+      label: "shipping_option_parity",
+      status: !candidatePresent
+        ? "informational_only"
+        : shippingOptionParity.verdict === "blocked"
+          ? "blocked"
+          : shippingOptionParity.verdict === "parity_aligned"
+            ? "satisfied"
+            : "informational_only",
+      detail_label: !candidatePresent
+        ? "Write-intent contract preview stays informational until shopper-safe neutral context is visible."
+        : shippingOptionParity.verdict === "blocked"
+          ? "Shipping-option parity preview currently exposes a blocker for future write-intent shaping."
+          : shippingOptionParity.verdict === "parity_aligned"
+            ? "Shipping-option parity preview is structurally aligned on shopper-safe fields."
+            : "Shipping-option parity preview remains informational but still useful as a diagnostic prerequisite surface.",
+    }),
+    buildDeliveryHubWriteIntentContractPreviewPrerequisite({
+      key: "projected_commit_parity",
+      label: "projected_commit_parity",
+      status: !candidatePresent
+        ? "informational_only"
+        : projectedCommitParity.verdict === "blocked"
+          ? "blocked"
+          : projectedCommitParity.commit_payload_readiness === "matched"
+            ? "satisfied"
+            : projectedCommitParity.commit_payload_readiness === "partial"
+              ? "missing"
+              : "informational_only",
+      detail_label: !candidatePresent
+        ? "Write-intent contract preview stays informational until shopper-safe neutral context is visible."
+        : projectedCommitParity.verdict === "blocked"
+          ? "Projected commit parity preview currently exposes a blocker for future write-intent shaping."
+          : projectedCommitParity.commit_payload_readiness === "matched"
+            ? "Projected commit parity preview already matches the shopper-safe commit payload shape."
+            : projectedCommitParity.commit_payload_readiness === "partial"
+              ? "Projected commit parity preview still lacks one or more shopper-safe fragments."
+              : "Projected commit parity preview remains informational only.",
+    }),
+    buildDeliveryHubWriteIntentContractPreviewPrerequisite({
+      key: "selection_write_seam",
+      label: "selection_write_seam",
+      status: !candidatePresent
+        ? "informational_only"
+        : selectionWriteSeam.verdict === "blocked"
+          ? "blocked"
+          : selectionWriteSeam.verdict === "write_shape_preview_available"
+            ? "satisfied"
+            : selectionWriteSeam.verdict === "write_shape_preview_incomplete"
+              ? "missing"
+              : "informational_only",
+      detail_label: !candidatePresent
+        ? "Write-intent contract preview stays informational until shopper-safe neutral context is visible."
+        : selectionWriteSeam.verdict === "blocked"
+          ? "Selection write seam preview is blocked by existing readiness or parity blockers."
+          : selectionWriteSeam.verdict === "write_shape_preview_available"
+            ? "Selection write seam preview already exposes a structurally derivable shopper-safe request shape."
+            : selectionWriteSeam.verdict === "write_shape_preview_incomplete"
+              ? "Selection write seam preview remains incomplete because one or more shopper-safe fragments are still missing."
+              : "Selection write seam preview remains informational only.",
+    }),
+  ]
+  const requiredPrerequisites = prerequisites.filter(
+    (prerequisite) => prerequisite.status !== "informational_only"
+  )
+  const satisfiedPrerequisiteCount = prerequisites.filter(
+    (prerequisite) =>
+      prerequisite.status === "satisfied" || prerequisite.status === "not_required"
+  ).length
+  const missingPrerequisiteCount = prerequisites.filter(
+    (prerequisite) => prerequisite.status === "missing"
+  ).length
+  const blockedPrerequisiteCount = prerequisites.filter(
+    (prerequisite) => prerequisite.status === "blocked"
+  ).length
+  const status: DeliveryHubWriteIntentContractPreviewStatus = !candidatePresent
+    ? "informational_only"
+    : blockedPrerequisiteCount > 0
+      ? "blocked"
+      : missingPrerequisiteCount > 0
+        ? "intent_incomplete"
+        : "intent_shape_available"
+
+  return {
+    tone:
+      status === "intent_shape_available"
+        ? "positive"
+        : status === "blocked"
+          ? "warning"
+          : "neutral",
+    status,
+    status_label:
+      status === "intent_shape_available"
+        ? "Write-intent contract preview looks structurally available"
+        : status === "blocked"
+          ? "Write-intent contract preview is blocked"
+          : status === "intent_incomplete"
+            ? "Write-intent contract preview is still incomplete"
+            : "Write-intent contract preview is informational only",
+    summary_label:
+      status === "intent_shape_available"
+        ? "Existing preview-only surfaces already expose a shopper-safe future write-intent contract shape for diagnostics only."
+        : status === "blocked"
+          ? "Existing preview-only surfaces still expose readiness or parity blockers, so write-intent contract preview remains diagnostic-only."
+          : status === "intent_incomplete"
+            ? "Existing preview-only surfaces expose part of the future write-intent contract shape, but one or more required shopper-safe fragments are still missing."
+            : "Write-intent contract preview remains informational until enough shopper-safe neutral context is available.",
+    intent_target_label:
+      "Future write-intent target preview: POST /store/delivery/selection",
+    preview_label:
+      "Delivery Hub write-intent contract preview · diagnostic only · no shopper action path · no network path",
+    shopper_safe_intent_target: "POST /store/delivery/selection",
+    required_prerequisite_count: requiredPrerequisites.length,
+    satisfied_prerequisite_count: satisfiedPrerequisiteCount,
+    missing_prerequisite_count: missingPrerequisiteCount,
+    blocked_prerequisite_count: blockedPrerequisiteCount,
+    prerequisites,
+    blocked_reasons: blockedReasons,
+    disabled_actions: [
+      "selection_action",
+      "persist_selection",
+      "clear_selection",
+      "set_shipping_method",
+      "network_request",
+    ],
+    hint_messages: uniqueDeliveryHubMessages([
+      "Preview-only write-intent contract layer only: no persistence, clearing, checkout action, or shipping-method mutation is performed here.",
+      "This contract preview is diagnostic only and does not create network intent for POST /store/delivery/selection.",
+      "The active checkout commit path remains legacy ApiShip.",
+      blockedReasons.includes("quote_reference_missing")
+        ? "Backend-issued quote_reference is still required before a future shopper-safe write-intent shape can be considered available."
+        : null,
+      blockedReasons.includes("pickup_point_missing")
+        ? "Required pickup_point fragment is still missing from the shopper-safe preview stack."
+        : null,
+      blockedReasons.includes("pickup_window_missing")
+        ? "Required pickup_window fragment is still missing from the shopper-safe preview stack."
+        : null,
+      ...selectionWriteSeam.mismatch_reasons,
+    ]).slice(0, 6),
+    mutation_intent: false,
+    submit_enabled: false,
+    network_required_now: false,
+    dry_run_only: true,
   }
 }
 

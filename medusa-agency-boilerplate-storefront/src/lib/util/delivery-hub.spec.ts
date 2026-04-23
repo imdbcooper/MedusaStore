@@ -14,6 +14,7 @@ import {
   buildDeliveryHubReadinessPreviewModel,
   buildDeliveryHubSelectionWriteSeamPreviewModel,
   buildDeliveryHubShadowCatalogPreviewModel,
+  buildDeliveryHubWriteIntentContractPreviewModel,
   buildDeliveryHubShadowCutoverBlockersPreviewModel,
   buildDeliveryHubShadowCutoverNextStepsPreviewModel,
   buildDeliveryHubShadowOrchestrationRecommendationPreviewModel,
@@ -2615,7 +2616,385 @@ test("buildDeliveryHubSelectionWriteSeamPreviewModel stays shopper-safe preview-
   }
 })
 
+test("buildDeliveryHubWriteIntentContractPreviewModel reports intent shape available from existing preview surfaces", () => {
+  const preview = buildDeliveryHubWriteIntentContractPreviewModel({
+    cart_id: "cart_write_intent_ready",
+    readiness: {
+      ok: true,
+      cart_id: "cart_write_intent_ready",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 7,
+        connection_id: "conn_write_intent_ready",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_write_intent_ready", version: 2 },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: true,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_write_intent_ready",
+          provider_point_code: null,
+          name: "Write intent PVZ",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: {
+          date: "2026-04-23",
+          time_from: "10:00",
+          time_to: "14:00",
+          interval_utc: {
+            from: "2026-04-23T07:00:00.000Z",
+            to: "2026-04-23T11:00:00.000Z",
+          },
+          label: "23 Apr · 10:00–14:00",
+        },
+        updated_at: "2026-04-23T10:00:00.000Z",
+      },
+      quote_context: {
+        connection: {
+          connection_id: "conn_write_intent_ready",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_write_intent_ready", version: 2 },
+        pickup_point_required: true,
+        pickup_window_required: true,
+        updated_at: "2026-04-23T10:00:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  assert.equal(preview.status, "intent_shape_available")
+  assert.equal(preview.mutation_intent, false)
+  assert.equal(preview.submit_enabled, false)
+  assert.equal(preview.network_required_now, false)
+  assert.equal(preview.blocked_reasons.length, 0)
+  assert.equal(preview.disabled_actions.includes("network_request"), true)
+})
+
+test("buildDeliveryHubWriteIntentContractPreviewModel reports incomplete state for missing quote_reference", () => {
+  const preview = buildDeliveryHubWriteIntentContractPreviewModel({
+    cart_id: "cart_write_intent_missing_quote_reference",
+    readiness: {
+      ok: true,
+      cart_id: "cart_write_intent_missing_quote_reference",
+      status: "ready",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_write_intent_missing_quote_reference",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: null as never,
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-23T10:05:00.000Z",
+      },
+    } as any,
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  assert.equal(preview.status, "intent_incomplete")
+  assert.equal(preview.blocked_reasons.includes("quote_reference_missing"), true)
+  assert.equal(
+    preview.prerequisites.find((prerequisite) => prerequisite.key === "quote_reference")?.status,
+    "missing"
+  )
+})
+
+test("buildDeliveryHubWriteIntentContractPreviewModel reports incomplete state for missing pickup point or pickup window", () => {
+  const missingPickupPoint = buildDeliveryHubWriteIntentContractPreviewModel({
+    cart_id: "cart_write_intent_missing_pickup_point",
+    readiness: {
+      ok: true,
+      cart_id: "cart_write_intent_missing_pickup_point",
+      status: "not_ready",
+      issues: [
+        {
+          code: "pickup_point_missing",
+          message: "Pickup point is required",
+          field: "pickup_point",
+        },
+      ],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_write_intent_missing_pickup_point",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_write_intent_missing_pickup_point", version: 1 },
+        pickup_point_required: true,
+        pickup_window_required: false,
+        updated_at: "2026-04-23T10:10:00.000Z",
+      },
+    },
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "quote_write_intent_missing_pickup_point", version: 1 },
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_point_ids: [],
+          pickup_window_required: false,
+        },
+      ],
+    },
+    pickup_points: { ok: true, points: [] },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  const missingPickupWindow = buildDeliveryHubWriteIntentContractPreviewModel({
+    cart_id: "cart_write_intent_missing_pickup_window",
+    readiness: {
+      ok: true,
+      cart_id: "cart_write_intent_missing_pickup_window",
+      status: "not_ready",
+      issues: [
+        {
+          code: "pickup_window_missing",
+          message: "Pickup window is required",
+          field: "pickup_window",
+        },
+      ],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_write_intent_missing_pickup_window",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_write_intent_missing_pickup_window", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: true,
+        updated_at: "2026-04-23T10:15:00.000Z",
+      },
+    },
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "quote_write_intent_missing_pickup_window", version: 1 },
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: false,
+          pickup_point_ids: [],
+          pickup_window_required: true,
+        },
+      ],
+    },
+    pickup_windows: { ok: true, pickup_windows: [] },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  assert.equal(missingPickupPoint.status, "intent_incomplete")
+  assert.equal(missingPickupPoint.blocked_reasons.includes("pickup_point_missing"), true)
+  assert.equal(
+    missingPickupPoint.prerequisites.find((prerequisite) => prerequisite.key === "pickup_point")
+      ?.status,
+    "missing"
+  )
+
+  assert.equal(missingPickupWindow.status, "intent_incomplete")
+  assert.equal(missingPickupWindow.blocked_reasons.includes("pickup_window_missing"), true)
+  assert.equal(
+    missingPickupWindow.prerequisites.find((prerequisite) => prerequisite.key === "pickup_window")
+      ?.status,
+    "missing"
+  )
+})
+
+test("buildDeliveryHubWriteIntentContractPreviewModel reports blocked state for degraded readiness or parity blockers", () => {
+  const preview = buildDeliveryHubWriteIntentContractPreviewModel({
+    cart_id: "cart_write_intent_blocked",
+    readiness: {
+      ok: true,
+      cart_id: "cart_write_intent_blocked",
+      status: "not_ready",
+      issues: [
+        {
+          code: "connection_disabled",
+          message: "Connection disabled",
+          field: "connection_id",
+        },
+      ],
+      selection: {
+        version: 2,
+        connection_id: "conn_write_intent_blocked",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_write_intent_blocked", version: 1 },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: false,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_write_intent_blocked",
+          provider_point_code: null,
+          name: "Blocked PVZ",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-23T10:20:00.000Z",
+      },
+      quote_context: {
+        connection: {
+          connection_id: "conn_write_intent_blocked",
+          state: "disabled",
+          ready: false,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_write_intent_blocked", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-23T10:20:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: false,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  assert.equal(preview.status, "blocked")
+  assert.ok(preview.blocked_reasons.length > 0)
+  assert.equal(preview.blocked_prerequisite_count > 0, true)
+})
+
+test("buildDeliveryHubWriteIntentContractPreviewModel stays shopper-safe preview-only with no submit wording or network intent", () => {
+  const preview = buildDeliveryHubWriteIntentContractPreviewModel({
+    cart_id: "cart_write_intent_safe",
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: false,
+      legacy_flow_kind: null,
+      legacy_selection_fresh: false,
+      legacy_method_label: null,
+    },
+  }) as Record<string, unknown>
+  const textSurface = [
+    preview["status_label"],
+    preview["summary_label"],
+    preview["preview_label"],
+    preview["intent_target_label"],
+    ...(Array.isArray(preview["hint_messages"]) ? (preview["hint_messages"] as string[]) : []),
+    ...(Array.isArray(preview["blocked_reasons"]) ? (preview["blocked_reasons"] as string[]) : []),
+    ...(Array.isArray(preview["disabled_actions"]) ? (preview["disabled_actions"] as string[]) : []),
+    ...((Array.isArray(preview["prerequisites"])
+      ? (preview["prerequisites"] as Array<Record<string, unknown>>).flatMap((prerequisite) => [
+          prerequisite["label"],
+          prerequisite["status"],
+          prerequisite["detail_label"],
+        ])
+      : []) as Array<string | unknown>),
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ")
+    .toLowerCase()
+
+  assert.equal(preview["mutation_intent"], false)
+  assert.equal(preview["submit_enabled"], false)
+  assert.equal(preview["network_required_now"], false)
+  assert.equal(textSurface.includes("activation"), false)
+  assert.equal(textSurface.includes("save"), false)
+  assert.equal(textSurface.includes("submit"), false)
+  for (const forbidden of [
+    "provider_code",
+    "quote_key",
+    "raw_reference",
+    "token",
+    "secret",
+    "credentials",
+    "provider_quote_id",
+    "yandex",
+  ]) {
+    assert.equal(textSurface.includes(forbidden), false, forbidden)
+  }
+})
+
 test("delivery-hub util preview stack remains no-network only for selection write seam", () => {
+  const source = readFileSync(new URL("./delivery-hub.ts", import.meta.url), "utf8")
+
+  assert.equal(source.includes("fetch("), false)
+  assert.equal(source.includes("axios"), false)
+  assert.equal(source.includes("XMLHttpRequest"), false)
+})
+
+test("delivery-hub util preview stack remains no-network only for write intent contract seam", () => {
   const source = readFileSync(new URL("./delivery-hub.ts", import.meta.url), "utf8")
 
   assert.equal(source.includes("fetch("), false)

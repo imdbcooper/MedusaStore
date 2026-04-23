@@ -44,6 +44,7 @@ import {
   buildDeliveryHubProjectedCommitParityPreviewModel,
   buildDeliveryHubSelectionWriteSeamPreviewModel,
   buildDeliveryHubShippingOptionParityPreviewModel,
+  buildDeliveryHubWriteIntentContractPreviewModel,
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
   type DeliveryHubNeutralSelectionRehearsalInput,
   type DeliveryHubNeutralSelectionRehearsalModel,
@@ -1127,6 +1128,10 @@ const Shipping: React.FC<ShippingProps> = ({
     buildDeliveryHubSelectionWriteSeamPreviewModel(
       deliveryHubRehearsalState.preview_input
     )
+  const deliveryHubWriteIntentContractPreview =
+    buildDeliveryHubWriteIntentContractPreviewModel(
+      deliveryHubRehearsalState.preview_input
+    )
   const deliveryHubHandoffContractMatrixPreview =
     buildDeliveryHubHandoffContractMatrixPreviewModel(
       deliveryHubRehearsalState.preview_input
@@ -1817,6 +1822,60 @@ const Shipping: React.FC<ShippingProps> = ({
                     <div className="text-ui-fg-muted txt-small">
                       Preview blockers: {deliveryHubSelectionWriteSeamPreview.blocked_codes.join(", ")}
                     </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="border-t border-ui-border-base pt-4">
+                <div className="flex flex-col gap-y-2">
+                  <Text className="text-ui-fg-base txt-medium-plus">
+                    Delivery Hub write-intent contract preview
+                  </Text>
+                  <Text className="text-ui-fg-muted txt-small">
+                    Preview-only write-intent contract seam. This block truthfully shows how ready the storefront preview stack is for a future shopper-safe write intent targeting POST /store/delivery/selection, without submit wiring, persistence, or network activity.
+                  </Text>
+                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
+                    <span>{deliveryHubWriteIntentContractPreview.status_label}</span>
+                    <span>{deliveryHubWriteIntentContractPreview.summary_label}</span>
+                    <span>{deliveryHubWriteIntentContractPreview.preview_label}</span>
+                    <span>{deliveryHubWriteIntentContractPreview.intent_target_label}</span>
+                    <span>Preview status: {deliveryHubWriteIntentContractPreview.status}</span>
+                    <span>
+                      mutation_intent: {String(deliveryHubWriteIntentContractPreview.mutation_intent)}
+                      {` · submit_enabled: ${String(deliveryHubWriteIntentContractPreview.submit_enabled)}`}
+                      {` · network_required_now: ${String(deliveryHubWriteIntentContractPreview.network_required_now)}`}
+                    </span>
+                    <span>
+                      prerequisites satisfied: {deliveryHubWriteIntentContractPreview.satisfied_prerequisite_count}
+                      {` / ${deliveryHubWriteIntentContractPreview.required_prerequisite_count}`}
+                      {` · missing: ${deliveryHubWriteIntentContractPreview.missing_prerequisite_count}`}
+                      {` · blocked: ${deliveryHubWriteIntentContractPreview.blocked_prerequisite_count}`}
+                    </span>
+                    <span>
+                      intent target: {deliveryHubWriteIntentContractPreview.shopper_safe_intent_target}
+                    </span>
+                    {deliveryHubWriteIntentContractPreview.prerequisites.map((prerequisite) => (
+                      <span key={prerequisite.key}>
+                        {prerequisite.label}: {prerequisite.status} · {prerequisite.detail_label}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="text-ui-fg-muted txt-small">
+                    Disabled actions: {deliveryHubWriteIntentContractPreview.disabled_actions.join(", ")}
+                  </div>
+                  {deliveryHubWriteIntentContractPreview.blocked_reasons.length > 0 && (
+                    <div className="text-ui-fg-muted txt-small">
+                      Blocked reasons: {deliveryHubWriteIntentContractPreview.blocked_reasons.join(", ")}
+                    </div>
+                  )}
+                  {deliveryHubWriteIntentContractPreview.hint_messages.length > 0 && (
+                    <ul className="list-disc pl-4 text-ui-fg-muted txt-small">
+                      {deliveryHubWriteIntentContractPreview.hint_messages
+                        .slice(0, 4)
+                        .map((message) => (
+                          <li key={message}>{message}</li>
+                        ))}
+                    </ul>
                   )}
                 </div>
               </div>
