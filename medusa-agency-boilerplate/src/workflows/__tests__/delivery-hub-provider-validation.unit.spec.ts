@@ -1,4 +1,4 @@
-import { describe, expect, it, jest } from "@jest/globals"
+import { beforeEach, describe, expect, it, jest } from "@jest/globals"
 import { MedusaError } from "@medusajs/framework/utils"
 import { DeliveryHubFulfillmentProvider } from "../../modules/deliveryhub"
 import { DELIVERY_HUB_MODE_CODE } from "../../modules/delivery-hub/constants"
@@ -10,6 +10,13 @@ const logger = {
   error: jest.fn(),
   debug: jest.fn(),
 }
+
+beforeEach(() => {
+  logger.info.mockClear()
+  logger.warn.mockClear()
+  logger.error.mockClear()
+  logger.debug.mockClear()
+})
 
 describe("Delivery Hub provider validation seam", () => {
   it("keeps validateFulfillmentData and createFulfillment aligned for valid input while preserving execution block", async () => {
@@ -53,6 +60,7 @@ describe("Delivery Hub provider validation seam", () => {
     await expect(executionPreviewLog).toBeDefined()
     expect(String(executionPreviewLog?.[0])).toContain('"execution_status":"blocked"')
     expect(String(executionPreviewLog?.[0])).toContain('"readiness_status":"ready"')
+    expect(String(executionPreviewLog?.[0])).toContain('"handoff_ready":false')
     await expect(
       logger.info.mock.calls.some((call) =>
         String(call[0]).includes("execution-plan preview seam evaluated")
@@ -97,6 +105,48 @@ describe("Delivery Hub provider validation seam", () => {
     ).rejects.toThrow(
       'Delivery Hub createFulfillment input is blocked: Delivery Hub field "quote.currency_code" is required.; Shipment execution remains intentionally unavailable; diagnostics validate payload assembly and block live shipment automation.'
     )
+  })
+
+  it("keeps createFulfillment blocked after handoff preflight assembly when committed option is present", async () => {
+    const provider = buildProvider()
+    const fulfillmentData = {
+      ...buildValidFulfillmentData(),
+      cart_id: "cart_1",
+      shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+      shipping_option_type_id: "deliveryhub_deliveryhub",
+      correlation_id: "corr_handoff_provider",
+      updated_at: "2026-04-23T07:00:00.000Z",
+    }
+
+    await expect(
+      provider.createFulfillment(
+        fulfillmentData,
+        [
+          {
+            line_item_id: "item_1",
+            quantity: 1,
+          },
+        ],
+        {
+          id: "order_1",
+          display_id: 42,
+          currency_code: "RUB",
+        },
+        {
+          id: "ful_1",
+          location_id: "sloc_1",
+        }
+      )
+    ).rejects.toThrow(
+      "Delivery Hub shipment automation is not materialized in the current provider scaffold; order-side diagnostics validate backend bridge input only."
+    )
+
+    const executionPreviewLog = [...logger.info.mock.calls]
+      .reverse()
+      .find((call) => String(call[0]).includes("execution-plan preview seam evaluated"))
+
+    expect(String(executionPreviewLog?.[0])).toContain('"handoff_ready":true')
+    expect(String(executionPreviewLog?.[0])).toContain('"handoff_contour":{"contract_status":"ready","execution_status":"blocked","handoff_target":"manual_external"')
   })
 
   it("blocks provider and shape drift through the same normalized diagnostic seam", async () => {

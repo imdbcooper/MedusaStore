@@ -16,6 +16,7 @@ import {
 import {
   buildDeliveryHubFulfillmentContractVerdict,
   buildDeliveryHubFulfillmentBridgePayload,
+  buildDeliveryHubFulfillmentHandoffSnapshot,
   buildDeliveryHubShipmentExecutionPlanPreview,
 } from "./delivery-hub/fulfillment-provider-bridge"
 import {
@@ -122,12 +123,25 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
     order: Partial<FulfillmentOrderDTO> | undefined,
     fulfillment: Partial<Omit<FulfillmentDTO, "provider_id" | "data" | "items">>
   ): Promise<CreateFulfillmentResult> {
+    const orderRecord = order as Record<string, unknown> | undefined
+    const fulfillmentRecord = fulfillment as Record<string, unknown>
     const executionPlanPreview = buildDeliveryHubShipmentExecutionPlanPreview({
       fulfillment_data: data,
       items: items.map((item) => item as Record<string, unknown>),
-      order: order as Record<string, unknown> | undefined,
-      fulfillment: fulfillment as Record<string, unknown>,
+      order: orderRecord,
+      fulfillment: fulfillmentRecord,
     })
+    const handoffInput = data as Record<string, unknown>
+    const fulfillmentHandoff =
+      executionPlanPreview.contract_status === "ready" &&
+      typeof handoffInput.shipping_option_id === "string" &&
+      handoffInput.shipping_option_id.trim()
+        ? buildDeliveryHubFulfillmentHandoffSnapshot({
+            fulfillment_data: data,
+            order: orderRecord,
+            fulfillment: fulfillmentRecord,
+          })
+        : null
 
     this.logger_.info(
       `Delivery Hub createFulfillment execution-plan preview seam evaluated: ${JSON.stringify({
@@ -142,6 +156,9 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
           executionPlanPreview.normalized.provider_execution_plan?.quote_reference ?? null,
         item_count: executionPlanPreview.normalized.items?.length ?? 0,
         order_id: executionPlanPreview.normalized.order?.id ?? null,
+        handoff_ready: fulfillmentHandoff !== null,
+        handoff_reference: fulfillmentHandoff?.references ?? null,
+        handoff_contour: fulfillmentHandoff?.contour ?? null,
         outbound_preview_redacted: executionPlanPreview.outbound_payload_preview.redacted,
       })}`
     )

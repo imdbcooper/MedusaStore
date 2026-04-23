@@ -7,11 +7,13 @@ import {
   buildDeliveryHubFulfillmentBridgePayload,
   buildDeliveryHubFulfillmentBridgePayloadFromCartSelection,
   buildDeliveryHubFulfillmentBridgePreview,
+  buildDeliveryHubFulfillmentHandoffSnapshot,
   buildDeliveryHubShipmentExecutionPlanPreview,
   DELIVERY_HUB_EXECUTION_IDENTITY_PREVIEW_VERSION,
   DELIVERY_HUB_EXECUTION_PERSISTENCE_AUDIT_PREVIEW_VERSION,
   DELIVERY_HUB_EXECUTION_PREFLIGHT_ELIGIBILITY_PREVIEW_VERSION,
   DELIVERY_HUB_FAILURE_HANDLING_PREVIEW_VERSION,
+  DELIVERY_HUB_FULFILLMENT_HANDOFF_SNAPSHOT_VERSION,
   DELIVERY_HUB_PROVIDER_DISPATCH_PREVIEW_VERSION,
   DELIVERY_HUB_SHIPMENT_RESULT_PREVIEW_VERSION,
   DELIVERY_HUB_EXECUTION_PLAN_OBSERVABILITY_PREVIEW_VERSION,
@@ -625,6 +627,173 @@ describe("Delivery Hub fulfillment provider bridge", () => {
         quantity: 1,
       },
     ])
+  })
+
+  it("assembles shopper-safe and ops-safe fulfillment handoff snapshot", () => {
+    const handoff = buildDeliveryHubFulfillmentHandoffSnapshot({
+      fulfillment_data: {
+        ...buildValidFulfillmentData(),
+        cart_id: "cart_1",
+        shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+        shipping_option_type_id: DELIVERY_HUB_FULFILLMENT_PROVIDER_ID,
+        correlation_id: "corr_handoff_1",
+        updated_at: "2026-04-23T07:00:00.000Z",
+      },
+      order: {
+        id: "order_1",
+        display_id: 42,
+        currency_code: "RUB",
+      },
+      fulfillment: {
+        id: "ful_1",
+        location_id: "sloc_1",
+      },
+    })
+
+    expect(handoff).toEqual({
+      version: DELIVERY_HUB_FULFILLMENT_HANDOFF_SNAPSHOT_VERSION,
+      provider_code: DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,
+      provider_id: DELIVERY_HUB_FULFILLMENT_PROVIDER_ID,
+      connection_id: "conn_ready",
+      quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+      quote_reference: expect.objectContaining({
+        id: expect.stringMatching(/^dhsel_[a-f0-9]{32}$/),
+        version: 1,
+      }),
+      quote_summary: {
+        carrier_code: "yandex",
+        carrier_label: "Yandex Delivery",
+        amount: 299,
+        currency_code: "RUB",
+        delivery_eta_min: 1,
+        delivery_eta_max: 1,
+      },
+      pickup_point_summary: {
+        name: "PVZ 2",
+        address: "Arbat 10",
+        city: "Moscow",
+        region: "Moscow",
+        postal_code: "119019",
+      },
+      pickup_window_summary: null,
+      references: {
+        cart_id: "cart_1",
+        order_id: "order_1",
+        order_display_id: 42,
+        fulfillment_id: "ful_1",
+        shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+        shipping_option_type_id: DELIVERY_HUB_FULFILLMENT_PROVIDER_ID,
+        location_id: "sloc_1",
+      },
+      correlation_id: "corr_handoff_1",
+      timestamps: {
+        selection_updated_at: "2026-04-23T07:00:00.000Z",
+        assembled_at: expect.any(String),
+      },
+      contour: {
+        contract_status: "ready",
+        execution_status: "blocked",
+        handoff_target: "manual_external",
+        repository_current_stage: "activation_blocked",
+        live_execution_enabled: false,
+        real_provider_dispatch_enabled: false,
+      },
+    })
+  })
+
+  it("blocks fulfillment handoff on missing selection, mismatched option and stale reference", () => {
+    expect(() =>
+      buildDeliveryHubFulfillmentHandoffSnapshot({
+        fulfillment_data: {
+          shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+        },
+      })
+    ).toThrow("Delivery Hub fulfillment handoff is blocked:")
+
+    expect(() =>
+      buildDeliveryHubFulfillmentHandoffSnapshot({
+        fulfillment_data: {
+          ...buildValidFulfillmentData(),
+          shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
+          shipping_option_type_id: DELIVERY_HUB_FULFILLMENT_PROVIDER_ID,
+          updated_at: "2026-04-23T07:00:00.000Z",
+        },
+      })
+    ).toThrow(
+      "Delivery Hub fulfillment handoff is blocked: committed shipping option does not match saved delivery selection."
+    )
+
+    expect(() =>
+      buildDeliveryHubFulfillmentHandoffSnapshot({
+        fulfillment_data: {
+          ...buildValidFulfillmentData(),
+          shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+          shipping_option_type_id: DELIVERY_HUB_FULFILLMENT_PROVIDER_ID,
+          committed_quote_reference: {
+            id: "dhsel_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            version: 1,
+          },
+          updated_at: "2026-04-23T07:00:00.000Z",
+        },
+      })
+    ).toThrow(
+      "Delivery Hub fulfillment handoff is blocked: committed quote reference is stale relative to saved delivery selection."
+    )
+  })
+
+  it("keeps handoff artifact anti-leak and execution-plan preview includes serialized handoff", () => {
+    const preview = buildDeliveryHubShipmentExecutionPlanPreview({
+      fulfillment_data: {
+        ...buildValidFulfillmentData(),
+        cart_id: "cart_1",
+        shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+        shipping_option_type_id: DELIVERY_HUB_FULFILLMENT_PROVIDER_ID,
+        correlation_id: "corr_handoff_1",
+        updated_at: "2026-04-23T07:00:00.000Z",
+        credentials: {
+          token: "secret-token",
+        },
+        raw_response: {
+          offer_id: "raw-offer-id",
+        },
+        metadata: {
+          secret: "secret-value",
+        },
+      },
+      order: {
+        id: "order_1",
+        display_id: 42,
+        currency_code: "RUB",
+      },
+      fulfillment: {
+        id: "ful_1",
+        location_id: "sloc_1",
+      },
+      items: [
+        {
+          line_item_id: "item_1",
+          quantity: 1,
+        },
+      ],
+    })
+
+    expect(preview.normalized.fulfillment_handoff).toEqual(
+      expect.objectContaining({
+        references: expect.objectContaining({
+          shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+        }),
+        contour: expect.objectContaining({
+          execution_status: "blocked",
+        }),
+      })
+    )
+    expect(preview.normalized.fulfillment_handoff).not.toHaveProperty("credentials")
+    expect(preview.normalized.fulfillment_handoff).not.toHaveProperty("raw_response")
+    expect(preview.normalized.fulfillment_handoff).not.toHaveProperty("metadata")
+    expect(JSON.stringify(preview.normalized.fulfillment_handoff)).not.toContain("secret-token")
+    expect(JSON.stringify(preview.normalized.fulfillment_handoff)).not.toContain("raw-offer-id")
+    expect(JSON.stringify(preview.normalized.fulfillment_handoff)).not.toContain("secret-value")
+    expect(preview.execution_status).toBe("blocked")
   })
 
   it("materializes admin execution-plan observability preview with ready and blocked contours", () => {

@@ -51,6 +51,7 @@ export const DELIVERY_HUB_PROVIDER_DISPATCH_PREVIEW_VERSION = 1
 export const DELIVERY_HUB_SHIPMENT_RESULT_PREVIEW_VERSION = 1
 export const DELIVERY_HUB_FAILURE_HANDLING_PREVIEW_VERSION = 1
 export const DELIVERY_HUB_FULFILLMENT_APPLICATION_PREVIEW_VERSION = 1
+export const DELIVERY_HUB_FULFILLMENT_HANDOFF_SNAPSHOT_VERSION = 1
 
 export type DeliveryHubFulfillmentBridgePayload = {
   version: typeof DELIVERY_HUB_FULFILLMENT_BRIDGE_VERSION
@@ -167,6 +168,62 @@ export type DeliveryHubProviderExecutionPlan = {
       pickup_point: DeliveryHubFulfillmentSelectionData["pickup_point"]
       pickup_window: DeliveryHubFulfillmentSelectionData["pickup_window"]
     }
+  }
+}
+
+export type DeliveryHubFulfillmentHandoffSnapshot = {
+  version: typeof DELIVERY_HUB_FULFILLMENT_HANDOFF_SNAPSHOT_VERSION
+  provider_code: typeof DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE
+  provider_id: typeof DELIVERY_HUB_FULFILLMENT_PROVIDER_ID
+  connection_id: string
+  quote_type: DeliveryHubFulfillmentModeCode
+  quote_reference: DeliveryHubFulfillmentSelectionData["quote_reference"]
+  quote_summary: {
+    carrier_code: string
+    carrier_label: string
+    amount: number
+    currency_code: string
+    delivery_eta_min: number | null
+    delivery_eta_max: number | null
+  }
+  pickup_point_summary: {
+    name: string
+    address: string
+    city: string | null
+    region: string | null
+    postal_code: string | null
+  }
+  pickup_window_summary: {
+    date: string
+    time_from: string | null
+    time_to: string | null
+    label: string
+    interval_utc: {
+      from: string
+      to: string
+    }
+  } | null
+  references: {
+    cart_id: string | null
+    order_id: string | null
+    order_display_id: string | number | null
+    fulfillment_id: string | null
+    shipping_option_id: string | null
+    shipping_option_type_id: string | null
+    location_id: string | null
+  }
+  correlation_id: string | null
+  timestamps: {
+    selection_updated_at: string | null
+    assembled_at: string
+  }
+  contour: {
+    contract_status: "ready"
+    execution_status: "blocked"
+    handoff_target: "manual_external"
+    repository_current_stage: DeliveryHubExecutionLedgerRepositoryAssemblyReadinessSummary["persistence_readiness_contour"]["current_stage"]
+    live_execution_enabled: false
+    real_provider_dispatch_enabled: false
   }
 }
 
@@ -545,6 +602,7 @@ export type DeliveryHubShipmentExecutionPlanPreview = {
     items: DeliveryHubCreateFulfillmentBridgeItem[] | null
     create_fulfillment_payload: DeliveryHubCreateFulfillmentBridgePayload | null
     provider_execution_plan: DeliveryHubProviderExecutionPlan | null
+    fulfillment_handoff: DeliveryHubFulfillmentHandoffSnapshot | null
   }
   execution_identity: DeliveryHubExecutionIdentityPreview | null
   outbound_payload_preview: {
@@ -914,6 +972,15 @@ export function buildDeliveryHubShipmentExecutionPlanPreview(input: {
   const outboundPayloadPreview = providerExecutionPlan
     ? buildDeliveryHubProviderExecutionPlanOutboundPayloadPreview(providerExecutionPlan)
     : null
+  const fulfillmentHandoff = diagnostic.normalized.create_fulfillment_payload
+    ? buildOptionalDeliveryHubFulfillmentHandoffSnapshot({
+        option_data: input.option_data,
+        fulfillment_data: input.fulfillment_data,
+        default_mode_code: input.default_mode_code,
+        order: input.order,
+        fulfillment: input.fulfillment,
+      })
+    : null
   const persistenceAuditPreview = buildDeliveryHubExecutionPersistenceAuditPreview({
     execution_plan: providerExecutionPlan,
     execution_identity: executionIdentityPreview,
@@ -956,7 +1023,7 @@ export function buildDeliveryHubShipmentExecutionPlanPreview(input: {
   )
   const repositoryAssemblySummary =
     buildDeliveryHubExecutionLedgerRepositoryAssemblyReadinessSummary()
- 
+
   return {
     version: DELIVERY_HUB_EXECUTION_PLAN_PREVIEW_VERSION,
     contract_status: diagnostic.contract_status,
@@ -1080,6 +1147,7 @@ export function buildDeliveryHubShipmentExecutionPlanPreview(input: {
     normalized: {
       ...diagnostic.normalized,
       provider_execution_plan: providerExecutionPlan,
+      fulfillment_handoff: fulfillmentHandoff,
     },
     execution_identity: executionIdentityPreview,
     outbound_payload_preview: {
@@ -2931,6 +2999,179 @@ function buildMissingSelectionError() {
     MedusaError.Types.INVALID_DATA,
     "Delivery Hub shipping selection must be persisted before price calculation."
   )
+}
+
+export function buildDeliveryHubFulfillmentHandoffSnapshot(input: {
+  option_data?: Record<string, unknown>
+  fulfillment_data?: Record<string, unknown>
+  default_mode_code?: string | null
+  order?: Record<string, unknown> | null
+  fulfillment?: Record<string, unknown> | null
+}): DeliveryHubFulfillmentHandoffSnapshot {
+  const rootFulfillmentData = asRecord(input.fulfillment_data)
+  const selectionUpdatedAt = normalizeNullableText(rootFulfillmentData.updated_at)
+  const correlationId = normalizeNullableText(rootFulfillmentData.correlation_id)
+  const shippingOptionId = normalizeNullableText(rootFulfillmentData.shipping_option_id)
+  const shippingOptionTypeId = normalizeNullableText(rootFulfillmentData.shipping_option_type_id)
+  const cartId = normalizeNullableText(rootFulfillmentData.cart_id)
+
+  if (!shippingOptionId) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Delivery Hub fulfillment handoff requires committed shipping_option_id."
+    )
+  }
+
+  const diagnostic = buildDeliveryHubCreateFulfillmentBridgeDiagnostic({
+    option_data: input.option_data,
+    fulfillment_data: input.fulfillment_data,
+    default_mode_code: input.default_mode_code,
+    order: input.order,
+    fulfillment: input.fulfillment,
+    items: [],
+  })
+
+  if (!diagnostic.normalized.delivery) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      `Delivery Hub fulfillment handoff is blocked: ${diagnostic.blocked_reasons.join("; ")}`
+    )
+  }
+
+  if (!diagnostic.normalized.create_fulfillment_payload) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Delivery Hub fulfillment handoff requires a normalized create-fulfillment payload."
+    )
+  }
+
+  const payload = diagnostic.normalized.create_fulfillment_payload
+  const selection = payload.delivery.fulfillment_data
+
+  if (shippingOptionId !== payload.delivery.option.id) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Delivery Hub fulfillment handoff is blocked: committed shipping option does not match saved delivery selection."
+    )
+  }
+
+  if (shippingOptionTypeId && shippingOptionTypeId !== DELIVERY_HUB_FULFILLMENT_PROVIDER_ID) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      `Delivery Hub fulfillment handoff is blocked: committed shipping option type must equal \"${DELIVERY_HUB_FULFILLMENT_PROVIDER_ID}\".`
+    )
+  }
+
+  if (rootFulfillmentData.quote_type && normalizeNullableText(rootFulfillmentData.quote_type) !== selection.mode_code) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Delivery Hub fulfillment handoff is blocked: committed quote_type does not match saved delivery selection."
+    )
+  }
+
+  if (rootFulfillmentData.connection_id && normalizeNullableText(rootFulfillmentData.connection_id) !== selection.connection_id) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Delivery Hub fulfillment handoff is blocked: committed connection_id does not match saved delivery selection."
+    )
+  }
+
+  if (
+    rootFulfillmentData.committed_quote_reference &&
+    asRecord(rootFulfillmentData.committed_quote_reference).id &&
+    normalizeNullableText(asRecord(rootFulfillmentData.committed_quote_reference).id) !==
+      selection.quote_reference.id
+  ) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Delivery Hub fulfillment handoff is blocked: committed quote reference is stale relative to saved delivery selection."
+    )
+  }
+
+  if (selection.quote_reference.version !== DELIVERY_HUB_FULFILLMENT_BRIDGE_VERSION) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "Delivery Hub fulfillment handoff is blocked: unsupported quote reference version."
+    )
+  }
+
+  const repositoryAssemblySummary =
+    buildDeliveryHubExecutionLedgerRepositoryAssemblyReadinessSummary()
+
+  return {
+    version: DELIVERY_HUB_FULFILLMENT_HANDOFF_SNAPSHOT_VERSION,
+    provider_code: DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,
+    provider_id: DELIVERY_HUB_FULFILLMENT_PROVIDER_ID,
+    connection_id: selection.connection_id,
+    quote_type: selection.mode_code,
+    quote_reference: selection.quote_reference,
+    quote_summary: {
+      carrier_code: selection.quote.carrier_code,
+      carrier_label: selection.quote.carrier_label,
+      amount: selection.quote.amount,
+      currency_code: selection.quote.currency_code,
+      delivery_eta_min: selection.quote.delivery_eta_min,
+      delivery_eta_max: selection.quote.delivery_eta_max,
+    },
+    pickup_point_summary: {
+      name: selection.pickup_point.name,
+      address: selection.pickup_point.address,
+      city: selection.pickup_point.city,
+      region: selection.pickup_point.region,
+      postal_code: selection.pickup_point.postal_code,
+    },
+    pickup_window_summary: selection.pickup_window
+      ? {
+          date: selection.pickup_window.date,
+          time_from: selection.pickup_window.time_from,
+          time_to: selection.pickup_window.time_to,
+          label: selection.pickup_window.label,
+          interval_utc: {
+            from: selection.pickup_window.interval_utc.from,
+            to: selection.pickup_window.interval_utc.to,
+          },
+        }
+      : null,
+    references: {
+      cart_id: cartId,
+      order_id: payload.order.id,
+      order_display_id: payload.order.display_id,
+      fulfillment_id: payload.fulfillment.id,
+      shipping_option_id: shippingOptionId,
+      shipping_option_type_id: shippingOptionTypeId,
+      location_id: payload.fulfillment.location_id,
+    },
+    correlation_id: correlationId,
+    timestamps: {
+      selection_updated_at: selectionUpdatedAt,
+      assembled_at: new Date().toISOString(),
+    },
+    contour: {
+      contract_status: "ready",
+      execution_status: "blocked",
+      handoff_target: "manual_external",
+      repository_current_stage:
+        repositoryAssemblySummary.persistence_readiness_contour.current_stage,
+      live_execution_enabled: false,
+      real_provider_dispatch_enabled: false,
+    },
+  }
+}
+
+function buildOptionalDeliveryHubFulfillmentHandoffSnapshot(input: {
+  option_data?: Record<string, unknown>
+  fulfillment_data?: Record<string, unknown>
+  default_mode_code?: string | null
+  order?: Record<string, unknown> | null
+  fulfillment?: Record<string, unknown> | null
+}): DeliveryHubFulfillmentHandoffSnapshot | null {
+  const rootFulfillmentData = asRecord(input.fulfillment_data)
+
+  if (!normalizeNullableText(rootFulfillmentData.shipping_option_id)) {
+    return null
+  }
+
+  return buildDeliveryHubFulfillmentHandoffSnapshot(input)
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
