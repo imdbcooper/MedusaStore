@@ -59,7 +59,7 @@
 - baseline region остается `ru`, а baseline currency остается `rub`;
 - `STORE_CORS`, `ADMIN_CORS` и `AUTH_CORS` включают staging origins, соответствующие реальному backend/storefront/admin access contour;
 - staging contour не требует включения opt-in integrations только ради базового старта;
-- пустое или disabled состояние для `UNISENDER_*`, `MTS_EXOLVE_*`, `VK_*`, `APISHIP_*`, `YOOKASSA_*` и `PAYLOAD_*` остается допустимым для первого readiness step, если эти integrations отдельно не включены и не утверждены для конкретного staging pass;
+- пустое или disabled состояние для `UNISENDER_*`, `MTS_EXOLVE_*`, `VK_*`, `YOOKASSA_*` и `PAYLOAD_*` остается допустимым для первого readiness step, если эти integrations отдельно не включены и не утверждены для конкретного staging pass;
 - storefront runtime assumptions остаются минимальными и согласованными с текущим baseline: backend URL, publishable key, base URL и default region;
 - staging не должен подменять baseline-контур ad-hoc ручными действиями, которые нельзя повторить тем же sanctioned path.
 

@@ -76,29 +76,29 @@ Before making claims, remember these points were already verified:
   - `YOOKASSA_WEBHOOK_SECRET`;
   - `YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS`;
   - `NEXT_PUBLIC_YOOKASSA_ENABLED`;
-  - `APISHIP_TOKEN`;
-  - `APISHIP_TEST_MODE`.
-- Shipping v1 is now confirmed for the current ApiShip-first scope.
+  - legacy provider credentials (historical only);
+  - legacy provider test/live mode (historical only).
+- Historical shipping v1 was confirmed for its narrow provider-aware rate-selection scope, but it is no longer the template default.
 - That current shipping slice means:
   - opt-in provider registration in [`medusa-config.ts`](../../../medusa-agency-boilerplate/medusa-config.ts);
-  - fulfillment provider in [`src/modules/apiship.ts`](../../../medusa-agency-boilerplate/src/modules/apiship.ts);
-  - store route for rate lookup in [`src/api/store/apiship/rates/route.ts`](../../../medusa-agency-boilerplate/src/api/store/apiship/rates/route.ts);
+  - fulfillment provider in the removed backend fulfillment-provider module;
+  - store route for rate lookup in [`src/api/store/delivery/rates/route.ts`](../../../medusa-agency-boilerplate/src/api/store/delivery/rates/route.ts);
   - seed path for the shipping option in [`src/scripts/seed.ts`](../../../medusa-agency-boilerplate/src/scripts/seed.ts);
-  - storefront data layer in [`src/lib/data/apiship.ts`](../../../medusa-agency-boilerplate-storefront/src/lib/data/apiship.ts) and [`src/lib/data/cart.ts`](../../../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts);
+  - storefront data layer in the removed storefront legacy delivery helper and [`src/lib/data/cart.ts`](../../../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts);
   - checkout shipping selection in [`src/modules/checkout/components/shipping/index.tsx`](../../../medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx);
-  - safe-by-default live/test behavior via `APISHIP_TEST_MODE`, with test-mode as the fallback default unless live is explicitly enabled;
-  - root orchestration is aligned to the same rule: [`scripts/env-sync.sh`](../../../scripts/env-sync.sh) must sync `APISHIP_TEST_MODE=true` into backend env when root env does not define it, so missing orchestration input never silently enables live;
-  - the confirmed runtime path `2026-04-18` used a production token and explicit `APISHIP_TEST_MODE=false` for live validation;
-  - ETA fallback support from legacy `daysMin/daysMax` to newer `workDays*` and `calendarDays*` fields in [`GET()`](../../../medusa-agency-boilerplate/src/api/store/apiship/rates/route.ts:67);
-  - structured diagnostic hardening for request failures in [`request()`](../../../medusa-agency-boilerplate/src/modules/apiship.ts:216);
+  - safe-by-default live/test behavior existed only as historical legacy-provider context, not current template guidance;
+  - root orchestration is aligned to the same rule: [`scripts/env-sync.sh`](../../../scripts/env-sync.sh) previously synced a safe test-mode fallback into backend env when root env does not define it, so missing orchestration input never silently enables live;
+  - the confirmed runtime path `2026-04-18` used a production token and explicit live-mode opt-in for live validation;
+  - ETA fallback support from legacy `daysMin/daysMax` to newer `workDays*` and `calendarDays*` fields in [`GET()`](../../../medusa-agency-boilerplate/src/api/store/delivery/rates/route.ts:67);
+  - structured diagnostic hardening for request failures in request diagnostics in the legacy provider module;
   - honest `cheapest_only_v1` semantics instead of a claimed multi-quote checkout;
-  - targeted fixes in [`route.ts`](../../../medusa-agency-boilerplate/src/api/store/apiship/rates/route.ts) and [`seed.ts`](../../../medusa-agency-boilerplate/src/scripts/seed.ts) closed the actual blocker, and ApiShip/Yandex rates now return at runtime.
+  - targeted fixes in [`route.ts`](../../../medusa-agency-boilerplate/src/api/store/delivery/rates/route.ts) and [`seed.ts`](../../../medusa-agency-boilerplate/src/scripts/seed.ts) closed the actual blocker, and historical Yandex-backed rates now return at runtime.
 - Baseline verification still holds after the notification, payment, and first shipping slice:
-  - [`npm run bootstrap()`](../../../package.json:14), [`npm run preflight()`](../../../package.json:8), and [`npm run dev()`](../../../package.json:24) still work without mandatory payment secrets, without mandatory `APISHIP_TOKEN`, and without mandatory external notification secrets;
+  - [`npm run bootstrap()`](../../../package.json:14), [`npm run preflight()`](../../../package.json:8), and [`npm run dev()`](../../../package.json:24) still work without mandatory payment secrets, without requiring legacy provider credentials, and without mandatory external notification secrets;
   - canonical root orchestration now explicitly syncs YooKassa guardrails `YOOKASSA_STOREFRONT_RETURN_ORIGINS`, optional `YOOKASSA_WEBHOOK_URL`, and safe default `YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS=false` into backend env before runtime starts;
   - notification runtime now has verified fallback semantics between requested and resolved provider;
-  - ApiShip provider is only enabled when a token is present;
-  - shipping option `ApiShip Courier to Address` appears after a repeat seed in an ApiShip-enabled environment;
+  - the legacy provider was opt-in and token-gated while it existed;
+  - historical provider-enabled environments required a repeat seed for their courier shipping option;
   - storefront checkout `500` was separated as a cart and data-state issue, not a confirmed shipping code regression;
   - clean onboarding remains opt-in and baseline-safe for the added notification, payment, and shipping env.
 - Checkout end-to-end validation v1 is now confirmed.
@@ -108,8 +108,8 @@ Before making claims, remember these points were already verified:
   - targeted fix in [`payment-button/index.tsx`](../../../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx) prevents calling [`placeOrder()`](../../../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts:404) before hosted authorization finishes;
   - targeted fix in [`cookies.ts`](../../../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts) changed [`setCartId()`](../../../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts:74) from `sameSite: "strict"` to `sameSite: "lax"` so cart state survives the cross-site return from hosted payment.
 - Remaining validated limits must be stated honestly:
-  - the ApiShip blocker for the current `cheapest_only_v1` slice is closed;
-  - the confirmed runtime path used a production token with explicit live mode and now returns ApiShip/Yandex tariffs;
+  - the legacy provider blocker for the current `cheapest_only_v1` slice is closed;
+  - the confirmed runtime path used a production token with explicit live mode and now returns the historical Yandex-backed rate path tariffs;
   - the first customer-facing post-order notification path is still not fully validated;
   - true multi-quote checkout and `providerConnectId` / `extraParams` support remain outside the current scope.
 - Re-running `npm run bootstrap` on an already populated database is now **confirmed as idempotent** via runtime validation (`2026-04-17`): all baseline entities are reused, the same publishable key is emitted, no duplicates are created, and conflicting database state correctly triggers exit code 1 without updating storefront env.
@@ -125,8 +125,8 @@ Before making claims, remember these points were already verified:
 - Bootstrap idempotency hardening v1 is **confirmed via runtime validation** (`2026-04-17`) and no longer an open concern.
 - The canonical template-readiness regression source of truth is [`Docs/template_readiness_regression.md`](../../../Docs/template_readiness_regression.md).
 - The canonical local authenticated notification smoke path is `fresh secret admin API key` → `Basic auth` → `POST /admin/notifications/smoke`, with an allowed lightweight helper via [`npm run smoke:notification`](../../../package.json:23).
-- The ApiShip return path is no longer `wait for external unblock`, and the checkout return path is no longer an open concern after the confirmed hosted YooKassa return.
-- The shipping direction remains ApiShip-first unless the user explicitly changes market scope.
+- The legacy provider return path is no longer `wait for external unblock`, and the checkout return path is no longer an open concern after the confirmed hosted YooKassa return.
+- The shipping direction now defaults to Delivery Hub/direct Yandex for the template unless the user explicitly changes market scope.
 - Phase 6 storefront customization is no longer the current active implementation track, but it must be described truthfully as `initial closure claim → valid reopen → remediation → post-remediation re-closure`: the full sanctioned preset-driven stack is now closed only after the remediation cycle, the final cross-preset regression pass is recorded as **PASS**, and the readiness verdict is now `ready for the next roadmap stage`.
 - The truthfully re-closed Phase 6 stack remains materialized on one shared storefront core through the unchanged central selector/config authority [`NEXT_PUBLIC_STOREFRONT_PRESET`](../../../medusa-agency-boilerplate-storefront/src/lib/env.ts:21) and [`storefront-client-config.ts`](../../../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts), plus [`HomeSectionRenderer`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/home-section-renderer/index.tsx), typed shell boundary [`StorefrontShellConfig`](../../../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:74), typed catalog shell boundary [`StorefrontCatalogShellConfig`](../../../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:298), shell resolvers [`resolveNavShellSurface()`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/shell-surface-resolver.ts:15), [`resolveSideMenuShellSurface()`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/shell-surface-resolver.ts:18), [`resolveFooterShellSurface()`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/shell-surface-resolver.ts:21), catalog resolvers [`resolveStoreCatalogIntroSurface()`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/catalog-shell-resolver.ts:15), [`resolveStoreCatalogResultsSurface()`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/catalog-shell-resolver.ts:18), [`resolveCollectionCatalogResultsSurface()`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/catalog-shell-resolver.ts:21), [`resolveFeaturedRailCatalogShellSurface()`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/catalog-shell-resolver.ts:24), shell consumers [`nav/index.tsx`](../../../medusa-agency-boilerplate-storefront/src/modules/layout/templates/nav/index.tsx:17), [`footer/index.tsx`](../../../medusa-agency-boilerplate-storefront/src/modules/layout/templates/footer/index.tsx:12), [`side-menu/index.tsx`](../../../medusa-agency-boilerplate-storefront/src/modules/layout/components/side-menu/index.tsx:50), browse consumers [`StoreCatalogIntroSurface`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/catalog-shell-surface.tsx:51), [`CatalogResultsShellSurface`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/catalog-shell-surface.tsx:104), [`FeaturedRailCatalogShellSurface`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/catalog-shell-surface.tsx:130), thin shell seam [`RootLayout`](../../../medusa-agency-boilerplate-storefront/src/app/layout.tsx:14), [`ProductSupportHighlights`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/product-support-highlights/index.tsx:16), preset-driven collection/content/post composition [`collection-landing-surface/index.tsx`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/collection-landing-surface/index.tsx) / [`content-page-surface/index.tsx`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/content-page-surface/index.tsx) / [`post-page-surface/index.tsx`](../../../medusa-agency-boilerplate-storefront/src/modules/storefront-customization/components/post-page-surface/index.tsx), typed [`landingSurfaces`](../../../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:317), typed adjacent [`productSurfaces.supportHighlights`](../../../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:323), typed listing/card contract [`listingSurfaces.productCard`](../../../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:324), and typed catalog shell contract [`catalogShell`](../../../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:325).
 - [`Preset-driven landing-surface contract v1`](../../../plans/preset-driven-landing-surface-contract-v1.md) is closed by commit `7e3266c1478ab81f4f6748d6ee6fa5612cf3eecd` `feat(storefront): add preset-driven landing surface contract`.
@@ -161,22 +161,22 @@ Re-verify any of these if the code has changed.
 - Do not describe payments as `not started` or as `only at decision stage`; the YooKassa-first path is already confirmed for the current scope.
 - Do not describe the current payment state as a fully production-ready checkout beyond what was actually verified.
 - Do not propose Stripe or another non-RF payment provider as the default v1 path for this repository unless the user explicitly changes the market scope.
-- Do not describe shipping as `not started` or as `only at decision stage`; the first ApiShip-first rate-selection slice is already implemented.
+- Do not describe shipping history as if no rate-selection slice ever existed; also do not present that historical slice as the current template default.
 - Do not claim that the current repo has a fully productized post-order lifecycle just because the checkout path is now validated through `review`, `order placement`, and the confirmed order page.
-- Do not describe the closed ApiShip blocker for `cheapest_only_v1` as still pending or deferred.
+- Do not describe the closed legacy provider blocker for `cheapest_only_v1` as still pending or deferred.
 - Do not describe the current shipping checkout as a full multi-quote UX; the source of truth is `cheapest_only_v1` until the scope is explicitly expanded.
-- Do not silently flip local/dev ApiShip traffic to live; safe-by-default test-mode must remain the default unless live is explicitly enabled.
+- Do not silently flip local/dev legacy provider traffic to live; safe-by-default test-mode must remain the default unless live is explicitly enabled.
 - Do not re-open the storefront checkout `500` as the current blocker when the verified issue was an absent or invalid cart rather than a confirmed shipping code regression.
-- Do not state or copy any real `APISHIP_TOKEN`, `UNISENDER_API_KEY`, credential-bearing `UNISENDER_BASE_URL`, `sk_*` secret key, or other user secret into markdown documentation.
+- Do not state or copy any real legacy provider credentials, `UNISENDER_API_KEY`, credential-bearing `UNISENDER_BASE_URL`, `sk_*` secret key, or other user secret into markdown documentation.
 - Do not claim that the canonical authenticated smoke path can reuse an old secret token; the source of truth requires a fresh generated secret admin API key.
 - Do not describe the YooKassa return route as a redirect to an arbitrary safe `http/https` URL; the source of truth is allowlist origin policy via `YOOKASSA_STOREFRONT_RETURN_ORIGINS`, with fallback only to configured allowlisted origin(s), `STORE_CORS`, or controlled local development fallback.
 - Do not describe an empty `YOOKASSA_WEBHOOK_SECRET` as allowing unsigned webhooks by default; unsigned acceptance is only valid with explicit `YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS=true` in development/test.
-- Do not start the shipping track from an arbitrary provider when the task is still this repository's Russian-market template; default to ApiShip-first investigation and validation.
+- Do not start the shipping track from an arbitrary provider when the task is still this repository's Russian-market template; default to Delivery Hub/direct Yandex unless the user explicitly changes market scope.
 - Do not start `payload-cms`, block-renderer, or publish and revalidate implementation while the repo is still on the active Phase 3 and template-hardening track unless the user explicitly re-scopes the project.
 - Treat bootstrap hardening on dirty databases as a confirmed and closed result of runtime validation, not as an open concern.
 - Do not describe bootstrap idempotency hardening v1 as open, pending, or the next default step; it was confirmed via runtime validation on `2026-04-17`.
 - Treat the notification auth helper as opt-in local smoke support, not as an expanded baseline requirement.
-- Treat the added notification, YooKassa, and ApiShip env variables as opt-in integration config, not as baseline startup requirements.
+- Treat the added notification, YooKassa, and legacy provider env variables as opt-in integration config, not as baseline startup requirements.
 - When working near region, bootstrap, or storefront routing behavior, preserve the already verified clean onboarding path and the fixed middleware semantics.
 - For unstable or integration-specific claims, verify against official Medusa docs or the actual package and provider source.
 - Keep the distinction clear between:
@@ -260,7 +260,7 @@ Default orientation after the current status update:
 - treat notification hardening v1 as closed and verified;
 - treat the canonical local authenticated notification smoke path as `fresh secret admin API key` → `Basic auth` → `POST /admin/notifications/smoke`, with [`npm run smoke:notification`](../../../package.json:23) as the minimal helper command;
 - treat payment v1 as a confirmed YooKassa-first path for the current scope;
-- treat shipping v1 as an implemented ApiShip-first opt-in and baseline-safe rate-selection slice with safe-by-default test-mode and honest `cheapest_only_v1` semantics;
+- treat the historical shipping v1 slice as implemented history, while treating Delivery Hub/direct Yandex as the current default delivery contour;
 - treat checkout end-to-end validation v1 as closed, including hosted YooKassa return, review step, order placement, and confirmed order page;
 - treat the targeted fixes in [`payment-button/index.tsx`](../../../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx) and [`cookies.ts`](../../../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts) as part of the source of truth for the confirmed checkout path;
 - treat `providerConnectId` / `extraParams` support and true multi-quote checkout as deferred until the user explicitly expands scope;
@@ -268,7 +268,7 @@ Default orientation after the current status update:
 - treat [`Docs/template_readiness_regression.md`](../../../Docs/template_readiness_regression.md) as the canonical regression-pack/source-of-truth for local template-readiness checks and for the accepted non-blocking baseline observations of the final Phase 6 closure;
 - treat the Phase 6 preset-driven storefront stack as truthfully closed only after the recorded reopen/remediation cycle: sanctioned preset selector, landing surfaces, adjacent product support highlights, listing surfaces, global shell, and catalog shell are all completed, the three reopened gaps are remediated, and the stack is regression-synced;
 - treat the final cross-preset regression/readiness pass as PASS for `atelier|market` without blockers, while keeping the historical reopen/remediation context visible in source-of-truth docs;
-- treat `VK Community Messaging v1 foundation` as implemented on top of the already confirmed ApiShip + YooKassa + checkout slices;
+- treat `VK Community Messaging v1 foundation` as implemented on top of the already confirmed legacy provider + YooKassa + checkout slices;
 - treat `VK ID` as a later optional identity-linking layer, not as a prerequisite for the first VK transport rollout and not as part of the already delivered VK transport foundation;
 - keep future communication sequencing on top of the implemented VK foundation rather than re-opening whether the VK transport itself should exist;
 - treat Stripe and similar official Medusa providers as reference patterns only unless the user explicitly changes the project market;

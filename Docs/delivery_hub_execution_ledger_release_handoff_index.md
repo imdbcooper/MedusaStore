@@ -139,7 +139,7 @@ This index does not authorize, imply or redefine any of the following:
 - shipment creation;
 - order or fulfillment mutation;
 - checkout or storefront cutover;
-- ApiShip weakening or removal;
+- Removed legacy delivery weakening;
 - official Admin patching;
 - second authority for fixture contract semantics;
 - second authority for offline validator semantics.

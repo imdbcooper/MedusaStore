@@ -1,5 +1,7 @@
 # Env Contract
 
+> Cleanup status: legacy provider/runtime routes have been removed from the master template. Delivery Hub/direct Yandex is the selected delivery contour; live dispatch remains gated/not enabled; backend startup must not require new delivery env secrets. Existing old databases may still contain obsolete delivery rows/provider ids and require separate operator-approved cleanup if relevant.
+
 > Статус документа: рабочая спецификация окружения по состоянию на `2026-04-20`
 >
 > Назначение: зафиксировать, какой `.env` за что отвечает в проекте и какие команды теперь считаются каноническими для локальной разработки.
@@ -91,8 +93,6 @@
 - `NOTIFICATION_SMOKE_MESSAGE`
 - `DELIVERY_HUB_ENCRYPTION_KEY`
 - `DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED`
-- `APISHIP_TOKEN`
-- `APISHIP_TEST_MODE`
 - `NOTIFICATION_SMS_PROVIDER`
 - `MTS_EXOLVE_API_KEY`
 - `MTS_EXOLVE_SENDER`
@@ -114,9 +114,9 @@ root-level скрипты используют этот файл как исто
 - `UNISENDER_API_KEY` и optional `UNISENDER_BASE_URL` — строго **opt-in** backend-only keys для текущего production email path; пустое значение не должно ломать startup, build и runtime, а при `NOTIFICATION_EMAIL_PROVIDER=unisender` система должна безопасно падать обратно на local provider;
 - `MEDUSA_BACKEND_URL`, `NOTIFICATION_SMOKE_TO`, `NOTIFICATION_SMOKE_SUBJECT` и `NOTIFICATION_SMOKE_MESSAGE` — helper-переменные только для локального authenticated smoke path; они не являются baseline requirement и не должны содержать реальные боевые секреты;
 - `DELIVERY_HUB_ENCRYPTION_KEY` — optional backend-only secret для encrypted Delivery Hub connection storage; fresh template startup не требует непустого значения, а реальные merchant credentials должны вводиться только через admin settings/runtime и не фиксироваться в шаблонах;
-- `DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED=false` — explicit inert guardrail для будущего live shipment execution; в текущем package Delivery Hub является default/new fulfillment contour, но live execution остаётся disabled и [`createFulfillment()`](../medusa-agency-boilerplate/src/modules/deliveryhub.ts:119) не разблокируется;
-- `APISHIP_TOKEN` — deprecated legacy compatibility opt-in для существующего ApiShip shipping slice; пустое значение означает, что provider не должен регистрироваться и baseline onboarding, build и runtime не должны ломаться; для fresh stores нужно настраивать Delivery Hub/direct Yandex, а ApiShip scheduled for staged removal; подтверждённый historical runtime path `2026-04-18` был проверен с production token без фиксации секрета в документации;
-- `APISHIP_TEST_MODE` — safe-by-default legacy ApiShip endpoint flag: шаблонный default теперь `true`, пустое или невалидное значение трактуется как test-mode, а live допускается только при явном `false`; это правило теперь закрыто и на orchestration-слое, потому что [scripts/env-sync.sh](../scripts/env-sync.sh) при отсутствии root-переменной синхронизирует в backend env именно `true`, а не live-значение; подтверждённый historical runtime path `2026-04-18` был проверен в live-режиме через явное `APISHIP_TEST_MODE=false`;
+- `DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED=false` — explicit inert guardrail для будущего live shipment execution; в текущем package Delivery Hub/direct Yandex является selected/default delivery contour, но live execution остаётся disabled и [`createFulfillment()`](../medusa-agency-boilerplate/src/modules/deliveryhub.ts:119) не разблокируется;
+- backend startup не требует новых delivery env secrets: removed provider/routes/helpers отсутствуют в template/runtime, а удалённые provider credentials не являются поддерживаемой optional integration и не должны документироваться как activation surface;
+- старые provider ids/rows могут оставаться только в ранее использованных local/staging DB после прошлых запусков и требуют отдельного operator-approved cleanup; этот package не добавляет destructive DB migration или автоматическое удаление исторических строк;
 - `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY` и `YOOKASSA_RETURN_URL` остаются opt-in activation set для hosted YooKassa payment path;
 - `YOOKASSA_STOREFRONT_RETURN_ORIGINS` задает comma-separated allowlist storefront origin-ов для return redirect; канонический root path `cp .env.example .env` → `npm run bootstrap` должен протаскивать этот ключ в backend env через [scripts/env-sync.sh](../scripts/env-sync.sh), а при отсутствии root-переменной sync пишет детерминированный local default `http://localhost:8000`;
 - `YOOKASSA_WEBHOOK_SECRET` больше не означает permissive webhook baseline при пустом значении: unsigned webhook по умолчанию должен отклоняться, а controlled local/dev override допускается только через явный `YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS=true`;
@@ -158,8 +158,7 @@ root-level скрипты используют этот файл как исто
 - `YOOKASSA_WEBHOOK_URL`
 - `YOOKASSA_WEBHOOK_SECRET`
 - `YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS`
-- `APISHIP_TOKEN`
-- `APISHIP_TEST_MODE`
+- historical DB residue from removed delivery provider (operator note only; no env activation keys or mode flags)
 - `NOTIFICATION_SMS_PROVIDER`
 - `MTS_EXOLVE_API_KEY`
 - `MTS_EXOLVE_SENDER`
@@ -341,16 +340,13 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 
 #### Shipping
 
-- Delivery Hub/direct Yandex теперь является default/new fulfillment contour для fresh templates: backend всегда регистрирует `deliveryhub` provider через [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts), explicit contract живёт в [`fulfillment-contour-contract.ts`](../medusa-agency-boilerplate/src/modules/fulfillment-contour-contract.ts), а прямой `Yandex Delivery` adapter остаётся authority для Delivery Hub/Yandex path.
+- Delivery Hub/direct Yandex теперь является selected/default delivery contour для fresh templates: backend регистрирует `deliveryhub` provider через [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts), explicit contract живёт в [`fulfillment-contour-contract.ts`](../medusa-agency-boilerplate/src/modules/fulfillment-contour-contract.ts), а прямой `Yandex Delivery` adapter остаётся authority для Delivery Hub/Yandex path.
 - `DELIVERY_HUB_ENCRYPTION_KEY` может оставаться пустым для baseline startup; реальные ключи/merchant credentials не должны попадать в env templates или docs.
 - `DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED=false` фиксирует, что current contour остаётся default/readiness path, но не live execution path; [`createFulfillment()`](../medusa-agency-boilerplate/src/modules/deliveryhub.ts:119) hard-blocked.
-- `APISHIP_TOKEN` включает deprecated ApiShip fulfillment provider только при непустом значении, что проверяется через [`isApiShipConfigured()`](../medusa-agency-boilerplate/src/modules/apiship.ts:105) и используется в [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts). Это legacy compatibility surface for existing stores only, not recommended for fresh templates and scheduled for staged removal.
-- `APISHIP_TEST_MODE` переключает live and test base URL внутри [`getApiShipProviderOptionsFromEnv()`](../medusa-agency-boilerplate/src/modules/apiship.ts:98) для уже включенного legacy provider.
-- Safe default сохранён: templates фиксируют `APISHIP_TEST_MODE=true`, а legacy helper `parseApiShipTestMode()` трактует пустое и невалидное значение как test-mode, чтобы local/dev не уходил в live молча.
-- Подтверждённый historical runtime path `2026-04-18` использовал production token и явное `APISHIP_TEST_MODE=false`; это history для уже поддерживаемого legacy slice, но не меняет Delivery Hub/direct Yandex default для clean clone.
-- Backend route [`GET()`](../medusa-agency-boilerplate/src/api/store/apiship/rates/route.ts:67) остаётся legacy compatibility route и не удаляется в этом package.
-- Пустой `APISHIP_TOKEN` — это валидный baseline-state для clean clone: legacy provider не регистрируется, а onboarding, build и runtime остаются рабочими.
-- Ни один markdown-документ этого репозитория не должен содержать фактическое значение `APISHIP_TOKEN`, `DELIVERY_HUB_ENCRYPTION_KEY` или provider credentials.
+- Storefront больше не использует старые provider-specific routes/helpers: standard shipping method commit остаётся generic, Delivery Hub neutral save/clear/summary остаётся present, а live shipment dispatch gated/not enabled.
+- Удалённые provider credentials не являются поддерживаемой optional integration, не включают provider через env и не являются backend startup requirement.
+- Старые provider ids/rows могут существовать только в ранее использованных local/staging DBs и требуют отдельного operator-approved cleanup; destructive DB migration в этом package отсутствует.
+- Ни один markdown-документ этого репозитория не должен содержать фактическое значение `DELIVERY_HUB_ENCRYPTION_KEY` или provider credentials.
 
 ---
 
@@ -377,8 +373,8 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - `NEXT_PUBLIC_STOREFRONT_PRESET` остается optional public config: при отсутствии или невалидном значении storefront безопасно откатывается к preset `atelier`, а sanctioned client-specific divergence должна оформляться через preset/config layer, typed landing-surface registry, adjacent product surfaces, typed listing/card contract, typed global shell contract [`StorefrontShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:74), typed catalog shell contract [`StorefrontCatalogShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:298) и sanctioned resolver boundaries, а не через форк shared templates;
 - `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` намеренно остается placeholder-only в template baseline и должен materialize'иться только успешным [`bootstrap.sh`](../scripts/bootstrap.sh:1) после seed, а не ручным копированием из старого клиента;
 - `PAYLOAD_CONTENT_PREVIEW_TOKEN`, `PAYLOAD_PREVIEW_SECRET`, `PAYLOAD_REVALIDATE_SECRET` и `REVALIDATE_SECRET` в storefront template baseline теперь намеренно пустые: secret values допускаются только при явном включении соответствующих preview/revalidate hooks;
-- storefront не хранит отдельный ApiShip token, `UNISENDER_API_KEY`, `UNISENDER_BASE_URL` с credential-параметрами или secret admin API key и не должен получать эти значения в публичный env;
-- текущий первый ApiShip slice использует storefront только как consumer backend route [src/lib/data/apiship.ts](../medusa-agency-boilerplate-storefront/src/lib/data/apiship.ts:22), а все чувствительные integration credentials остаются на backend стороне;
+- storefront не хранит отдельный legacy provider token, `UNISENDER_API_KEY`, `UNISENDER_BASE_URL` с credential-параметрами или secret admin API key и не должен получать эти значения в публичный env;
+- текущий первый legacy provider slice использует storefront только как consumer backend route the removed storefront legacy provider helper, а все чувствительные integration credentials остаются на backend стороне;
 - notification authenticated smoke path является backend-admin concern и не должен переноситься в storefront env;
 - cart identity для checkout runtime хранится storefront-side cookie helper [`setCartId()`](../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts:74), и для подтвержденного YooKassa hosted return path эта cookie policy должна оставаться совместимой с cross-site return;
 - подтвержденный source of truth для текущего checkout path — `sameSite: "lax"`, а не `sameSite: "strict"`, потому что strict policy ломала автоматический возврат из hosted payment обратно в review/order placement flow;
@@ -499,12 +495,10 @@ Guardrails этого пути:
 - authenticated smoke path — opt-in operational path, а не обязательная часть clean onboarding baseline.
 - уже materialized communication providers `UniSender` и `VK Community Messaging`, а также будущие tracks `VK ID` и `MTS Exolve`, не должны превращаться в baseline requirement для smoke или clean onboarding вне их explicit opt-in contract.
 
-Статус по Delivery Hub / ApiShip и checkout для этого канонического пути:
-- Delivery Hub/direct Yandex считается default/new contour для fresh templates, но live shipment execution и checkout cutover остаются disabled;
-- отсутствие `APISHIP_TOKEN` считается подтвержденным baseline-safe состоянием;
-- наличие `APISHIP_TOKEN` переводит legacy ApiShip integration в opt-in compatibility режим и требует повторного seed для появления shipping option `ApiShip Courier to Address`;
-- для local/dev safe default legacy ApiShip теперь test-only: live endpoint не должен включаться неявно при пустом или невалидном `APISHIP_TEST_MODE`;
-- подтверждённый historical runtime path `2026-04-18` использовал production token и явное `APISHIP_TEST_MODE=false`;
+Статус по Delivery Hub / removed delivery provider и checkout для этого канонического пути:
+- Delivery Hub/direct Yandex считается selected/default contour для fresh templates, но live shipment execution и checkout cutover остаются disabled;
+- removed-provider env activation surface отсутствует: backend startup и clean onboarding не должны зависеть от удалённых provider credentials, mode flags или восстановленных activation semantics;
+- старые базы могут содержать historical delivery rows/provider ids; это считается только historical DB residue и очищается отдельно, external/operator-approved процедурой при необходимости;
 - blocker по текущему slice `provider_aware_v1` закрыт targeted fixes в route/data path: route подтверждён runtime-проверкой, grouped rates начали возвращаться, а выбранный тариф сохраняется и используется backend recalculation path;
 - текущая v1 семантика checkout теперь честно provider-aware: grouped quotes и выбранный тариф materialized, а `providerConnectId` / `extraParams` support и live multi-provider switching на одном тестовом адресе остаются deferred;
 - полная runtime-цепочка `shipping → hosted YooKassa payment → automatic return → review → order placement → confirmed order page` теперь подтверждена end-to-end;

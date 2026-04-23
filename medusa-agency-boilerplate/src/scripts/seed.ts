@@ -23,8 +23,6 @@ import {
   updateStoresWorkflow,
 } from "@medusajs/medusa/core-flows";
 import { ApiKey } from "../../.medusa/types/query-entry-points";
-import { bootstrapApiShipSettings, getDefaultApiShipSettings } from "../modules/apiship-settings";
-import { ensureApiShipShippingOptionsForStore } from "../modules/apiship-store";
 
 type RegionRecord = {
   id: string;
@@ -104,12 +102,10 @@ const DEFAULT_STOCK_LOCATION_NAME = "Template RU Warehouse";
 const DEFAULT_FULFILLMENT_SET_NAME = "Template RU Fulfillment";
 const DEFAULT_SHIPPING_PROFILE_NAME = "Default Shipping Profile";
 const DEFAULT_SHIPPING_OPTION_NAME = "Template Standard Shipping";
-const APISHIP_SHIPPING_OPTION_NAME = "ApiShip Courier to Address";
 const DEFAULT_PUBLISHABLE_KEY_TITLE = "Webshop";
 const DEFAULT_PAYMENT_PROVIDER_ID = "pp_system_default";
 const YOOKASSA_PAYMENT_PROVIDER_ID = "pp_yookassa_yookassa";
 const MANUAL_FULFILLMENT_PROVIDER_ID = "manual_manual";
-const APISHIP_FULFILLMENT_PROVIDER_ID = "apiship_apiship";
 const BASELINE_HARDENING_HINT =
   "Resolve the conflicting baseline entities on this database or rerun bootstrap on a clean clone.";
 const SHOPPER_FACING_CATALOG: CatalogSeedDefinition[] = [
@@ -757,16 +753,6 @@ export default async function seedDemoData({ container }: ExecArgs) {
     },
   });
 
-  if (process.env.APISHIP_TOKEN?.trim()) {
-    await ensureDirectLink("stock location to ApiShip fulfillment provider", {
-      [Modules.STOCK_LOCATION]: {
-        stock_location_id: stockLocation.id,
-      },
-      [Modules.FULFILLMENT]: {
-        fulfillment_provider_id: APISHIP_FULFILLMENT_PROVIDER_ID,
-      },
-    });
-  }
 
   logger.info("Seeding fulfillment data...");
   const shippingProfiles = (await fulfillmentModuleService.listShippingProfiles({
@@ -874,16 +860,8 @@ export default async function seedDemoData({ container }: ExecArgs) {
     DEFAULT_SHIPPING_OPTION_NAME,
     MANUAL_FULFILLMENT_PROVIDER_ID
   );
-  const reusableApiShipShippingOption = findReusableShippingOption(
-    shippingOptions,
-    APISHIP_SHIPPING_OPTION_NAME,
-    APISHIP_FULFILLMENT_PROVIDER_ID
-  );
 
   const shippingOptionsToCreate: any[] = [];
-  const defaultApiShipSettings = getDefaultApiShipSettings({
-    enabled: !!process.env.APISHIP_TOKEN?.trim(),
-  });
 
   if (!reusableDefaultShippingOption) {
     shippingOptionsToCreate.push({
@@ -920,42 +898,6 @@ export default async function seedDemoData({ container }: ExecArgs) {
     logger.info(`Reusing shipping option "${DEFAULT_SHIPPING_OPTION_NAME}".`);
   }
 
-  if (process.env.APISHIP_TOKEN?.trim()) {
-    if (!reusableApiShipShippingOption) {
-      shippingOptionsToCreate.push({
-        name: APISHIP_SHIPPING_OPTION_NAME,
-        price_type: "calculated",
-        provider_id: APISHIP_FULFILLMENT_PROVIDER_ID,
-        service_zone_id: serviceZoneId,
-        shipping_profile_id: shippingProfile.id,
-        type: {
-          label: "Courier",
-          description:
-            "Legacy ApiShip courier shipping option kept for backward-compatible upgrade paths.",
-          code: "apiship-courier-legacy",
-        },
-        data: {
-          id: "apiship_courier_to_address",
-          deliveryType: 1,
-          pickupType: 1,
-        },
-        rules: [
-          {
-            attribute: "enabled_in_store",
-            value: "false",
-            operator: "eq" as const,
-          },
-          {
-            attribute: "is_return",
-            value: "false",
-            operator: "eq" as const,
-          },
-        ],
-      });
-    } else {
-      logger.info(`Reusing shipping option "${APISHIP_SHIPPING_OPTION_NAME}".`);
-    }
-  }
 
   if (shippingOptionsToCreate.length) {
     await createShippingOptionsWorkflow(container).run({
@@ -964,32 +906,6 @@ export default async function seedDemoData({ container }: ExecArgs) {
     logger.info(`Created ${shippingOptionsToCreate.length} missing shipping option(s).`);
   }
 
-  if (process.env.APISHIP_TOKEN?.trim()) {
-    await bootstrapApiShipSettings(pgConnection, {
-      enabled: defaultApiShipSettings.enabled,
-      modes: defaultApiShipSettings.modes,
-    });
-
-    const refreshedShippingOptions = (
-      (
-        await query.graph({
-          entity: "shipping_option",
-          fields: ["id", "name", "provider_id", "data"],
-          filters: {
-            provider_id: APISHIP_FULFILLMENT_PROVIDER_ID,
-          },
-        })
-      ).data as ShippingOptionRecord[] | undefined
-    ) ?? [];
-
-    await ensureApiShipShippingOptionsForStore({
-      container,
-      service_zone_id: serviceZoneId,
-      shipping_profile_id: shippingProfile.id,
-      existing_shipping_options: refreshedShippingOptions,
-      settings: defaultApiShipSettings,
-    });
-  }
 
   await ensureWorkflowLink("sales channel to stock location", async () => {
     await linkSalesChannelsToStockLocationWorkflow(container).run({

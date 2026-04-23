@@ -38,7 +38,7 @@
 - восстановление через новый undocumented deployment mechanism;
 - secret-manager export or restore, если такой процесс не описан текущими артефактами;
 - recovery после Redis, DNS, reverse proxy, network или hosting platform outage как primary failure domain;
-- recovery optional integrations `UNISENDER_*`, `MTS_EXOLVE_*`, `VK_*`, `APISHIP_*`, `YOOKASSA_*`, `PAYLOAD_*`, если они отдельно не утверждены для конкретного staging pass;
+- recovery optional integrations `UNISENDER_*`, `MTS_EXOLVE_*`, `VK_*`, `YOOKASSA_*`, `PAYLOAD_*`, если они отдельно не утверждены для конкретного staging pass;
 - monitoring, alerting и log-baseline implementation.
 
 ## 2. In-scope stateful surfaces и допустимые assumptions

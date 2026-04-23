@@ -1520,7 +1520,7 @@ function buildStoreSettingsHints(input: {
     input.supports_dropoff
       ? "Returned neutral settings indicate dropoff-origin modality visibility."
       : null,
-    "This settings surface is read-only and does not save selection state, commit checkout delivery, or replace the active legacy ApiShip shopper flow.",
+    "This settings surface is read-only and does not save selection state, commit checkout delivery, or enable live dispatch.",
   ]
 
   return Array.from(new Set(hints.filter((hint): hint is string => !!hint)))

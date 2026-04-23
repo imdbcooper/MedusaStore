@@ -1,12 +1,6 @@
 "use server"
 
 import { sdk } from "@lib/config"
-import {
-  isApiShipShippingMethodId,
-  isApiShipShippingSelectionData,
-  type ApiShipShopperModeKey,
-  validateApiShipShippingSelectionData,
-} from "@lib/util/apiship"
 import medusaError from "@lib/util/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
@@ -226,37 +220,23 @@ export async function deleteLineItem(lineId: string) {
 export async function setShippingMethod({
   cartId,
   shippingMethodId,
-  shopperModeKey,
-  addressFingerprint,
   data,
 }: {
   cartId: string
   shippingMethodId: string
-  shopperModeKey?: ApiShipShopperModeKey | null
-  addressFingerprint?: string | null
   data?: Record<string, unknown>
 }) {
   const headers = {
     ...(await getAuthHeaders()),
   }
 
-  const resolvedShopperModeKey = shopperModeKey ??
-    (isApiShipShippingMethodId(shippingMethodId) ? shippingMethodId : null)
-  const validatedData =
-    resolvedShopperModeKey || isApiShipShippingSelectionData(data)
-      ? validateApiShipShippingSelectionData(data, {
-          shippingOptionId: shippingMethodId,
-          shopperModeKey: resolvedShopperModeKey,
-          addressFingerprint,
-        })
-      : data
 
   return sdk.store.cart
     .addShippingMethod(
       cartId,
       {
         option_id: shippingMethodId,
-        ...(validatedData ? { data: validatedData } : {}),
+        ...(data ? { data } : {}),
       },
       {},
       headers

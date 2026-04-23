@@ -76,7 +76,7 @@
 - `MEDUSA_BACKEND_URL` — стабильный public backend URL, который используется и для verification, и как upstream для storefront;
 - `STORE_CORS`, `ADMIN_CORS` и `AUTH_CORS` включают реальные staging origins;
 - storefront minimum runtime assumptions остаются теми, что уже зафиксированы в [Docs/current_work.md](./current_work.md): backend URL, publishable key, base URL и default region `ru`;
-- optional integrations `UNISENDER_*`, `MTS_EXOLVE_*`, `VK_*`, `APISHIP_*`, `YOOKASSA_*`, `PAYLOAD_*` могут оставаться empty or disabled, если конкретный staging pass их отдельно не включает;
+- optional integrations `UNISENDER_*`, `MTS_EXOLVE_*`, `VK_*`, `YOOKASSA_*`, `PAYLOAD_*` могут оставаться empty or disabled, если конкретный staging pass их отдельно не включает;
 - staging deploy path не должен зависеть от staging-only ручных обходов, которые нельзя повторить тем же sanctioned path.
 
 ### Явные assumptions и follow-up, которые нельзя выдумывать здесь

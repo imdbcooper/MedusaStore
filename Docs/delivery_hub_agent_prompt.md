@@ -9,7 +9,7 @@
 
 Контекст проекта:
 - это master repo для РФ-магазинов;
-- текущий исторический shipping slice на ApiShip уже реализован, но долгосрочная архитектура меняется;
+- текущий исторический shipping slice на legacy provider уже реализован, но долгосрочная архитектура меняется;
 - новый source-of-truth документ: `Docs/delivery_hub_spec.md`;
 - текущий operational status: `Docs/current_work.md`;
 - roadmap: `Docs/master_repo_plan_v2.md`.
@@ -19,7 +19,7 @@
 - использовать только `src/admin/routes/*`, `src/admin/widgets/*`, `src/api/admin/*`, `src/api/store/*`, `src/modules/*`;
 - не хранить merchant credentials в storefront;
 - не выводить реальные секреты в docs и логи;
-- не удалять ApiShip на первом шаге;
+- не удалять legacy provider на первом шаге;
 - не переписывать checkout целиком до готовности backend delivery contract.
 
 Что нужно сделать в первую очередь:
@@ -39,7 +39,7 @@
    - `listPickupWindows`
    - `quoteWarehouseToPickupPoint`
    - `quoteDropoffPointToPickupPoint`
-8. Использовать прямую интеграцию с Yandex Delivery, а не ApiShip.
+8. Использовать прямую интеграцию с Yandex Delivery, а не legacy provider.
 
 Что уже подтверждено по Yandex и должно быть учтено:
 - `pickup-points/list` возвращает точки и флаг `available_for_dropoff`;
@@ -68,8 +68,8 @@ Definition of Done для первого tranche:
 - `Docs/delivery_hub_spec.md`
 - `Docs/current_work.md`
 - `medusa-agency-boilerplate/medusa-config.ts`
-- существующие `src/admin/routes/settings/apiship/page.tsx`
-- существующие shipping-related модули, но не копируй ApiShip-архитектуру как source of truth.
+- существующие `src/admin/routes/settings/legacy provider/page.tsx`
+- существующие shipping-related модули, но не копируй legacy provider-архитектуру как source of truth.
 
 После каждого meaningful change обновляй docs truthfully.
 ```

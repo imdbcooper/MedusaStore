@@ -1,5 +1,7 @@
 # Master Repo Plan v2
 
+> Cleanup status: legacy provider/runtime routes have been removed from the master template. Delivery Hub/direct Yandex is the selected delivery contour; live dispatch remains gated/not enabled; backend startup must not require new delivery env secrets. Existing old databases may still contain obsolete delivery rows/provider ids and require separate operator-approved cleanup if relevant.
+
 > Статус документа: рабочий план, синхронизированный с проверенным состоянием репозитория по состоянию на `2026-04-19`
 >
 > Назначение: заменить прежний оптимистичный план на проверенную дорожную карту, которая ведет проект к состоянию тиражируемого репозитория-шаблона для интернет-магазинов.
@@ -68,7 +70,7 @@
 - все core-решения первой версии по умолчанию выбираются для типового интернет-магазина в РФ;
 - пригодность для российского рынка важнее, чем наличие у Medusa более подробно задокументированного или более удобного first-party примера;
 - для payment track текущим направлением v1 считается **YooKassa-first path**;
-- исторический `ApiShip-first` slice остается подтвержденным промежуточным результатом, но для долгосрочного shipping track целевым следующим направлением теперь считается **собственный `delivery-hub` с первым adapter `Yandex Delivery`**;
+- исторический `historical provider-aware` slice остается подтвержденным промежуточным результатом, но для долгосрочного shipping track целевым следующим направлением теперь считается **собственный `delivery-hub` с первым adapter `Yandex Delivery`**;
 - нецелевые для РФ решения можно изучать как reference pattern для архитектуры Medusa, но нельзя выбирать как `default v1 choice`, если пользователь явно не сменил рынок проекта.
 
 ---
@@ -113,7 +115,7 @@
 
 Следующие вещи **не считаются уже подтвержденными как готовое решение**, и поэтому входят в план через отдельную фазу верификации:
 - наличие подходящего и поддерживаемого first-party решения Medusa для YooKassa;
-- наличие подходящего и поддерживаемого first-party решения Medusa для ApiShip;
+- наличие подходящего и поддерживаемого first-party решения Medusa для legacy provider;
 - наличие готового и безопасного SMTP-провайдера именно под наш сценарий без дополнительной доработки;
 - необходимость немедленной миграции текущей структуры в workspace/monorepo;
 - необходимость нескольких полноценных шаблонов фронта в первой версии.
@@ -248,7 +250,7 @@ Payload CMS рассматривается как **отдельный headless 
 ### 6.2. Открытые блокеры шаблонного ядра
 
 - payment path v1 еще не утвержден как runtime-confirmed шаблонное решение, хотя текущий практический путь уже зафиксирован как YooKassa-first;
-- shipping path v1 еще не утвержден как шаблонное решение; целевой следующий кандидат по market scope — ApiShip-first;
+- shipping path v1 еще не утвержден как шаблонное решение; целевой следующий кандидат по market scope — historical provider-aware;
 - общий end-to-end integration layer еще не собран полностью;
 - storefront все еще визуально и смыслово остается starter-проектом Medusa;
 - в проекте пока нет завершенного client configuration layer;
@@ -578,7 +580,7 @@ Commerce-flow не должен переписываться для типово
   - продолжать текущий YooKassa-first path и подтвердить его для нужного рынка через POC/runtime validation.
 - для доставки:
   - использовать пригодность для РФ как главный критерий отбора;
-  - по умолчанию идти в ApiShip-first исследование и validation track;
+  - по умолчанию идти в historical provider-aware исследование и validation track;
   - зафиксировать, будет ли это custom module/provider, адаптер к внешнему API или проверенный внешний пакет;
   - отдельно подтвердить получение тарифов, выбор ПВЗ, создание отправления, webhook/status update.
 - для каждого кандидата выполнить техническую верификацию:
@@ -692,7 +694,7 @@ Commerce-flow не должен переписываться для типово
   - YooKassa-first checkout path;
   - manual fallback;
   - optional Stripe-compatible reference adapter при наличии соответствующего backend provider;
-  - ApiShip `cheapest_only_v1` delivery semantics;
+  - legacy provider `cheapest_only_v1` delivery semantics;
 - starter/demo/admin-onboarding cleanup в shopper-visible surfaces и storefront docs.
 
 ### Что закрываем в первую очередь
@@ -768,7 +770,7 @@ Commerce-flow не должен переписываться для типово
 - статическая проверка shopper-facing entrypoints на отсутствие `demo`, `onboarding`, admin setup CTA и starter-branding там, где это больше не часть baseline;
 - regression review для home, catalog, product, cart, checkout, account и confirmed order surfaces;
 - отдельная проверка region switching и optional locale fallback semantics;
-- отдельная проверка того, что YooKassa-first checkout path и ApiShip `cheapest_only_v1` semantics не ломаются storefront cleanup-изменениями;
+- отдельная проверка того, что YooKassa-first checkout path и legacy provider `cheapest_only_v1` semantics не ломаются storefront cleanup-изменениями;
 - storefront build/lint/runtime smoke остаются implementation-stage validation surface, но не превращают workstream в новый integration track.
 
 ### Definition of Done

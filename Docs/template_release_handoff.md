@@ -86,7 +86,7 @@ flowchart TD
    - storefront name, title, description, tagline, email, phone и social links должны перестать быть template placeholders до client-facing handoff.
 
 10. **Enable optional integrations only when approved**
-    - YooKassa, ApiShip, UniSender, VK, Payload preview/revalidate и другие opt-in surfaces не становятся baseline requirement автоматически;
+    - YooKassa, legacy provider, UniSender, VK, Payload preview/revalidate и другие opt-in surfaces не становятся baseline requirement автоматически;
     - пустой или disabled state остается валидным template-safe baseline, если feature не включается для конкретного handoff.
 
 11. **Run smoke and readiness checks**

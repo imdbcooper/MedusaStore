@@ -1,9 +1,5 @@
 import { defineConfig, loadEnv } from "@medusajs/framework/utils"
 import {
-  getApiShipProviderOptionsFromEnv,
-  isApiShipConfigured,
-} from "./src/modules/apiship"
-import {
   getNotificationEmailProviderDefinition,
   getNotificationEmailRuntime,
 } from "./src/modules/notification-email"
@@ -18,10 +14,7 @@ import {
 import { getVkIdRuntime } from "./src/modules/vk-id"
 import { isYooKassaConfigured } from "./src/modules/yookassa"
 import { DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE } from "./src/modules/delivery-hub/provider-surface"
-import {
-  getDefaultFulfillmentContourContract,
-  getLegacyApiShipDeprecationContract,
-} from "./src/modules/fulfillment-contour-contract"
+import { getDefaultFulfillmentContourContract } from "./src/modules/fulfillment-contour-contract"
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd())
 
@@ -83,27 +76,13 @@ const paymentProviders = isYooKassaConfigured(yookassaProviderOptions)
     ]
   : []
 
-const apiShipProviderOptions = getApiShipProviderOptionsFromEnv()
 const defaultFulfillmentContour = getDefaultFulfillmentContourContract()
-const legacyApiShipDeprecation = getLegacyApiShipDeprecationContract()
 
 const fulfillmentProviders = [
   {
     resolve: "@medusajs/medusa/fulfillment-manual",
     id: "manual",
   },
-  ...(isApiShipConfigured(apiShipProviderOptions)
-    ? [
-        {
-          resolve: "./src/modules/apiship",
-          id: "apiship",
-          options: {
-            ...apiShipProviderOptions,
-            deprecation: legacyApiShipDeprecation,
-          },
-        },
-      ]
-    : []),
   {
     resolve: "./src/modules/deliveryhub",
     id: DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,

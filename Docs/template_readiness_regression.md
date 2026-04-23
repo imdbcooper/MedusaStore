@@ -16,7 +16,7 @@
    - `GET /store/payment/yookassa`;
    - `GET /store/payment/yookassa/return`;
    - `POST /yookassa/webhook`;
-4. текущий поддерживаемый ApiShip scope через `GET /store/apiship/rates` как `provider_aware_v1` + safe-by-default env semantics;
+4. текущий поддерживаемый legacy provider scope через `GET /store/delivery/rates` как `provider_aware_v1` + safe-by-default env semantics;
 5. baseline integrity gates для `Phase 8 / tranche 1`:
    - root aggregated lint/typecheck path;
    - existing build + HTTP smoke path;
@@ -275,7 +275,7 @@ Expected behavior, который не считается регрессией:
 
 ---
 
-## 6. Regression 04 — ApiShip supported scope as `provider_aware_v1`
+## 6. Regression 04 — legacy provider supported scope as `provider_aware_v1`
 
 ### Цель
 
@@ -285,21 +285,20 @@ Expected behavior, который не считается регрессией:
 
 Проверяется только следующее:
 
-1. baseline-safe отсутствие обязательного `APISHIP_TOKEN`;
-2. safe-by-default semantics для `APISHIP_TEST_MODE`;
-3. route contract `GET /store/apiship/rates`;
+1. clean onboarding и startup не зависят от removed-provider env activation surface;
+2. historical DB residue from removed delivery provider остаётся только operator cleanup concern;
+3. route contract `GET /store/delivery/rates`;
 4. текущая selection semantics как `provider_aware_v1`, включая grouped provider/tariff selection и persistence в cart shipping method data.
 
 ### Канонические ожидания по env
 
-- пустой `APISHIP_TOKEN` не должен ломать bootstrap, preflight и baseline runtime;
-- `APISHIP_TEST_MODE=true` остается шаблонным default;
-- пустое или невалидное `APISHIP_TEST_MODE` трактуется как test-mode;
-- live разрешен только при явном `APISHIP_TEST_MODE=false`.
+- отсутствие removed-provider env activation surface не должно ломать bootstrap, preflight и baseline runtime;
+- Delivery Hub/direct Yandex остаётся selected/default delivery contour;
+- historical delivery rows/provider ids в старых базах не считаются runtime env contract и очищаются отдельно только operator-approved процедурой.
 
 ### Канонический route contract
 
-Route: `GET /store/apiship/rates?cart_id=<id>&shipping_option_id=<id>`
+Route: `GET /store/delivery/rates?cart_id=<id>&shipping_option_id=<id>`
 
 Что должно быть true:
 
@@ -316,16 +315,16 @@ Expected non-crash responses:
 
 - `404`-style contract через JSON `code: cart_not_found`;
 - `200` + `code: shipping_address_incomplete`;
-- `200` + `code: apiship_option_not_found`;
-- `200` + `code: apiship_calculation_unavailable`.
+- `200` + `code: legacy_provider_option_not_found`;
+- `200` + `code: legacy_provider_calculation_unavailable`.
 
 ### Что deliberately не считается regression внутри этого pack
 
 Следующее остается внешним или отдельным scope и не должно подменяться ложной кодовой регрессией:
 
-- пустой `/connections` у аккаунта ApiShip;
+- пустой `/connections` у аккаунта legacy provider;
 - отсутствие активных подключений и договоров;
-- отсутствие тарифов из-за account-state в кабинете ApiShip;
+- отсутствие тарифов из-за account-state в кабинете legacy provider;
 - live multi-provider switching на одном test address;
 - `providerConnectId` / `extraParams` support.
 
@@ -348,7 +347,7 @@ Expected non-crash responses:
 
 - отдельный bootstrap harness;
 - отдельный YooKassa e2e runner;
-- отдельный ApiShip mock runner.
+- отдельный legacy provider mock runner.
 
 ### Добавленный Phase 8 / tranche 1 baseline contour
 

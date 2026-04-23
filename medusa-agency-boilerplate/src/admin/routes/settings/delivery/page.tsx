@@ -679,7 +679,7 @@ const DeliverySettingsPage = () => {
         <div>
           <Heading level="h1">Delivery</Heading>
           <Text className="text-ui-fg-subtle mt-2">
-            Admin control plane for Delivery Hub tranche-1. Existing ApiShip behavior is left intact.
+            Admin control plane for Delivery Hub tranche-1. Live dispatch remains gated and disabled by default.
           </Text>
         </div>
         <Button type="button" variant="secondary" onClick={() => void loadData(true)} isLoading={isRefreshing}>

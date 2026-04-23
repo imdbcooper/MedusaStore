@@ -220,7 +220,7 @@ This template does not authorize or imply:
 - retry scheduling;
 - compensation writes;
 - checkout or storefront cutover;
-- ApiShip weakening or removal;
+- Removed legacy delivery weakening;
 - official Admin patching;
 - unblocking [`createFulfillment()`](../src/modules/deliveryhub.ts:119).
 

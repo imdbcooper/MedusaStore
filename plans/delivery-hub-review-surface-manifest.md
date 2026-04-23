@@ -1,5 +1,7 @@
 # Delivery Hub review-surface quarantine manifest
 
+> Cleanup status: legacy provider/runtime routes have been removed from the master template. Delivery Hub/direct Yandex is the selected delivery contour; live dispatch remains gated/not enabled; backend startup must not require new delivery env secrets. Existing old databases may still contain obsolete delivery rows/provider ids and require separate operator-approved cleanup if relevant.
+
 Generated: 2026-04-23T01:03:47Z
 Workspace: [`medusa-agency-boilerplate`](../)
 Scope: process artifact only; no feature changes, no cleanup/removal, no destructive git operations.
@@ -21,7 +23,7 @@ Read-only inventory was collected from:
 |---|---|---|
 | A | Intended [`delivery-hub`](../Docs/delivery_hub_spec.md) work / next tranche surface | include or future-tranche |
 | B | Protected invariant surfaces | reference-only / invariant-only |
-| C | Legacy ApiShip noise / non-current work | exclude or future-tranche |
+| C | Legacy provider noise / non-current work | exclude or future-tranche |
 | D | Sibling storefront / cross-repo surface | reference-only / exclude |
 | E | Docs/status/planning artifacts | reference-only / include only for planning review |
 
@@ -39,7 +41,7 @@ Read-only inventory was collected from:
 |---|---|---|
 | [`createFulfillment()`](../medusa-agency-boilerplate/src/modules/deliveryhub.ts:119) | Must remain hard-blocked. | invariant-only |
 | [`DeliveryHubExecutionLedgerRepositoryAssemblyPersistenceReadinessContour`](../medusa-agency-boilerplate/src/modules/delivery-hub/storage/execution-ledger-repository-assembly-scaffold.ts:161) | Must remain `artifact_defined -> manual_application_external -> snapshot_verification_available -> activation_blocked`. | invariant-only |
-| Legacy [`ApiShip`](../medusa-agency-boilerplate/src/modules/apiship.ts:190) | Must not be removed. | invariant-only |
+| Legacy provider | Must not be removed. | invariant-only |
 | Storefront cutover | No storefront cutover claim is made by this manifest. | invariant-only |
 
 ## Bucket A — intended delivery-hub work / next tranche surface
@@ -144,23 +146,23 @@ These paths are not the current feature-review target. They are present to verif
 | ?? | [`scripts/browser-smoke.sh`](../scripts/browser-smoke.sh) | reference-only | Browser smoke helper; operational surface. |
 | ?? | [`scripts/staging-verification.sh`](../scripts/staging-verification.sh) | reference-only | Staging verification helper; operational surface, no staging cutover claim. |
 
-## Bucket C — legacy ApiShip noise / non-current work
+## Bucket C — legacy provider noise / non-current work
 
 These paths are acknowledged dirty-tree inventory but excluded from the current delivery-hub review surface unless imported by included paths.
 
 | Status | Path | Action | Reason |
 |---|---|---|---|
-| M | [`medusa-agency-boilerplate/src/api/store/apiship/rates/route.ts`](../medusa-agency-boilerplate/src/api/store/apiship/rates/route.ts) | exclude | Legacy ApiShip store rates endpoint; non-current work/noise for delivery-hub review. |
-| M | [`medusa-agency-boilerplate/src/modules/apiship.ts`](../medusa-agency-boilerplate/src/modules/apiship.ts) | reference-only | Legacy [`ApiShip`](../medusa-agency-boilerplate/src/modules/apiship.ts:190) must remain present; not removed or cleaned here. |
-| ?? | [`medusa-agency-boilerplate/src/admin/routes/settings/apiship/page.tsx`](../medusa-agency-boilerplate/src/admin/routes/settings/apiship/page.tsx) | exclude | Legacy ApiShip admin UI; non-current work/noise. |
-| ?? | [`medusa-agency-boilerplate/src/api/admin/apiship/settings/route.ts`](../medusa-agency-boilerplate/src/api/admin/apiship/settings/route.ts) | exclude | Legacy ApiShip admin settings endpoint; non-current work/noise. |
-| ?? | [`medusa-agency-boilerplate/src/api/store/apiship/points/route.ts`](../medusa-agency-boilerplate/src/api/store/apiship/points/route.ts) | exclude | Legacy ApiShip store points endpoint; non-current work/noise. |
-| ?? | [`medusa-agency-boilerplate/src/api/store/apiship/settings/route.ts`](../medusa-agency-boilerplate/src/api/store/apiship/settings/route.ts) | exclude | Legacy ApiShip store settings endpoint; non-current work/noise. |
-| ?? | [`medusa-agency-boilerplate/src/modules/apiship-rates.ts`](../medusa-agency-boilerplate/src/modules/apiship-rates.ts) | exclude | Legacy ApiShip rates module; not current delivery-hub surface. |
-| ?? | [`medusa-agency-boilerplate/src/modules/apiship-settings.ts`](../medusa-agency-boilerplate/src/modules/apiship-settings.ts) | exclude | Legacy ApiShip settings module; not current delivery-hub surface. |
-| ?? | [`medusa-agency-boilerplate/src/modules/apiship-shipping-options.ts`](../medusa-agency-boilerplate/src/modules/apiship-shipping-options.ts) | exclude | Legacy ApiShip shipping options module; not current delivery-hub surface. |
-| ?? | [`medusa-agency-boilerplate/src/modules/apiship-store.ts`](../medusa-agency-boilerplate/src/modules/apiship-store.ts) | exclude | Legacy ApiShip store module; not current delivery-hub surface. |
-| ?? | [`medusa-agency-boilerplate/src/workflows/__tests__/apiship-settings.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/apiship-settings.unit.spec.ts) | exclude | Legacy ApiShip settings test; non-current work/noise. |
+| M | [`medusa-agency-boilerplate/src/api/store/delivery/rates/route.ts`](../medusa-agency-boilerplate/src/api/store/delivery/rates/route.ts) | exclude | Legacy store rates endpoint; non-current work/noise for delivery-hub review. |
+| M | medusa-agency-boilerplate/the removed backend legacy provider module | reference-only | Legacy provider must remain present; not removed or cleaned here. |
+| ?? | medusa-agency-boilerplate/src/admin/routes/settings/legacy provider/page.tsx | exclude | Legacy provider admin UI; non-current work/noise. |
+| ?? | [`medusa-agency-boilerplate/src/api/admin/delivery/settings/route.ts`](../medusa-agency-boilerplate/src/api/admin/delivery/settings/route.ts) | exclude | Legacy provider admin settings endpoint; non-current work/noise. |
+| ?? | [`medusa-agency-boilerplate/src/api/store/delivery/points/route.ts`](../medusa-agency-boilerplate/src/api/store/delivery/points/route.ts) | exclude | Legacy store points endpoint; non-current work/noise. |
+| ?? | [`medusa-agency-boilerplate/src/api/store/delivery/settings/route.ts`](../medusa-agency-boilerplate/src/api/store/delivery/settings/route.ts) | exclude | Legacy store settings endpoint; non-current work/noise. |
+| ?? | removed backend legacy rates module | exclude | Legacy rates module; not current delivery-hub surface. |
+| ?? | removed backend legacy settings module | exclude | Legacy settings module; not current delivery-hub surface. |
+| ?? | removed backend legacy shipping-options module | exclude | Legacy shipping options module; not current delivery-hub surface. |
+| ?? | removed backend legacy store module | exclude | Legacy store module; not current delivery-hub surface. |
+| ?? | medusa-agency-boilerplate/src/workflows/__tests__/legacy provider-settings.unit.spec.ts | exclude | Legacy settings test; non-current work/noise. |
 
 ## Bucket D — sibling storefront / cross-repo surface
 
@@ -170,7 +172,7 @@ Sibling repo check found no `../medusa-agency-boilerplate-storefront/.git`. The 
 |---|---|---|---|
 | M | [`medusa-agency-boilerplate-storefront/next.config.js`](../medusa-agency-boilerplate-storefront/next.config.js) | reference-only | Storefront config surface; cross-repo/cutover-sensitive. |
 | M | [`medusa-agency-boilerplate-storefront/package.json`](../medusa-agency-boilerplate-storefront/package.json) | reference-only | Storefront package surface; not backend delivery-hub review. |
-| M | [`medusa-agency-boilerplate-storefront/src/lib/data/apiship.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/apiship.ts) | exclude | Storefront legacy ApiShip data surface; cross-repo and non-current. |
+| M | removed storefront legacy delivery helper | exclude | Storefront legacy provider data surface; cross-repo and non-current. |
 | M | [`medusa-agency-boilerplate-storefront/src/lib/util/compare-addresses.ts`](../medusa-agency-boilerplate-storefront/src/lib/util/compare-addresses.ts) | exclude | Storefront utility change; cross-repo surface. |
 | M | [`medusa-agency-boilerplate-storefront/src/modules/checkout/components/address-select/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/address-select/index.tsx) | exclude | Storefront checkout UI; no cutover claim. |
 | M | [`medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/payment-button/index.tsx) | exclude | Storefront checkout payment UI; cross-repo surface. |
@@ -194,7 +196,7 @@ These paths are documentation, evidence, planning, or captured review artifacts.
 | M | [`Docs/plan_analysis.md`](../Docs/plan_analysis.md) | reference-only | Planning analysis; use as context only. |
 | M | [`Docs/template_readiness_regression.md`](../Docs/template_readiness_regression.md) | reference-only | Template/readiness documentation; not current edit scope. |
 | M | [`Docs/template_release_handoff.md`](../Docs/template_release_handoff.md) | reference-only | Release handoff template; not current edit scope. |
-| ?? | [`Docs/apiship_yandex_test_data.md`](../Docs/apiship_yandex_test_data.md) | reference-only | Legacy ApiShip documentation/evidence; not current delivery-hub review. |
+| ?? | obsolete historical delivery test-data document | reference-only | Legacy provider documentation/evidence; not current delivery-hub review. |
 | ?? | [`Docs/delivery_hub_agent_prompt.md`](../Docs/delivery_hub_agent_prompt.md) | reference-only | Delivery-hub prompt/planning artifact. |
 | ?? | [`Docs/delivery_hub_execution_ledger_evidence_bundle_packaging_convention.md`](../Docs/delivery_hub_execution_ledger_evidence_bundle_packaging_convention.md) | reference-only | Evidence packaging convention; planning/evidence context. |
 | ?? | [`Docs/delivery_hub_execution_ledger_evidence_submission_checklist.md`](../Docs/delivery_hub_execution_ledger_evidence_submission_checklist.md) | reference-only | Evidence submission checklist; planning/evidence context. |
@@ -214,9 +216,9 @@ These paths are documentation, evidence, planning, or captured review artifacts.
 | ?? | [`plans/delivery-hub-review-surface-manifest.md`](delivery-hub-review-surface-manifest.md) | include | This manifest; the only in-scope edit for this cleanup/isolation inventory tranche. |
 | ?? | [`playwright-admin-login-snapshot.md`](../playwright-admin-login-snapshot.md) | reference-only | Captured browser snapshot; evidence/noise outside source review. |
 | ?? | [`playwright-admin-orders-snapshot.md`](../playwright-admin-orders-snapshot.md) | reference-only | Captured browser snapshot; evidence/noise outside source review. |
-| ?? | [`playwright-apiship-after-save.md`](../playwright-apiship-after-save.md) | reference-only | Captured legacy ApiShip browser snapshot; evidence/noise. |
-| ?? | [`playwright-apiship-settings-deep.md`](../playwright-apiship-settings-deep.md) | reference-only | Captured legacy ApiShip browser snapshot; evidence/noise. |
-| ?? | [`playwright-apiship-toggle-after-click.md`](../playwright-apiship-toggle-after-click.md) | reference-only | Captured legacy ApiShip browser snapshot; evidence/noise. |
+| ?? | obsolete historical browser snapshot | reference-only | Captured legacy provider browser snapshot; evidence/noise. |
+| ?? | obsolete historical browser snapshot | reference-only | Captured legacy provider browser snapshot; evidence/noise. |
+| ?? | obsolete historical browser snapshot | reference-only | Captured legacy provider browser snapshot; evidence/noise. |
 | ?? | [`playwright-cart-snapshot.md`](../playwright-cart-snapshot.md) | reference-only | Captured storefront/browser snapshot; evidence/noise. |
 | ?? | [`playwright-checkout-address-snapshot.md`](../playwright-checkout-address-snapshot.md) | reference-only | Captured checkout snapshot; evidence/noise. |
 | ?? | [`playwright-checkout-after-door-commit.md`](../playwright-checkout-after-door-commit.md) | reference-only | Captured checkout snapshot; evidence/noise. |

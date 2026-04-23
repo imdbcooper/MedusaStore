@@ -1,5 +1,7 @@
 # Delivery Hub v1 Specification
 
+> Cleanup status: legacy provider/runtime routes have been removed from the master template. Delivery Hub/direct Yandex is the selected delivery contour; live dispatch remains gated/not enabled; backend startup must not require new delivery env secrets. Existing old databases may still contain obsolete delivery rows/provider ids and require separate operator-approved cleanup if relevant.
+
 > Статус документа: проектная спецификация на первую реализацию собственного слоя доставки.
 >
 > Дата первой редакции: `2026-04-21`.
@@ -14,12 +16,12 @@
 
 ## 1. Зачем меняем направление
 
-Исторический shipping slice `ApiShip provider_aware_v1` в репозитории уже materialized и подтвержден как рабочий для своего узкого scope. Это остается фактом и не должно быть переписано как будто этого slice не было.
+Исторический shipping slice `legacy-provider-aware_v1` в репозитории уже materialized и подтвержден как рабочий для своего узкого scope. Это остается фактом и не должно быть переписано как будто этого slice не было.
 
 Но дальнейшая shipping-архитектура меняется по причинам:
 
 - прямые тесты `Yandex Delivery` показали, что `self_pickup` и `warehouse -> PVZ` реально работают через API Яндекса;
-- `ApiShip` не дает достаточно прозрачной и предсказуемой модели для `PVZ`, `dropoff`, `warehouse`, `pickup windows` и диагностики;
+- legacy provider не дает достаточно прозрачной и предсказуемой модели для `PVZ`, `dropoff`, `warehouse`, `pickup windows` и диагностики;
 - магазин-шаблон для РФ в долгую выигрывает от собственного расширяемого delivery-layer, а не от жесткой завязки на одного агрегатора;
 - merchant-facing настройка доставки должна жить в админке магазина и не требовать внешнего кабинета как основного control-plane.
 
@@ -34,7 +36,7 @@
 - хранит merchant-specific credentials и настройки в backend;
 - поддерживает несколько служб доставки через единый внутренний контракт;
 - в первой итерации реализует адаптер `Yandex Delivery`;
-- позволяет полностью выпилить `ApiShip` после migration cutover.
+- позволяет полностью выпилить legacy provider после migration cutover.
 
 ## 3. Нецели первой итерации
 
@@ -124,7 +126,7 @@
 
 ### 5.3. Fulfillment registration
 
-Вместо `apiship` должен остаться один внутренний provider:
+Вместо legacy provider должен остаться один внутренний provider:
 
 - `deliveryhub`
 
@@ -433,9 +435,9 @@ Materialized в текущем tranche-safe backend/store contract-first scope:
 - следующим tranche-safe шагом поверх readiness/summary/persisted-selection/shadow-catalog contour теперь materialized read-only store settings surface [`GET /store/delivery/settings`](../medusa-agency-boilerplate/src/api/store/delivery/settings/route.ts) и adjacent shadow settings preview в [`shipping/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx): backend route вызывает [`getStoreSettings()`](../medusa-agency-boilerplate/src/modules/delivery-hub/service.ts:724) и возвращает только shopper-safe neutral settings read model `enabled | status | summary | preview_visibility | hints` без provider/internal ids, без secrets и без mutation path; storefront sampled-но читает этот контракт через [`retrieveDeliveryHubSettings()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:76), строит informational visibility summary через [`buildDeliveryHubShadowSettingsPreviewModel()`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts:1534) и показывает только feature/config/debug/operator visibility без `save selection`, без `clear selection`, без [`setShippingMethod()`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts:226), без commit side-effects и без dual-flow shopper UX.
 - поверх sampled shadow quote context теперь materialized ещё и read-only shadow pickup-window preview в [`shipping/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx): компонент only-if-needed вызывает [`listDeliveryHubPickupWindows()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:119), а helper [`buildDeliveryHubShadowPickupWindowPreviewModel()`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts:1821) сводит ответ к shopper-safe availability / required-quote-count / hints / errors summary без leaked identifiers, без provider-specific copy, без `save selection`, `set shipping method`, commit side-effects и без dual-flow shopper UX.
 - approved шагом поверх этих read-only blocks materialized narrow storefront-only shadow shipping-option parity preview в [`shipping/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx), который через [`buildDeliveryHubShadowShippingOptionParityPreviewModel()`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts:1957) сравнивает committed legacy shipping method/cart state только с уже загруженными neutral shadow settings / quote / pickup-point summaries и сводит результат к shopper-safe parity vocabulary `aligned | divergent | insufficient_context | not_applicable`, не вызывая [`saveDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:151), [`clearDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:169), [`setShippingMethod()`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts:226), shopper mutations, CTA wiring или checkout cutover.
-- следующим tranche-safe шагом поверх approved shadow shipping-option parity preview теперь тоже materialized read-only shadow selection parity preview в [`shipping/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx): компонент сравнивает только уже committed legacy shipping method/cart state с уже загруженным neutral persisted selection boundary через [`buildDeliveryHubShadowSelectionParityPreviewModel()`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts:2159), сводя результат к narrow shopper-safe vocabulary `aligned | missing_legacy_method | missing_neutral_selection | modality_mismatch | reference_mismatch | insufficient_data`; preview показывает лишь informational modality/reference/readiness alignment hints, не вызывает [`saveDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:151), [`clearDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:169), [`setShippingMethod()`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts:226), не раскрывает provider/internal identifiers и не подменяет active ApiShip shopper flow.
-- текущим tranche-safe storefront шагом поверх уже существующих read-only shadow/readiness summaries materialized read-only shadow orchestration verdict preview в [`shipping/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx), который сводит readiness / persisted selection / settings / catalog / quote / pickup-point / pickup-window / actionability / shipping-option parity / selection parity только через [`buildDeliveryHubShadowOrchestrationVerdictPreviewModel()`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts:2788) к compact neutral verdict vocabulary `aligned | degraded | blocked | insufficient_data`; preview остаётся rollout-observability only, показывает лишь compact severity/count/hints summary, не вызывает [`saveDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:151), [`clearDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:169), [`setShippingMethod()`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts:226), не добавляет shopper-interactive CTA wiring и не подменяет active ApiShip shopper flow.
-- следующим approved storefront-only шагом поверх orchestration verdict materialized read-only shadow recommendation preview в [`shipping/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx): pure builder [`buildDeliveryHubShadowOrchestrationRecommendationPreviewModel()`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts:2837) агрегирует только уже существующие readiness / persisted selection / actionability / shipping-option parity / selection parity / orchestration verdict summaries и truthfully возвращает shopper-safe neutral result `recommended | unavailable | insufficient_data`; block явно остаётся informational/shadow-only, показывает лишь shopper-safe modality / pickup-point / pickup-window / quote snapshot при aligned shadow constellation, а при неполном или degraded контексте не выдумывает уверенную рекомендацию, не раскрывает provider/internal identifiers, не вызывает [`saveDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:151), [`clearDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:169), [`setShippingMethod()`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts:226) и не меняет active legacy ApiShip commit path.
+- следующим tranche-safe шагом поверх approved shadow shipping-option parity preview теперь тоже materialized read-only shadow selection parity preview в [`shipping/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx): компонент сравнивает только уже committed legacy shipping method/cart state с уже загруженным neutral persisted selection boundary через [`buildDeliveryHubShadowSelectionParityPreviewModel()`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts:2159), сводя результат к narrow shopper-safe vocabulary `aligned | missing_legacy_method | missing_neutral_selection | modality_mismatch | reference_mismatch | insufficient_data`; preview показывает лишь informational modality/reference/readiness alignment hints, не вызывает [`saveDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:151), [`clearDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:169), [`setShippingMethod()`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts:226), не раскрывает provider/internal identifiers и не подменяет active legacy provider shopper flow.
+- текущим tranche-safe storefront шагом поверх уже существующих read-only shadow/readiness summaries materialized read-only shadow orchestration verdict preview в [`shipping/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx), который сводит readiness / persisted selection / settings / catalog / quote / pickup-point / pickup-window / actionability / shipping-option parity / selection parity только через [`buildDeliveryHubShadowOrchestrationVerdictPreviewModel()`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts:2788) к compact neutral verdict vocabulary `aligned | degraded | blocked | insufficient_data`; preview остаётся rollout-observability only, показывает лишь compact severity/count/hints summary, не вызывает [`saveDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:151), [`clearDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:169), [`setShippingMethod()`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts:226), не добавляет shopper-interactive CTA wiring и не подменяет active legacy provider shopper flow.
+- следующим approved storefront-only шагом поверх orchestration verdict materialized read-only shadow recommendation preview в [`shipping/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx): pure builder [`buildDeliveryHubShadowOrchestrationRecommendationPreviewModel()`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts:2837) агрегирует только уже существующие readiness / persisted selection / actionability / shipping-option parity / selection parity / orchestration verdict summaries и truthfully возвращает shopper-safe neutral result `recommended | unavailable | insufficient_data`; block явно остаётся informational/shadow-only, показывает лишь shopper-safe modality / pickup-point / pickup-window / quote snapshot при aligned shadow constellation, а при неполном или degraded контексте не выдумывает уверенную рекомендацию, не раскрывает provider/internal identifiers, не вызывает [`saveDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:151), [`clearDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:169), [`setShippingMethod()`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts:226) и не меняет active legacy provider commit path.
 - текущим pre-cutin preparation шагом поверх existing preview/readiness inputs materialized storefront-only neutral selection rehearsal: pure builder [`buildDeliveryHubNeutralSelectionRehearsalModel()`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts) строит shopper-safe draft status `candidate_available | blocked | insufficient_data | legacy_only`, а pure dry-run guard [`evaluateDeliveryHubNeutralSelectionRehearsalActionability()`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts) сообщает только можно ли технически сформировать future selection write body. UI block в [`shipping/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx) явно marked as pre-cutin/read-only; он не добавляет CTA, не вызывает [`saveDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:151), [`clearDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:169), [`setShippingMethod()`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts:226), не делает checkout cutover и не запускает shipment execution.
 
 Пока planned и не materialized в коде:
@@ -444,7 +446,7 @@ Materialized в текущем tranche-safe backend/store contract-first scope:
 - mutation semantics для shopper-facing settings surface.
 ### 9.3. Checkout contract
 
-Долгосрочно shipping method data в cart должна хранить не `apiship`-формат, а нейтральный selection:
+Долгосрочно shipping method data в cart должна хранить не legacy provider-формат, а нейтральный selection:
  
  - `carrier_code`
  - `connection_id`
@@ -459,15 +461,15 @@ Materialized в текущем tranche-safe backend/store contract-first scope:
 
 Truthful текущий промежуточный статус:
  
-- active shopper checkout flow всё ещё использует legacy ApiShip shipping-method persistence в storefront [`setShippingMethod()`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts:226) и checkout UI [`Shipping`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx:299);
+- active shopper checkout flow всё ещё использует legacy provider shipping-method persistence в storefront [`setShippingMethod()`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts:226) и checkout UI [`Shipping`](../medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx:299);
 - delivery-hub selection уже существует как отдельный neutral cart metadata contract через [`GET/POST/DELETE /store/delivery/selection`](../medusa-agency-boilerplate/src/api/store/delivery/selection/route.ts), но shopper-facing cutover в эту tranche не выполняется;
 - storefront сейчас materializes только read-only readiness visibility, read-only summary visibility, read-only persisted-selection visibility, sampled read-only shadow catalog visibility, sampled read-only shadow pickup-point visibility, sampled read-only shadow quote visibility и dependent read-only shadow pickup-window visibility через helper-level preview models без вмешательства в active shipping selection flow.
 
-## 10. Стратегия выпиливания ApiShip
+## 10. Стратегия выпиливания legacy provider
 
 ### 10.1. Общий принцип
 
-`ApiShip` убирается полностью, но не в первый день.
+legacy provider убирается полностью, но не в первый день.
 
 Нужен controlled migration:
 
@@ -476,26 +478,26 @@ Truthful текущий промежуточный статус:
 3. переключить storefront quotes/selection на `deliveryhub`;
 4. переключить admin operations на `deliveryhub`;
 5. оставить legacy handling только для уже созданных старых заказов;
-6. удалить ApiShip код;
-7. удалить ApiShip env и docs.
+6. удалить legacy provider код;
+7. удалить legacy provider env и docs.
 
 ### 10.2. Порядок удаления
 
 После ready-state удалить:
 
-- `medusa-agency-boilerplate/src/modules/apiship.ts`
-- `medusa-agency-boilerplate/src/modules/apiship-*`
-- `medusa-agency-boilerplate/src/api/store/apiship/*`
-- `medusa-agency-boilerplate/src/api/admin/apiship/*`
-- storefront `src/lib/data/apiship.ts`
-- storefront `apiship` utilities и selection logic
-- `APISHIP_*` env contract
-- seed/update logic под `apiship`
+- `medusa-agency-boilerplate/the removed backend legacy provider module`
+- `medusa-agency-boilerplate/the removed backend legacy provider modules`
+- `medusa-agency-boilerplate/src/api/store/delivery/*`
+- `medusa-agency-boilerplate/src/api/admin/delivery/*`
+- storefront `the removed storefront legacy provider helper`
+- storefront legacy provider utilities и selection logic
+- removed legacy provider env contract
+- seed/update logic под legacy provider
 
 ### 10.3. Что нужно сохранить на время миграции
 
 - исторические shipping methods и historical order data;
-- migration adapters для старых orders, если они уже созданы через ApiShip;
+- migration adapters для старых orders, если они уже созданы через legacy provider;
 - storefront backward safety до cutover.
 
 ## 11. Этапы реализации
@@ -562,7 +564,7 @@ Definition of Done:
 
 Definition of Done:
 
-- storefront получает catalog и quotes без зависимости от `apiship`;
+- storefront получает catalog и quotes без зависимости от legacy provider;
 - выбор ПВЗ сохраняется в cart через новый delivery contract;
 - regression tests по checkout не падают.
 
@@ -580,7 +582,7 @@ Definition of Done:
 - админ может из заказа создать и обновить отгрузку;
 - shipment id и статусы хранятся внутри `delivery-hub`.
 
-### Этап F. ApiShip removal
+### Этап F. legacy provider removal
 
 Сделать:
 
@@ -591,8 +593,8 @@ Definition of Done:
 
 Definition of Done:
 
-- код и UI больше не зависят от ApiShip;
-- проект проходит bootstrap/build/dev без `APISHIP_*`;
+- код и UI больше не зависят от legacy provider;
+- проект проходит bootstrap/build/dev без legacy provider env variables;
 - docs и current status truthfully отражают новый слой.
 
 ## 12. Тестовая стратегия
@@ -617,18 +619,18 @@ Truthful status для текущей tranche-1 реализации уже уж
 - Yandex API может требовать более сложный order/claim lifecycle, чем quote stage;
 - хранение merchant credentials потребует аккуратного encryption policy;
 - merchant UX легко превратить в сложную форму на 40 полей;
-- migration с ApiShip может задеть checkout data shape;
+- migration с legacy provider может задеть checkout data shape;
 - direct integrations потребуют своей поддержки и monitoring discipline.
 
 ## 14. Решение по roadmap
 
 Новый shipping direction для долгосрочной архитектуры:
 
-- не `ApiShip-first`
+- не `historical provider-aware`
 - а `own delivery layer first`
 - первый adapter = `Yandex Delivery`
 
-Исторический ApiShip slice при этом остается truthful source-of-truth как уже реализованный и подтвержденный промежуточный этап проекта.
+Исторический legacy provider slice при этом остается truthful source-of-truth как уже реализованный и подтвержденный промежуточный этап проекта.
 
 ## 15. Первый implementation slice
 
@@ -748,7 +750,7 @@ Store API (частично materialized в коде):
 Store API всё ещё intentionally узкий:
  
 - [`GET /store/delivery/settings`](../medusa-agency-boilerplate/src/api/store/delivery/settings/route.ts) теперь materialized как read-only neutral settings surface и возвращает только shopper-safe fields `enabled | status | summary | preview_visibility | hints` без provider/internal ids, без secrets и без mutation semantics;
-- storefront checkout пока не переключён на этот surface и продолжает использовать legacy `apiship` path;
+- storefront checkout пока не переключён на этот surface и продолжает использовать legacy provider path;
 - при этом storefront-side neutral data layer уже materialized как двухслойный scaffold: server data helpers в [`delivery-hub.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts) оборачивают [`GET /store/delivery/catalog`](../medusa-agency-boilerplate/src/api/store/delivery/catalog/route.ts), [`GET /store/delivery/settings`](../medusa-agency-boilerplate/src/api/store/delivery/settings/route.ts), [`GET /store/delivery/quotes`](../medusa-agency-boilerplate/src/api/store/delivery/quotes/route.ts), [`GET /store/delivery/pickup-points`](../medusa-agency-boilerplate/src/api/store/delivery/pickup-points/route.ts), [`GET /store/delivery/pickup-windows`](../medusa-agency-boilerplate/src/api/store/delivery/pickup-windows/route.ts), [`GET/POST/DELETE /store/delivery/selection`](../medusa-agency-boilerplate/src/api/store/delivery/selection/route.ts) и [`GET /store/delivery/readiness`](../medusa-agency-boilerplate/src/api/store/delivery/readiness/route.ts), а shared neutral contract/guardrail layer в [`delivery-hub.ts`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts) централизует explicit query/body shaping, runtime normalization shopper-safe types, preview builders для readiness / summary / shadow settings / shadow catalog / shadow quote / shadow pickup-window visibility, read-only shadow selection actionability / shipping-option parity / selection parity / orchestration verdict / recommendation / cutover-readiness / cutover-blockers previews, плюс отсечение leaked internal/provider-specific fragments; quote path читает backend-issued `quote_reference`, а не выводит reference локально из internal `quote_key`;
 - current public contract опирается на materialized `Yandex Delivery` connection и minimal warehouse mapping;
 - `GET /store/delivery/catalog` возвращает только shopper-safe neutral contract: `default_connection_id | null` и `connections[]`, где каждая запись ограничена полями `connection_id`, `label`, neutral readiness summary `state + ready` и neutral capabilities `quote_types`, `supports_pickup_points`, `supports_pickup_windows`, `supports_dropoff`;
@@ -911,7 +913,7 @@ Merchant-facing provider tokens (Yandex API token и т.п.) **не** живут
 Текущий truthful статус связывания с Medusa fulfillment module:
 
 - Канонический fulfillment provider code уже materialized как `deliveryhub`, а provider id — как `deliveryhub_deliveryhub` в [`shipping-option-contract.ts`](../medusa-agency-boilerplate/src/modules/delivery-hub/shipping-option-contract.ts) и реэкспортируется через [`provider-surface.ts`](../medusa-agency-boilerplate/src/modules/delivery-hub/provider-surface.ts).
-- В [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts) теперь truthfully регистрируется новый fulfillment provider [`deliveryhub.ts`](../medusa-agency-boilerplate/src/modules/deliveryhub.ts) **без новых обязательных env** и без удаления параллельного legacy provider `apiship`.
+- В [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts) теперь truthfully регистрируется новый fulfillment provider [`deliveryhub.ts`](../medusa-agency-boilerplate/src/modules/deliveryhub.ts) **без новых обязательных env** и без удаления параллельного legacy provider legacy provider.
 - Добавлен отдельный canonical backend contract для `deliveryhub` shipping-option metadata: versioned `shipping_option.data` shape = `version + provider_code + provider_id + id + mode_code`, где `id` — canonical mode-level option identity формата `deliveryhub:<mode_code>`, а `provider_code/provider_id` — явная provider identity.
 - Helper surface в [`shipping-option-contract.ts`](../medusa-agency-boilerplate/src/modules/delivery-hub/shipping-option-contract.ts) materializes build/normalize/validate path для двух уже существующих mode-контуров: `warehouse_to_pickup_point` и `dropoff_point_to_pickup_point`, включая additive-safe legacy alias handling (`mode_code`, `quote_type`, plain mode id) и guardrails против provider/mode mismatch.
 - Следующий tranche-safe шаг теперь truthfully materialized как planner/read-model в [`shipping-option-planner.ts`](../medusa-agency-boilerplate/src/modules/delivery-hub/shipping-option-planner.ts:71): helper [`planDeliveryHubDesiredShippingOptions()`](../medusa-agency-boilerplate/src/modules/delivery-hub/shipping-option-planner.ts:71) вычисляет desired canonical `deliveryhub` shipping-option set по текущим `delivery_connection` / `delivery_warehouse`, агрегирует `desired_options`, `deferred_options` и per-connection statuses, использует canonical metadata helpers из [`shipping-option-contract.ts`](../medusa-agency-boilerplate/src/modules/delivery-hub/shipping-option-contract.ts) и явно не делает DB write / Medusa sync side-effects.
@@ -932,14 +934,14 @@ Merchant-facing provider tokens (Yandex API token и т.п.) **не** живут
 - [`Settings -> Delivery`](../medusa-agency-boilerplate/src/admin/routes/settings/delivery/page.tsx) теперь materializes не только rollout-readiness block с desired options, deferred issues, per-connection planner state и reconciliation bucket summary, но и отдельный operator-facing manual sync control: default action остаётся safe `dry_run`, execute-path требует exact guard match и explicit Medusa ids, а сам UI intentionally остаётся manual scaffold без automatic rollout.
 - Новый provider scaffold intentionally минимален: [`deliveryhub.ts`](../medusa-agency-boilerplate/src/modules/deliveryhub.ts) по-прежнему materializes только `getFulfillmentOptions()`, `validateOption()`, `validateFulfillmentData()`, `calculatePrice()` и нормализацию canonical `deliveryhub` selection payload; он не делает live quote orchestration, не создаёт shipment и не выполняет checkout cutover.
 - `calculatePrice()` в текущем scaffold не зовёт внешние provider API: он принимает уже materialized neutral selection payload, валидирует mode/selection shape и возвращает `calculated_amount` + sanitized backend-facing `data` envelope, пригодный для следующих tranche'ей shipping option sync / fulfillment integration.
-- ApiShip fulfillment provider (`apiship`) остаётся параллельным до окончания cutover (§10). В `medusa-config.ts` сейчас одновременно живут `manual`, optional `apiship` и новый `deliveryhub`.
-- Shopper-facing `shipping_option.provider_id` со значением `deliveryhub` **ещё не materialized** как production checkout path: полный shipping option wiring, реальные sync job / create-update-delete mutations, storefront cutover и вытеснение `apiship` остаются deferred.
+- Delivery Hub/direct Yandex является selected/default delivery contour в template. `manual` и `deliveryhub` остаются текущими template/runtime providers; removed provider/routes/helpers не являются optional integration, не регистрируются alongside Delivery Hub и не требуются для backend startup.
+- Shopper-facing `shipping_option.provider_id` со значением `deliveryhub` уже является intended direct contour для fresh template setup, while live shipment dispatch remains gated/not enabled; standard shipping method commit remains generic and provider-neutral, а старые provider-specific storefront routes/helpers больше не используются.
 
 ### 16.14. Storefront / checkout migration mapping
 
 #### 16.14.1. Active checkout boundary
 
-> **Текущее состояние на `2026-04-22`:** active checkout commit path остаётся целиком на legacy ApiShip. Ни один из materialized storefront shadow layers не вызывает [`saveDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:151), [`clearDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:169), [`setShippingMethod()`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts:226) или любые другие commit side-effects. Legacy ApiShip checkout flow не меняется и не подменяется.
+> **Текущее состояние на `2026-04-23`:** storefront больше не использует старые provider-specific routes/helpers. Delivery Hub neutral selection save/clear/summary уже present through [`saveDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:151), [`clearDeliveryHubSelection()`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts:169) and summary surfaces; standard shipping method commit through [`setShippingMethod()`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts:226) remains generic/provider-neutral and must use existing Medusa shipping option ids. Live shipment dispatch remains gated/not enabled, and removed provider/routes/helpers are gone from template/runtime.
 
 #### 16.14.2. Materialized storefront shadow preview layers
 
@@ -976,7 +978,7 @@ Merchant-facing provider tokens (Yandex API token и т.п.) **не** живут
 - не делают factual claims сверх уже вычисленных shadow previews;
 - не раскрывают `provider_code`, internal ids, credentials или provider-specific fragments;
 - при нехватке контекста честно деградируют к `insufficient_data` вместо имитации ready signal;
-- каждый UI block explicitly маркирован как `read-only shadow preview only` и повторяет, что active checkout commit path остаётся на legacy ApiShip;
+- UI blocks are shopper-safe/inert where applicable; standard shipping method commit remains generic/provider-neutral; Delivery Hub neutral save/clear/summary is present; live shipment dispatch gated/not enabled;
 - checklist preview (#19) агрегирует только уже materialized previews и присваивает item statuses `ready | pending | blocked | insufficient_data`, где `pending` — neutral follow-up vocabulary без утверждения что cutover запущен, а `blocked` — только когда shadow picture truthfully показывает blockers / hold / not-advised rollout;
 - decision preview (#18) truthfully возвращает только verdict `hold | observe_only | insufficient_data` и никогда `proceed` или `ready_to_cutover`;
 - gate preview (#17) раскладывает будущее cutover decision на shopper-safe gates, но не делает claim что gates «пройдены» для production;
@@ -986,51 +988,51 @@ Targeted storefront coverage в [`delivery-hub.spec.ts`](../medusa-agency-boiler
 
 #### 16.14.4. Migration mapping table
 
-Storefront остаётся на legacy ApiShip surface до этапа D. На cutover требуется map старых полей shipping method data в нейтральные поля из §9.3:
+Storefront остаётся на legacy provider surface до этапа D. На cutover требуется map старых полей shipping method data в нейтральные поля из §9.3:
 
-| Legacy (ApiShip selection) | Delivery Hub (neutral selection) | Заметка |
+| Legacy (legacy provider selection) | Delivery Hub (neutral selection) | Заметка |
 | --- | --- | --- |
 | `providerKey` (`"yataxi"`, ...) | `carrier_code` | Mapping table храним на backend (fixed). |
 | `tariffId` | `mode_code` + `quote_key` | `tariffId` → `mode_code` через provider-specific mapper; оригинал сохраняется в `provider_quote_ref`. |
 | `pointOutId` / `pointCode` | `pickup_point_id` | Строка, provider-native id. |
 | `pointOutName` / address | `pickup_point_label`, `pickup_point_address` | Только label/display. |
 | `pickupWindow` (если был) | `pickup_window_from`, `pickup_window_to` | ISO UTC. |
-| ApiShip `connectionId` | `connection_id` | id нового `delivery_connection`. |
+| legacy provider connection id | `connection_id` | id нового `delivery_connection`. |
 
-Поля в cart, которые раньше жили под `shipping_method.data.apiship.*`, переезжают в `shipping_method.data.delivery_hub.*`. Старые orders (уже оформленные через ApiShip) остаются на старой форме и читаются legacy mapper'ом до §16.15 sunset cleanup.
+Поля в cart, которые раньше жили под `shipping_method.data.legacy_provider.*`, переезжают в `shipping_method.data.delivery_hub.*`. Старые orders (уже оформленные через legacy provider) остаются на старой форме и читаются legacy mapper'ом до §16.15 sunset cleanup.
 
-### 16.15. ApiShip sunset — gate criteria
+### 16.15. legacy provider sunset — gate criteria
 
-`ApiShip` выпиливается только после того, как выполнены все следующие условия:
+legacy provider выпиливается только после того, как выполнены все следующие условия:
 
 - `deliveryhub` fulfillment provider зарегистрирован и обслуживает production-rate quotes;
-- storefront checkout получает не менее `N` заказов подряд (конкретный порог фиксируется в release notes) без обращения к legacy `/store/apiship/*` роутам;
+- storefront checkout получает не менее `N` заказов подряд (конкретный порог фиксируется в release notes) без обращения к legacy `/store/delivery/*` роутам;
 - admin operations (create/cancel shipment, label generation там, где нужно) полностью переведены на `/admin/delivery/*`;
-- нет активных shipping method в каталоге магазина с `provider_id="apiship"`;
+- нет активных shipping method в каталоге магазина с `provider_id matching obsolete legacy values`;
 - `delivery_event_logs` содержит success traces по обоим Yandex flows v1 (§16.6) на live mode;
-- в [`Docs/current_work.md`](./current_work.md) зафиксирован `APISHIP_SUNSET_READY` checkpoint.
+- в [`Docs/current_work.md`](./current_work.md) зафиксирован legacy-provider sunset-readiness checkpoint.
 
 Только после прохождения всех gate criteria выполняется удаление по списку §10.2.
 
 ### 16.16. Test fixtures для direct Yandex v1
 
-Существующий [`apiship_yandex_test_data.md`](./apiship_yandex_test_data.md) содержит тестовые warehouse / PVZ / payload через панель ApiShip. Эти же адреса и PVZ-идентификаторы **можно использовать как человеко-читаемые fixtures** для direct Yandex integration v1, но с поправками:
+Существующий the obsolete historical Yandex test-data document содержит тестовые warehouse / PVZ / payload через панель legacy provider. Эти же адреса и PVZ-идентификаторы **можно использовать как человеко-читаемые fixtures** для direct Yandex integration v1, но с поправками:
 
-- `providerKey="yataxi"` и `pointInId` / `pointOutId` — это ApiShip-side абстракции, а не Yandex-native id. Direct Yandex adapter обязан получить свои pickup points через `POST /pickup-points/list` и использовать native `point_id`.
-- ApiShip `pointCode` (UUID) обычно совпадает с Yandex-native `point_id` для `yataxi` и может использоваться как ожидаемое значение в integration tests, но это должно быть верифицировано перед каждым tranche.
+- `providerKey="yataxi"` и `pointInId` / `pointOutId` — это legacy-provider-side абстракции, а не Yandex-native id. Direct Yandex adapter обязан получить свои pickup points через `POST /pickup-points/list` и использовать native `point_id`.
+- legacy provider `pointCode` (UUID) обычно совпадает с Yandex-native `point_id` для `yataxi` и может использоваться как ожидаемое значение в integration tests, но это должно быть верифицировано перед каждым tranche.
 - Тестовый груз из §8 (`weight=20`, габариты `10x10x10`, `assessedCost=1000`) остаётся валидным payload.
-- Direct Yandex fixtures будут перенесены в отдельный документ `Docs/delivery_hub_yandex_test_data.md`, когда появится этап C; до этого эта §16.16 служит bridge между ApiShip-era fixtures и direct-Yandex integration tests.
+- Direct Yandex fixtures будут перенесены в отдельный документ `Docs/delivery_hub_yandex_test_data.md`, когда появится этап C; до этого эта §16.16 служит bridge между legacy provider-era fixtures и direct-Yandex integration tests.
 
 ### 16.17. Этапы (уточнённый scope)
 
 Уточнение к §11:
 
-- **Этап A (Foundation)** — materialized. Реализованы: module scaffold, `delivery_connection`/`delivery_event_log` storage, encryption, registry, adapter interface.
+- **Этап A (Foundation)** — materialized. Реализованы: module scaffold, `delivery_connection`/`delivery_event_log` storage, encryption, registry, adapter interface, selected/default Delivery Hub/direct Yandex delivery contour.
 - **Этап B (Admin foundation)** — частично. Реализовано: materialized `Settings -> Delivery`, `Providers` list, `Connections` CRUD, `Yandex connection` form, minimal local `Warehouses` CRUD, `Test connection`, `Connection diagnostics` с hardened structured diagnostics, admin-only read preview [`GET /admin/delivery/shipping-options/preview`](../medusa-agency-boilerplate/src/api/admin/delivery/shipping-options/preview/route.ts), admin-only manual sync scaffold [`POST /admin/delivery/shipping-options/sync`](../medusa-agency-boilerplate/src/api/admin/delivery/shipping-options/sync/route.ts), summary-only audit trail для manual shipping-option sync через existing logs contour, встроенный `Shipping option preview` block на странице и operator-facing `Shipping option manual sync` UI block с safe-by-default `dry_run` и guarded execute path. Не реализовано: `/connections/:id/disable` как отдельный роут, отдельный `Delivery Modes` surface, provider-driven warehouse sync/import, полноценный logs console beyond текущего read-only блока.
 - **Этап C (Yandex quote engine)** — частично. Реализовано: `warehouse_to_pickup_point`, `dropoff_point_to_pickup_point`, listPickupPoints, listPickupWindows, admin `Test Quote` route/form with live-validation readiness/admin diagnostics hardened, resolve локального `default warehouse` в `provider_warehouse_id` для Yandex quote path, canonical fulfillment metadata scaffold, desired shipping-option planner, read-only reconciliation diff against current Medusa shipping-option snapshots, pure sync-operation plan scaffold как база для будущего write workflow, manual executor scaffold, internal Medusa mutation-port adapter scaffold, admin-only manual sync API scaffold с safe dry-run default и guarded execute path, summary-only audit trail для manual sync attempts, а также preview surface для rollout readiness и operator-facing manual sync UI scaffold. Не реализовано: debug summary-экран beyond текущего preview, integration tests на Yandex test mode, automatic shipping-option rollout/cutover и mature operational workflow around shipping-option sync.
-- **Этап D (Storefront cut-in)** — tranche-safe scaffold partially materialized, но полноценный cut-in не начат. Реализовано: neutral storefront data layer wrappers [`delivery-hub.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts), shared request/response shaping + runtime guardrails [`delivery-hub.ts`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts), read-only checkout readiness preview, read-only persisted selection preview, sampled read-only shadow catalog / settings / pickup-point / quote / pickup-window previews, read-only shadow shipping-option parity / selection parity / selection actionability / orchestration verdict / recommendation previews, read-only shadow cutover readiness / blockers / next-steps / summary / evidence previews, серия cutover-planning shadow previews: rollout (#16), gate (#17), decision (#18), checklist (#19), и pre-cutin neutral selection rehearsal (#20) как shopper-safe draft/dry-run layer без mutation calls — полный structured registry materialized storefront shadow/rehearsal layers приведён в §16.14.2. Store settings surface [`GET /store/delivery/settings`](../medusa-agency-boilerplate/src/api/store/delivery/settings/route.ts) materialized. Targeted storefront coverage [`delivery-hub.spec.ts`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.spec.ts) покрывает status paths для preview/rehearsal builders. Не реализовано: checkout UI switch, shipping method wiring, legacy ApiShip replacement, full storefront rollout. Store routes и storefront migration — см. §16.14. Active checkout commit path остаётся на legacy ApiShip — см. §16.14.1.
-- **Этап E (Shipment operations)** — не начат. Включает `createShipment` / `getShipment` / `cancelShipment` и admin order widget.
-- **Этап F (ApiShip removal)** — не начат. Стартует только после прохождения §16.15.
+- **Этап D (Storefront cut-in)** — partially materialized. Реализовано: neutral storefront data layer wrappers [`delivery-hub.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts), shared request/response shaping + runtime guardrails [`delivery-hub.ts`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts), read-only checkout readiness preview, read-only persisted selection preview, sampled read-only shadow catalog / settings / pickup-point / quote / pickup-window previews, read-only shadow shipping-option parity / selection parity / selection actionability / orchestration verdict / recommendation previews, read-only shadow cutover readiness / blockers / next-steps / summary / evidence previews, серия cutover-planning shadow previews, controlled neutral selection save/clear and saved summary surfaces. Store settings surface [`GET /store/delivery/settings`](../medusa-agency-boilerplate/src/api/store/delivery/settings/route.ts) materialized. Targeted storefront coverage [`delivery-hub.spec.ts`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.spec.ts) покрывает status paths для preview/rehearsal builders. Standard shipping method commit remains generic/provider-neutral, removed provider-specific routes/helpers are not used, and live shipment dispatch remains gated/not enabled. Store routes и storefront migration — см. §16.14.
+- **Этап E (Shipment operations)** — не начат. Включает `createShipment` / `getShipment` / `cancelShipment` и admin order widget; live shipment dispatch remains gated/not enabled.
+- **Этап F (historical DB residue cleanup, if needed)** — external/operator-approved only. Старые provider ids/rows могут существовать только в ранее использованных local/staging DBs после прошлых запусков; destructive DB migration или automatic cleanup не входят в этот package.
 
 Текущий automated coverage для tranche-1 остаётся deliberately no-network и intentionally scoped к materialized seams, но больше не ограничивается только базовыми unit tests: service/backend invariants и security/adapter contour закрыты [`delivery-hub-tranche1-coverage.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/delivery-hub-tranche1-coverage.unit.spec.ts), planner/manual-sync internals — [`delivery-hub.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/delivery-hub.unit.spec.ts) и [`delivery-hub-manual-sync-audit.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/delivery-hub-manual-sync-audit.unit.spec.ts), admin/store route boundaries — [`delivery-hub-admin.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/delivery-hub-admin.unit.spec.ts) и [`delivery-hub-store.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/delivery-hub-store.unit.spec.ts), а operator-facing admin page derived state — [`page-state.unit.spec.ts`](../medusa-agency-boilerplate/src/admin/routes/settings/delivery/__tests__/page-state.unit.spec.ts) через pure seam [`page-state.ts`](../medusa-agency-boilerplate/src/admin/routes/settings/delivery/page-state.ts). Это не эквивалент live network verification, storefront write-path wiring или checkout cutover.
 
@@ -1056,7 +1058,7 @@ Storefront остаётся на legacy ApiShip surface до этапа D. На 
 
 - §7.2, store/admin API status и §16.18 синхронизированы с materialized admin/store response-boundary hardening через [`shared.ts`](../medusa-agency-boilerplate/src/api/admin/delivery/shared.ts) и [`shared.ts`](../medusa-agency-boilerplate/src/api/store/delivery/shared.ts);
 - §7.2, §16.17 и §16.18 теперь явно фиксируют focused no-network admin page seam [`page-state.ts`](../medusa-agency-boilerplate/src/admin/routes/settings/delivery/page-state.ts) + coverage [`page-state.unit.spec.ts`](../medusa-agency-boilerplate/src/admin/routes/settings/delivery/__tests__/page-state.unit.spec.ts) как часть current tranche-1 state, без overclaim про новый runtime surface;
-- tests/status narrative переписан так, чтобы explicitly удерживать factual boundaries текущего tranche-1: checkout cutover не выполнен, storefront остаётся shadow/read-only, legacy ApiShip commit flow остаётся активным.
+- tests/status narrative переписан так, чтобы explicitly удерживать factual boundaries текущего tranche-1: checkout cutover не выполнен, storefront ограничен neutral selection metadata save/clear/summary, standard shipping method commit остаётся generic/provider-neutral, live dispatch не включён.
 
 ### 16.20. Pre-cutover next steps (scoped)
 
@@ -1070,10 +1072,9 @@ Storefront остаётся на legacy ApiShip surface до этапа D. На 
 
 Ни один из этих шагов не:
 
-- переключает active checkout commit path с legacy ApiShip;
+- enables live shipment dispatch, introduces provider-specific commit payloads, or bypasses generic Medusa shipping option commit semantics;
 - создаёт новые backend store/admin routes;
 - вызывает `save selection`, `clear selection`, `setShippingMethod()` или другие commit side-effects;
 - обещает timeline для production cutover.
 
 Первый шаг, который потребует реального checkout cutover, будет explicitly маркирован как **Этап D cutover gate** и потребует прохождения всех gate criteria из §16.14.3 и §16.15.
-

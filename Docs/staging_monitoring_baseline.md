@@ -242,7 +242,7 @@ Monitoring baseline использует эти boundaries, но не приду
 
 - staging platform или operator хотя бы способны видеть reachability HTTP surfaces и dependency availability;
 - observation можно зафиксировать вручную или через уже существующие platform-native средства, если они не противоречат текущему repo contour;
-- optional integrations `UNISENDER_*`, `MTS_EXOLVE_*`, `VK_*`, `APISHIP_*`, `YOOKASSA_*`, `PAYLOAD_*` по-прежнему могут оставаться disabled or empty для первого canonical monitoring contour, если конкретный staging pass их отдельно не включает;
+- optional integrations `UNISENDER_*`, `MTS_EXOLVE_*`, `VK_*`, `YOOKASSA_*`, `PAYLOAD_*` по-прежнему могут оставаться disabled or empty для первого canonical monitoring contour, если конкретный staging pass их отдельно не включает;
 - notification smoke остаётся главным baseline verification anchor для backend-side authenticated runtime path;
 - storefront remains separate runtime surface и поэтому требует отдельного наблюдения, а не implicit backend-only verdict.
 

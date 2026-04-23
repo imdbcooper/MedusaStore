@@ -128,8 +128,6 @@ export const storefrontConfig = {
       confirmAndGoToYooKassa: "Подтвердить и перейти в YooKassa",
       placeOrder: "Оформить заказ",
       method: "Способ",
-      apishipCheapestTariff:
-        "Показан самый доступный тариф ApiShip для выбранного способа доставки.",
       shippingRateUnavailable:
         "Стоимость будет уточнена после выбора способа доставки.",
     },

@@ -84,7 +84,7 @@ Rollback должен считаться justified, если выполнено 
 - baseline seeded state отсутствует или уже был неконсистентен до rollout;
 - candidate требует отдельный undocumented migration choreography;
 - suspected data corruption требует restore, а не redeploy;
-- optional integrations `UNISENDER_*`, `MTS_EXOLVE_*`, `VK_*`, `APISHIP_*`, `YOOKASSA_*`, `PAYLOAD_*` не были частью утвержденного staging pass.
+- optional integrations `UNISENDER_*`, `MTS_EXOLVE_*`, `VK_*`, `YOOKASSA_*`, `PAYLOAD_*` не были частью утвержденного staging pass.
 
 Для таких случаев нужен explicit handoff в backup/restore, environment remediation или отдельный follow-up artifact.
 

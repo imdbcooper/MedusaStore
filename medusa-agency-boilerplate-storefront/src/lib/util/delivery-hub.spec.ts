@@ -1737,7 +1737,7 @@ test("buildDeliveryHubHandoffPreviewModel returns ready shopper-safe handoff pre
     blocker_codes: [],
     hint_messages: [
       "Pre-cutin read-only handoff preview seam only: no save, clear, submit, or shipping-method mutation is performed here.",
-      "The active checkout commit path remains legacy ApiShip.",
+      "Delivery Hub is selected for neutral delivery metadata; live dispatch remains gated.",
     ],
     dry_run_only: true,
     mutation_intent: false,
@@ -1812,11 +1812,11 @@ test("buildDeliveryHubShippingOptionParityPreviewModel reports aligned structura
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -1872,11 +1872,11 @@ test("buildDeliveryHubShippingOptionParityPreviewModel reports partial parity wh
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -1926,11 +1926,11 @@ test("buildDeliveryHubShippingOptionParityPreviewModel reports partial parity wh
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -1967,11 +1967,11 @@ test("buildDeliveryHubShippingOptionParityPreviewModel reports blocked parity wh
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -1996,11 +1996,11 @@ test("buildDeliveryHubShippingOptionParityPreviewModel reports blocked parity wh
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "door_delivery",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip door",
+      legacy_method_label: "Delivery Hub door",
     },
   })
 
@@ -2016,7 +2016,7 @@ test("buildDeliveryHubShippingOptionParityPreviewModel reports blocked parity wh
 test("buildDeliveryHubShippingOptionParityPreviewModel keeps preview-only wording and no internal leakage", () => {
   const preview = buildDeliveryHubShippingOptionParityPreviewModel({
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: false,
       legacy_flow_kind: null,
       legacy_selection_fresh: false,
@@ -2349,11 +2349,11 @@ test("buildDeliveryHubHandoffContractMatrixPreviewModel reports complete contrac
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -2426,11 +2426,11 @@ test("buildDeliveryHubPersistedSelectionContractParityPreviewModel reports match
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -2586,11 +2586,11 @@ test("buildDeliveryHubPersistedSelectionContractParityPreviewModel reports sanit
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
   const serialized = JSON.stringify(preview).toLowerCase()
@@ -2655,11 +2655,11 @@ test("buildDeliveryHubPersistedSelectionContractParityPreviewModel reports sanit
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "door_delivery",
       legacy_selection_fresh: false,
-      legacy_method_label: "ApiShip courier",
+      legacy_method_label: "Delivery Hub courier",
     },
   })
   const serialized = JSON.stringify(preview).toLowerCase()
@@ -2698,11 +2698,11 @@ test("buildDeliveryHubPersistedSelectionContractParityPreviewModel stays shopper
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "door_delivery",
       legacy_selection_fresh: false,
-      legacy_method_label: "ApiShip courier",
+      legacy_method_label: "Delivery Hub courier",
     },
   }) as Record<string, unknown>
   const serialized = JSON.stringify(preview).toLowerCase()
@@ -2797,11 +2797,11 @@ test("buildDeliveryHubProjectedCommitParityPreviewModel reports matched projecte
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -2959,11 +2959,11 @@ test("buildDeliveryHubProjectedCommitParityPreviewModel reports readiness-blocke
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
   const serialized = JSON.stringify(preview).toLowerCase()
@@ -3004,11 +3004,11 @@ test("buildDeliveryHubProjectedCommitParityPreviewModel stays shopper-safe and p
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "door_delivery",
       legacy_selection_fresh: false,
-      legacy_method_label: "ApiShip courier",
+      legacy_method_label: "Delivery Hub courier",
     },
   }) as Record<string, unknown>
   const serialized = JSON.stringify(preview).toLowerCase()
@@ -3096,11 +3096,11 @@ test("buildDeliveryHubSelectionWriteSeamPreviewModel reports fully derivable sho
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -3295,7 +3295,7 @@ test("buildDeliveryHubSelectionWriteSeamPreviewModel stays shopper-safe preview-
   const preview = buildDeliveryHubSelectionWriteSeamPreviewModel({
     cart_id: "cart_write_preview_safe",
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: false,
       legacy_flow_kind: null,
       legacy_selection_fresh: false,
@@ -3385,11 +3385,11 @@ test("buildDeliveryHubWriteIntentContractPreviewModel reports intent shape avail
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -3424,11 +3424,11 @@ test("buildDeliveryHubWriteIntentContractPreviewModel reports incomplete state f
       },
     } as any,
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -3488,11 +3488,11 @@ test("buildDeliveryHubWriteIntentContractPreviewModel reports incomplete state f
     },
     pickup_points: { ok: true, points: [] },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -3543,11 +3543,11 @@ test("buildDeliveryHubWriteIntentContractPreviewModel reports incomplete state f
     },
     pickup_windows: { ok: true, pickup_windows: [] },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -3628,11 +3628,11 @@ test("buildDeliveryHubWriteIntentContractPreviewModel reports blocked state for 
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: false,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -3645,7 +3645,7 @@ test("buildDeliveryHubWriteIntentContractPreviewModel stays shopper-safe preview
   const preview = buildDeliveryHubWriteIntentContractPreviewModel({
     cart_id: "cart_write_intent_safe",
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: false,
       legacy_flow_kind: null,
       legacy_selection_fresh: false,
@@ -3755,11 +3755,11 @@ test("buildDeliveryHubSelectionPayloadParityPreviewModel reports matched payload
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -3795,11 +3795,11 @@ test("buildDeliveryHubSelectionPayloadParityPreviewModel reports incomplete stat
       },
     } as any,
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -3981,11 +3981,11 @@ test("buildDeliveryHubSelectionPayloadParityPreviewModel reports blocked state f
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: false,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -3998,7 +3998,7 @@ test("buildDeliveryHubSelectionPayloadParityPreviewModel stays shopper-safe prev
   const preview = buildDeliveryHubSelectionPayloadParityPreviewModel({
     cart_id: "cart_payload_parity_safe",
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: false,
       legacy_flow_kind: null,
       legacy_selection_fresh: false,
@@ -4090,11 +4090,11 @@ test("buildDeliveryHubSelectionSaveCutInPayload returns backend-ready neutral sa
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -4211,7 +4211,7 @@ test("buildDeliveryHubSelectionSaveCutInPayload blocks incomplete or stale save 
     },
     pickup_windows: { ok: true, pickup_windows: [] },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: false,
       legacy_flow_kind: null,
       legacy_selection_fresh: false,
@@ -4283,11 +4283,11 @@ test("buildDeliveryHubSelectionSaveCutInPayload exposes no provider raw payload 
       },
     } as any,
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -4491,11 +4491,11 @@ test("buildDeliveryHubHandoffContractMatrixPreviewModel reports readiness-blocke
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
 
@@ -4529,11 +4529,11 @@ test("buildDeliveryHubHandoffContractMatrixPreviewModel reports parity-blocked c
       },
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "door_delivery",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip door",
+      legacy_method_label: "Delivery Hub door",
     },
   })
 
@@ -4548,7 +4548,7 @@ test("buildDeliveryHubHandoffContractMatrixPreviewModel reports parity-blocked c
 test("buildDeliveryHubHandoffContractMatrixPreviewModel stays informational for legacy-only context", () => {
   const preview = buildDeliveryHubHandoffContractMatrixPreviewModel({
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: false,
       legacy_flow_kind: null,
       legacy_selection_fresh: false,
@@ -4567,7 +4567,7 @@ test("buildDeliveryHubHandoffContractMatrixPreviewModel stays informational for 
 test("buildDeliveryHubHandoffContractMatrixPreviewModel stays shopper-safe and preview-only", () => {
   const preview = buildDeliveryHubHandoffContractMatrixPreviewModel({
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: false,
       legacy_flow_kind: null,
       legacy_selection_fresh: false,
@@ -6107,7 +6107,7 @@ test("buildDeliveryHubShadowOrchestrationRecommendationPreviewModel stays neutra
     detail_label: "incomplete · not applicable · missing legacy method",
     hint_messages: [
       "Current shadow constellation is still informational only and does not yet have enough shopper-safe context to describe a recommendation.",
-      "The active checkout commit path remains the legacy ApiShip flow; this preview does not save, clear, or commit anything.",
+      "Delivery Hub neutral selection is active; this preview does not save, clear, commit shipping, or dispatch anything.",
       "Current read-only shadow constellation is still informational and does not yet provide enough comparable context for a stronger rollout verdict.",
       "Current shadow selection actionability remains informational because sampled preview context is incomplete.",
     ],
@@ -6214,7 +6214,7 @@ test("buildDeliveryHubShadowCutoverReadinessPreviewModel reports ready shadow co
       "verdict aligned · shadow recommendation recommended · action-ready · aligned · aligned",
     hint_messages: [
       "Shadow-only cutover readiness preview indicates that the current checkout contour looks internally aligned for a future Delivery Hub cutover.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, or switch anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, or dispatch anything.",
       "Current read-only shadow constellation agrees across readiness, actionability, and parity previews for the sampled legacy checkout context.",
       "Read-only shadow recommendation only. Current checkout keeps the committed legacy shipping flow and does not switch shipping method or save any neutral selection from this preview.",
     ],
@@ -6323,7 +6323,7 @@ test("buildDeliveryHubShadowCutoverReadinessPreviewModel stays non-cutover when 
       "verdict insufficient data · shadow recommendation insufficient data · incomplete · not applicable · missing legacy method",
     hint_messages: [
       "Shadow-only cutover readiness preview does not yet have enough comparable context to claim future cutover readiness for this checkout.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, or switch anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, or dispatch anything.",
       "Current read-only shadow constellation is still informational and does not yet provide enough comparable context for a stronger rollout verdict.",
       "Current shadow constellation is still informational only and does not yet have enough shopper-safe context to describe a recommendation.",
     ],
@@ -6429,7 +6429,7 @@ test("buildDeliveryHubShadowCutoverReadinessPreviewModel stays non-cutover when 
       "verdict degraded · shadow recommendation unavailable · needs pickup-point context · degraded · missing neutral selection",
     hint_messages: [
       "Shadow-only cutover readiness preview currently indicates that the checkout contour is not ready for a future Delivery Hub cutover.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, or switch anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, or dispatch anything.",
       "Current read-only shadow constellation shows degradation or parity drift, so rollout observability remains watch-only.",
       "Current shadow constellation does not support a shopper-safe recommendation for this cart context, so this block remains informational only.",
     ],
@@ -6567,7 +6567,7 @@ test("buildDeliveryHubShadowCutoverBlockersPreviewModel reports known blockers o
     ],
     hint_messages: [
       "Read-only shadow cutover blockers preview only. Known blocker points below are derived from existing shadow previews for the current checkout context and do not change shopper state.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, or switch anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, or dispatch anything.",
       "Shadow-only cutover readiness preview currently indicates that the checkout contour is not ready for a future Delivery Hub cutover.",
     ],
   })
@@ -6687,7 +6687,7 @@ test("buildDeliveryHubShadowCutoverBlockersPreviewModel stays neutral when no kn
     hint_messages: [
       "Read-only shadow cutover blockers preview only. No known blocker points are currently visible in existing shadow previews for this checkout context.",
       "This neutral result does not claim that checkout is already cut over or that the active shipping commit path has changed.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, or switch anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, or dispatch anything.",
     ],
   })
 
@@ -6805,7 +6805,7 @@ test("buildDeliveryHubShadowCutoverBlockersPreviewModel stays neutral when no kn
     blockers: [],
     hint_messages: [
       "Read-only shadow cutover blockers preview does not yet have enough comparable context to list blocker points for the current checkout.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, or switch anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, or dispatch anything.",
       "Shadow-only cutover readiness preview does not yet have enough comparable context to claim future cutover readiness for this checkout.",
       "Current shadow constellation is still informational only and does not yet have enough shopper-safe context to describe a recommendation.",
     ],
@@ -6964,7 +6964,7 @@ test("buildDeliveryHubShadowCutoverNextStepsPreviewModel reports known next step
     ],
     hint_messages: [
       "Read-only shadow cutover next-steps preview only. Suggested next steps below simply restate issues already visible in existing shadow previews for the current checkout context.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, or switch anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, or dispatch anything.",
       "Read-only shadow cutover blockers preview only. Known blocker points below are derived from existing shadow previews for the current checkout context and do not change shopper state.",
       "Shadow-only cutover readiness preview currently indicates that the checkout contour is not ready for a future Delivery Hub cutover.",
     ],
@@ -7086,7 +7086,7 @@ test("buildDeliveryHubShadowCutoverNextStepsPreviewModel stays neutral when next
     hint_messages: [
       "Read-only shadow cutover next-steps preview only. Existing shadow previews do not currently point to a single clear next step for this checkout context.",
       "This neutral result does not claim that checkout is already cut over or that the active shipping commit path has changed.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, or switch anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, or dispatch anything.",
     ],
   })
 
@@ -7205,7 +7205,7 @@ test("buildDeliveryHubShadowCutoverNextStepsPreviewModel stays neutral when next
     next_steps: [],
     hint_messages: [
       "Read-only shadow cutover next-steps preview does not yet have enough comparable context to suggest meaningful next steps for the current checkout.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, or switch anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, or dispatch anything.",
       "Shadow-only cutover readiness preview does not yet have enough comparable context to claim future cutover readiness for this checkout.",
       "Current shadow constellation is still informational only and does not yet have enough shopper-safe context to describe a recommendation.",
     ],
@@ -7289,7 +7289,7 @@ test("buildDeliveryHubShadowCutoverSummaryPreviewModel reports aligned, attentio
     hint_messages: [
       "Read-only shadow cutover summary preview only. This compact block aggregates already visible shadow readiness, blockers, and next-step previews for future Delivery Hub cutover planning only.",
       "Aligned shadow contour here means that the currently materialized shadow previews do not show readiness drift, known blockers, or a clear follow-up step for this checkout context; it does not mean checkout is already cut over.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "Shadow-only cutover readiness preview indicates that the current checkout contour looks internally aligned for a future Delivery Hub cutover.",
     ],
   })
@@ -7383,7 +7383,7 @@ test("buildDeliveryHubShadowCutoverSummaryPreviewModel reports aligned, attentio
     ],
     hint_messages: [
       "Read-only shadow cutover summary preview only. This compact block highlights attention points already visible across existing shadow readiness, blockers, and next-step previews.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "This summary does not claim that Delivery Hub checkout cutover has started; it only restates currently visible shadow signals for future planning.",
       "Shadow-only cutover readiness preview currently indicates that the checkout contour is not ready for a future Delivery Hub cutover.",
     ],
@@ -7465,7 +7465,7 @@ test("buildDeliveryHubShadowCutoverSummaryPreviewModel reports aligned, attentio
     ],
     hint_messages: [
       "Read-only shadow cutover summary preview does not yet have enough comparable context to describe a future cutover summary for this checkout.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "Shadow-only cutover readiness preview does not yet have enough comparable context to claim future cutover readiness for this checkout.",
       "Read-only shadow cutover blockers preview does not yet have enough comparable context to list blocker points for the current checkout.",
     ],
@@ -7592,7 +7592,7 @@ test("buildDeliveryHubShadowCutoverEvidencePreviewModel compacts supporting cuto
     hint_messages: [
       "Read-only shadow cutover evidence preview only. This compact block aggregates already visible shadow cutover summary, readiness, blockers, next-step, and recommendation previews as supporting evidence for the current shadow picture only.",
       "Supporting signals currently reinforce an aligned shadow cutover picture, but this still does not mean checkout is already cut over.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "Read-only shadow cutover summary preview only. This compact block aggregates already visible shadow readiness, blockers, and next-step previews for future Delivery Hub cutover planning only.",
     ],
   })
@@ -7690,7 +7690,7 @@ test("buildDeliveryHubShadowCutoverEvidencePreviewModel stays neutral when suppo
     evidence_items: [],
     hint_messages: [
       "Read-only shadow cutover evidence preview does not yet have enough comparable context to compact supporting signals for the current checkout.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "Read-only shadow cutover summary preview does not yet have enough comparable context to describe a future cutover summary for this checkout.",
       "Shadow-only cutover readiness preview does not yet have enough comparable context to claim future cutover readiness for this checkout.",
     ],
@@ -7815,7 +7815,7 @@ test("buildDeliveryHubShadowCutoverRolloutPreviewModel stays observe-only when a
     ],
     hint_messages: [
       "Read-only shadow cutover rollout preview only. Even when the current shadow contour looks aligned, this block remains observational and does not indicate that checkout cutover has occurred.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "This observe-only result simply compacts already visible shadow rollout signals for future planning and does not start rollout in checkout.",
       "Read-only shadow cutover summary preview only. This compact block aggregates already visible shadow readiness, blockers, and next-step previews for future Delivery Hub cutover planning only.",
     ],
@@ -7957,8 +7957,8 @@ test("buildDeliveryHubShadowCutoverRolloutPreviewModel marks rollout as not advi
     ],
     hint_messages: [
       "Read-only shadow cutover rollout preview only. Current shadow signals suggest that rollout should remain observational and should not be treated as an active checkout cutover.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
-      "This preview does not change shipping method selection or claim that the shopper path has moved away from legacy ApiShip.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
+      "This preview does not change shipping method selection or claim that live dispatch is enabled.",
       "Read-only shadow cutover summary preview only. This compact block highlights attention points already visible across existing shadow readiness, blockers, and next-step previews.",
     ],
   })
@@ -8075,7 +8075,7 @@ test("buildDeliveryHubShadowCutoverRolloutPreviewModel stays neutral when rollou
     ],
     hint_messages: [
       "Read-only shadow cutover rollout preview only. This compact block aggregates already materialized summary, evidence, readiness, blockers, next-step, and recommendation previews into a rollout-oriented picture for observation only.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "This preview does not claim that checkout cutover has started or that rollout is already underway.",
       "Read-only shadow cutover summary preview does not yet have enough comparable context to describe a future cutover summary for this checkout.",
     ],
@@ -8277,7 +8277,7 @@ test("buildDeliveryHubShadowCutoverGatePreviewModel reports aligned, blocked, an
     hint_messages: [
       "Read-only shadow cutover gate preview only. Each gate below simply restates already materialized parity, readiness, blocker, recommendation, evidence, and rollout previews for future cutover decision-making only.",
       "Aligned gates here mean that the currently materialized shadow previews look internally consistent for observation; this does not mean checkout is already cut over.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "Read-only shadow cutover rollout preview only. Even when the current shadow contour looks aligned, this block remains observational and does not indicate that checkout cutover has occurred.",
     ],
   })
@@ -8482,7 +8482,7 @@ test("buildDeliveryHubShadowCutoverGatePreviewModel reports aligned, blocked, an
     ],
     hint_messages: [
       "Read-only shadow cutover gate preview only. Each gate below simply restates already materialized parity, readiness, blocker, recommendation, evidence, and rollout previews for future cutover decision-making only.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "Blocked gates below simply highlight attention points already visible in current shadow previews and do not start any checkout cutover.",
       "Read-only shadow cutover rollout preview only. Current shadow signals suggest that rollout should remain observational and should not be treated as an active checkout cutover.",
     ],
@@ -8678,7 +8678,7 @@ test("buildDeliveryHubShadowCutoverGatePreviewModel reports aligned, blocked, an
     ],
     hint_messages: [
       "Read-only shadow cutover gate preview only. Each gate below simply restates already materialized parity, readiness, blocker, recommendation, evidence, and rollout previews for future cutover decision-making only.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "Some gates remain informational only because current shadow previews still lack enough comparable context for a fuller future cutover picture.",
       "Read-only shadow cutover rollout preview only. This compact block aggregates already materialized summary, evidence, readiness, blockers, next-step, and recommendation previews into a rollout-oriented picture for observation only.",
     ],
@@ -8838,7 +8838,7 @@ test("buildDeliveryHubShadowCutoverDecisionPreviewModel reports hold, observe-on
     ],
     hint_messages: [
       "Read-only shadow cutover decision preview only. This compact block aggregates already materialized shadow summary, evidence, rollout, and gate previews into a pre-cutover decision verdict for planning only.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "An observe-only verdict here means the currently materialized shadow previews look internally consistent enough to monitor, but checkout is not cut over and no shipping method will be switched.",
       "Read-only shadow cutover gate preview only. Each gate below simply restates already materialized parity, readiness, blocker, recommendation, evidence, and rollout previews for future cutover decision-making only.",
     ],
@@ -8999,7 +8999,7 @@ test("buildDeliveryHubShadowCutoverDecisionPreviewModel reports hold, observe-on
     ],
     hint_messages: [
       "Read-only shadow cutover decision preview only. This compact block aggregates already materialized shadow summary, evidence, rollout, and gate previews into a pre-cutover decision verdict for planning only.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "A hold verdict here only restates attention points already visible in current shadow previews and does not mean that checkout cutover has started or that any shipping method will be switched.",
       "Read-only shadow cutover gate preview only. Each gate below simply restates already materialized parity, readiness, blocker, recommendation, evidence, and rollout previews for future cutover decision-making only.",
     ],
@@ -9150,7 +9150,7 @@ test("buildDeliveryHubShadowCutoverDecisionPreviewModel reports hold, observe-on
     ],
     hint_messages: [
       "Read-only shadow cutover decision preview only. This compact block aggregates already materialized shadow summary, evidence, rollout, and gate previews into a pre-cutover decision verdict for planning only.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "When this decision preview says insufficient data, it means the current shadow previews still lack enough shopper-safe context to describe even an observe-only pre-cutover decision picture.",
       "Read-only shadow cutover gate preview only. Each gate below simply restates already materialized parity, readiness, blocker, recommendation, evidence, and rollout previews for future cutover decision-making only.",
     ],
@@ -9355,7 +9355,7 @@ test("buildDeliveryHubShadowCutoverChecklistPreviewModel reports ready, pending,
     ],
     hint_messages: [
       "Read-only shadow cutover checklist preview only. Ready checklist items simply indicate that the currently materialized pre-cutover shadow checks look internally consistent for observation.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "Ready checks here do not mean checkout is already cut over; they only show that current shopper-safe shadow checks have enough aligned context to observe as a checklist.",
       "Read-only shadow cutover decision preview only. This compact block aggregates already materialized shadow summary, evidence, rollout, and gate previews into a pre-cutover decision verdict for planning only.",
     ],
@@ -9554,8 +9554,8 @@ test("buildDeliveryHubShadowCutoverChecklistPreviewModel reports ready, pending,
     ],
     hint_messages: [
       "Read-only shadow cutover checklist preview only. Pending checklist items simply show where the current shadow cutover picture still needs follow-up before any future checkout cutover planning could mature.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
-      "Pending checks here do not claim that checkout has already switched away from legacy ApiShip; they only restate shopper-safe shadow signals.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
+      "Pending checks here do not claim that live dispatch is enabled; they only restate shopper-safe shadow signals.",
       "Shadow-only cutover readiness preview currently indicates that the checkout contour is not ready for a future Delivery Hub cutover.",
     ],
   })
@@ -9757,7 +9757,7 @@ test("buildDeliveryHubShadowCutoverChecklistPreviewModel reports ready, pending,
     ],
     hint_messages: [
       "Read-only shadow cutover checklist preview only. Each checklist item below simply restates already materialized cutover-related shadow previews for pre-cutover observation only.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "Blocked checklist items below only highlight already visible cutover blockers or hold signals and do not mean checkout cutover has started.",
       "Read-only shadow cutover blockers preview only. Known blocker points below are derived from existing shadow previews for the current checkout context and do not change shopper state.",
     ],
@@ -9953,7 +9953,7 @@ test("buildDeliveryHubShadowCutoverChecklistPreviewModel reports ready, pending,
     ],
     hint_messages: [
       "Read-only shadow cutover checklist preview does not yet have enough comparable context to classify all pre-cutover checks for the current checkout.",
-      "Current checkout still commits through the active legacy ApiShip flow. This block does not save, clear, switch, or commit anything.",
+      "Delivery Hub neutral selection is active; this block does not save, clear, switch shipping, commit shipping, or dispatch anything.",
       "When checklist items say insufficient data, they simply reflect that already materialized shopper-safe shadow previews still lack comparable context.",
       "Read-only shadow cutover gate preview only. Each gate below simply restates already materialized parity, readiness, blocker, recommendation, evidence, and rollout previews for future cutover decision-making only.",
     ],
@@ -10049,11 +10049,11 @@ test("buildDeliveryHubNeutralSelectionRehearsalModel reports aligned candidate w
       quote_context: null,
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
   const guard = evaluateDeliveryHubNeutralSelectionRehearsalActionability(model)
@@ -10081,11 +10081,11 @@ test("neutral selection rehearsal blocks missing quote reference, pickup point, 
       quote_context: null,
     },
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: true,
       legacy_flow_kind: "pickup_point",
       legacy_selection_fresh: true,
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
     },
   })
   assert.equal(missingQuote.status, "insufficient_data")
@@ -10194,7 +10194,7 @@ test("neutral selection rehearsal blocks missing quote reference, pickup point, 
       tone: "warning",
       parity_status: "reference_mismatch",
       status_label: "Mismatch",
-      legacy_method_label: "ApiShip pickup",
+      legacy_method_label: "Delivery Hub pickup",
       legacy_modality_label: "Pickup point",
       neutral_modality_label: "Pickup point",
       legacy_reference_label: "A",
@@ -10210,7 +10210,7 @@ test("neutral selection rehearsal blocks missing quote reference, pickup point, 
 test("neutral selection rehearsal reports legacy-only and preserves no-leak guarantees", () => {
   const model = buildDeliveryHubNeutralSelectionRehearsalModel({
     legacy_context: {
-      active_commit_path: "legacy_apiship",
+      active_commit_path: "delivery_hub",
       legacy_is_committed: false,
       legacy_flow_kind: null,
       legacy_selection_fresh: false,

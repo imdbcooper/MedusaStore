@@ -5,7 +5,6 @@ import {
   validateAndTransformQuery,
 } from "@medusajs/framework/http"
 
-import { AdminUpdateApiShipSettingsSchema } from "./admin/apiship/settings/route"
 import { AdminCreateDeliveryConnectionSchema } from "./admin/delivery/connections/route"
 import { AdminUpdateDeliveryConnectionSchema } from "./admin/delivery/connections/[id]/route"
 import { AdminDeliveryConnectionTestSchema } from "./admin/delivery/connections/[id]/test/route"
@@ -21,8 +20,6 @@ import {
 import { AdminNotificationSmokeSchema } from "./admin/notifications/smoke/route"
 import { AdminSmsNotificationSmokeSchema } from "./admin/notifications/smoke/sms/route"
 import { AdminVkNotificationSmokeSchema } from "./admin/notifications/smoke/vk/route"
-import { StoreApiShipPointsSchema } from "./store/apiship/points/route"
-import { StoreApiShipRatesSchema } from "./store/apiship/rates/route"
 import { StoreCustomerMarketingPreferencesSchema } from "./store/customers/me/marketing-preferences/route"
 import { StoreDeliveryCatalogQuerySchema } from "./store/delivery/catalog/route"
 import { StoreDeliveryPickupPointsQuerySchema } from "./store/delivery/pickup-points/route"
@@ -44,16 +41,6 @@ const adminAuth = authenticate("user", ["session", "bearer", "api-key"])
 
 export default defineMiddlewares({
   routes: [
-    {
-      matcher: "/admin/apiship/settings",
-      methods: ["GET"],
-      middlewares: [adminAuth],
-    },
-    {
-      matcher: "/admin/apiship/settings",
-      methods: ["POST"],
-      middlewares: [adminAuth, validateAndTransformBody(AdminUpdateApiShipSettingsSchema)],
-    },
     {
       matcher: "/admin/delivery/providers",
       methods: ["GET"],
@@ -200,26 +187,6 @@ export default defineMiddlewares({
       matcher: "/store/customers/me/vk-id/unlink",
       methods: ["POST"],
       middlewares: [authenticate("customer", ["session", "bearer"])],
-    },
-    {
-      matcher: "/store/apiship/rates",
-      methods: ["GET"],
-      middlewares: [
-        validateAndTransformQuery(StoreApiShipRatesSchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
-    },
-    {
-      matcher: "/store/apiship/points",
-      methods: ["GET"],
-      middlewares: [
-        validateAndTransformQuery(StoreApiShipPointsSchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
     },
     {
       matcher: "/store/delivery/catalog",
