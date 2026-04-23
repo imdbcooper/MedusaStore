@@ -14,6 +14,7 @@ import {
   Modules,
 } from "@medusajs/framework/utils"
 import {
+  buildDeliveryHubExecutionLedgerEvidenceArtifactAssembly,
   buildDeliveryHubFulfillmentContractVerdict,
   buildDeliveryHubFulfillmentBridgePayload,
   buildDeliveryHubFulfillmentHandoffSnapshot,
@@ -142,7 +143,15 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
             fulfillment: fulfillmentRecord,
           })
         : null
-
+    const executionLedgerEvidence =
+      executionPlanPreview.contract_status === "ready" && fulfillmentHandoff !== null
+        ? buildDeliveryHubExecutionLedgerEvidenceArtifactAssembly({
+            fulfillment_data: data,
+            order: orderRecord,
+            fulfillment: fulfillmentRecord,
+          })
+        : null
+ 
     this.logger_.info(
       `Delivery Hub createFulfillment execution-plan preview seam evaluated: ${JSON.stringify({
         contract_status: executionPlanPreview.contract_status,
@@ -159,6 +168,18 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
         handoff_ready: fulfillmentHandoff !== null,
         handoff_reference: fulfillmentHandoff?.references ?? null,
         handoff_contour: fulfillmentHandoff?.contour ?? null,
+        execution_ledger_evidence_status: executionLedgerEvidence?.status ?? null,
+        execution_ledger_evidence_preview:
+          executionLedgerEvidence?.artifact
+            ? {
+                artifact_kind: executionLedgerEvidence.artifact.artifact_kind,
+                evidence_status: executionLedgerEvidence.artifact.evidence_status,
+                quote_reference_summary:
+                  executionLedgerEvidence.artifact.quote_reference_summary,
+                references: executionLedgerEvidence.artifact.references,
+                contour: executionLedgerEvidence.artifact.contour,
+              }
+            : null,
         outbound_preview_redacted: executionPlanPreview.outbound_payload_preview.redacted,
       })}`
     )

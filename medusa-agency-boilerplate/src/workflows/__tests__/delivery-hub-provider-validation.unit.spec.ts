@@ -147,6 +147,9 @@ describe("Delivery Hub provider validation seam", () => {
 
     expect(String(executionPreviewLog?.[0])).toContain('"handoff_ready":true')
     expect(String(executionPreviewLog?.[0])).toContain('"handoff_contour":{"contract_status":"ready","execution_status":"blocked","handoff_target":"manual_external"')
+    expect(String(executionPreviewLog?.[0])).toContain('"execution_ledger_evidence_status":"ready"')
+    expect(String(executionPreviewLog?.[0])).toContain('"artifact_kind":"deliveryhub_execution_ledger_evidence"')
+    expect(String(executionPreviewLog?.[0])).toContain('"ledger_persistence_enabled":false')
   })
 
   it("blocks provider and shape drift through the same normalized diagnostic seam", async () => {

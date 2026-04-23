@@ -52,6 +52,7 @@ export const DELIVERY_HUB_SHIPMENT_RESULT_PREVIEW_VERSION = 1
 export const DELIVERY_HUB_FAILURE_HANDLING_PREVIEW_VERSION = 1
 export const DELIVERY_HUB_FULFILLMENT_APPLICATION_PREVIEW_VERSION = 1
 export const DELIVERY_HUB_FULFILLMENT_HANDOFF_SNAPSHOT_VERSION = 1
+export const DELIVERY_HUB_EXECUTION_LEDGER_EVIDENCE_ARTIFACT_VERSION = 1
 
 export type DeliveryHubFulfillmentBridgePayload = {
   version: typeof DELIVERY_HUB_FULFILLMENT_BRIDGE_VERSION
@@ -225,6 +226,48 @@ export type DeliveryHubFulfillmentHandoffSnapshot = {
     live_execution_enabled: false
     real_provider_dispatch_enabled: false
   }
+}
+
+export type DeliveryHubExecutionLedgerEvidenceArtifact = {
+  version: typeof DELIVERY_HUB_EXECUTION_LEDGER_EVIDENCE_ARTIFACT_VERSION
+  artifact_kind: "deliveryhub_execution_ledger_evidence"
+  artifact_status: "assembled"
+  evidence_status: "preview_ready_manual_handoff"
+  provider_code: typeof DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE
+  provider_id: typeof DELIVERY_HUB_FULFILLMENT_PROVIDER_ID
+  connection_id: string
+  quote_type: DeliveryHubFulfillmentModeCode
+  quote_reference_summary: {
+    id: string
+    version: number
+  }
+  quote_summary: DeliveryHubFulfillmentHandoffSnapshot["quote_summary"]
+  pickup_point_summary: DeliveryHubFulfillmentHandoffSnapshot["pickup_point_summary"]
+  pickup_window_summary: DeliveryHubFulfillmentHandoffSnapshot["pickup_window_summary"]
+  references: DeliveryHubFulfillmentHandoffSnapshot["references"]
+  correlation_id: string | null
+  timestamps: {
+    selection_updated_at: string | null
+    handoff_assembled_at: string
+    artifact_assembled_at: string
+  }
+  contour: {
+    contract_status: "ready"
+    execution_status: "blocked"
+    handoff_target: "manual_external"
+    persistence_contour: "manual_external_only"
+    repository_current_stage: DeliveryHubExecutionLedgerRepositoryAssemblyReadinessSummary["persistence_readiness_contour"]["current_stage"]
+    live_execution_enabled: false
+    ledger_persistence_enabled: false
+    real_provider_dispatch_enabled: false
+  }
+}
+
+export type DeliveryHubExecutionLedgerEvidenceArtifactAssemblyResult = {
+  version: typeof DELIVERY_HUB_EXECUTION_LEDGER_EVIDENCE_ARTIFACT_VERSION
+  status: "ready" | "blocked"
+  artifact: DeliveryHubExecutionLedgerEvidenceArtifact | null
+  blocked_reason: string | null
 }
 
 export type DeliveryHubShipmentExecutionPlanPreviewStep = {
@@ -603,6 +646,9 @@ export type DeliveryHubShipmentExecutionPlanPreview = {
     create_fulfillment_payload: DeliveryHubCreateFulfillmentBridgePayload | null
     provider_execution_plan: DeliveryHubProviderExecutionPlan | null
     fulfillment_handoff: DeliveryHubFulfillmentHandoffSnapshot | null
+    execution_ledger_evidence:
+      | DeliveryHubExecutionLedgerEvidenceArtifactAssemblyResult
+      | null
   }
   execution_identity: DeliveryHubExecutionIdentityPreview | null
   outbound_payload_preview: {
@@ -981,6 +1027,15 @@ export function buildDeliveryHubShipmentExecutionPlanPreview(input: {
         fulfillment: input.fulfillment,
       })
     : null
+  const executionLedgerEvidence = diagnostic.normalized.create_fulfillment_payload
+    ? buildDeliveryHubExecutionLedgerEvidenceArtifactAssembly({
+        option_data: input.option_data,
+        fulfillment_data: input.fulfillment_data,
+        default_mode_code: input.default_mode_code,
+        order: input.order,
+        fulfillment: input.fulfillment,
+      })
+    : null
   const persistenceAuditPreview = buildDeliveryHubExecutionPersistenceAuditPreview({
     execution_plan: providerExecutionPlan,
     execution_identity: executionIdentityPreview,
@@ -1148,6 +1203,7 @@ export function buildDeliveryHubShipmentExecutionPlanPreview(input: {
       ...diagnostic.normalized,
       provider_execution_plan: providerExecutionPlan,
       fulfillment_handoff: fulfillmentHandoff,
+      execution_ledger_evidence: executionLedgerEvidence,
     },
     execution_identity: executionIdentityPreview,
     outbound_payload_preview: {
@@ -3155,6 +3211,65 @@ export function buildDeliveryHubFulfillmentHandoffSnapshot(input: {
       live_execution_enabled: false,
       real_provider_dispatch_enabled: false,
     },
+  }
+}
+
+export function buildDeliveryHubExecutionLedgerEvidenceArtifactAssembly(input: {
+  option_data?: Record<string, unknown>
+  fulfillment_data?: Record<string, unknown>
+  default_mode_code?: string | null
+  order?: Record<string, unknown> | null
+  fulfillment?: Record<string, unknown> | null
+}): DeliveryHubExecutionLedgerEvidenceArtifactAssemblyResult {
+  try {
+    const handoff = buildDeliveryHubFulfillmentHandoffSnapshot(input)
+
+    return {
+      version: DELIVERY_HUB_EXECUTION_LEDGER_EVIDENCE_ARTIFACT_VERSION,
+      status: "ready",
+      artifact: {
+        version: DELIVERY_HUB_EXECUTION_LEDGER_EVIDENCE_ARTIFACT_VERSION,
+        artifact_kind: "deliveryhub_execution_ledger_evidence",
+        artifact_status: "assembled",
+        evidence_status: "preview_ready_manual_handoff",
+        provider_code: handoff.provider_code,
+        provider_id: handoff.provider_id,
+        connection_id: handoff.connection_id,
+        quote_type: handoff.quote_type,
+        quote_reference_summary: {
+          id: handoff.quote_reference.id,
+          version: handoff.quote_reference.version,
+        },
+        quote_summary: handoff.quote_summary,
+        pickup_point_summary: handoff.pickup_point_summary,
+        pickup_window_summary: handoff.pickup_window_summary,
+        references: handoff.references,
+        correlation_id: handoff.correlation_id,
+        timestamps: {
+          selection_updated_at: handoff.timestamps.selection_updated_at,
+          handoff_assembled_at: handoff.timestamps.assembled_at,
+          artifact_assembled_at: new Date().toISOString(),
+        },
+        contour: {
+          contract_status: "ready",
+          execution_status: "blocked",
+          handoff_target: "manual_external",
+          persistence_contour: "manual_external_only",
+          repository_current_stage: handoff.contour.repository_current_stage,
+          live_execution_enabled: false,
+          ledger_persistence_enabled: false,
+          real_provider_dispatch_enabled: false,
+        },
+      },
+      blocked_reason: null,
+    }
+  } catch (error) {
+    return {
+      version: DELIVERY_HUB_EXECUTION_LEDGER_EVIDENCE_ARTIFACT_VERSION,
+      status: "blocked",
+      artifact: null,
+      blocked_reason: getBridgePreviewErrorMessage(error),
+    }
   }
 }
 
