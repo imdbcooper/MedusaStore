@@ -45,6 +45,8 @@ export type DeliveryHubControlledFulfillmentExecutionBlockReasonCode =
   | "delivery_mode_not_supported"
   | "provider_execution_reference_unavailable"
   | "provider_dispatch_not_materialized"
+  | "execution_ledger_duplicate_execution"
+  | "execution_ledger_drift_detected"
 
 export type DeliveryHubControlledFulfillmentExecutionResult = {
   version: typeof DELIVERY_HUB_CONTROLLED_FULFILLMENT_EXECUTION_RESULT_VERSION
@@ -92,7 +94,7 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
     provider_origin_dispatch_context_present: boolean
     shipment_execution_enabled: boolean
     live_adapter_call_performed: boolean
-    persisted_execution_ledger_write_performed: false
+    persisted_execution_ledger_write_performed: boolean
   }
   provider_dispatch_port: YandexCreateShipmentDispatchPortSummary
   provider_payload_materialization: {
@@ -141,7 +143,7 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
     outcome: "not_attempted" | "accepted" | "failed"
     redacted: boolean
     persistence_performed: boolean
-    execution_ledger_persistence_performed: false
+    execution_ledger_persistence_performed: boolean
     order_mutation_performed: false
     fulfillment_mutation_performed: false
     safe_message: string
@@ -156,13 +158,29 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
     readiness_status: DeliveryHubShipmentExecutionPlanPreview["readiness_verdict"]["status"]
     execution_status: "blocked" | "dispatch_attempted"
     live_dispatch_performed: boolean
-    ledger_persistence_performed: false
+    ledger_persistence_performed: boolean
   }
   anti_leak_confirmations: {
     credentials_included: false
     raw_provider_payloads_included: false
     raw_offer_ids_included: false
   }
+}
+
+export type DeliveryHubControlledFulfillmentExecutionLedgerRuntime = {
+  reserveForDispatch(input: {
+    execution_reference: string
+    idempotency_key: string
+  }): Promise<{
+    status: "created" | "matched" | "drifted"
+    persistence_performed: boolean
+  }>
+  markDispatchResultReceived(input: {
+    execution_reference: string
+    outcome: "accepted" | "failed"
+  }): Promise<{
+    persistence_performed: boolean
+  }>
 }
 
 export async function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
@@ -175,6 +193,7 @@ export async function buildDeliveryHubControlledFulfillmentExecutionResult(input
   provider_origin_dispatch_context: DeliveryHubProviderOriginDispatchContext | null
   fulfillment_data: Record<string, unknown>
   shipment_execution_enabled: boolean
+  execution_ledger_runtime?: DeliveryHubControlledFulfillmentExecutionLedgerRuntime | null
 }): Promise<DeliveryHubControlledFulfillmentExecutionResult> {
   const modeCode = input.handoff?.quote_type ?? null
   const modeSupported = isDirectYandexModeSupported(modeCode)
@@ -526,11 +545,82 @@ export async function buildDeliveryHubControlledFulfillmentExecutionResult(input
     })
   }
 
+  const executionReference =
+    input.execution_plan_preview.execution_identity?.provider_operation_reference ?? null
+  const idempotencyKey = input.execution_plan_preview.execution_identity?.idempotency_key_preview ?? null
+  let executionLedgerPersistencePerformed = false
+
+  if (input.execution_ledger_runtime && executionReference && idempotencyKey) {
+    const reservation = await input.execution_ledger_runtime.reserveForDispatch({
+      execution_reference: executionReference,
+      idempotency_key: idempotencyKey,
+    })
+
+    if (reservation.status === "matched") {
+      return buildBlockedResult({
+        execution_plan_preview: input.execution_plan_preview,
+        handoff: input.handoff,
+        execution_ledger_evidence: input.execution_ledger_evidence,
+        connection,
+        connection_lookup_available: true,
+        persisted_execution_reference_present: true,
+        provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+        provider_origin_dispatch_context_present: true,
+        fulfillment_data: input.fulfillment_data,
+        shipment_execution_enabled: true,
+        mode_code: modeCode,
+        mode_supported: true,
+        runtime_dispatch_implemented: true,
+        blocked_reason_code: "execution_ledger_duplicate_execution",
+        blocked_reason:
+          "Controlled execution ledger already contains this canonical shipment execution identity, so direct Yandex dispatch is intentionally blocked to preserve durable single-execution authority.",
+        status: "dispatch_prepared",
+        result_decision: "dispatch_prepared_but_blocked",
+        blocking_stage: "provider_dispatch_execution",
+      })
+    }
+
+    if (reservation.status === "drifted") {
+      return buildBlockedResult({
+        execution_plan_preview: input.execution_plan_preview,
+        handoff: input.handoff,
+        execution_ledger_evidence: input.execution_ledger_evidence,
+        connection,
+        connection_lookup_available: true,
+        persisted_execution_reference_present: true,
+        provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+        provider_origin_dispatch_context_present: true,
+        fulfillment_data: input.fulfillment_data,
+        shipment_execution_enabled: true,
+        mode_code: modeCode,
+        mode_supported: true,
+        runtime_dispatch_implemented: true,
+        blocked_reason_code: "execution_ledger_drift_detected",
+        blocked_reason:
+          "Controlled execution ledger detected reservation drift for this canonical shipment execution identity, so live direct Yandex dispatch is blocked until the existing durable record is reconciled.",
+        status: "dispatch_prepared",
+        result_decision: "dispatch_prepared_but_blocked",
+        blocking_stage: "provider_dispatch_execution",
+      })
+    }
+
+    executionLedgerPersistencePerformed = reservation.persistence_performed
+  }
+
   const dispatchResult = await executeYandexCreateShipmentDispatch({
     client: new YandexDeliveryClient(connection),
     request: dispatchRequest.request,
   })
 
+  if (input.execution_ledger_runtime && executionReference) {
+    const ledgerResult = await input.execution_ledger_runtime.markDispatchResultReceived({
+      execution_reference: executionReference,
+      outcome: dispatchResult.succeeded ? "accepted" : "failed",
+    })
+    executionLedgerPersistencePerformed =
+      executionLedgerPersistencePerformed || ledgerResult.persistence_performed
+  }
+ 
   return buildDispatchAttemptedResult({
     execution_plan_preview: input.execution_plan_preview,
     handoff: input.handoff,
@@ -546,6 +636,7 @@ export async function buildDeliveryHubControlledFulfillmentExecutionResult(input
     mode_supported: true,
     provider_payload_materialization: providerPayloadMaterialization,
     provider_dispatch_result: dispatchResult,
+    execution_ledger_persistence_performed: executionLedgerPersistencePerformed,
   })
 }
 
@@ -681,6 +772,7 @@ function buildDispatchAttemptedResult(input: {
   shipment_execution_enabled: boolean
   provider_payload_materialization: DeliveryHubProviderPayloadMaterializationSummary
   provider_dispatch_result: YandexCreateShipmentDispatchResult
+  execution_ledger_persistence_performed: boolean
 }): DeliveryHubControlledFulfillmentExecutionResult {
   const providerDispatchPort = buildYandexCreateShipmentDispatchPortContract({
     execution_gate_enabled: input.shipment_execution_enabled,
@@ -733,7 +825,7 @@ function buildDispatchAttemptedResult(input: {
       provider_origin_dispatch_context_present: input.provider_origin_dispatch_context_present,
       shipment_execution_enabled: input.shipment_execution_enabled,
       live_adapter_call_performed: true,
-      persisted_execution_ledger_write_performed: false,
+      persisted_execution_ledger_write_performed: input.execution_ledger_persistence_performed,
     },
     provider_dispatch_port: providerDispatchPort.summary,
     provider_payload_materialization: input.provider_payload_materialization,
@@ -753,12 +845,16 @@ function buildDispatchAttemptedResult(input: {
       outcome: input.provider_dispatch_result.succeeded ? "accepted" : "failed",
       redacted: true,
       persistence_performed: false,
-      execution_ledger_persistence_performed: false,
+      execution_ledger_persistence_performed: input.execution_ledger_persistence_performed,
       order_mutation_performed: false,
       fulfillment_mutation_performed: false,
       safe_message: input.provider_dispatch_result.succeeded
-        ? "Direct Yandex create_shipment was attempted and accepted in runtime, with only a redacted result returned; no shipment persistence, no execution-ledger persistence, and no order or fulfillment mutation were performed."
-        : `Direct Yandex create_shipment was attempted in runtime and returned a redacted failure category (${input.provider_dispatch_result.status_category}); no shipment persistence, no execution-ledger persistence, and no order or fulfillment mutation were performed.`,
+        ? input.execution_ledger_persistence_performed
+          ? "Direct Yandex create_shipment was attempted and accepted in runtime, with canonical execution-ledger reservation/result transitions persisted, only a redacted result returned, and no shipment persistence or order or fulfillment mutation performed at this step."
+          : "Direct Yandex create_shipment was attempted and accepted in runtime, with only a redacted result returned; no shipment persistence, no execution-ledger persistence, and no order or fulfillment mutation were performed."
+        : input.execution_ledger_persistence_performed
+          ? `Direct Yandex create_shipment was attempted in runtime and returned a redacted failure category (${input.provider_dispatch_result.status_category}); canonical execution-ledger reservation/result transitions were persisted, while shipment persistence and order or fulfillment mutation were not performed at this step.`
+          : `Direct Yandex create_shipment was attempted in runtime and returned a redacted failure category (${input.provider_dispatch_result.status_category}); no shipment persistence, no execution-ledger persistence, and no order or fulfillment mutation were performed.`,
     },
     evidence: {
       status: input.execution_ledger_evidence?.status ?? null,
@@ -771,7 +867,7 @@ function buildDispatchAttemptedResult(input: {
       readiness_status: input.execution_plan_preview.readiness_verdict.status,
       execution_status: "dispatch_attempted",
       live_dispatch_performed: true,
-      ledger_persistence_performed: false,
+      ledger_persistence_performed: input.execution_ledger_persistence_performed,
     },
     anti_leak_confirmations: {
       credentials_included: false,

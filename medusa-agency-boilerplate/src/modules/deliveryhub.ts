@@ -20,7 +20,10 @@ import {
   buildDeliveryHubFulfillmentHandoffSnapshot,
   buildDeliveryHubShipmentExecutionPlanPreview,
 } from "./delivery-hub/fulfillment-provider-bridge"
-import { buildDeliveryHubControlledFulfillmentExecutionResult } from "./delivery-hub/fulfillment-execution-seam"
+import {
+  buildDeliveryHubControlledFulfillmentExecutionResult,
+  type DeliveryHubControlledFulfillmentExecutionLedgerRuntime,
+} from "./delivery-hub/fulfillment-execution-seam"
 import {
   getDeliveryHubCartById,
   getDeliveryHubQuery,
@@ -41,6 +44,13 @@ import {
   buildDeliveryHubShipmentPersistenceResponseSummary,
   upsertDeliveryShipment,
 } from "./delivery-hub/storage/shipments-repository"
+import { DeliveryHubExecutionLedgerPgRepository } from "./delivery-hub/storage/execution-ledger-pg-repository"
+import {
+  DELIVERY_HUB_EXECUTION_STATE,
+  buildDeliveryHubControlledExecutionAuditDraft,
+  buildDeliveryHubControlledExecutionRecordDraft,
+  buildDeliveryHubControlledExecutionReservationDraft,
+} from "./delivery-hub/shipment-execution-contract"
 
 type InjectedDependencies = {
   logger: Logger
@@ -237,6 +247,10 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       }
     }
 
+    const executionLedgerRuntime = this.buildControlledExecutionLedgerRuntime({
+      execution_plan_preview: executionPlanPreview,
+      pg_connection: pgConnection,
+    })
     const controlledExecution = await buildDeliveryHubControlledFulfillmentExecutionResult({
       execution_plan_preview: executionPlanPreview,
       handoff: fulfillmentHandoff,
@@ -249,6 +263,7 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
         : null,
       fulfillment_data: handoffInput,
       shipment_execution_enabled: isDeliveryHubShipmentExecutionEnabled(),
+      execution_ledger_runtime: executionLedgerRuntime,
     })
     const persistedShipment = await this.persistControlledExecutionShipment({
       controlled_execution: controlledExecution,
@@ -452,6 +467,12 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       metadata: {
         provider_code: input.controlled_execution.provider_code,
         execution_path: input.controlled_execution.execution_path,
+        ledger_execution_reference:
+          input.controlled_execution.execution_identity.provider_operation_reference,
+        ledger_idempotency_key_preview:
+          input.controlled_execution.execution_identity.idempotency_key_preview,
+        ledger_persistence_performed:
+          input.controlled_execution.dispatch_result.execution_ledger_persistence_performed,
         redacted: true,
       },
     })
@@ -459,8 +480,12 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
     input.controlled_execution.dispatch_result.persistence_performed = persistedShipment !== null
     input.controlled_execution.dispatch_result.safe_message = persistedShipment
       ? input.controlled_execution.provider_dispatch_result?.succeeded
-        ? "Direct Yandex create_shipment was attempted and accepted in runtime, with a redacted result returned and shipment persistence materialized; no execution-ledger persistence and no order or fulfillment mutation were performed."
-        : `Direct Yandex create_shipment was attempted in runtime and returned a redacted failure category (${input.controlled_execution.provider_dispatch_result?.status_category ?? "unknown"}); shipment persistence was materialized, while execution-ledger persistence and order or fulfillment mutation were not performed.`
+        ? input.controlled_execution.dispatch_result.execution_ledger_persistence_performed
+          ? "Direct Yandex create_shipment was attempted and accepted in runtime, canonical execution-ledger reservation/result transitions were persisted, and shipment persistence was materialized with ledger linkage; no order or fulfillment mutation was performed."
+          : "Direct Yandex create_shipment was attempted and accepted in runtime, with a redacted result returned and shipment persistence materialized; no execution-ledger persistence and no order or fulfillment mutation were performed."
+        : input.controlled_execution.dispatch_result.execution_ledger_persistence_performed
+          ? `Direct Yandex create_shipment was attempted in runtime and returned a redacted failure category (${input.controlled_execution.provider_dispatch_result?.status_category ?? "unknown"}); canonical execution-ledger reservation/result transitions and shipment persistence with ledger linkage were materialized, while order or fulfillment mutation was not performed.`
+          : `Direct Yandex create_shipment was attempted in runtime and returned a redacted failure category (${input.controlled_execution.provider_dispatch_result?.status_category ?? "unknown"}); shipment persistence was materialized, while execution-ledger persistence and order or fulfillment mutation were not performed.`
       : input.controlled_execution.dispatch_result.safe_message
 
     if (persistedShipment !== null) {
@@ -490,6 +515,143 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       return getDeliveryHubPgConnection(this.container_)
     } catch {
       return null
+    }
+  }
+
+  protected buildControlledExecutionLedgerRuntime(input: {
+    execution_plan_preview: ReturnType<typeof buildDeliveryHubShipmentExecutionPlanPreview>
+    pg_connection: ReturnType<typeof getDeliveryHubPgConnection> | null
+  }): DeliveryHubControlledFulfillmentExecutionLedgerRuntime | null {
+    const executionPlan = input.execution_plan_preview.normalized.provider_execution_plan
+    if (!input.pg_connection || !executionPlan) {
+      return null
+    }
+
+    const repository = new DeliveryHubExecutionLedgerPgRepository({
+      connection: input.pg_connection,
+      now: () => new Date().toISOString(),
+    })
+    const executionIdentity = input.execution_plan_preview.execution_identity
+
+    if (!executionIdentity?.provider_operation_reference || !executionIdentity.idempotency_key_preview) {
+      return null
+    }
+
+    const reservationDraft = buildDeliveryHubControlledExecutionReservationDraft({
+      execution_plan: executionPlan,
+    })
+    const executionRecordDraft = buildDeliveryHubControlledExecutionRecordDraft({
+      execution_plan: executionPlan,
+    })
+
+    return {
+      reserveForDispatch: async ({ execution_reference, idempotency_key }) => {
+        if (
+          execution_reference !== executionIdentity.provider_operation_reference ||
+          idempotency_key !== executionIdentity.idempotency_key_preview
+        ) {
+          return {
+            status: "drifted",
+            persistence_performed: false,
+          }
+        }
+
+        const reserveResult = await repository.reserveExecution({
+          execution_record: executionRecordDraft,
+          reservation_draft: reservationDraft,
+          audit_event: buildDeliveryHubControlledExecutionAuditDraft({
+            execution_plan: executionPlan,
+            current_state: DELIVERY_HUB_EXECUTION_STATE.planned,
+            event_type: "deliveryhub.execution.planned",
+          }),
+        })
+
+        if (reserveResult.status !== "created") {
+          return {
+            status: reserveResult.status,
+            persistence_performed: false,
+          }
+        }
+
+        await repository.recordTransition({
+          execution_reference,
+          from: DELIVERY_HUB_EXECUTION_STATE.planned,
+          to: DELIVERY_HUB_EXECUTION_STATE.reserved,
+          audit_event: buildDeliveryHubControlledExecutionAuditDraft({
+            execution_plan: executionPlan,
+            current_state: DELIVERY_HUB_EXECUTION_STATE.reserved,
+            event_type: "deliveryhub.execution.reserved",
+          }),
+        })
+        await repository.recordTransition({
+          execution_reference,
+          from: DELIVERY_HUB_EXECUTION_STATE.reserved,
+          to: DELIVERY_HUB_EXECUTION_STATE.dispatchReady,
+          audit_event: buildDeliveryHubControlledExecutionAuditDraft({
+            execution_plan: executionPlan,
+            current_state: DELIVERY_HUB_EXECUTION_STATE.dispatchReady,
+            event_type: "deliveryhub.execution.dispatch_ready",
+          }),
+        })
+        await repository.recordTransition({
+          execution_reference,
+          from: DELIVERY_HUB_EXECUTION_STATE.dispatchReady,
+          to: DELIVERY_HUB_EXECUTION_STATE.dispatchInflight,
+        })
+
+        return {
+          status: "created",
+          persistence_performed: true,
+        }
+      },
+      markDispatchResultReceived: async ({ execution_reference, outcome }) => {
+        const resultReceived = await repository.recordTransition({
+          execution_reference,
+          from: DELIVERY_HUB_EXECUTION_STATE.dispatchInflight,
+          to: DELIVERY_HUB_EXECUTION_STATE.resultReceived,
+        })
+
+        if (resultReceived.status !== "recorded") {
+          return {
+            persistence_performed: false,
+          }
+        }
+
+        if (outcome === "failed") {
+          const failedBlocked = await repository.recordTransition({
+            execution_reference,
+            from: DELIVERY_HUB_EXECUTION_STATE.resultReceived,
+            to: DELIVERY_HUB_EXECUTION_STATE.failedBlocked,
+          })
+
+          return {
+            persistence_performed: failedBlocked.status === "recorded" || resultReceived.status === "recorded",
+          }
+        }
+
+        const applicationReady = await repository.recordTransition({
+          execution_reference,
+          from: DELIVERY_HUB_EXECUTION_STATE.resultReceived,
+          to: DELIVERY_HUB_EXECUTION_STATE.applicationReady,
+        })
+
+        if (applicationReady.status !== "recorded") {
+          return {
+            persistence_performed: true,
+          }
+        }
+
+        const terminal = await repository.recordTransition({
+          execution_reference,
+          from: DELIVERY_HUB_EXECUTION_STATE.applicationReady,
+          to: DELIVERY_HUB_EXECUTION_STATE.completed,
+        })
+
+        return {
+          persistence_performed:
+            terminal.status === "recorded" || applicationReady.status === "recorded",
+        }
+      },
     }
   }
 
