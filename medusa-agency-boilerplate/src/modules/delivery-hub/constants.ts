@@ -5,7 +5,7 @@ export const DELIVERY_HUB_EVENT_LOGS_TABLE = "delivery_event_logs"
 export const DELIVERY_HUB_DEFAULT_COUNTRY_CODE = "RU"
 export const DELIVERY_HUB_PROVIDER_YANDEX = "yandex"
 export const DELIVERY_HUB_SUPPORTED_PUBLIC_PROVIDER_CODES = [DELIVERY_HUB_PROVIDER_YANDEX] as const
-export const DELIVERY_HUB_QUOTE_REFERENCE_ID_PATTERN = /^dhsel_[a-f0-9]{32}$/
+export const DELIVERY_HUB_QUOTE_REFERENCE_ID_PATTERN = /^dhsel_(?:[a-f0-9]{32}|t1_[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/
 
 export const DELIVERY_HUB_CONNECTION_STATUS = {
   draft: "draft",

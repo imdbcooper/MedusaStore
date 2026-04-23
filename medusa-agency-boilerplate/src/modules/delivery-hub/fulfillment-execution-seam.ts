@@ -14,7 +14,10 @@ import {
   DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,
   DELIVERY_HUB_FULFILLMENT_PROVIDER_ID,
 } from "./provider-surface"
-import type { DeliveryHubProviderExecutionReference } from "./cart-selection"
+import type {
+  DeliveryHubProviderExecutionReference,
+  DeliveryHubProviderOriginDispatchContext,
+} from "./cart-selection"
 import type { DeliveryHubFulfillmentModeCode } from "./shipping-option-contract"
 
 export const DELIVERY_HUB_CONTROLLED_FULFILLMENT_EXECUTION_RESULT_VERSION = 1
@@ -67,6 +70,7 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
     mode_code: DeliveryHubFulfillmentModeCode | null
     mode_supported: boolean
     provider_execution_reference_present: boolean
+    provider_origin_dispatch_context_present: boolean
     shipment_execution_enabled: boolean
     live_adapter_call_performed: false
     persisted_execution_ledger_write_performed: false
@@ -103,12 +107,17 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
   connection: DeliveryConnectionRecord | null
   connection_lookup_available: boolean
   persisted_execution_reference: DeliveryHubProviderExecutionReference | null
+  provider_origin_dispatch_context: DeliveryHubProviderOriginDispatchContext | null
   shipment_execution_enabled: boolean
 }): DeliveryHubControlledFulfillmentExecutionResult {
   const modeCode = input.handoff?.quote_type ?? null
   const modeSupported = isDirectYandexModeSupported(modeCode)
   const connection = input.connection
   const providerExecutionReferencePresent = input.persisted_execution_reference !== null
+  const providerOriginDispatchContextPresent = isProviderOriginDispatchContextReadyForMode(
+    input.provider_origin_dispatch_context,
+    modeCode
+  )
   const connectionReady =
     connection !== null &&
     connection.enabled &&
@@ -123,6 +132,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection: input.connection,
       connection_lookup_available: input.connection_lookup_available,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
@@ -143,6 +153,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection: null,
       connection_lookup_available: false,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
@@ -163,6 +174,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
@@ -183,6 +195,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
@@ -203,6 +216,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
@@ -223,6 +237,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
@@ -243,6 +258,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
@@ -263,6 +279,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: false,
@@ -283,6 +300,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: false,
+      provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: true,
@@ -297,6 +315,26 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
     })
   }
 
+  if (!providerOriginDispatchContextPresent) {
+    return buildBlockedResult({
+      execution_plan_preview: input.execution_plan_preview,
+      handoff: input.handoff,
+      execution_ledger_evidence: input.execution_ledger_evidence,
+      connection,
+      connection_lookup_available: true,
+      persisted_execution_reference_present: true,
+      provider_origin_dispatch_context_present: false,
+      shipment_execution_enabled: input.shipment_execution_enabled,
+      mode_code: modeCode,
+      mode_supported: true,
+      blocked_reason_code: "provider_dispatch_not_materialized",
+      blocked_reason: resolveMissingProviderOriginDispatchContextBoundary(modeCode),
+      status: "dispatch_prepared",
+      result_decision: "dispatch_prepared_but_blocked",
+      blocking_stage: "provider_dispatch_contract",
+    })
+  }
+
   if (!input.shipment_execution_enabled) {
     return buildBlockedResult({
       execution_plan_preview: input.execution_plan_preview,
@@ -305,6 +343,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: true,
+      provider_origin_dispatch_context_present: true,
       shipment_execution_enabled: false,
       mode_code: modeCode,
       mode_supported: true,
@@ -324,6 +363,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
     connection,
     connection_lookup_available: true,
     persisted_execution_reference_present: true,
+    provider_origin_dispatch_context_present: true,
     shipment_execution_enabled: true,
     mode_code: modeCode,
     mode_supported: true,
@@ -344,6 +384,7 @@ type BuildBlockedResultInput = {
   mode_code: DeliveryHubFulfillmentModeCode | null
   mode_supported: boolean
   persisted_execution_reference_present: boolean
+  provider_origin_dispatch_context_present: boolean
   shipment_execution_enabled: boolean
   blocked_reason_code: DeliveryHubControlledFulfillmentExecutionBlockReasonCode
   blocked_reason: string
@@ -392,6 +433,7 @@ function buildBlockedResult(
       mode_code: input.handoff?.quote_type ?? input.mode_code,
       mode_supported: input.mode_supported,
       provider_execution_reference_present: input.persisted_execution_reference_present,
+      provider_origin_dispatch_context_present: input.provider_origin_dispatch_context_present,
       shipment_execution_enabled: input.shipment_execution_enabled,
       live_adapter_call_performed: false,
       persisted_execution_ledger_write_performed: false,
@@ -433,16 +475,53 @@ function isDirectYandexModeSupported(modeCode: DeliveryHubFulfillmentModeCode | 
   )
 }
 
+function isProviderOriginDispatchContextReadyForMode(
+  context: DeliveryHubProviderOriginDispatchContext | null,
+  modeCode: DeliveryHubFulfillmentModeCode | null
+) {
+  if (modeCode === DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint) {
+    return (
+      context?.mode_code === DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint &&
+      typeof context.origin_point_id === "string" &&
+      context.origin_point_id.trim().length > 0
+    )
+  }
+
+  if (modeCode === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint) {
+    return (
+      context?.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint &&
+      typeof context.provider_warehouse_id === "string" &&
+      context.provider_warehouse_id.trim().length > 0
+    )
+  }
+
+  return false
+}
+
+function resolveMissingProviderOriginDispatchContextBoundary(
+  modeCode: DeliveryHubFulfillmentModeCode | null
+) {
+  if (modeCode === DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint) {
+    return "Direct Yandex create-shipment dispatch remains blocked because the committed backend-only handoff does not persist the provider-origin dropoff point reference required to truthfully materialize dropoff-point-to-pickup-point provider dispatch."
+  }
+
+  if (modeCode === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint) {
+    return "Direct Yandex create-shipment dispatch remains blocked because the committed backend-only handoff does not resolve the provider-origin warehouse reference required to truthfully materialize warehouse-to-pickup-point provider dispatch."
+  }
+
+  return "Direct Yandex create-shipment dispatch remains blocked because the committed backend-only handoff still lacks the provider-origin dispatch context required to truthfully materialize a live adapter call."
+}
+
 function resolveDirectYandexDispatchMaterializationBoundary(
   modeCode: DeliveryHubFulfillmentModeCode | null
 ) {
   if (modeCode === DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint) {
-    return "Direct Yandex create-shipment dispatch remains blocked because the committed backend-only handoff does not persist the origin_point_id required to truthfully materialize dropoff-point-to-pickup-point provider dispatch."
+    return "Direct Yandex create-shipment dispatch remains blocked after provider-origin dropoff context became available; the no-network controlled seam still does not materialize a live dropoff-point-to-pickup-point adapter call in createFulfillment()."
   }
 
   if (modeCode === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint) {
-    return "Direct Yandex create-shipment dispatch remains blocked because the committed backend-only handoff does not resolve the provider warehouse reference required to truthfully materialize warehouse-to-pickup-point provider dispatch."
+    return "Direct Yandex create-shipment dispatch remains blocked after provider-origin warehouse context became available; the no-network controlled seam still does not materialize a live warehouse-to-pickup-point adapter call in createFulfillment()."
   }
 
-  return "Direct Yandex create-shipment dispatch remains blocked because the committed backend-only handoff still lacks the provider-origin dispatch context required to truthfully materialize a live adapter call."
+  return "Direct Yandex create-shipment dispatch remains blocked after provider-origin dispatch context became available because live adapter execution is still intentionally not materialized in createFulfillment()."
 }

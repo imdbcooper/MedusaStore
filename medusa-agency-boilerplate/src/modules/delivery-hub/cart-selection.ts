@@ -32,6 +32,16 @@ export type DeliveryHubCartSelectionPickupPoint = Omit<DeliveryPickupPoint, "met
 
 export type DeliveryHubCartSelectionPickupWindow = Omit<DeliveryPickupWindow, "metadata">
 
+export type DeliveryHubProviderOriginDispatchContext =
+  | {
+      mode_code: typeof DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint
+      origin_point_id: string
+    }
+  | {
+      mode_code: typeof DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
+      provider_warehouse_id: string
+    }
+
 export type DeliveryHubQuoteReference = {
   id: string
   version: number
@@ -70,6 +80,7 @@ export type DeliveryHubCartSelectionWriteInput = {
   pickup_window?: DeliveryHubCartSelectionPickupWindow | null
   correlation_id?: string | null
   provider_execution_reference?: DeliveryHubProviderExecutionReference | null
+  provider_origin_dispatch_context?: DeliveryHubProviderOriginDispatchContext | null
 } & ({
   quote_reference: DeliveryHubQuoteReference
 } | {
@@ -366,6 +377,7 @@ export function createDeliveryHubQuoteReference(input: {
   connection_id: string
   quote_type: string
   quote_key: string
+  provider_origin_dispatch_context?: DeliveryHubProviderOriginDispatchContext | null
 }): DeliveryHubQuoteReference {
   return {
     id: createDeliveryHubQuoteReferenceId(input),
@@ -377,15 +389,36 @@ function createDeliveryHubQuoteReferenceId(input: {
   connection_id: string
   quote_type: string
   quote_key: string
+  provider_origin_dispatch_context?: DeliveryHubProviderOriginDispatchContext | null
 }) {
+  const quoteType = readQuoteType(input.quote_type)
+  const normalizedInput = {
+    connection_id: input.connection_id,
+    quote_type: input.quote_type,
+    quote_key: input.quote_key,
+    provider_origin_dispatch_context: quoteType
+      ? normalizeProviderOriginDispatchContextForQuoteType(
+          input.provider_origin_dispatch_context,
+          quoteType
+        )
+      : null,
+  }
+  const encryptedToken = normalizedInput.provider_origin_dispatch_context
+    ? encryptDeliveryHubQuoteReferencePayload(normalizedInput)
+    : null
+
+  if (encryptedToken) {
+    return `dhsel_t1_${encryptedToken}`
+  }
+
   const digest = crypto
     .createHash("sha256")
     .update(
       JSON.stringify({
         version: DELIVERY_HUB_CART_SELECTION_VERSION,
-        connection_id: input.connection_id,
-        quote_type: input.quote_type,
-        quote_key: input.quote_key,
+        connection_id: normalizedInput.connection_id,
+        quote_type: normalizedInput.quote_type,
+        quote_key: normalizedInput.quote_key,
       })
     )
     .digest("hex")
@@ -556,6 +589,7 @@ function resolveQuoteReference(
     connection_id: connectionId,
     quote_type: quoteType,
     quote_key: requireNonEmptyString(input.quote_key, "quote_key"),
+    provider_origin_dispatch_context: input.provider_origin_dispatch_context ?? null,
   })
 }
 
@@ -578,23 +612,30 @@ function resolveProviderExecutionReference(
       connection_id: connectionId,
       quote_type: quoteType,
       quote_key: requireNonEmptyString(input.quote_key, "quote_key"),
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context ?? null,
     })
   }
 
-  return null
+  return createDeliveryHubProviderExecutionReferenceFromQuoteReference(quoteReference)
 }
 
 export function createDeliveryHubProviderExecutionReference(input: {
   connection_id: string
   quote_type: string
   quote_key: string
+  provider_origin_dispatch_context?: DeliveryHubProviderOriginDispatchContext | null
 }): DeliveryHubProviderExecutionReference | null {
   const quoteKey = requireNonEmptyString(input.quote_key, "quote_key")
+  const quoteType = requireQuoteType(input.quote_type)
   const token = encryptDeliveryHubProviderExecutionReference({
     connection_id: requireNonEmptyString(input.connection_id, "connection_id"),
-    quote_type: requireNonEmptyString(input.quote_type, "quote_type"),
+    quote_type: quoteType,
     quote_key: quoteKey,
     provider_quote_reference: quoteKey,
+    provider_origin_dispatch_context: normalizeProviderOriginDispatchContextForQuoteType(
+      input.provider_origin_dispatch_context,
+      quoteType
+    ),
   })
 
   if (!token) {
@@ -611,6 +652,12 @@ export function decryptDeliveryHubProviderExecutionReference(
   reference: DeliveryHubProviderExecutionReference
 ) {
   return decryptProviderExecutionReferenceToken(reference.token)
+}
+
+export function readDeliveryHubProviderExecutionReferenceOriginContext(
+  reference: DeliveryHubProviderExecutionReference
+): DeliveryHubProviderOriginDispatchContext | null {
+  return decryptProviderExecutionReferenceToken(reference.token).provider_origin_dispatch_context ?? null
 }
 
 function requireProviderExecutionReference(
@@ -803,6 +850,7 @@ function encryptDeliveryHubProviderExecutionReference(payload: {
   quote_type: string
   quote_key: string
   provider_quote_reference: string
+  provider_origin_dispatch_context?: DeliveryHubProviderOriginDispatchContext | null
 }) {
   const secret = getConfiguredDeliveryHubProviderExecutionReferenceSecret()
 
@@ -824,6 +872,7 @@ function decryptProviderExecutionReferenceToken(token: string): {
   quote_type: string
   quote_key: string
   provider_quote_reference: string
+  provider_origin_dispatch_context: DeliveryHubProviderOriginDispatchContext | null
 } {
   const segments = token.split(".")
 
@@ -852,16 +901,14 @@ function decryptProviderExecutionReferenceToken(token: string): {
       decipher.final(),
     ])
     const payload = asRecord(JSON.parse(plaintext.toString("utf8")))
+    const quoteType = requireQuoteType(payload.quote_type)
 
     return {
       connection_id: requireNonEmptyString(
         payload.connection_id,
         "backend_execution_reference.payload.connection_id"
       ),
-      quote_type: requireNonEmptyString(
-        payload.quote_type,
-        "backend_execution_reference.payload.quote_type"
-      ),
+      quote_type: quoteType,
       quote_key: requireNonEmptyString(
         payload.quote_key,
         "backend_execution_reference.payload.quote_key"
@@ -869,6 +916,10 @@ function decryptProviderExecutionReferenceToken(token: string): {
       provider_quote_reference: requireNonEmptyString(
         payload.provider_quote_reference,
         "backend_execution_reference.payload.provider_quote_reference"
+      ),
+      provider_origin_dispatch_context: normalizeProviderOriginDispatchContextForQuoteType(
+        payload.provider_origin_dispatch_context,
+        quoteType
       ),
     }
   } catch {
@@ -917,9 +968,28 @@ function providerExecutionReferenceMatchesContext(
     quote_type: string
     quote_key: string
     provider_quote_reference: string
+    provider_origin_dispatch_context: DeliveryHubProviderOriginDispatchContext | null
   },
   context: DeliveryHubProviderExecutionReferenceValidationContext
 ) {
+  if (payload.connection_id !== context.connection_id || payload.quote_type !== context.quote_type) {
+    return false
+  }
+
+  const quoteReferencePayload = decryptDeliveryHubQuoteReferencePayload(context.quote_reference)
+
+  if (quoteReferencePayload) {
+    return (
+      quoteReferencePayload.connection_id === payload.connection_id &&
+      quoteReferencePayload.quote_type === payload.quote_type &&
+      quoteReferencePayload.quote_key === payload.quote_key &&
+      providerOriginDispatchContextsEqual(
+        quoteReferencePayload.provider_origin_dispatch_context,
+        payload.provider_origin_dispatch_context
+      )
+    )
+  }
+
   const expectedQuoteReference = createDeliveryHubQuoteReference({
     connection_id: payload.connection_id,
     quote_type: payload.quote_type,
@@ -927,11 +997,174 @@ function providerExecutionReferenceMatchesContext(
   })
 
   return (
-    payload.connection_id === context.connection_id &&
-    payload.quote_type === context.quote_type &&
+    payload.provider_origin_dispatch_context === null &&
     expectedQuoteReference.id === context.quote_reference.id &&
     expectedQuoteReference.version === context.quote_reference.version
   )
+}
+
+function providerOriginDispatchContextsEqual(
+  left: DeliveryHubProviderOriginDispatchContext | null,
+  right: DeliveryHubProviderOriginDispatchContext | null
+) {
+  if (left === null || right === null) {
+    return left === right
+  }
+
+  if (left.mode_code !== right.mode_code) {
+    return false
+  }
+
+  if (left.mode_code === DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint) {
+    return (
+      right.mode_code === DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint &&
+      left.origin_point_id === right.origin_point_id
+    )
+  }
+
+  return (
+    right.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint &&
+    left.provider_warehouse_id === right.provider_warehouse_id
+  )
+}
+
+function createDeliveryHubProviderExecutionReferenceFromQuoteReference(
+  quoteReference: DeliveryHubQuoteReference
+): DeliveryHubProviderExecutionReference | null {
+  const payload = decryptDeliveryHubQuoteReferencePayload(quoteReference)
+
+  if (!payload) {
+    return null
+  }
+
+  return createDeliveryHubProviderExecutionReference({
+    connection_id: payload.connection_id,
+    quote_type: payload.quote_type,
+    quote_key: payload.quote_key,
+    provider_origin_dispatch_context: payload.provider_origin_dispatch_context,
+  })
+}
+
+function encryptDeliveryHubQuoteReferencePayload(payload: {
+  connection_id: string
+  quote_type: string
+  quote_key: string
+  provider_origin_dispatch_context?: DeliveryHubProviderOriginDispatchContext | null
+}) {
+  const secret = getConfiguredDeliveryHubProviderExecutionReferenceSecret()
+
+  if (!secret) {
+    return null
+  }
+
+  const iv = crypto.randomBytes(12)
+  const cipher = crypto.createCipheriv("aes-256-gcm", secret, iv)
+  const plaintext = Buffer.from(JSON.stringify(payload), "utf8")
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()])
+  const tag = cipher.getAuthTag()
+
+  return [
+    encodeDeliveryHubOpaqueTokenSegment(iv),
+    encodeDeliveryHubOpaqueTokenSegment(tag),
+    encodeDeliveryHubOpaqueTokenSegment(ciphertext),
+  ].join(".")
+}
+
+function decryptDeliveryHubQuoteReferencePayload(quoteReference: DeliveryHubQuoteReference): {
+  connection_id: string
+  quote_type: DeliveryHubCartSelectionQuoteType
+  quote_key: string
+  provider_origin_dispatch_context: DeliveryHubProviderOriginDispatchContext | null
+} | null {
+  const normalizedId = readString(quoteReference.id)
+
+  if (!normalizedId || !normalizedId.startsWith("dhsel_t1_")) {
+    return null
+  }
+
+  const token = normalizedId.slice("dhsel_t1_".length)
+  const segments = token.split(".")
+
+  if (segments.length !== 3 || segments.some((segment) => !segment)) {
+    return null
+  }
+
+  try {
+    const [iv, tag, ciphertext] = segments
+    const secret = getDeliveryHubProviderExecutionReferenceSecret()
+    const decipher = crypto.createDecipheriv(
+      "aes-256-gcm",
+      secret,
+      decodeDeliveryHubOpaqueTokenSegment(iv!)
+    )
+    decipher.setAuthTag(decodeDeliveryHubOpaqueTokenSegment(tag!))
+    const plaintext = Buffer.concat([
+      decipher.update(decodeDeliveryHubOpaqueTokenSegment(ciphertext!)),
+      decipher.final(),
+    ])
+    const payload = asRecord(JSON.parse(plaintext.toString("utf8")))
+    const quoteType = readQuoteType(payload.quote_type)
+
+    if (!quoteType) {
+      return null
+    }
+
+    const providerOriginDispatchContext = normalizeProviderOriginDispatchContextForQuoteType(
+      payload.provider_origin_dispatch_context,
+      quoteType
+    )
+
+    if (hasProviderOriginDispatchContext(payload) && !providerOriginDispatchContext) {
+      return null
+    }
+
+    return {
+      connection_id: requireNonEmptyString(payload.connection_id, "quote_reference.payload.connection_id"),
+      quote_type: quoteType,
+      quote_key: requireNonEmptyString(payload.quote_key, "quote_reference.payload.quote_key"),
+      provider_origin_dispatch_context: providerOriginDispatchContext,
+    }
+  } catch {
+    return null
+  }
+}
+
+function normalizeProviderOriginDispatchContextForQuoteType(
+  value: unknown,
+  quoteType: DeliveryHubCartSelectionQuoteType
+): DeliveryHubProviderOriginDispatchContext | null {
+  const record = asRecord(value)
+  const modeCode = readQuoteType(record.mode_code)
+
+  if (quoteType === DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint) {
+    const originPointId = readString(record.origin_point_id)
+    return modeCode === DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint && originPointId
+      ? {
+          mode_code: quoteType,
+          origin_point_id: originPointId,
+        }
+      : null
+  }
+
+  const providerWarehouseId = readString(record.provider_warehouse_id)
+  return modeCode === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint && providerWarehouseId
+    ? {
+        mode_code: quoteType,
+        provider_warehouse_id: providerWarehouseId,
+      }
+    : null
+}
+
+function hasProviderOriginDispatchContext(value: Record<string, unknown>) {
+  return Object.prototype.hasOwnProperty.call(value, "provider_origin_dispatch_context")
+}
+
+function encodeDeliveryHubOpaqueTokenSegment(value: Buffer) {
+  return value.toString("base64url")
+}
+
+function decodeDeliveryHubOpaqueTokenSegment(value: string) {
+  return Buffer.from(value, "base64url")
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

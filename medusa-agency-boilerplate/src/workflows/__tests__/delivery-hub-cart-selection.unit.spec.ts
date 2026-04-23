@@ -11,6 +11,7 @@ import {
   decryptDeliveryHubProviderExecutionReference,
   readDeliveryHubCartSelection,
   readDeliveryHubCartSelectionBackendExecutionReference,
+  readDeliveryHubProviderExecutionReferenceOriginContext,
   validateDeliveryHubProviderExecutionReference,
 } from "../../modules/delivery-hub/cart-selection"
 
@@ -245,6 +246,7 @@ describe("Delivery Hub cart selection contract", () => {
       quote_type: "warehouse_to_pickup_point",
       quote_key: "offer_backend_only_123",
       provider_quote_reference: "offer_backend_only_123",
+      provider_origin_dispatch_context: null,
     })
   })
 
@@ -347,6 +349,228 @@ describe("Delivery Hub cart selection contract", () => {
       providerExecutionReference
     )
     expect((readDeliveryHubCartSelection(nextMetadata) as Record<string, unknown>).backend_execution_reference).toBeUndefined()
+  })
+
+  it("materializes backend-only provider-origin dropoff context from quote input without leaking it through public selection or raw quote reference text", () => {
+    const quoteReference = createDeliveryHubQuoteReference({
+      connection_id: "conn_dropoff",
+      quote_type: "dropoff_point_to_pickup_point",
+      quote_key: "offer_dropoff_1",
+      provider_origin_dispatch_context: {
+        mode_code: "dropoff_point_to_pickup_point",
+        origin_point_id: "dropoff_origin_1",
+      },
+    })
+
+    const nextMetadata = buildDeliveryHubCartSelectionMetadata(
+      {},
+      {
+        connection_id: "conn_dropoff",
+        quote_type: "dropoff_point_to_pickup_point",
+        quote_reference: quoteReference,
+        quote: {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          amount: 699,
+          currency_code: "rub",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_dropoff",
+          provider_point_code: null,
+          name: "PVZ Dropoff",
+          address: "Pokrovka 12",
+          city: "Moscow",
+          region: null,
+          postal_code: null,
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: true,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      }
+    ) as Record<string, any>
+
+    const backendReference = readDeliveryHubCartSelectionBackendExecutionReference(nextMetadata)
+    const publicSelection = readDeliveryHubCartSelection(nextMetadata)
+
+    expect(backendReference).not.toBeNull()
+    expect(readDeliveryHubProviderExecutionReferenceOriginContext(backendReference!)).toEqual({
+      mode_code: "dropoff_point_to_pickup_point",
+      origin_point_id: "dropoff_origin_1",
+    })
+    expect(JSON.stringify(nextMetadata)).not.toContain("dropoff_origin_1")
+    expect(JSON.stringify(publicSelection)).not.toContain("dropoff_origin_1")
+    expect(publicSelection?.quote_reference.id).toMatch(/^dhsel_t1_[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/)
+  })
+
+  it("materializes backend-only provider-origin warehouse context from quote input without leaking it through public selection", () => {
+    const quoteReference = createDeliveryHubQuoteReference({
+      connection_id: "conn_wh",
+      quote_type: "warehouse_to_pickup_point",
+      quote_key: "offer_wh_1",
+      provider_origin_dispatch_context: {
+        mode_code: "warehouse_to_pickup_point",
+        provider_warehouse_id: "ya-wh-1",
+      },
+    })
+
+    const nextMetadata = buildDeliveryHubCartSelectionMetadata(
+      {},
+      {
+        connection_id: "conn_wh",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: quoteReference,
+        quote: {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          amount: 499,
+          currency_code: "rub",
+          delivery_eta_min: 1,
+          delivery_eta_max: 3,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_wh",
+          provider_point_code: null,
+          name: "PVZ Warehouse",
+          address: "Tverskaya 10",
+          city: "Moscow",
+          region: null,
+          postal_code: null,
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      }
+    ) as Record<string, any>
+
+    const backendReference = readDeliveryHubCartSelectionBackendExecutionReference(nextMetadata)
+    const publicSelection = readDeliveryHubCartSelection(nextMetadata)
+
+    expect(backendReference).not.toBeNull()
+    expect(readDeliveryHubProviderExecutionReferenceOriginContext(backendReference!)).toEqual({
+      mode_code: "warehouse_to_pickup_point",
+      provider_warehouse_id: "ya-wh-1",
+    })
+    expect(JSON.stringify(nextMetadata)).not.toContain("ya-wh-1")
+    expect(JSON.stringify(publicSelection)).not.toContain("ya-wh-1")
+    expect((publicSelection as Record<string, unknown>).backend_execution_reference).toBeUndefined()
+  })
+
+  it("rejects warehouse quote with dropoff provider-origin context without backend materialization", () => {
+    const quoteReference = createDeliveryHubQuoteReference({
+      connection_id: "conn_mismatch_wh",
+      quote_type: "warehouse_to_pickup_point",
+      quote_key: "offer_mismatch_wh",
+      provider_origin_dispatch_context: {
+        mode_code: "dropoff_point_to_pickup_point",
+        origin_point_id: "dropoff_origin_wrong",
+      },
+    })
+
+    const nextMetadata = buildDeliveryHubCartSelectionMetadata(
+      {},
+      {
+        connection_id: "conn_mismatch_wh",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: quoteReference,
+        quote: {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          amount: 499,
+          currency_code: "rub",
+          delivery_eta_min: 1,
+          delivery_eta_max: 3,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_mismatch_wh",
+          provider_point_code: null,
+          name: "PVZ Mismatch Warehouse",
+          address: "Tverskaya 11",
+          city: "Moscow",
+          region: null,
+          postal_code: null,
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      }
+    ) as Record<string, any>
+
+    expect(readDeliveryHubCartSelectionBackendExecutionReference(nextMetadata)).toBeNull()
+    expect(readDeliveryHubCartSelection(nextMetadata)).toEqual(
+      expect.objectContaining({
+        connection_id: "conn_mismatch_wh",
+        quote_type: "warehouse_to_pickup_point",
+      })
+    )
+    expect(JSON.stringify(nextMetadata)).not.toContain("dropoff_origin_wrong")
+  })
+
+  it("rejects dropoff quote with warehouse provider-origin context without backend materialization", () => {
+    const quoteReference = createDeliveryHubQuoteReference({
+      connection_id: "conn_mismatch_dropoff",
+      quote_type: "dropoff_point_to_pickup_point",
+      quote_key: "offer_mismatch_dropoff",
+      provider_origin_dispatch_context: {
+        mode_code: "warehouse_to_pickup_point",
+        provider_warehouse_id: "provider_wh_wrong",
+      },
+    })
+
+    const nextMetadata = buildDeliveryHubCartSelectionMetadata(
+      {},
+      {
+        connection_id: "conn_mismatch_dropoff",
+        quote_type: "dropoff_point_to_pickup_point",
+        quote_reference: quoteReference,
+        quote: {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          amount: 699,
+          currency_code: "rub",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_mismatch_dropoff",
+          provider_point_code: null,
+          name: "PVZ Mismatch Dropoff",
+          address: "Pokrovka 13",
+          city: "Moscow",
+          region: null,
+          postal_code: null,
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: true,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      }
+    ) as Record<string, any>
+
+    expect(readDeliveryHubCartSelectionBackendExecutionReference(nextMetadata)).toBeNull()
+    expect(readDeliveryHubCartSelection(nextMetadata)).toEqual(
+      expect.objectContaining({
+        connection_id: "conn_mismatch_dropoff",
+        quote_type: "dropoff_point_to_pickup_point",
+      })
+    )
+    expect(JSON.stringify(nextMetadata)).not.toContain("provider_wh_wrong")
   })
 
   it("rejects mismatched backend execution reference context and strips stale persisted token", () => {

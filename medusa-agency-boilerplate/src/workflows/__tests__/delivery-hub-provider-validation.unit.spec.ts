@@ -168,11 +168,19 @@ describe("Delivery Hub provider validation seam", () => {
                   connection_id: "conn_ready",
                   quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
                   quote_key: "quote_provider_validation",
+                  provider_origin_dispatch_context: {
+                    mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                    origin_point_id: "origin_dropoff_1",
+                  },
                 }),
                 backend_execution_reference: createDeliveryHubProviderExecutionReference({
                   connection_id: "conn_ready",
                   quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
                   quote_key: "quote_provider_validation",
+                  provider_origin_dispatch_context: {
+                    mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                    origin_point_id: "origin_dropoff_1",
+                  },
                 }),
                 quote: {
                   carrier_code: "yandex",
@@ -270,6 +278,7 @@ describe("Delivery Hub provider validation seam", () => {
             mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
             mode_supported: true,
             provider_execution_reference_present: true,
+            provider_origin_dispatch_context_present: true,
             shipment_execution_enabled: false,
             live_adapter_call_performed: false,
             persisted_execution_ledger_write_performed: false,
@@ -321,11 +330,19 @@ describe("Delivery Hub provider validation seam", () => {
                   connection_id: "conn_ready",
                   quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
                   quote_key: "quote_provider_validation",
+                  provider_origin_dispatch_context: {
+                    mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                    origin_point_id: "origin_dropoff_1",
+                  },
                 }),
                 backend_execution_reference: createDeliveryHubProviderExecutionReference({
                   connection_id: "conn_ready",
                   quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
                   quote_key: "quote_provider_validation",
+                  provider_origin_dispatch_context: {
+                    mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                    origin_point_id: "origin_dropoff_1",
+                  },
                 }),
                 quote: {
                   carrier_code: "yandex",
@@ -384,6 +401,7 @@ describe("Delivery Hub provider validation seam", () => {
             blocked_reason: expect.stringContaining("DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED is not enabled"),
             dispatch_preparation: expect.objectContaining({
               provider_execution_reference_present: true,
+              provider_origin_dispatch_context_present: true,
               shipment_execution_enabled: false,
             }),
           }),
@@ -392,7 +410,7 @@ describe("Delivery Hub provider validation seam", () => {
     )
   })
 
-  it("truthfully records the last direct Yandex blocker when the shipment execution gate is enabled", async () => {
+  it("truthfully shifts the dropoff direct Yandex blocker after provider-origin context is available and the shipment execution gate is enabled", async () => {
     process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
 
     const provider = buildProvider({
@@ -411,11 +429,19 @@ describe("Delivery Hub provider validation seam", () => {
                   connection_id: "conn_ready",
                   quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
                   quote_key: "quote_provider_validation",
+                  provider_origin_dispatch_context: {
+                    mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                    origin_point_id: "origin_dropoff_1",
+                  },
                 }),
                 backend_execution_reference: createDeliveryHubProviderExecutionReference({
                   connection_id: "conn_ready",
                   quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
                   quote_key: "quote_provider_validation",
+                  provider_origin_dispatch_context: {
+                    mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                    origin_point_id: "origin_dropoff_1",
+                  },
                 }),
                 quote: {
                   carrier_code: "yandex",
@@ -471,9 +497,10 @@ describe("Delivery Hub provider validation seam", () => {
           controlled_execution: expect.objectContaining({
             status: "dispatch_prepared",
             blocked_reason_code: "provider_dispatch_not_materialized",
-            blocked_reason: expect.stringContaining("origin_point_id required"),
+            blocked_reason: expect.stringContaining("provider-origin dropoff context became available"),
             dispatch_preparation: expect.objectContaining({
               provider_execution_reference_present: true,
+              provider_origin_dispatch_context_present: true,
               shipment_execution_enabled: true,
             }),
             anti_leak_confirmations: {
@@ -491,9 +518,237 @@ describe("Delivery Hub provider validation seam", () => {
       .find((call) => String(call[0]).includes("controlled execution seam evaluated"))
 
     expect(String(controlledExecutionLog?.[0])).toContain('"shipment_execution_enabled":true')
+    expect(String(controlledExecutionLog?.[0])).toContain('"provider_origin_dispatch_context_present":true')
     expect(String(controlledExecutionLog?.[0])).not.toContain("quote_provider_validation")
+    expect(String(controlledExecutionLog?.[0])).not.toContain("origin_dropoff_1")
   })
  
+  it("truthfully shifts the warehouse direct Yandex blocker after provider-origin context is available and the shipment execution gate is enabled", async () => {
+    process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
+
+    const provider = buildProvider({
+      resolvedPgConnection: buildReadOnlyLookupPgConnection([buildConnectionRow()]),
+      carts: [
+        {
+          id: "cart_1",
+          metadata: {
+            delivery_hub: {
+              selection: {
+                version: 1,
+                provider_code: "yandex",
+                connection_id: "conn_ready",
+                quote_type: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+                quote_reference: createDeliveryHubQuoteReference({
+                  connection_id: "conn_ready",
+                  quote_type: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+                  quote_key: "quote_provider_validation_wh",
+                  provider_origin_dispatch_context: {
+                    mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+                    provider_warehouse_id: "provider_wh_1",
+                  },
+                }),
+                backend_execution_reference: createDeliveryHubProviderExecutionReference({
+                  connection_id: "conn_ready",
+                  quote_type: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+                  quote_key: "quote_provider_validation_wh",
+                  provider_origin_dispatch_context: {
+                    mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+                    provider_warehouse_id: "provider_wh_1",
+                  },
+                }),
+                quote: {
+                  carrier_code: "yandex",
+                  carrier_label: "Yandex Delivery",
+                  amount: 299,
+                  currency_code: "RUB",
+                  delivery_eta_min: 1,
+                  delivery_eta_max: 1,
+                  pickup_point_required: true,
+                  pickup_window_required: false,
+                },
+                pickup_point: {
+                  provider_point_id: "pvz_1",
+                  provider_point_code: null,
+                  name: "PVZ 1",
+                  address: "Tverskaya 1",
+                  city: "Moscow",
+                  region: null,
+                  postal_code: null,
+                  lat: null,
+                  lng: null,
+                  is_origin_dropoff_allowed: false,
+                  is_destination_pickup_allowed: true,
+                  payment_methods: [],
+                },
+                pickup_window: null,
+                correlation_id: "corr_enabled_boundary_wh",
+                updated_at: "2026-04-23T07:00:00.000Z",
+              },
+            },
+          },
+        },
+      ],
+    })
+
+    await expect(
+      provider.createFulfillment(
+        {
+          ...buildValidFulfillmentData(),
+          cart_id: "cart_1",
+          connection_id: "conn_ready",
+          mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+          quote_type: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+          shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
+          shipping_option_type_id: "deliveryhub_deliveryhub",
+          correlation_id: "corr_enabled_boundary_wh",
+          updated_at: "2026-04-23T07:00:00.000Z",
+          quote_reference: createDeliveryHubQuoteReference({
+            connection_id: "conn_ready",
+            quote_type: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+            quote_key: "quote_provider_validation_wh",
+            provider_origin_dispatch_context: {
+              mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+              provider_warehouse_id: "provider_wh_1",
+            },
+          }),
+        },
+        [{ line_item_id: "item_1", quantity: 1 }],
+        { id: "order_1", display_id: 42, currency_code: "RUB" },
+        { id: "ful_1", location_id: "sloc_1" }
+      )
+    ).resolves.toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          controlled_execution: expect.objectContaining({
+            status: "dispatch_prepared",
+            blocked_reason_code: "provider_dispatch_not_materialized",
+            blocked_reason: expect.stringContaining("provider-origin warehouse context became available"),
+            dispatch_preparation: expect.objectContaining({
+              mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+              provider_execution_reference_present: true,
+              provider_origin_dispatch_context_present: true,
+              shipment_execution_enabled: true,
+            }),
+          }),
+        }),
+      })
+    )
+
+    const controlledExecutionLog = [...logger.info.mock.calls]
+      .reverse()
+      .find((call) => String(call[0]).includes("controlled execution seam evaluated"))
+
+    expect(String(controlledExecutionLog?.[0])).not.toContain("quote_provider_validation_wh")
+    expect(String(controlledExecutionLog?.[0])).not.toContain("provider_wh_1")
+  })
+ 
+  it("does not falsely shift the direct Yandex blocker for mismatched provider-origin context", async () => {
+    process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
+
+    const provider = buildProvider({
+      resolvedPgConnection: buildReadOnlyLookupPgConnection([buildConnectionRow()]),
+      carts: [
+        {
+          id: "cart_1",
+          metadata: {
+            delivery_hub: {
+              selection: {
+                version: 1,
+                provider_code: "yandex",
+                connection_id: "conn_ready",
+                quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                quote_reference: createDeliveryHubQuoteReference({
+                  connection_id: "conn_ready",
+                  quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                  quote_key: "quote_mismatch_context",
+                  provider_origin_dispatch_context: {
+                    mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+                    provider_warehouse_id: "provider_wh_wrong",
+                  },
+                }),
+                backend_execution_reference: createDeliveryHubProviderExecutionReference({
+                  connection_id: "conn_ready",
+                  quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                  quote_key: "quote_mismatch_context",
+                  provider_origin_dispatch_context: {
+                    mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+                    provider_warehouse_id: "provider_wh_wrong",
+                  },
+                }),
+                quote: {
+                  carrier_code: "yandex",
+                  carrier_label: "Yandex Delivery",
+                  amount: 299,
+                  currency_code: "RUB",
+                  delivery_eta_min: 1,
+                  delivery_eta_max: 1,
+                  pickup_point_required: true,
+                  pickup_window_required: false,
+                },
+                pickup_point: {
+                  provider_point_id: "pvz_1",
+                  provider_point_code: null,
+                  name: "PVZ 1",
+                  address: "Tverskaya 1",
+                  city: "Moscow",
+                  region: null,
+                  postal_code: null,
+                  lat: null,
+                  lng: null,
+                  is_origin_dropoff_allowed: false,
+                  is_destination_pickup_allowed: true,
+                  payment_methods: [],
+                },
+                pickup_window: null,
+                correlation_id: "corr_mismatch_context",
+                updated_at: "2026-04-23T07:00:00.000Z",
+              },
+            },
+          },
+        },
+      ],
+    })
+
+    await expect(
+      provider.createFulfillment(
+        {
+          ...buildValidFulfillmentData(),
+          cart_id: "cart_1",
+          shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+          shipping_option_type_id: "deliveryhub_deliveryhub",
+          correlation_id: "corr_mismatch_context",
+          updated_at: "2026-04-23T07:00:00.000Z",
+        },
+        [{ line_item_id: "item_1", quantity: 1 }],
+        { id: "order_1", display_id: 42, currency_code: "RUB" },
+        { id: "ful_1", location_id: "sloc_1" }
+      )
+    ).resolves.toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          controlled_execution: expect.objectContaining({
+            status: "dispatch_prepared",
+            blocked_reason_code: "provider_dispatch_not_materialized",
+            blocked_reason: expect.stringContaining("does not persist the provider-origin dropoff point reference"),
+            dispatch_preparation: expect.objectContaining({
+              provider_execution_reference_present: true,
+              provider_origin_dispatch_context_present: false,
+              shipment_execution_enabled: true,
+            }),
+          }),
+        }),
+      })
+    )
+
+    const controlledExecutionLog = [...logger.info.mock.calls]
+      .reverse()
+      .find((call) => String(call[0]).includes("controlled execution seam evaluated"))
+
+    expect(String(controlledExecutionLog?.[0])).toContain('"provider_origin_dispatch_context_present":false')
+    expect(String(controlledExecutionLog?.[0])).not.toContain("provider_wh_wrong")
+    expect(String(controlledExecutionLog?.[0])).not.toContain("quote_mismatch_context")
+  })
+
   it("keeps the old blocker when backend execution reference cannot materialize without encryption key", async () => {
     delete process.env.DELIVERY_HUB_ENCRYPTION_KEY
 

@@ -772,7 +772,17 @@ export class DeliveryHubService {
 
       return {
         ok: true,
-        quotes: quotes.map((quote) => sanitizeStoreQuote(connection.id, quote)),
+        quotes: quotes.map((quote) =>
+          sanitizeStoreQuote(connection.id, quote, input.mode_code === DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint
+            ? {
+                mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                origin_point_id: requireString(input.origin_point_id, "origin_point_id"),
+              }
+            : {
+                mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+                provider_warehouse_id: requireString(resolvedWarehouseId, "warehouse_id"),
+              })
+        ),
       }
     } catch (error) {
       const normalized = normalizeDeliveryHubError(error)
@@ -1525,7 +1535,16 @@ function isStoreCatalogQuoteType(modeCode: string) {
 
 function sanitizeStoreQuote(
   connectionId: string,
-  quote: DeliveryQuote
+  quote: DeliveryQuote,
+  providerOriginDispatchContext:
+    | {
+        mode_code: typeof DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint
+        origin_point_id: string
+      }
+    | {
+        mode_code: typeof DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
+        provider_warehouse_id: string
+      }
 ): DeliveryStoreQuotePublic {
   return {
     carrier_code: quote.carrier_code,
@@ -1542,6 +1561,7 @@ function sanitizeStoreQuote(
       connection_id: connectionId,
       quote_type: quote.mode_code,
       quote_key: quote.quote_key,
+      provider_origin_dispatch_context: providerOriginDispatchContext,
     }),
   }
 }

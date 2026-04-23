@@ -26,6 +26,7 @@ import {
   getDeliveryHubQuery,
   readDeliveryHubCartSelection,
   readDeliveryHubCartSelectionBackendExecutionReference,
+  readDeliveryHubProviderExecutionReferenceOriginContext,
   validateDeliveryHubProviderExecutionReference,
 } from "./delivery-hub/cart-selection"
 import {
@@ -238,6 +239,9 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       connection: committedConnection,
       connection_lookup_available: connectionLookupAvailable,
       persisted_execution_reference: persistedExecutionReference,
+      provider_origin_dispatch_context: persistedExecutionReference
+        ? readDeliveryHubProviderExecutionReferenceOriginContext(persistedExecutionReference)
+        : null,
       shipment_execution_enabled: isDeliveryHubShipmentExecutionEnabled(),
     })
 
@@ -337,10 +341,17 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
         return null
       }
 
+      if (
+        selection.connection_id !== input.connection_id ||
+        selection.quote_type !== input.quote_type
+      ) {
+        return null
+      }
+
       return validateDeliveryHubProviderExecutionReference(reference, {
         connection_id: input.connection_id,
         quote_type: input.quote_type as any,
-        quote_reference: input.quote_reference,
+        quote_reference: selection.quote_reference,
       })
     } catch {
       return null
