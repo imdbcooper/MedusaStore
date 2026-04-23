@@ -1,6 +1,6 @@
 # Template Readiness Regression Pack
 
-> Статус документа: канонический regression-pack для локальной проверки template readiness по состоянию на `2026-04-19`
+> Статус документа: канонический regression-pack для локальной проверки template readiness по состоянию на `2026-04-20`
 >
 > Назначение: зафиксировать минимальный, воспроизводимый и профессиональный набор проверок для уже реализованных критичных путей без построения отдельного CI-контура.
 
@@ -16,7 +16,11 @@
    - `GET /store/payment/yookassa`;
    - `GET /store/payment/yookassa/return`;
    - `POST /yookassa/webhook`;
-4. текущий поддерживаемый ApiShip scope через `GET /store/apiship/rates` как `cheapest_only_v1` + safe-by-default env semantics.
+4. текущий поддерживаемый ApiShip scope через `GET /store/apiship/rates` как `provider_aware_v1` + safe-by-default env semantics;
+5. baseline integrity gates для `Phase 8 / tranche 1`:
+   - root aggregated lint/typecheck path;
+   - existing build + HTTP smoke path;
+   - minimal browser smoke для storefront runtime.
 
 Отдельно как baseline hardening expectation удерживается и storefront build path: `npm --prefix medusa-agency-boilerplate-storefront run build` не должен падать только потому, что во время SSG static params collection недоступен live Store API. На closure checkpoint `2026-04-19` этот baseline был дополнительно подтверждён финальным cross-preset regression pass verdict **PASS** для `NEXT_PUBLIC_STOREFRONT_PRESET=atelier` и `NEXT_PUBLIC_STOREFRONT_PRESET=market` на browse surface matrix `landing + product support highlights + listing/product cards + global shell + catalog shell`.
 
@@ -79,6 +83,14 @@ npm run dev
 cp .env.example .env
 npm run bootstrap
 npm run preflight
+```
+
+#### Проверка backend health probe после старта runtime
+
+`npm run smoke:backend` — это probe для уже поднятого backend, а не команда старта. Перед ним нужно сначала поднять backend runtime sanctioned startup path, а затем запускать probe.
+
+```bash
+npm run dev
 npm run smoke:backend
 ```
 
@@ -97,7 +109,8 @@ npm run bootstrap
   - `Canonical next step: npm run dev`;
 - storefront `.env.local` содержит реальный `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY`, а не placeholder;
 - `npm run preflight` проходит;
-- `npm run smoke:backend` проходит через `/health`.
+- после фактического старта backend runtime команда `npm run smoke:backend` проходит через `/health`;
+- `npm run smoke:backend` не считается backend startup step и не заменяет явный запуск runtime.
 
 ### Что считается явным regression signal
 
@@ -134,6 +147,10 @@ npm run smoke:notification
 3. извлекает `ROOT_LOCAL_ADMIN_SECRET_API_KEY` из helper output;
 4. кодирует `Authorization: Basic <base64(secret_api_key:)>`;
 5. вызывает `POST /admin/notifications/smoke`.
+
+Operational note:
+- helper intentionally не должен наследовать root orchestration `DATABASE_URL` и `REDIS_URL` при локальном `medusa exec`, потому что root `.env` использует docker-network hostnames, а local helper должен читать backend-local connection settings из [`medusa-agency-boilerplate/.env`](../medusa-agency-boilerplate/.env);
+- closure-check `2026-04-20` отдельно подтвердил этот guardrail targeted remediation в [`scripts/notification-smoke.sh`](../scripts/notification-smoke.sh:1): authenticated smoke снова проходит reproducibly в canonical root runtime path.
 
 ### Что должно быть true
 
@@ -258,7 +275,7 @@ Expected behavior, который не считается регрессией:
 
 ---
 
-## 6. Regression 04 — ApiShip supported scope as `cheapest_only_v1`
+## 6. Regression 04 — ApiShip supported scope as `provider_aware_v1`
 
 ### Цель
 
@@ -271,7 +288,7 @@ Expected behavior, который не считается регрессией:
 1. baseline-safe отсутствие обязательного `APISHIP_TOKEN`;
 2. safe-by-default semantics для `APISHIP_TEST_MODE`;
 3. route contract `GET /store/apiship/rates`;
-4. текущая selection semantics как `cheapest_only_v1`.
+4. текущая selection semantics как `provider_aware_v1`, включая grouped provider/tariff selection и persistence в cart shipping method data.
 
 ### Канонические ожидания по env
 
@@ -289,9 +306,10 @@ Route: `GET /store/apiship/rates?cart_id=<id>&shipping_option_id=<id>`
 - response всегда остается честным JSON contract, а не необработанным crash path;
 - при наличии тарифов route возвращает:
   - `quotes`;
+  - `grouped_quotes`;
   - `selected_quote`;
-  - `selection_mode: "cheapest_only_v1"`;
-- `selected_quote` должен совпадать с самым дешевым элементом отсортированного `quotes`;
+  - `selection_mode: "provider_aware_v1"`;
+- `selected_quote` по контракту route остаётся default cheapest quote в flattened list, а grouped provider/tariff selection и persistence происходят storefront-side;
 - ETA mapping допускает legacy `daysMin/daysMax` и fallback на `workDays*` / `calendarDays*`.
 
 Expected non-crash responses:
@@ -308,7 +326,7 @@ Expected non-crash responses:
 - пустой `/connections` у аккаунта ApiShip;
 - отсутствие активных подключений и договоров;
 - отсутствие тарифов из-за account-state в кабинете ApiShip;
-- полноценный multi-quote checkout UX;
+- live multi-provider switching на одном test address;
 - `providerConnectId` / `extraParams` support.
 
 ---
@@ -330,8 +348,56 @@ Expected non-crash responses:
 
 - отдельный bootstrap harness;
 - отдельный YooKassa e2e runner;
-- отдельный ApiShip mock runner;
-- новый CI pipeline.
+- отдельный ApiShip mock runner.
+
+### Добавленный Phase 8 / tranche 1 baseline contour
+
+Для baseline integrity contour sanctioned root entrypoint остаётся `npm run integrity:baseline`.
+
+Он агрегирует только минимально релевантные checks этого tranche через два узких под-контура:
+
+1. `npm run integrity:baseline:static`:
+   - `npm run lint` → на текущем truthful contour это только storefront [`lint`](../medusa-agency-boilerplate-storefront/package.json:14), потому что backend lint tooling в repo не materialized;
+   - `npm run typecheck` → backend [`typecheck`](../medusa-agency-boilerplate/package.json:22) + storefront [`typecheck`](../medusa-agency-boilerplate-storefront/package.json:15);
+   - `npm run backend:build`;
+   - `npm run storefront:build`.
+2. `npm run integrity:baseline:runtime-smoke`:
+   - `npm run smoke:backend`;
+   - `npm run smoke:notification`;
+   - `npm run smoke:storefront`;
+   - `npm run smoke:browser`.
+
+Это разделение добавлено не для расширения scope, а только для минимальной automation/CI совместимости: локальный sanctioned gate [`integrity:baseline`](../package.json:39) остаётся единым entrypoint, но CI job может честно подготовить runtime (`bootstrap` → `preflight` → `dev`) и затем вызвать тот же root command без дублирования полного static contour внутри startup orchestration.
+
+`npm run smoke:browser` intentionally остаётся минимальным browser smoke, а не e2e suite: [`scripts/browser-smoke.sh`](../scripts/browser-smoke.sh:1) поднимает headless Chrome через DevTools Protocol, открывает storefront route `/ru/account`, ждёт `document.readyState=complete` и проверяет только базовые viability signals login surface (`pathname`, `title`, наличие `Email` в body и `data-testid="nav-account-link"`). Для truthful local rerun `Phase 8 / tranche 1` этот smoke теперь опирается на stabilized storefront dev path без Turbopack: [`dev`](../medusa-agency-boilerplate-storefront/package.json:11) использует `next dev`, а [`scripts/storefront-dev.sh`](../scripts/storefront-dev.sh:17) продолжает сбрасывать stale `.next` artifacts при признаках corrupted dev runtime.
+
+### Минимальный CI boundary для baseline gate
+
+`Phase 8 / tranche 1` теперь materialized и на automation boundary через GitHub Actions workflow [`integrity-baseline.yml`](../.github/workflows/integrity-baseline.yml). Local closure-check `2026-04-20` дополнительно подтвердил PASS для обоих sanctioned под-контуров: static и runtime-smoke.
+
+Этот workflow intentionally ограничен одним job `integrity-baseline` и делает только минимально необходимое:
+
+1. checkout репозитория;
+2. setup Node.js `22` и npm cache для backend/storefront lockfile;
+3. setup headless Chrome для [`smoke:browser`](../package.json:36);
+4. `npm ci` отдельно для [`medusa-agency-boilerplate`](../medusa-agency-boilerplate/package.json) и [`medusa-agency-boilerplate-storefront`](../medusa-agency-boilerplate-storefront/package.json);
+5. `cp .env.example .env` как template-safe baseline env materialization;
+6. sanctioned bootstrap/runtime preparation: `npm run bootstrap` → `npm run preflight` → background `npm run dev`;
+7. readiness wait только до доступности backend `/health` и storefront root URL;
+8. запуск sanctioned root gate `npm run integrity:baseline`.
+
+Truthful assumptions этого CI slice:
+
+- runner должен уметь запускать Docker Compose, потому что sanctioned bootstrap/dev path поднимает PostgreSQL, Redis и backend через [`docker-compose.yml`](../docker-compose.yml);
+- root `.env.example` остаётся template-safe baseline для CI bootstrap и не подменяет собой production/staging secrets;
+- browser smoke в CI требует явный Chrome binary path, который workflow прокидывает через `BROWSER_SMOKE_BROWSER_BIN`.
+
+Что этот workflow сознательно **не** делает:
+
+- staging/prod deploy;
+- rollback / backup / restore automation;
+- infra hardening beyond local baseline contour;
+- новые проверки вне already sanctioned [`integrity:baseline`](../package.json:39).
 
 ---
 

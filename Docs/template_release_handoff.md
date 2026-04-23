@@ -5,6 +5,8 @@
 > База: `Phase 7 / tranche 1` truthfully закрыт commit'ом `a96aa81adfd655ddda9b6fea03dacf61c3174737` `feat(template): add client-init contract baseline`, а канонический init contract остается в [`Docs/client_init_contract.md`](./client_init_contract.md).
 >
 > Назначение: превратить tranche 1 baseline в реально передаваемый template package narrative без code changes, без reopening `Фазы 6` и без захода в `Фазу 8`.
+>
+> Closure note `2026-04-20`: `Phase 7 / tranche 3` repeat RC smoke/closure-check теперь тоже подтвержден, так что вся `Фаза 7` truthfully закрыта; этот документ остаётся каноническим tranche 2 artifact для packaging/handoff narrative.
 
 ---
 

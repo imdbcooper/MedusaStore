@@ -1,6 +1,6 @@
 # Env Contract
 
-> Статус документа: рабочая спецификация окружения по состоянию на `2026-04-19`
+> Статус документа: рабочая спецификация окружения по состоянию на `2026-04-20`
 >
 > Назначение: зафиксировать, какой `.env` за что отвечает в проекте и какие команды теперь считаются каноническими для локальной разработки.
 
@@ -32,6 +32,16 @@
 - inventory client-specific inputs across root/backend/storefront surfaces;
 - разделение на `mandatory`, `bootstrap-generated` и `optional` inputs;
 - template-safe placeholder baseline без workstation/demo residue в env и storefront branding/legal-contact surfaces.
+
+После closure checkpoint `2026-04-19` этот baseline нужно читать вместе с уже materialized `Phase 7 / tranche 2` artifact в [`Docs/template_release_handoff.md`](./template_release_handoff.md):
+- tranche 1 остается узким source of truth именно для init/env contract baseline;
+- tranche 2 является canonical handoff/release packaging narrative для checklist, onboarding path и clean release-package contour;
+- это не означает вход в `Фазу 8` и не меняет scope текущего env-документа.
+
+После repeat closure-check `2026-04-20` нужно дополнительно удерживать:
+- `Фаза 7` теперь truthfully закрыта целиком;
+- активный следующий roadmap stage = `Фаза 8`;
+- baseline integrity contour уже materialized и validated, но это всё ещё не staging/prod hardening contour.
 
 `Фаза 6 storefront customization` при этом не переоткрывается:
 - sanctioned preset selector остается [`NEXT_PUBLIC_STOREFRONT_PRESET`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:14);
@@ -332,7 +342,7 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - Safe default изменен: templates фиксируют `APISHIP_TEST_MODE=true`, а helper [`parseApiShipTestMode()`](../medusa-agency-boilerplate/src/modules/apiship.ts:461) трактует пустое и невалидное значение как test-mode, чтобы local/dev не уходил в live молча.
 - Подтверждённый runtime path `2026-04-18` использовал production token и явное `APISHIP_TEST_MODE=false`; это now-fixed source of truth для live-проверки текущего поддерживаемого slice, но не меняет baseline-safe default для clean clone.
 - Backend route [`GET()`](../medusa-agency-boilerplate/src/api/store/apiship/rates/route.ts:67) подтверждён runtime-проверкой: targeted fixes в route/data path закрыли blocker, rates из ApiShip/Yandex начали возвращаться.
-- Текущий shipping scope честно ограничен до `cheapest_only_v1`: route возвращает `quotes`, `selected_quote` и `selection_mode`, но checkout не считается полноценным multi-quote UX.
+- Текущий shipping scope теперь описывается как `provider_aware_v1`: route возвращает `quotes`, `grouped_quotes`, `selected_quote` и `selection_mode`, storefront сохраняет `provider_key` и `tariff_id` в cart shipping method data, а checkout больше не сводится к silent cheapest-only fallback.
 - Пустой `APISHIP_TOKEN` — это валидный baseline-state для clean clone: provider не регистрируется, а onboarding, build и runtime остаются рабочими.
 - Ни один markdown-документ этого репозитория не должен содержать фактическое значение `APISHIP_TOKEN`.
 
@@ -388,6 +398,8 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - `npm run smoke:storefront`
 - `npm run permissions:fix`
 
+`npm run smoke:backend` нужно читать как probe-only health check для уже поднятого backend runtime через `/health`, а не как startup-команду. Сначала должен быть запущен backend sanctioned path'ом вроде `npm run dev` или отдельно поднятым backend ad-hoc runtime, и только потом допустим этот smoke probe.
+
 Смысл:
 разработчик и агент должны входить в проект через корень репозитория, а не вспоминать разрозненные команды по папкам.
 
@@ -429,6 +441,7 @@ Root clean-start путь остается каноническим именно
 - сначала всегда запускается [scripts/preflight.sh](../scripts/preflight.sh);
 - затем root orchestration поднимает PostgreSQL, Redis и backend через `docker compose` и ждет backend healthcheck;
 - storefront стартует локально только после готовности backend;
+- после этого `npm run smoke:backend` можно использовать как отдельный probe готовности уже поднятого backend, но не как замену самому startup path;
 - это root orchestration semantics, а не универсальный wrapper поверх произвольного уже собранного локального runtime state.
 
 Guardrail:
@@ -467,6 +480,11 @@ Guardrail:
 - вызывает `POST /admin/notifications/smoke` с JSON payload;
 - печатает response как operational smoke result.
 
+Runtime/env guardrail этого helper path:
+- root `.env` по-прежнему остаётся orchestration-layer source of truth и может содержать `DATABASE_URL` / `REDIS_URL` с docker-network hostnames для compose runtime;
+- local helper step `createSecretAdminApiKey()` при этом не должен наследовать эти root connection values, потому что локальный `medusa exec` должен читать backend-local connection settings из [`medusa-agency-boilerplate/.env`](../medusa-agency-boilerplate/.env);
+- targeted remediation `2026-04-20` теперь materialized в [`scripts/notification-smoke.sh`](../scripts/notification-smoke.sh:1): helper запускает local admin API key script с очищенными `DATABASE_URL` и `REDIS_URL`, чтобы orchestration env не подменял backend-local runtime contract.
+
 Guardrails этого пути:
 - docs и templates не должны содержать реальный `sk_*` key;
 - docs и templates не должны содержать реальный `UNISENDER_API_KEY`, credential-bearing `UNISENDER_BASE_URL` или другой notification secret;
@@ -480,8 +498,8 @@ Guardrails этого пути:
 - наличие `APISHIP_TOKEN` переводит shipping integration в opt-in режим и требует повторного seed для появления shipping option `ApiShip Courier to Address`;
 - для local/dev safe default теперь test-only: live endpoint не должен включаться неявно при пустом или невалидном `APISHIP_TEST_MODE`;
 - подтверждённый runtime path `2026-04-18` использовал production token и явное `APISHIP_TEST_MODE=false`;
-- blocker по текущему slice `cheapest_only_v1` закрыт targeted fixes в route/data path: route подтверждён runtime-проверкой, а ApiShip/Yandex rates начали возвращаться;
-- текущая v1 семантика checkout честно ограничена до cheapest-only, а true multi-quote UX и `providerConnectId` / `extraParams` support остаются deferred;
+- blocker по текущему slice `provider_aware_v1` закрыт targeted fixes в route/data path: route подтверждён runtime-проверкой, grouped rates начали возвращаться, а выбранный тариф сохраняется и используется backend recalculation path;
+- текущая v1 семантика checkout теперь честно provider-aware: grouped quotes и выбранный тариф materialized, а `providerConnectId` / `extraParams` support и live multi-provider switching на одном тестовом адресе остаются deferred;
 - полная runtime-цепочка `shipping → hosted YooKassa payment → automatic return → review → order placement → confirmed order page` теперь подтверждена end-to-end;
 - practical return contract после hosted payment теперь такой: storefront должен вернуться в review state с сохранённым cart context, не вызывать `placeOrder()` до hosted authorization и только затем завершать order placement;
 - `order lifecycle notifications v1` уже реализован как первый production-like slice от события `order.placed`, а hardening v1.1 фиксирует anti-duplicate contract через existing notification storage, normalized recipient matching, controlled duplicate suppression и accepted race window;
