@@ -4,6 +4,10 @@ import {
   DELIVERY_HUB_PROVIDER_YANDEX,
 } from "./constants"
 import {
+  buildYandexCreateShipmentDispatchPortContract,
+  type YandexCreateShipmentDispatchPortSummary,
+} from "./adapters/yandex/create-shipment-dispatch-port"
+import {
   materializeYandexCreateShipmentPayloadPreview,
   type YandexCreateShipmentMaterializerBlockedReasonCode,
 } from "./adapters/yandex/create-shipment-materializer"
@@ -79,6 +83,7 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
     live_adapter_call_performed: false
     persisted_execution_ledger_write_performed: false
   }
+  provider_dispatch_port: YandexCreateShipmentDispatchPortSummary
   provider_payload_materialization: {
     provider_code: typeof DELIVERY_HUB_PROVIDER_YANDEX
     operation: "create_shipment"
@@ -464,6 +469,7 @@ function buildBlockedResult(
   input: BuildBlockedResultInput
 ): DeliveryHubControlledFulfillmentExecutionResult {
   const providerPayloadMaterialization = buildProviderPayloadMaterializationSummary(input)
+  const providerDispatchPort = buildProviderDispatchPortSummary(input, providerPayloadMaterialization)
 
   return {
     version: DELIVERY_HUB_CONTROLLED_FULFILLMENT_EXECUTION_RESULT_VERSION,
@@ -508,6 +514,7 @@ function buildBlockedResult(
       persisted_execution_ledger_write_performed: false,
     },
     provider_payload_materialization: providerPayloadMaterialization,
+    provider_dispatch_port: providerDispatchPort,
     execution_identity: {
       provider_operation_reference:
         input.execution_plan_preview.execution_identity?.provider_operation_reference ?? null,
@@ -672,6 +679,24 @@ function buildProviderPayloadMaterializationSummary(
       masked_correlation_id_present: !!result.preview.payload.correlation_id,
     },
   }
+}
+
+function buildProviderDispatchPortSummary(
+  input: BuildBlockedResultInput,
+  providerPayloadMaterialization: DeliveryHubProviderPayloadMaterializationSummary
+): YandexCreateShipmentDispatchPortSummary {
+  const modeCode = input.handoff?.quote_type ?? input.mode_code
+  const providerSupported = input.connection?.provider_code === DELIVERY_HUB_PROVIDER_YANDEX
+  const dispatchPort = buildYandexCreateShipmentDispatchPortContract({
+    execution_gate_enabled: input.shipment_execution_enabled,
+    preview_available: providerPayloadMaterialization.attempted,
+    preview_ready: providerPayloadMaterialization.ready,
+    mode_code: modeCode,
+    supported_mode: isDirectYandexModeSupported(modeCode),
+    provider_supported: providerSupported,
+  })
+
+  return dispatchPort.summary
 }
 
 function buildProviderPayloadPreviewPackages(

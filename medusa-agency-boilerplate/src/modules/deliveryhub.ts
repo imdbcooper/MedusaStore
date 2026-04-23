@@ -262,6 +262,7 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
         },
         connection: controlledExecution.connection,
         dispatch_preparation: controlledExecution.dispatch_preparation,
+        provider_dispatch_port: controlledExecution.provider_dispatch_port,
         provider_payload_materialization: controlledExecution.provider_payload_materialization,
         execution_identity: controlledExecution.execution_identity,
         evidence: controlledExecution.evidence,

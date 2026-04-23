@@ -292,6 +292,21 @@ describe("Delivery Hub provider validation seam", () => {
             live_adapter_call_performed: false,
             persisted_execution_ledger_write_performed: false,
           }),
+          provider_dispatch_port: expect.objectContaining({
+            provider_code: "yandex",
+            operation: "create_shipment",
+            available: false,
+            implemented: false,
+            execution_gate_enabled: false,
+            dispatch_attempted: false,
+            dispatch_blocked: true,
+            blocked_reason_code: "execution_gate_disabled",
+            preview_materialization_available: true,
+            preview_materialization_ready: true,
+            preview_mode: "preview_only",
+            supported_mode: true,
+            mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+          }),
           provider_payload_materialization: expect.objectContaining({
             provider_code: "yandex",
             operation: "create_shipment",
@@ -347,6 +362,8 @@ describe("Delivery Hub provider validation seam", () => {
     expect(String(controlledExecutionLog?.[0])).toContain('"status":"dispatch_prepared"')
     expect(String(controlledExecutionLog?.[0])).toContain('"blocked_reason_code":"provider_dispatch_not_materialized"')
     expect(String(controlledExecutionLog?.[0])).toContain('"shipment_execution_enabled":false')
+    expect(String(controlledExecutionLog?.[0])).toContain('"provider_dispatch_port"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"blocked_reason_code":"execution_gate_disabled"')
     expect(String(controlledExecutionLog?.[0])).toContain('"live_adapter_call_performed":false')
     expect(String(controlledExecutionLog?.[0])).toContain('"provider_payload_materialization"')
     expect(String(controlledExecutionLog?.[0])).toContain('"status":"ready"')
@@ -448,6 +465,16 @@ describe("Delivery Hub provider validation seam", () => {
               shipment_execution_enabled: false,
               live_adapter_call_performed: false,
               persisted_execution_ledger_write_performed: false,
+            }),
+            provider_dispatch_port: expect.objectContaining({
+              available: false,
+              implemented: false,
+              execution_gate_enabled: false,
+              dispatch_attempted: false,
+              blocked_reason_code: "execution_gate_disabled",
+              preview_materialization_available: true,
+              preview_materialization_ready: true,
+              preview_mode: "preview_only",
             }),
             provider_payload_materialization: expect.objectContaining({
               status: "ready",
@@ -566,6 +593,16 @@ describe("Delivery Hub provider validation seam", () => {
               live_adapter_call_performed: false,
               persisted_execution_ledger_write_performed: false,
             }),
+            provider_dispatch_port: expect.objectContaining({
+              available: true,
+              implemented: false,
+              execution_gate_enabled: true,
+              dispatch_attempted: false,
+              blocked_reason_code: "dispatch_port_not_implemented",
+              preview_materialization_available: true,
+              preview_materialization_ready: true,
+              preview_mode: "preview_only",
+            }),
             provider_payload_materialization: expect.objectContaining({
               status: "ready",
               attempted: true,
@@ -598,6 +635,8 @@ describe("Delivery Hub provider validation seam", () => {
 
     expect(String(controlledExecutionLog?.[0])).toContain('"shipment_execution_enabled":true')
     expect(String(controlledExecutionLog?.[0])).toContain('"provider_origin_dispatch_context_present":true')
+    expect(String(controlledExecutionLog?.[0])).toContain('"provider_dispatch_port"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"blocked_reason_code":"dispatch_port_not_implemented"')
     expect(String(controlledExecutionLog?.[0])).toContain('"provider_payload_materialization"')
     expect(String(controlledExecutionLog?.[0])).toContain('"source_type":"dropoff_point"')
     expect(String(controlledExecutionLog?.[0])).toContain('"masked_correlation_id_present":true')
@@ -713,6 +752,16 @@ describe("Delivery Hub provider validation seam", () => {
               live_adapter_call_performed: false,
               persisted_execution_ledger_write_performed: false,
             }),
+            provider_dispatch_port: expect.objectContaining({
+              available: true,
+              implemented: false,
+              execution_gate_enabled: true,
+              dispatch_attempted: false,
+              blocked_reason_code: "dispatch_port_not_implemented",
+              preview_materialization_available: true,
+              preview_materialization_ready: false,
+              preview_mode: "preview_only",
+            }),
             provider_payload_materialization: expect.objectContaining({
               status: "blocked",
               attempted: true,
@@ -737,6 +786,8 @@ describe("Delivery Hub provider validation seam", () => {
       .reverse()
       .find((call) => String(call[0]).includes("controlled execution seam evaluated"))
 
+    expect(String(controlledExecutionLog?.[0])).toContain('"provider_dispatch_port"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"blocked_reason_code":"dispatch_port_not_implemented"')
     expect(String(controlledExecutionLog?.[0])).toContain('"provider_payload_materialization"')
     expect(String(controlledExecutionLog?.[0])).toContain('"blocked_reason_code":"missing_pickup_interval_window"')
     expect(String(controlledExecutionLog?.[0])).not.toContain("quote_provider_validation_wh")
@@ -838,6 +889,16 @@ describe("Delivery Hub provider validation seam", () => {
               live_adapter_call_performed: false,
               persisted_execution_ledger_write_performed: false,
             }),
+            provider_dispatch_port: expect.objectContaining({
+              available: true,
+              implemented: false,
+              execution_gate_enabled: true,
+              dispatch_attempted: false,
+              blocked_reason_code: "dispatch_port_not_implemented",
+              preview_materialization_available: true,
+              preview_materialization_ready: false,
+              preview_mode: "preview_only",
+            }),
             provider_payload_materialization: expect.objectContaining({
               status: "blocked",
               attempted: true,
@@ -866,6 +927,8 @@ describe("Delivery Hub provider validation seam", () => {
       .find((call) => String(call[0]).includes("controlled execution seam evaluated"))
 
     expect(String(controlledExecutionLog?.[0])).toContain('"provider_origin_dispatch_context_present":false')
+    expect(String(controlledExecutionLog?.[0])).toContain('"provider_dispatch_port"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"blocked_reason_code":"dispatch_port_not_implemented"')
     expect(String(controlledExecutionLog?.[0])).toContain('"provider_payload_materialization"')
     expect(String(controlledExecutionLog?.[0])).toContain('"blocked_reason_code":"missing_provider_origin_dispatch_context"')
     expect(String(controlledExecutionLog?.[0])).not.toContain("provider_wh_wrong")
