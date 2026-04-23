@@ -939,10 +939,8 @@ export function shapeDeliveryHubSaveSelectionPayload(
   input: DeliveryHubSaveSelectionInput
 ): DeliveryHubSaveSelectionInput {
   const record = requireRecord(input, "selection")
-
-  return {
+  const payload: DeliveryHubSaveSelectionInput = {
     cart_id: readRequiredString(record.cart_id, "cart_id"),
-    provider_code: readOptionalString(record.provider_code),
     connection_id: readRequiredString(record.connection_id, "connection_id"),
     quote_type: readQuoteType(record.quote_type, "quote_type"),
     quote_reference: normalizeDeliveryHubQuoteReference(
@@ -957,6 +955,13 @@ export function shapeDeliveryHubSaveSelectionPayload(
         : normalizeDeliveryHubPickupWindow(record.pickup_window, "pickup_window"),
     correlation_id: readOptionalString(record.correlation_id),
   }
+
+  const providerCode = readOptionalString(record.provider_code)
+  if (providerCode !== null) {
+    payload.provider_code = providerCode
+  }
+
+  return payload
 }
 
 export function shapeDeliveryHubClearSelectionPayload(
@@ -1683,6 +1688,126 @@ export type DeliveryHubNeutralSelectionRehearsalActionabilityModel = {
   mutation_intent: false
   blocker_codes: DeliveryHubNeutralSelectionRehearsalBlockerCode[]
   hint_messages: string[]
+}
+
+export type DeliveryHubSelectionSaveCutInGuardReason =
+  | "cart_id_missing"
+  | "connection_id_missing"
+  | "quote_type_missing"
+  | "quote_reference_missing"
+  | "quote_missing"
+  | "pickup_point_missing"
+  | "pickup_window_missing"
+  | "readiness_blocked"
+  | "settings_unavailable"
+  | "legacy_parity_mismatch"
+  | "payload_invalid"
+
+export type DeliveryHubSelectionSaveCutInGuard =
+  | {
+      status: "ready"
+      payload: DeliveryHubSaveSelectionInput
+      reason_codes: []
+      message: string
+    }
+  | {
+      status: "blocked"
+      payload: null
+      reason_codes: DeliveryHubSelectionSaveCutInGuardReason[]
+      message: string
+    }
+
+export function buildDeliveryHubSelectionSaveCutInPayload(
+  input: DeliveryHubNeutralSelectionRehearsalInput = {}
+): DeliveryHubSelectionSaveCutInGuard {
+  const candidate = getDeliveryHubNeutralRehearsalCandidate(input)
+  const rehearsalBlockers = getDeliveryHubNeutralRehearsalBlockers(input)
+  const reasonCodes: DeliveryHubSelectionSaveCutInGuardReason[] = []
+  const pushReason = (reason: DeliveryHubSelectionSaveCutInGuardReason) => {
+    if (!reasonCodes.includes(reason)) {
+      reasonCodes.push(reason)
+    }
+  }
+
+  if (!input.cart_id?.trim()) {
+    pushReason("cart_id_missing")
+  }
+
+  if (!candidate.connection.connection_id) {
+    pushReason("connection_id_missing")
+  }
+
+  if (!candidate.quoteType) {
+    pushReason("quote_type_missing")
+  }
+
+  if (!candidate.quoteReference) {
+    pushReason("quote_reference_missing")
+  }
+
+  if (!candidate.quoteSummary) {
+    pushReason("quote_missing")
+  }
+
+  if (candidate.pickupPointRequired && !candidate.pickupPoint) {
+    pushReason("pickup_point_missing")
+  }
+
+  if (candidate.pickupWindowRequired && !candidate.pickupWindow) {
+    pushReason("pickup_window_missing")
+  }
+
+  if (rehearsalBlockers.includes("readiness_blocked")) {
+    pushReason("readiness_blocked")
+  }
+
+  if (rehearsalBlockers.includes("settings_unavailable")) {
+    pushReason("settings_unavailable")
+  }
+
+  if (rehearsalBlockers.includes("legacy_parity_mismatch")) {
+    pushReason("legacy_parity_mismatch")
+  }
+
+  if (reasonCodes.length > 0) {
+    return {
+      status: "blocked",
+      payload: null,
+      reason_codes: reasonCodes,
+      message: `Delivery Hub selection save cut-in is blocked: ${reasonCodes
+        .map((reason) => reason.replace(/_/g, " "))
+        .join(", ")}.`,
+    }
+  }
+
+  try {
+    const payload = shapeDeliveryHubSaveSelectionPayload({
+      cart_id: input.cart_id as string,
+      connection_id: candidate.connection.connection_id as string,
+      quote_type: candidate.quoteType as DeliveryHubQuoteType,
+      quote_reference: candidate.quoteReference as DeliveryHubQuoteReference,
+      quote: candidate.quoteSummary as DeliveryHubSelectionQuoteSummary,
+      pickup_point: candidate.pickupPoint as DeliveryHubSelectionPickupPoint,
+      pickup_window:
+        candidate.pickupWindowRequired || candidate.pickupWindow
+          ? candidate.pickupWindow ?? null
+          : null,
+    })
+
+    return {
+      status: "ready",
+      payload,
+      reason_codes: [],
+      message: "Delivery Hub selection save cut-in has a backend-ready neutral payload.",
+    }
+  } catch {
+    return {
+      status: "blocked",
+      payload: null,
+      reason_codes: ["payload_invalid"],
+      message: "Delivery Hub selection save cut-in could not shape a backend-ready neutral payload.",
+    }
+  }
 }
 
 export type DeliveryHubHandoffPreviewVerdict =

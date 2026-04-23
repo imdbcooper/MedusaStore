@@ -8,12 +8,14 @@ import {
 } from "@lib/data/apiship"
 import { setShippingMethod } from "@lib/data/cart"
 import {
+  clearDeliveryHubSelection,
   listDeliveryHubPickupPoints,
   listDeliveryHubPickupWindows,
   listDeliveryHubQuotes,
   retrieveDeliveryHubReadiness,
   retrieveDeliveryHubSelection,
   retrieveDeliveryHubSettings,
+  saveDeliveryHubSelection,
 } from "@lib/data/delivery-hub"
 import { calculatePriceForShippingOption } from "@lib/data/fulfillment"
 import { storefrontConfig } from "@lib/storefront-config"
@@ -43,6 +45,7 @@ import {
   buildDeliveryHubPersistedSelectionContractParityPreviewModel,
   buildDeliveryHubProjectedCommitParityPreviewModel,
   buildDeliveryHubSelectionPayloadParityPreviewModel,
+  buildDeliveryHubSelectionSaveCutInPayload,
   buildDeliveryHubSelectionWriteSeamPreviewModel,
   buildDeliveryHubShippingOptionParityPreviewModel,
   buildDeliveryHubWriteIntentContractPreviewModel,
@@ -101,6 +104,11 @@ type DeliveryHubRehearsalState = {
   model: DeliveryHubNeutralSelectionRehearsalModel
   preview_input: DeliveryHubNeutralSelectionRehearsalInput
   issue_message: string | null
+}
+
+type DeliveryHubSelectionCutInState = {
+  status: "idle" | "saving" | "saved" | "clearing" | "cleared" | "blocked" | "error"
+  message: string | null
 }
 
 function isCheckoutEligibleShippingOption(
@@ -355,6 +363,11 @@ const Shipping: React.FC<ShippingProps> = ({
         },
       },
       issue_message: null,
+    })
+  const [deliveryHubSelectionCutInState, setDeliveryHubSelectionCutInState] =
+    useState<DeliveryHubSelectionCutInState>({
+      status: "idle",
+      message: null,
     })
   const [error, setError] = useState<string | null>(null)
 
@@ -887,6 +900,73 @@ const Shipping: React.FC<ShippingProps> = ({
       })
   }
 
+  const handleSaveDeliveryHubSelectionCutIn = async () => {
+    const guard = buildDeliveryHubSelectionSaveCutInPayload(
+      deliveryHubRehearsalState.preview_input
+    )
+
+    if (guard.status !== "ready") {
+      setDeliveryHubSelectionCutInState({
+        status: "blocked",
+        message: guard.message,
+      })
+      return
+    }
+
+    setError(null)
+    setDeliveryHubSelectionCutInState({
+      status: "saving",
+      message: "Saving neutral Delivery Hub selection to the cart metadata…",
+    })
+
+    await saveDeliveryHubSelection(guard.payload)
+      .then(() => {
+        setDeliveryHubSelectionCutInState({
+          status: "saved",
+          message:
+            "Neutral Delivery Hub selection saved to the cart metadata. Shipping method commit remains disabled for Delivery Hub.",
+        })
+        router.refresh()
+      })
+      .catch((err) => {
+        setDeliveryHubSelectionCutInState({
+          status: "error",
+          message: err.message ?? "Unable to save Delivery Hub selection.",
+        })
+      })
+  }
+
+  const handleClearDeliveryHubSelectionCutIn = async () => {
+    if (!cart.id) {
+      setDeliveryHubSelectionCutInState({
+        status: "blocked",
+        message: "Cart id is required before Delivery Hub selection can be cleared.",
+      })
+      return
+    }
+
+    setError(null)
+    setDeliveryHubSelectionCutInState({
+      status: "clearing",
+      message: "Clearing neutral Delivery Hub selection from the cart metadata…",
+    })
+
+    await clearDeliveryHubSelection({ cart_id: cart.id })
+      .then(() => {
+        setDeliveryHubSelectionCutInState({
+          status: "cleared",
+          message: "Neutral Delivery Hub selection cleared from the cart metadata.",
+        })
+        router.refresh()
+      })
+      .catch((err) => {
+        setDeliveryHubSelectionCutInState({
+          status: "error",
+          message: err.message ?? "Unable to clear Delivery Hub selection.",
+        })
+      })
+  }
+
   const handleSelectApiShipProvider = (optionId: string, providerKey: string) => {
     setShippingMethodId(optionId)
     setApiShipRatesMap((current) => {
@@ -1133,6 +1213,16 @@ const Shipping: React.FC<ShippingProps> = ({
     buildDeliveryHubSelectionWriteSeamPreviewModel(
       deliveryHubRehearsalState.preview_input
     )
+  const deliveryHubSelectionSaveCutInGuard =
+    buildDeliveryHubSelectionSaveCutInPayload(
+      deliveryHubRehearsalState.preview_input
+    )
+  const hasPersistedDeliveryHubSelection = Boolean(
+    deliveryHubRehearsalState.preview_input.persisted_selection?.selection
+  )
+  const deliveryHubSelectionMutationInFlight =
+    deliveryHubSelectionCutInState.status === "saving" ||
+    deliveryHubSelectionCutInState.status === "clearing"
   const deliveryHubWriteIntentContractPreview =
     buildDeliveryHubWriteIntentContractPreviewModel(
       deliveryHubRehearsalState.preview_input
@@ -1517,7 +1607,7 @@ const Shipping: React.FC<ShippingProps> = ({
                   Delivery Hub neutral selection rehearsal
                 </Text>
                 <Text className="text-ui-fg-muted txt-small">
-                  Pre-cutin rehearsal/read-only only. The active commit path remains legacy ApiShip; no shopper action is performed here.
+                  Controlled save/clear cut-in for the neutral cart selection contract. The active shipping method commit path remains legacy ApiShip; Delivery Hub fulfillment execution is still blocked.
                 </Text>
                 {deliveryHubRehearsalState.status === "loading" && (
                   <div className="flex items-center gap-x-2 text-ui-fg-muted txt-small">
@@ -1562,6 +1652,72 @@ const Shipping: React.FC<ShippingProps> = ({
                     ))}
                   </ul>
                 )}
+                <div className="rounded-rounded border border-ui-border-base bg-ui-bg-base p-3">
+                  <div className="flex flex-col gap-y-3">
+                    <div className="grid gap-y-1 text-ui-fg-muted txt-small">
+                      <span>
+                        Save cut-in guard: {deliveryHubSelectionSaveCutInGuard.status}
+                      </span>
+                      <span>{deliveryHubSelectionSaveCutInGuard.message}</span>
+                      {deliveryHubSelectionSaveCutInGuard.status === "ready" && (
+                        <span>
+                          POST payload is shaped from neutral cart id, connection id, quote reference, quote summary, pickup point and pickup window only.
+                        </span>
+                      )}
+                      {deliveryHubSelectionSaveCutInGuard.status === "blocked" && (
+                        <span>
+                          Blockers: {deliveryHubSelectionSaveCutInGuard.reason_codes.join(", ")}
+                        </span>
+                      )}
+                      {deliveryHubSelectionCutInState.message && (
+                        <span>{deliveryHubSelectionCutInState.message}</span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        type="button"
+                        disabled={
+                          deliveryHubSelectionSaveCutInGuard.status !== "ready" ||
+                          deliveryHubSelectionMutationInFlight
+                        }
+                        onClick={() => {
+                          void handleSaveDeliveryHubSelectionCutIn()
+                        }}
+                      >
+                        {deliveryHubSelectionCutInState.status === "saving" ? (
+                          <span className="flex items-center gap-x-2">
+                            <Loader /> Saving neutral selection
+                          </span>
+                        ) : (
+                          "Save neutral selection"
+                        )}
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="transparent"
+                        type="button"
+                        disabled={
+                          (!hasPersistedDeliveryHubSelection &&
+                            deliveryHubSelectionCutInState.status !== "saved") ||
+                          deliveryHubSelectionMutationInFlight
+                        }
+                        onClick={() => {
+                          void handleClearDeliveryHubSelectionCutIn()
+                        }}
+                      >
+                        {deliveryHubSelectionCutInState.status === "clearing" ? (
+                          <span className="flex items-center gap-x-2">
+                            <Loader /> Clearing neutral selection
+                          </span>
+                        ) : (
+                          "Clear neutral selection"
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="border-t border-ui-border-base pt-4">

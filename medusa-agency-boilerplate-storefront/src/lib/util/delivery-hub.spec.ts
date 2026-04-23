@@ -13,6 +13,7 @@ import {
   buildDeliveryHubProjectedCommitParityPreviewModel,
   buildDeliveryHubReadinessPreviewModel,
   buildDeliveryHubSelectionPayloadParityPreviewModel,
+  buildDeliveryHubSelectionSaveCutInPayload,
   buildDeliveryHubSelectionWriteSeamPreviewModel,
   buildDeliveryHubShadowCatalogPreviewModel,
   buildDeliveryHubWriteIntentContractPreviewModel,
@@ -340,7 +341,58 @@ test("shapeDeliveryHubSaveSelectionPayload preserves neutral selection structure
       },
       label: "22 Apr, 10:00-14:00",
     },
+    correlation_id: null,
   })
+  assert.equal("provider_code" in payload, false)
+})
+
+test("shapeDeliveryHubSaveSelectionPayload omits absent provider_code but preserves explicit valid provider_code", () => {
+  const baseSelection = {
+    cart_id: "cart_provider_shape",
+    connection_id: "conn_provider_shape",
+    quote_type: "warehouse_to_pickup_point" as const,
+    quote_reference: { id: "dhsel_quote_provider_shape", version: 1 },
+    quote: {
+      carrier_code: "neutral_carrier",
+      carrier_label: "Neutral Carrier",
+      amount: 499,
+      currency_code: "RUB",
+      delivery_eta_min: 1,
+      delivery_eta_max: 2,
+      pickup_point_required: true,
+      pickup_window_required: false,
+    },
+    pickup_point: {
+      provider_point_id: "pvz_provider_shape",
+      provider_point_code: null,
+      name: "Provider Shape PVZ",
+      address: "Tverskaya 1",
+      city: "Moscow",
+      region: "Moscow",
+      postal_code: "101000",
+      lat: 55.75,
+      lng: 37.61,
+      is_origin_dropoff_allowed: false,
+      is_destination_pickup_allowed: true,
+      payment_methods: ["card"],
+    },
+    pickup_window: null,
+  }
+
+  const omittedProviderPayload = shapeDeliveryHubSaveSelectionPayload(baseSelection)
+  const nullProviderPayload = shapeDeliveryHubSaveSelectionPayload({
+    ...baseSelection,
+    provider_code: null,
+  })
+  const explicitProviderPayload = shapeDeliveryHubSaveSelectionPayload({
+    ...baseSelection,
+    provider_code: "yandex",
+  })
+
+  assert.equal("provider_code" in omittedProviderPayload, false)
+  assert.equal("provider_code" in nullProviderPayload, false)
+  assert.notDeepEqual(Object.keys(omittedProviderPayload), ["provider_code"])
+  assert.equal(explicitProviderPayload.provider_code, "yandex")
 })
 
 test("normalizeDeliveryHubPickupPointsResponse strips metadata and readiness helpers stay neutral", () => {
@@ -477,6 +529,7 @@ test("normalizeDeliveryHubReadinessResponse preserves neutral readiness summary 
     ],
     selection: {
       version: 1,
+      provider_code: "yandex",
       connection_id: "conn_1",
       quote_type: "warehouse_to_pickup_point",
       quote_reference: {
@@ -3322,6 +3375,287 @@ test("buildDeliveryHubSelectionPayloadParityPreviewModel stays shopper-safe prev
   }
 })
 
+test("buildDeliveryHubSelectionSaveCutInPayload returns backend-ready neutral save payload", () => {
+  const guard = buildDeliveryHubSelectionSaveCutInPayload({
+    cart_id: "cart_save_cut_in_ready",
+    readiness: {
+      ok: true,
+      cart_id: "cart_save_cut_in_ready",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 1,
+        connection_id: "conn_save_cut_in_ready",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "dhsel_quote_save_cut_in_ready", version: 3 },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: true,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_save_cut_in_ready",
+          provider_point_code: null,
+          name: "Ready PVZ",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: {
+          date: "2026-04-24",
+          time_from: "10:00",
+          time_to: "14:00",
+          interval_utc: {
+            from: "2026-04-24T07:00:00.000Z",
+            to: "2026-04-24T11:00:00.000Z",
+          },
+          label: "24 Apr · 10:00–14:00",
+        },
+        updated_at: "2026-04-23T10:55:00.000Z",
+      },
+      quote_context: {
+        connection: {
+          connection_id: "conn_save_cut_in_ready",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "dhsel_quote_save_cut_in_ready", version: 3 },
+        pickup_point_required: true,
+        pickup_window_required: true,
+        updated_at: "2026-04-23T10:55:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  assert.equal(guard.status, "ready")
+  assert.deepEqual(guard.reason_codes, [])
+  assert.deepEqual(guard.payload, {
+    cart_id: "cart_save_cut_in_ready",
+    connection_id: "conn_save_cut_in_ready",
+    quote_type: "warehouse_to_pickup_point",
+    quote_reference: { id: "dhsel_quote_save_cut_in_ready", version: 3 },
+    quote: {
+      carrier_code: "neutral_carrier",
+      carrier_label: "Neutral Carrier",
+      amount: 499,
+      currency_code: "RUB",
+      delivery_eta_min: 1,
+      delivery_eta_max: 2,
+      pickup_point_required: true,
+      pickup_window_required: true,
+    },
+    pickup_point: {
+      provider_point_id: "pvz_save_cut_in_ready",
+      provider_point_code: null,
+      name: "Ready PVZ",
+      address: "Tverskaya 1",
+      city: "Moscow",
+      region: "Moscow",
+      postal_code: "101000",
+      lat: 55.75,
+      lng: 37.61,
+      is_origin_dropoff_allowed: false,
+      is_destination_pickup_allowed: true,
+      payment_methods: ["card"],
+    },
+    pickup_window: {
+      date: "2026-04-24",
+      time_from: "10:00",
+      time_to: "14:00",
+      interval_utc: {
+        from: "2026-04-24T07:00:00.000Z",
+        to: "2026-04-24T11:00:00.000Z",
+      },
+      label: "24 Apr · 10:00–14:00",
+    },
+    correlation_id: null,
+  })
+  assert.equal("provider_code" in (guard.payload ?? {}), false)
+})
+
+test("buildDeliveryHubSelectionSaveCutInPayload blocks incomplete or stale save input", () => {
+  const guard = buildDeliveryHubSelectionSaveCutInPayload({
+    cart_id: "cart_save_cut_in_blocked",
+    readiness: {
+      ok: true,
+      cart_id: "cart_save_cut_in_blocked",
+      status: "not_ready",
+      issues: [
+        {
+          code: "pickup_window_missing",
+          message: "Pickup window is required",
+          field: "pickup_window",
+        },
+      ],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_save_cut_in_blocked",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "dhsel_quote_save_cut_in_blocked", version: 1 },
+        pickup_point_required: true,
+        pickup_window_required: true,
+        updated_at: "2026-04-23T11:00:00.000Z",
+      },
+    },
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "dhsel_quote_save_cut_in_blocked", version: 1 },
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_point_ids: ["pvz_save_cut_in_blocked"],
+          pickup_window_required: true,
+        },
+      ],
+    },
+    pickup_points: {
+      ok: true,
+      points: [
+        {
+          provider_point_id: "pvz_save_cut_in_blocked",
+          provider_point_code: null,
+          name: "Blocked PVZ",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+      ],
+    },
+    pickup_windows: { ok: true, pickup_windows: [] },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: false,
+      legacy_flow_kind: null,
+      legacy_selection_fresh: false,
+      legacy_method_label: null,
+    },
+  })
+
+  assert.equal(guard.status, "blocked")
+  assert.equal(guard.payload, null)
+  assert.equal(guard.reason_codes.includes("pickup_window_missing"), true)
+  assert.equal(guard.reason_codes.includes("readiness_blocked"), true)
+  assert.equal(guard.reason_codes.includes("legacy_parity_mismatch"), false)
+})
+
+test("buildDeliveryHubSelectionSaveCutInPayload exposes no provider raw payload or secret-like fields", () => {
+  const guard = buildDeliveryHubSelectionSaveCutInPayload({
+    cart_id: "cart_save_cut_in_safe",
+    readiness: {
+      ok: true,
+      cart_id: "cart_save_cut_in_safe",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 1,
+        connection_id: "conn_save_cut_in_safe",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "dhsel_quote_save_cut_in_safe", version: 1 },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_save_cut_in_safe",
+          provider_point_code: null,
+          name: "Safe PVZ",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-23T11:05:00.000Z",
+        raw_reference: { provider_offer_id: "raw_offer_1" },
+        metadata: { secret: "should_not_leak" },
+        authorization: "Bearer secret",
+      } as any,
+      quote_context: {
+        connection: {
+          connection_id: "conn_save_cut_in_safe",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "dhsel_quote_save_cut_in_safe", version: 1 },
+        pickup_point_required: true,
+        pickup_window_required: false,
+        updated_at: "2026-04-23T11:05:00.000Z",
+      },
+    } as any,
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  assert.equal(guard.status, "ready")
+  const serialized = JSON.stringify(guard).toLowerCase()
+
+  for (const forbidden of [
+    "raw_reference",
+    "quote_key",
+    "provider_offer_id",
+    "metadata",
+    "authorization",
+    "credential",
+    "secret",
+    "token",
+  ]) {
+    assert.equal(serialized.includes(forbidden), false, forbidden)
+  }
+})
+
 test("delivery-hub util preview stack remains no-network only for selection payload parity seam", () => {
   const source = readFileSync(new URL("./delivery-hub.ts", import.meta.url), "utf8")
 
@@ -3609,15 +3943,18 @@ test("buildDeliveryHubHandoffContractMatrixPreviewModel stays shopper-safe and p
   }
 })
 
-test("checkout shipping source still has no delivery-hub mutation wiring", () => {
+test("checkout shipping source wires delivery-hub save/clear without Delivery Hub shipping method commit", () => {
   const source = readFileSync(
     new URL("../../modules/checkout/components/shipping/index.tsx", import.meta.url),
     "utf8"
   )
 
-  assert.equal(source.includes("saveDeliveryHubSelection"), false)
-  assert.equal(source.includes("clearDeliveryHubSelection"), false)
+  assert.equal(source.includes("saveDeliveryHubSelection"), true)
+  assert.equal(source.includes("clearDeliveryHubSelection"), true)
+  assert.equal(source.includes("buildDeliveryHubSelectionSaveCutInPayload"), true)
   assert.equal(source.includes("setShippingMethod({\n      cartId: cart.id"), true)
+  assert.equal(source.includes("shippingMethodId: guard.payload"), false)
+  assert.equal(source.includes("shippingMethodId: deliveryHubSelectionSaveCutInGuard"), false)
 })
 
 test("buildDeliveryHubShadowSelectionActionabilityPreviewModel derives neutral read-only actionability states", () => {
@@ -9246,18 +9583,20 @@ test("neutral selection rehearsal reports legacy-only and preserves no-leak guar
   }
 })
 
-test("delivery hub rehearsal path does not import or call selection mutation helpers", () => {
+test("delivery hub selection cut-in wires only neutral save/clear helpers and keeps util no-network", () => {
   const shippingSource = readFileSync(
     new URL("../../modules/checkout/components/shipping/index.tsx", import.meta.url),
     "utf8"
   )
   const utilSource = readFileSync(new URL("./delivery-hub.ts", import.meta.url), "utf8")
 
-  assert.equal(/saveDeliveryHubSelection\s*[,(]/.test(shippingSource), false)
-  assert.equal(/clearDeliveryHubSelection\s*[,(]/.test(shippingSource), false)
+  assert.equal(/saveDeliveryHubSelection\s*[,(]/.test(shippingSource), true)
+  assert.equal(/clearDeliveryHubSelection\s*[,(]/.test(shippingSource), true)
+  assert.equal(/buildDeliveryHubSelectionSaveCutInPayload\s*\(/.test(shippingSource), true)
   assert.equal(/saveDeliveryHubSelection\s*\(/.test(utilSource), false)
   assert.equal(/clearDeliveryHubSelection\s*\(/.test(utilSource), false)
   assert.equal(/setShippingMethod\s*\(/.test(utilSource), false)
-  assert.equal(/mutation_intent:\s*true/.test(utilSource), false)
-  assert.equal(/activation[_ -]?ready/.test(utilSource), false)
+  assert.equal(/setShippingMethod\s*\(\s*\{[^}]*delivery/i.test(shippingSource), false)
+  assert.equal(/createFulfillment\s*\(/.test(shippingSource + utilSource), false)
+  assert.equal(/activation[_ -]?ready/i.test(utilSource), false)
 })
