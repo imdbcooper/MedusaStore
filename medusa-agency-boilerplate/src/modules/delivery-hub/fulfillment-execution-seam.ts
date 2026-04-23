@@ -5,13 +5,17 @@ import {
 } from "./constants"
 import {
   buildYandexCreateShipmentDispatchPortContract,
+  buildYandexCreateShipmentDispatchRequest,
+  executeYandexCreateShipmentDispatch,
   type YandexCreateShipmentDispatchPortSummary,
+  type YandexCreateShipmentDispatchResult,
 } from "./adapters/yandex/create-shipment-dispatch-port"
 import {
   materializeYandexCreateShipmentPayloadPreview,
   type YandexCreateShipmentMaterializerBlockedReasonCode,
 } from "./adapters/yandex/create-shipment-materializer"
 import type { DeliveryConnectionRecord } from "./domain/connection"
+import { YandexDeliveryClient } from "./adapters/yandex/client"
 import type {
   DeliveryHubExecutionIdentityPreview,
   DeliveryHubExecutionLedgerEvidenceArtifactAssemblyResult,
@@ -47,11 +51,18 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
   provider_code: typeof DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE
   provider_id: typeof DELIVERY_HUB_FULFILLMENT_PROVIDER_ID
   execution_path: "direct_yandex_controlled_handoff"
-  status: "blocked" | "dispatch_prepared"
-  result_decision: "blocked_before_preparation" | "dispatch_prepared_but_blocked"
-  blocking_stage: "handoff_preflight" | "connection_readiness" | "provider_dispatch_contract"
-  blocked_reason_code: DeliveryHubControlledFulfillmentExecutionBlockReasonCode
-  blocked_reason: string
+  status: "blocked" | "dispatch_prepared" | "dispatch_attempted"
+  result_decision:
+    | "blocked_before_preparation"
+    | "dispatch_prepared_but_blocked"
+    | "dispatch_attempted_no_persistence"
+  blocking_stage:
+    | "handoff_preflight"
+    | "connection_readiness"
+    | "provider_dispatch_contract"
+    | "provider_dispatch_execution"
+  blocked_reason_code: DeliveryHubControlledFulfillmentExecutionBlockReasonCode | null
+  blocked_reason: string | null
   handoff: {
     available: boolean
     connection_id: string | null
@@ -80,7 +91,7 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
     provider_execution_reference_present: boolean
     provider_origin_dispatch_context_present: boolean
     shipment_execution_enabled: boolean
-    live_adapter_call_performed: false
+    live_adapter_call_performed: boolean
     persisted_execution_ledger_write_performed: false
   }
   provider_dispatch_port: YandexCreateShipmentDispatchPortSummary
@@ -123,6 +134,18 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
     plan_fingerprint: string | null
     execution_fingerprint: string | null
   }
+  provider_dispatch_result: YandexCreateShipmentDispatchResult | null
+  dispatch_result: {
+    attempted: boolean
+    performed: boolean
+    outcome: "not_attempted" | "accepted" | "failed"
+    redacted: boolean
+    persistence_performed: false
+    execution_ledger_persistence_performed: false
+    order_mutation_performed: false
+    fulfillment_mutation_performed: false
+    safe_message: string
+  }
   evidence: {
     status: DeliveryHubExecutionLedgerEvidenceArtifactAssemblyResult["status"] | null
     artifact_kind: string | null
@@ -131,8 +154,8 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
   contour: {
     contract_status: DeliveryHubShipmentExecutionPlanPreview["contract_status"]
     readiness_status: DeliveryHubShipmentExecutionPlanPreview["readiness_verdict"]["status"]
-    execution_status: "blocked"
-    live_dispatch_performed: false
+    execution_status: "blocked" | "dispatch_attempted"
+    live_dispatch_performed: boolean
     ledger_persistence_performed: false
   }
   anti_leak_confirmations: {
@@ -142,7 +165,7 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
   }
 }
 
-export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
+export async function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
   execution_plan_preview: DeliveryHubShipmentExecutionPlanPreview
   handoff: DeliveryHubFulfillmentHandoffSnapshot | null
   execution_ledger_evidence: DeliveryHubExecutionLedgerEvidenceArtifactAssemblyResult | null
@@ -152,7 +175,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
   provider_origin_dispatch_context: DeliveryHubProviderOriginDispatchContext | null
   fulfillment_data: Record<string, unknown>
   shipment_execution_enabled: boolean
-}): DeliveryHubControlledFulfillmentExecutionResult {
+}): Promise<DeliveryHubControlledFulfillmentExecutionResult> {
   const modeCode = input.handoff?.quote_type ?? null
   const modeSupported = isDirectYandexModeSupported(modeCode)
   const connection = input.connection
@@ -390,6 +413,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: true,
+      runtime_dispatch_implemented: true,
       blocked_reason_code: "provider_dispatch_not_materialized",
       blocked_reason: resolveMissingProviderOriginDispatchContextBoundary(modeCode),
       status: "dispatch_prepared",
@@ -412,6 +436,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       shipment_execution_enabled: false,
       mode_code: modeCode,
       mode_supported: true,
+      runtime_dispatch_implemented: true,
       blocked_reason_code: "provider_dispatch_not_materialized",
       blocked_reason:
         "Direct Yandex create-shipment dispatch remains blocked because DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED is not enabled, so createFulfillment() must stay on the no-network controlled seam.",
@@ -421,7 +446,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
     })
   }
 
-  return buildBlockedResult({
+  const providerPayloadMaterialization = buildProviderPayloadMaterializationSummary({
     execution_plan_preview: input.execution_plan_preview,
     handoff: input.handoff,
     execution_ledger_evidence: input.execution_ledger_evidence,
@@ -440,6 +465,88 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
     result_decision: "dispatch_prepared_but_blocked",
     blocking_stage: "provider_dispatch_contract",
   })
+
+  if (providerPayloadMaterialization.status !== "ready") {
+    return buildBlockedResult({
+      execution_plan_preview: input.execution_plan_preview,
+      handoff: input.handoff,
+      execution_ledger_evidence: input.execution_ledger_evidence,
+      connection,
+      connection_lookup_available: true,
+      persisted_execution_reference_present: true,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+      provider_origin_dispatch_context_present: true,
+      fulfillment_data: input.fulfillment_data,
+      shipment_execution_enabled: true,
+      mode_code: modeCode,
+      mode_supported: true,
+      runtime_dispatch_implemented: true,
+      blocked_reason_code: "provider_dispatch_not_materialized",
+      blocked_reason:
+        providerPayloadMaterialization.blocked_reason ??
+        resolveDirectYandexDispatchMaterializationBoundary(modeCode),
+      status: "dispatch_prepared",
+      result_decision: "dispatch_prepared_but_blocked",
+      blocking_stage: "provider_dispatch_contract",
+    })
+  }
+
+  const dispatchRequest = buildYandexCreateShipmentDispatchRequest(
+    buildYandexDispatchRequestInput({
+      execution_plan_preview: input.execution_plan_preview,
+      handoff: input.handoff,
+      connection,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+      fulfillment_data: input.fulfillment_data,
+    })
+  )
+
+  if (dispatchRequest.status !== "ready") {
+    return buildBlockedResult({
+      execution_plan_preview: input.execution_plan_preview,
+      handoff: input.handoff,
+      execution_ledger_evidence: input.execution_ledger_evidence,
+      connection,
+      connection_lookup_available: true,
+      persisted_execution_reference_present: true,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+      provider_origin_dispatch_context_present: true,
+      fulfillment_data: input.fulfillment_data,
+      shipment_execution_enabled: true,
+      mode_code: modeCode,
+      mode_supported: true,
+      runtime_dispatch_implemented: true,
+      blocked_reason_code: "provider_dispatch_not_materialized",
+      blocked_reason:
+        dispatchRequest.blocked_reasons[0]?.message ??
+        resolveDirectYandexDispatchMaterializationBoundary(modeCode),
+      status: "dispatch_prepared",
+      result_decision: "dispatch_prepared_but_blocked",
+      blocking_stage: "provider_dispatch_contract",
+    })
+  }
+
+  const dispatchResult = await executeYandexCreateShipmentDispatch({
+    client: new YandexDeliveryClient(connection),
+    request: dispatchRequest.request,
+  })
+
+  return buildDispatchAttemptedResult({
+    execution_plan_preview: input.execution_plan_preview,
+    handoff: input.handoff,
+    execution_ledger_evidence: input.execution_ledger_evidence,
+    connection,
+    connection_lookup_available: true,
+    persisted_execution_reference_present: true,
+    provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+    provider_origin_dispatch_context_present: true,
+    fulfillment_data: input.fulfillment_data,
+    shipment_execution_enabled: true,
+    mode_code: modeCode,
+    mode_supported: true,
+    provider_payload_materialization: providerPayloadMaterialization,
+    provider_dispatch_result: dispatchResult,
+  })
 }
 
 type BuildBlockedResultInput = {
@@ -455,6 +562,7 @@ type BuildBlockedResultInput = {
   provider_origin_dispatch_context_present: boolean
   fulfillment_data: Record<string, unknown>
   shipment_execution_enabled: boolean
+  runtime_dispatch_implemented?: boolean
   blocked_reason_code: DeliveryHubControlledFulfillmentExecutionBlockReasonCode
   blocked_reason: string
   status: DeliveryHubControlledFulfillmentExecutionResult["status"]
@@ -524,6 +632,19 @@ function buildBlockedResult(
       execution_fingerprint:
         input.execution_plan_preview.execution_identity?.execution_fingerprint ?? null,
     },
+    provider_dispatch_result: null,
+    dispatch_result: {
+      attempted: false,
+      performed: false,
+      outcome: "not_attempted",
+      redacted: true,
+      persistence_performed: false,
+      execution_ledger_persistence_performed: false,
+      order_mutation_performed: false,
+      fulfillment_mutation_performed: false,
+      safe_message:
+        "Direct Yandex create_shipment was not attempted on this path; no shipment persistence, no execution-ledger persistence, and no order or fulfillment mutation were performed.",
+    },
     evidence: {
       status: input.execution_ledger_evidence?.status ?? null,
       artifact_kind: input.execution_ledger_evidence?.artifact?.artifact_kind ?? null,
@@ -542,6 +663,184 @@ function buildBlockedResult(
       raw_provider_payloads_included: false,
       raw_offer_ids_included: false,
     },
+  }
+}
+
+function buildDispatchAttemptedResult(input: {
+  execution_plan_preview: DeliveryHubShipmentExecutionPlanPreview
+  handoff: DeliveryHubFulfillmentHandoffSnapshot
+  execution_ledger_evidence: DeliveryHubExecutionLedgerEvidenceArtifactAssemblyResult | null
+  connection: DeliveryConnectionRecord
+  connection_lookup_available: boolean
+  mode_code: DeliveryHubFulfillmentModeCode | null
+  mode_supported: boolean
+  persisted_execution_reference_present: boolean
+  provider_origin_dispatch_context: DeliveryHubProviderOriginDispatchContext | null
+  provider_origin_dispatch_context_present: boolean
+  fulfillment_data: Record<string, unknown>
+  shipment_execution_enabled: boolean
+  provider_payload_materialization: DeliveryHubProviderPayloadMaterializationSummary
+  provider_dispatch_result: YandexCreateShipmentDispatchResult
+}): DeliveryHubControlledFulfillmentExecutionResult {
+  const providerDispatchPort = buildYandexCreateShipmentDispatchPortContract({
+    execution_gate_enabled: input.shipment_execution_enabled,
+    preview_available: input.provider_payload_materialization.attempted,
+    preview_ready: input.provider_payload_materialization.ready,
+    mode_code: input.mode_code,
+    supported_mode: input.mode_supported,
+    provider_supported: input.connection.provider_code === DELIVERY_HUB_PROVIDER_YANDEX,
+    runtime_dispatch_implemented: true,
+    dispatch_attempted: true,
+    dispatch_blocked: false,
+  })
+
+  return {
+    version: DELIVERY_HUB_CONTROLLED_FULFILLMENT_EXECUTION_RESULT_VERSION,
+    provider_code: DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,
+    provider_id: DELIVERY_HUB_FULFILLMENT_PROVIDER_ID,
+    execution_path: "direct_yandex_controlled_handoff",
+    status: "dispatch_attempted",
+    result_decision: "dispatch_attempted_no_persistence",
+    blocking_stage: "provider_dispatch_execution",
+    blocked_reason_code: null,
+    blocked_reason: null,
+    handoff: {
+      available: true,
+      connection_id: input.handoff.connection_id,
+      quote_type: input.handoff.quote_type,
+      quote_reference_summary: {
+        id: input.handoff.quote_reference.id,
+        version: input.handoff.quote_reference.version,
+      },
+      references: input.handoff.references,
+      correlation_id: input.handoff.correlation_id,
+    },
+    connection: {
+      lookup_available: input.connection_lookup_available,
+      id: input.connection.id,
+      provider_code: input.connection.provider_code,
+      mode: input.connection.mode,
+      status: input.connection.status,
+      enabled: input.connection.enabled,
+      credentials_ready: true,
+    },
+    dispatch_preparation: {
+      provider_code: DELIVERY_HUB_PROVIDER_YANDEX,
+      operation: "create_shipment",
+      mode_code: input.handoff.quote_type,
+      mode_supported: input.mode_supported,
+      provider_execution_reference_present: input.persisted_execution_reference_present,
+      provider_origin_dispatch_context_present: input.provider_origin_dispatch_context_present,
+      shipment_execution_enabled: input.shipment_execution_enabled,
+      live_adapter_call_performed: true,
+      persisted_execution_ledger_write_performed: false,
+    },
+    provider_dispatch_port: providerDispatchPort.summary,
+    provider_payload_materialization: input.provider_payload_materialization,
+    execution_identity: {
+      provider_operation_reference:
+        input.execution_plan_preview.execution_identity?.provider_operation_reference ?? null,
+      idempotency_key_preview:
+        input.execution_plan_preview.execution_identity?.idempotency_key_preview ?? null,
+      plan_fingerprint: input.execution_plan_preview.execution_identity?.plan_fingerprint ?? null,
+      execution_fingerprint:
+        input.execution_plan_preview.execution_identity?.execution_fingerprint ?? null,
+    },
+    provider_dispatch_result: input.provider_dispatch_result,
+    dispatch_result: {
+      attempted: true,
+      performed: true,
+      outcome: input.provider_dispatch_result.succeeded ? "accepted" : "failed",
+      redacted: true,
+      persistence_performed: false,
+      execution_ledger_persistence_performed: false,
+      order_mutation_performed: false,
+      fulfillment_mutation_performed: false,
+      safe_message: input.provider_dispatch_result.succeeded
+        ? "Direct Yandex create_shipment was attempted and accepted in runtime, with only a redacted result returned; no shipment persistence, no execution-ledger persistence, and no order or fulfillment mutation were performed."
+        : `Direct Yandex create_shipment was attempted in runtime and returned a redacted failure category (${input.provider_dispatch_result.status_category}); no shipment persistence, no execution-ledger persistence, and no order or fulfillment mutation were performed.`,
+    },
+    evidence: {
+      status: input.execution_ledger_evidence?.status ?? null,
+      artifact_kind: input.execution_ledger_evidence?.artifact?.artifact_kind ?? null,
+      artifact_evidence_status:
+        input.execution_ledger_evidence?.artifact?.evidence_status ?? null,
+    },
+    contour: {
+      contract_status: input.execution_plan_preview.contract_status,
+      readiness_status: input.execution_plan_preview.readiness_verdict.status,
+      execution_status: "dispatch_attempted",
+      live_dispatch_performed: true,
+      ledger_persistence_performed: false,
+    },
+    anti_leak_confirmations: {
+      credentials_included: false,
+      raw_provider_payloads_included: false,
+      raw_offer_ids_included: false,
+    },
+  }
+}
+
+function buildYandexDispatchRequestInput(input: {
+  execution_plan_preview: DeliveryHubShipmentExecutionPlanPreview
+  handoff: DeliveryHubFulfillmentHandoffSnapshot
+  connection: DeliveryConnectionRecord
+  provider_origin_dispatch_context: DeliveryHubProviderOriginDispatchContext | null
+  fulfillment_data: Record<string, unknown>
+}) {
+  return {
+    mode: input.handoff.quote_type,
+    provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+    destination_pickup_point: {
+      provider_point_id:
+        input.execution_plan_preview.normalized.delivery?.fulfillment_data.pickup_point.provider_point_id ?? null,
+      provider_point_code:
+        input.execution_plan_preview.normalized.delivery?.fulfillment_data.pickup_point.provider_point_code ?? null,
+      name: input.handoff.pickup_point_summary.name,
+      address: input.handoff.pickup_point_summary.address,
+      city: input.handoff.pickup_point_summary.city,
+    },
+    pickup_interval_utc: input.handoff.pickup_window_summary?.interval_utc ?? null,
+    order: {
+      order_id: input.execution_plan_preview.normalized.order?.id ?? null,
+      display_id: input.execution_plan_preview.normalized.order?.display_id ?? null,
+      external_order_reference: input.execution_plan_preview.normalized.order?.id ?? null,
+      currency_code: input.execution_plan_preview.normalized.order?.currency_code ?? null,
+      total: input.handoff.quote_summary.amount,
+    },
+    recipient: {
+      full_name: resolveRecipientName(input.fulfillment_data, input.execution_plan_preview),
+      email: resolveFulfillmentEmail(input.fulfillment_data),
+      phone: resolveFulfillmentPhone(input.fulfillment_data),
+    },
+    address: {
+      country_code: resolveFulfillmentShippingAddressField(input.fulfillment_data, "country_code"),
+      city:
+        resolveFulfillmentShippingAddressField(input.fulfillment_data, "city") ??
+        input.handoff.pickup_point_summary.city ??
+        null,
+      region:
+        resolveFulfillmentShippingAddressField(input.fulfillment_data, "province") ??
+        input.handoff.pickup_point_summary.region ??
+        null,
+      postal_code:
+        resolveFulfillmentShippingAddressField(input.fulfillment_data, "postal_code") ??
+        input.handoff.pickup_point_summary.postal_code ??
+        null,
+      address_line:
+        buildFulfillmentShippingAddressLine(input.fulfillment_data) ??
+        input.handoff.pickup_point_summary.address ??
+        null,
+    },
+    packages: buildProviderPayloadPreviewPackages(input.execution_plan_preview),
+    connection: {
+      connection_id: input.connection.id,
+      provider_code: input.connection.provider_code,
+      mode: input.connection.mode,
+      provider_account_reference: null,
+    },
+    quote_reference: input.handoff.quote_reference,
+    correlation_id: input.handoff.correlation_id,
   }
 }
 
@@ -694,6 +993,7 @@ function buildProviderDispatchPortSummary(
     mode_code: modeCode,
     supported_mode: isDirectYandexModeSupported(modeCode),
     provider_supported: providerSupported,
+    runtime_dispatch_implemented: input.runtime_dispatch_implemented ?? false,
   })
 
   return dispatchPort.summary

@@ -13,6 +13,7 @@ export const YANDEX_CREATE_SHIPMENT_API_PATH = "/shipments/create"
 
 export type YandexCreateShipmentDispatchPortBlockedReasonCode =
   | "execution_gate_disabled"
+  | "dispatch_runtime_blocked"
   | "dispatch_port_not_implemented"
   | "provider_not_supported"
   | "mode_not_supported"
@@ -21,12 +22,12 @@ export type YandexCreateShipmentDispatchPortSummary = {
   provider_code: typeof DELIVERY_HUB_PROVIDER_YANDEX
   operation: "create_shipment"
   available: boolean
-  implemented: false
+  implemented: boolean
   execution_gate_enabled: boolean
-  dispatch_attempted: false
-  dispatch_blocked: true
-  blocked_reason_code: YandexCreateShipmentDispatchPortBlockedReasonCode
-  blocked_reason: string
+  dispatch_attempted: boolean
+  dispatch_blocked: boolean
+  blocked_reason_code: YandexCreateShipmentDispatchPortBlockedReasonCode | null
+  blocked_reason: string | null
   preview_materialization_available: boolean
   preview_materialization_ready: boolean
   preview_mode: "preview_only"
@@ -175,8 +176,22 @@ export function buildYandexCreateShipmentDispatchPortContract(input: {
   mode_code: YandexCreateShipmentMaterializerMode | string | null
   supported_mode: boolean
   provider_supported: boolean
+  runtime_dispatch_implemented?: boolean
+  dispatch_attempted?: boolean
+  dispatch_blocked?: boolean
 }): YandexCreateShipmentDispatchPortContract {
-  const blockedReason = resolveBlockedReason(input)
+  const runtimeDispatchImplemented = input.runtime_dispatch_implemented ?? false
+  const dispatchAttempted = input.dispatch_attempted ?? false
+  const dispatchBlocked = input.dispatch_blocked ?? true
+  const blockedReason =
+    dispatchBlocked
+      ? resolveBlockedReason({
+          execution_gate_enabled: input.execution_gate_enabled,
+          supported_mode: input.supported_mode,
+          provider_supported: input.provider_supported,
+          runtime_dispatch_implemented: runtimeDispatchImplemented,
+        })
+      : null
 
   return {
     version: YANDEX_CREATE_SHIPMENT_DISPATCH_PORT_VERSION,
@@ -185,13 +200,17 @@ export function buildYandexCreateShipmentDispatchPortContract(input: {
     summary: {
       provider_code: DELIVERY_HUB_PROVIDER_YANDEX,
       operation: "create_shipment",
-      available: input.provider_supported && input.supported_mode && input.execution_gate_enabled,
-      implemented: false,
+      available:
+        input.provider_supported &&
+        input.supported_mode &&
+        input.execution_gate_enabled &&
+        runtimeDispatchImplemented,
+      implemented: runtimeDispatchImplemented,
       execution_gate_enabled: input.execution_gate_enabled,
-      dispatch_attempted: false,
-      dispatch_blocked: true,
-      blocked_reason_code: blockedReason.code,
-      blocked_reason: blockedReason.message,
+      dispatch_attempted: dispatchAttempted,
+      dispatch_blocked: dispatchBlocked,
+      blocked_reason_code: blockedReason?.code ?? null,
+      blocked_reason: blockedReason?.message ?? null,
       preview_materialization_available: input.preview_available,
       preview_materialization_ready: input.preview_ready,
       preview_mode: "preview_only",
@@ -259,6 +278,7 @@ function resolveBlockedReason(input: {
   execution_gate_enabled: boolean
   supported_mode: boolean
   provider_supported: boolean
+  runtime_dispatch_implemented: boolean
 }) {
   if (!input.provider_supported) {
     return {
@@ -284,10 +304,18 @@ function resolveBlockedReason(input: {
     }
   }
 
+  if (input.runtime_dispatch_implemented) {
+    return {
+      code: "dispatch_runtime_blocked" as const,
+      message:
+        "Direct Yandex create_shipment executable layer is materialized, but this controlled execution path remains blocked by readiness, payload materialization, or provider-origin context prerequisites.",
+    }
+  }
+
   return {
     code: "dispatch_port_not_implemented" as const,
     message:
-      "Direct Yandex create_shipment dispatch port boundary is materialized, but the actual adapter invocation is intentionally not implemented.",
+      "Direct Yandex create_shipment dispatch port is not implemented for the current controlled execution contour.",
   }
 }
 

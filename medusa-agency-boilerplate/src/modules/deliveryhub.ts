@@ -232,7 +232,7 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       }
     }
 
-    const controlledExecution = buildDeliveryHubControlledFulfillmentExecutionResult({
+    const controlledExecution = await buildDeliveryHubControlledFulfillmentExecutionResult({
       execution_plan_preview: executionPlanPreview,
       handoff: fulfillmentHandoff,
       execution_ledger_evidence: executionLedgerEvidence,
@@ -256,14 +256,27 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
           available: controlledExecution.handoff.available,
           connection_id: controlledExecution.handoff.connection_id,
           quote_type: controlledExecution.handoff.quote_type,
-          quote_reference_summary: controlledExecution.handoff.quote_reference_summary,
+          quote_reference_summary: {
+            present: !!controlledExecution.handoff.quote_reference_summary.id,
+            version: controlledExecution.handoff.quote_reference_summary.version,
+          },
           references: controlledExecution.handoff.references,
-          correlation_id: controlledExecution.handoff.correlation_id,
+          correlation_id_present: !!controlledExecution.handoff.correlation_id,
         },
-        connection: controlledExecution.connection,
+        connection: {
+          lookup_available: controlledExecution.connection.lookup_available,
+          id: controlledExecution.connection.id,
+          provider_code: controlledExecution.connection.provider_code,
+          mode: controlledExecution.connection.mode,
+          status: controlledExecution.connection.status,
+          enabled: controlledExecution.connection.enabled,
+          credentials_ready: controlledExecution.connection.credentials_ready,
+        },
         dispatch_preparation: controlledExecution.dispatch_preparation,
         provider_dispatch_port: controlledExecution.provider_dispatch_port,
         provider_payload_materialization: controlledExecution.provider_payload_materialization,
+        provider_dispatch_result: controlledExecution.provider_dispatch_result,
+        dispatch_result: controlledExecution.dispatch_result,
         execution_identity: controlledExecution.execution_identity,
         evidence: controlledExecution.evidence,
         contour: controlledExecution.contour,
