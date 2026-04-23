@@ -39,6 +39,7 @@ import {
 import {
   buildDeliveryHubHandoffPreviewModel,
   buildDeliveryHubNeutralSelectionRehearsalModel,
+  buildDeliveryHubShippingOptionParityPreviewModel,
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
   type DeliveryHubNeutralSelectionRehearsalInput,
   type DeliveryHubNeutralSelectionRehearsalModel,
@@ -1104,6 +1105,10 @@ const Shipping: React.FC<ShippingProps> = ({
   const deliveryHubHandoffPreview = buildDeliveryHubHandoffPreviewModel(
     deliveryHubRehearsalState.preview_input
   )
+  const deliveryHubShippingOptionParityPreview =
+    buildDeliveryHubShippingOptionParityPreviewModel(
+      deliveryHubRehearsalState.preview_input
+    )
 
   return (
     <div className="bg-white">
@@ -1525,6 +1530,64 @@ const Shipping: React.FC<ShippingProps> = ({
                     ))}
                   </ul>
                 )}
+              </div>
+
+              <div className="border-t border-ui-border-base pt-4">
+                <div className="flex flex-col gap-y-2">
+                  <Text className="text-ui-fg-base txt-medium-plus">
+                    Delivery Hub neutral shipping-option parity preview
+                  </Text>
+                  <Text className="text-ui-fg-muted txt-small">
+                    Preview-only parity seam. This block compares the neutral delivery candidate with the current legacy shipping-option context using shopper-safe structural signals only.
+                  </Text>
+                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
+                    <span>{deliveryHubShippingOptionParityPreview.verdict_label}</span>
+                    <span>{deliveryHubShippingOptionParityPreview.summary_label}</span>
+                    <span>Preview verdict: {deliveryHubShippingOptionParityPreview.verdict}</span>
+                    <span>
+                      candidate: {deliveryHubShippingOptionParityPreview.candidate_present ? "present" : "missing"}
+                    </span>
+                    <span>
+                      connection_id: {deliveryHubShippingOptionParityPreview.connection_id ?? "missing"}
+                      {` · ${deliveryHubShippingOptionParityPreview.connection_id_signal.status}`}
+                    </span>
+                    <span>
+                      mode_code: {deliveryHubShippingOptionParityPreview.mode_code ?? "missing"}
+                      {` · ${deliveryHubShippingOptionParityPreview.mode_code_signal.status}`}
+                    </span>
+                    {deliveryHubShippingOptionParityPreview.mode_label && (
+                      <span>Mode label: {deliveryHubShippingOptionParityPreview.mode_label}</span>
+                    )}
+                    <span>
+                      quote_reference: {deliveryHubShippingOptionParityPreview.quote_reference_present ? "present" : "missing"}
+                      {` · ${deliveryHubShippingOptionParityPreview.quote_reference_signal.status}`}
+                    </span>
+                    <span>
+                      pickup point: {deliveryHubShippingOptionParityPreview.pickup_point_present ? "present" : "missing"}
+                      {deliveryHubShippingOptionParityPreview.pickup_point_required ? " · required" : " · optional"}
+                      {` · ${deliveryHubShippingOptionParityPreview.pickup_point_signal.status}`}
+                    </span>
+                    <span>
+                      pickup window: {deliveryHubShippingOptionParityPreview.pickup_window_present ? "present" : "missing"}
+                      {deliveryHubShippingOptionParityPreview.pickup_window_required ? " · required" : " · optional"}
+                      {` · ${deliveryHubShippingOptionParityPreview.pickup_window_signal.status}`}
+                    </span>
+                  </div>
+                  {deliveryHubShippingOptionParityPreview.gap_codes.length > 0 && (
+                    <div className="text-ui-fg-muted txt-small">
+                      Gaps: {deliveryHubShippingOptionParityPreview.gap_codes.join(", ")}
+                    </div>
+                  )}
+                  {deliveryHubShippingOptionParityPreview.hint_messages.length > 0 && (
+                    <ul className="list-disc pl-4 text-ui-fg-muted txt-small">
+                      {deliveryHubShippingOptionParityPreview.hint_messages
+                        .slice(0, 3)
+                        .map((message) => (
+                          <li key={message}>{message}</li>
+                        ))}
+                    </ul>
+                  )}
+                </div>
               </div>
 
               <div className="border-t border-ui-border-base pt-4">

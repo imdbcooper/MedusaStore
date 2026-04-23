@@ -28,6 +28,7 @@ import {
   buildDeliveryHubShadowCutoverDecisionPreviewModel,
   buildDeliveryHubShadowSettingsPreviewModel,
   buildDeliveryHubShadowShippingOptionParityPreviewModel,
+  buildDeliveryHubShippingOptionParityPreviewModel,
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
   normalizeDeliveryHubCatalogResponse,
   normalizeDeliveryHubPickupPointsResponse,
@@ -1030,6 +1031,304 @@ test("buildDeliveryHubHandoffPreviewModel returns ready shopper-safe handoff pre
     dry_run_only: true,
     mutation_intent: false,
   })
+})
+
+test("buildDeliveryHubShippingOptionParityPreviewModel reports aligned structural parity", () => {
+  const preview = buildDeliveryHubShippingOptionParityPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_parity_ready",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 1,
+        connection_id: "conn_parity_ready",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_parity_ready",
+          version: 2,
+        },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: true,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_parity_ready",
+          provider_point_code: null,
+          name: "Ready PVZ",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: {
+          date: "2026-04-22",
+          time_from: "10:00",
+          time_to: "14:00",
+          interval_utc: {
+            from: "2026-04-22T07:00:00.000Z",
+            to: "2026-04-22T11:00:00.000Z",
+          },
+          label: "22 Apr · 10:00–14:00",
+        },
+        updated_at: "2026-04-22T09:00:00.000Z",
+      },
+      quote_context: {
+        connection: {
+          connection_id: "conn_parity_ready",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_parity_ready",
+          version: 2,
+        },
+        pickup_point_required: true,
+        pickup_window_required: true,
+        updated_at: "2026-04-22T09:00:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  assert.equal(preview.verdict, "parity_aligned")
+  assert.equal(preview.connection_id_signal.status, "aligned")
+  assert.equal(preview.mode_code_signal.status, "aligned")
+  assert.equal(preview.quote_reference_signal.status, "aligned")
+  assert.equal(preview.pickup_point_signal.status, "aligned")
+  assert.equal(preview.pickup_window_signal.status, "aligned")
+  assert.deepEqual(preview.gap_codes, [])
+  assert.equal(preview.mutation_intent, false)
+  assert.equal(preview.dry_run_only, true)
+})
+
+test("buildDeliveryHubShippingOptionParityPreviewModel reports partial parity when pickup point is missing", () => {
+  const preview = buildDeliveryHubShippingOptionParityPreviewModel({
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "quote_ref_pickup_gap", version: 1 },
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: null,
+          delivery_eta_max: null,
+          pickup_point_required: true,
+          pickup_point_ids: [],
+          pickup_window_required: false,
+        },
+      ],
+    },
+    pickup_points: { ok: true, points: [] },
+    readiness: {
+      ok: true,
+      cart_id: "cart_parity_pickup_gap",
+      status: "missing_selection",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_pickup_gap",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_ref_pickup_gap", version: 1 },
+        pickup_point_required: true,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T09:00:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  assert.equal(preview.verdict, "parity_partial")
+  assert.equal(preview.pickup_point_signal.status, "missing")
+  assert.ok(preview.gap_codes.includes("missing_pickup_point"))
+})
+
+test("buildDeliveryHubShippingOptionParityPreviewModel reports partial parity when pickup window is missing", () => {
+  const preview = buildDeliveryHubShippingOptionParityPreviewModel({
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "quote_ref_window_gap", version: 1 },
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: null,
+          delivery_eta_max: null,
+          pickup_point_required: false,
+          pickup_point_ids: [],
+          pickup_window_required: true,
+        },
+      ],
+    },
+    pickup_windows: { ok: true, pickup_windows: [] },
+    readiness: {
+      ok: true,
+      cart_id: "cart_parity_window_gap",
+      status: "missing_selection",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_window_gap",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_ref_window_gap", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: true,
+        updated_at: "2026-04-22T09:00:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  assert.equal(preview.verdict, "parity_partial")
+  assert.equal(preview.pickup_window_signal.status, "missing")
+  assert.ok(preview.gap_codes.includes("missing_pickup_window"))
+})
+
+test("buildDeliveryHubShippingOptionParityPreviewModel reports blocked parity when readiness or mode alignment fails", () => {
+  const blockedByConnection = buildDeliveryHubShippingOptionParityPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_parity_blocked_connection",
+      status: "not_ready",
+      issues: [
+        {
+          code: "connection_credentials_not_ready",
+          message: "Connection credentials are not ready",
+          field: "connection_id",
+        },
+      ],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_blocked",
+          state: "credentials_not_ready",
+          ready: false,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_ref_blocked", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T09:00:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  const blockedByMode = buildDeliveryHubShippingOptionParityPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_parity_blocked_mode",
+      status: "ready",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_mode_mismatch",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "dropoff_point_to_pickup_point",
+        quote_reference: { id: "quote_ref_mode_mismatch", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T09:00:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "door_delivery",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip door",
+    },
+  })
+
+  assert.equal(blockedByConnection.verdict, "blocked")
+  assert.equal(blockedByConnection.connection_id_signal.status, "blocked")
+  assert.ok(blockedByConnection.gap_codes.includes("connection_not_ready"))
+
+  assert.equal(blockedByMode.verdict, "blocked")
+  assert.equal(blockedByMode.mode_code_signal.status, "mismatch")
+  assert.ok(blockedByMode.gap_codes.includes("mode_mismatch"))
+})
+
+test("buildDeliveryHubShippingOptionParityPreviewModel keeps preview-only wording and no internal leakage", () => {
+  const preview = buildDeliveryHubShippingOptionParityPreviewModel({
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: false,
+      legacy_flow_kind: null,
+      legacy_selection_fresh: false,
+      legacy_method_label: null,
+    },
+  })
+  const serialized = JSON.stringify(preview).toLowerCase()
+
+  assert.equal(preview.verdict, "informational_only")
+  assert.equal(preview.mutation_intent, false)
+  assert.equal(preview.dry_run_only, true)
+  assert.equal(serialized.includes("activation"), false)
+  for (const forbidden of [
+    "provider_code",
+    "quote_key",
+    "raw_reference",
+    "token",
+    "secret",
+    "credentials",
+    "yandex",
+  ]) {
+    assert.equal(serialized.includes(forbidden), false, forbidden)
+  }
 })
 
 test("buildDeliveryHubHandoffPreviewModel marks missing quote_reference", () => {
@@ -6926,4 +7225,5 @@ test("delivery hub rehearsal path does not import or call selection mutation hel
   assert.equal(/clearDeliveryHubSelection\s*\(/.test(utilSource), false)
   assert.equal(/setShippingMethod\s*\(/.test(utilSource), false)
   assert.equal(/mutation_intent:\s*true/.test(utilSource), false)
+  assert.equal(/activation[_ -]?ready/.test(utilSource), false)
 })

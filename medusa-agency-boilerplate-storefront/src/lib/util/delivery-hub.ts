@@ -1710,6 +1710,63 @@ export type DeliveryHubHandoffPreviewModel = {
   mutation_intent: false
 }
 
+export type DeliveryHubShippingOptionParityPreviewVerdict =
+  | "informational_only"
+  | "parity_partial"
+  | "parity_aligned"
+  | "blocked"
+
+export type DeliveryHubShippingOptionParityPreviewGapCode =
+  | "missing_candidate"
+  | "legacy_context_missing"
+  | "legacy_context_stale"
+  | "connection_not_ready"
+  | "missing_connection_id"
+  | "missing_mode_code"
+  | "mode_mismatch"
+  | "missing_quote_reference"
+  | "missing_pickup_point"
+  | "missing_pickup_window"
+
+export type DeliveryHubShippingOptionParityPreviewSignalStatus =
+  | "aligned"
+  | "missing"
+  | "mismatch"
+  | "blocked"
+  | "informational_only"
+  | "not_applicable"
+
+export type DeliveryHubShippingOptionParityPreviewSignal = {
+  label: string
+  status: DeliveryHubShippingOptionParityPreviewSignalStatus
+  detail_label: string
+}
+
+export type DeliveryHubShippingOptionParityPreviewModel = {
+  tone: "neutral" | "positive" | "warning"
+  verdict: DeliveryHubShippingOptionParityPreviewVerdict
+  verdict_label: string
+  summary_label: string
+  candidate_present: boolean
+  connection_id: string | null
+  mode_code: DeliveryHubQuoteType | null
+  mode_label: string | null
+  quote_reference_present: boolean
+  pickup_point_required: boolean
+  pickup_point_present: boolean
+  pickup_window_required: boolean
+  pickup_window_present: boolean
+  connection_id_signal: DeliveryHubShippingOptionParityPreviewSignal
+  mode_code_signal: DeliveryHubShippingOptionParityPreviewSignal
+  quote_reference_signal: DeliveryHubShippingOptionParityPreviewSignal
+  pickup_point_signal: DeliveryHubShippingOptionParityPreviewSignal
+  pickup_window_signal: DeliveryHubShippingOptionParityPreviewSignal
+  gap_codes: DeliveryHubShippingOptionParityPreviewGapCode[]
+  hint_messages: string[]
+  dry_run_only: true
+  mutation_intent: false
+}
+
 export function getDeliveryHubReadinessStatusLabel(
   status: DeliveryHubSelectionReadinessStatus
 ) {
@@ -3513,6 +3570,62 @@ function getDeliveryHubHandoffPreviewBlockerLabel(
   }
 }
 
+function getDeliveryHubShippingOptionParityGapLabel(
+  code: DeliveryHubShippingOptionParityPreviewGapCode
+) {
+  switch (code) {
+    case "missing_candidate":
+      return "Neutral delivery candidate is not available in the current preview stack."
+    case "legacy_context_missing":
+      return "Legacy checkout context is missing, so parity remains informational only."
+    case "legacy_context_stale":
+      return "Legacy checkout context is stale for the current address fingerprint."
+    case "connection_not_ready":
+      return "Neutral connection readiness is not yet ready."
+    case "missing_connection_id":
+      return "Neutral candidate does not expose connection_id yet."
+    case "missing_mode_code":
+      return "Neutral candidate does not expose mode_code yet."
+    case "mode_mismatch":
+      return "Neutral mode_code does not align with the committed legacy delivery shape."
+    case "missing_quote_reference":
+      return "Neutral candidate does not expose quote_reference yet."
+    case "missing_pickup_point":
+      return "Neutral candidate still lacks a required pickup point."
+    case "missing_pickup_window":
+      return "Neutral candidate still lacks a required pickup window."
+  }
+}
+
+function getDeliveryHubLegacyModeAlignment(
+  legacyFlowKind: "pickup_point" | "door_delivery" | null,
+  modeCode: DeliveryHubQuoteType | null
+) {
+  if (!legacyFlowKind) {
+    return "informational_only" as const
+  }
+
+  if (!modeCode) {
+    return "missing" as const
+  }
+
+  if (legacyFlowKind === "pickup_point") {
+    return ["warehouse_to_pickup_point", "dropoff_point_to_pickup_point"].includes(modeCode)
+      ? ("aligned" as const)
+      : ("mismatch" as const)
+  }
+
+  return "mismatch" as const
+}
+
+function buildDeliveryHubShippingOptionParitySignal(input: {
+  label: string
+  status: DeliveryHubShippingOptionParityPreviewSignalStatus
+  detail_label: string
+}): DeliveryHubShippingOptionParityPreviewSignal {
+  return input
+}
+
 export function buildDeliveryHubHandoffPreviewModel(
   input: DeliveryHubNeutralSelectionRehearsalInput = {}
 ): DeliveryHubHandoffPreviewModel {
@@ -3606,6 +3719,215 @@ export function buildDeliveryHubHandoffPreviewModel(
       "The active checkout commit path remains legacy ApiShip.",
       ...blockerCodes.map(getDeliveryHubHandoffPreviewBlockerLabel),
       ...(input.readiness?.issues.map((issue) => issue.message) ?? []),
+    ]).slice(0, 6),
+    dry_run_only: true,
+    mutation_intent: false,
+  }
+}
+
+export function buildDeliveryHubShippingOptionParityPreviewModel(
+  input: DeliveryHubNeutralSelectionRehearsalInput = {}
+): DeliveryHubShippingOptionParityPreviewModel {
+  const candidate = getDeliveryHubNeutralRehearsalCandidate(input)
+  const gapCodes: DeliveryHubShippingOptionParityPreviewGapCode[] = []
+  const legacyContext = input.legacy_context ?? null
+
+  const pushGap = (code: DeliveryHubShippingOptionParityPreviewGapCode) => {
+    if (!gapCodes.includes(code)) {
+      gapCodes.push(code)
+    }
+  }
+
+  const candidatePresent = Boolean(candidate.quoteSummary || candidate.quoteReference || candidate.quoteType)
+  const modeAlignment = getDeliveryHubLegacyModeAlignment(
+    legacyContext?.legacy_flow_kind ?? null,
+    candidate.quoteType
+  )
+
+  if (!candidatePresent) {
+    pushGap("missing_candidate")
+  }
+
+  if (!legacyContext?.legacy_is_committed || !legacyContext.legacy_flow_kind) {
+    pushGap("legacy_context_missing")
+  }
+
+  if (legacyContext?.legacy_is_committed && legacyContext.legacy_selection_fresh === false) {
+    pushGap("legacy_context_stale")
+  }
+
+  if (candidatePresent && !candidate.connection.connection_id) {
+    pushGap("missing_connection_id")
+  }
+
+  if (
+    candidatePresent &&
+    (!candidate.connection.ready || candidate.connection.state !== "ready")
+  ) {
+    pushGap("connection_not_ready")
+  }
+
+  if (!candidate.quoteType) {
+    pushGap("missing_mode_code")
+  }
+
+  if (modeAlignment === "mismatch") {
+    pushGap("mode_mismatch")
+  }
+
+  if (!candidate.quoteReference) {
+    pushGap("missing_quote_reference")
+  }
+
+  if (candidate.pickupPointRequired && !candidate.pickupPoint) {
+    pushGap("missing_pickup_point")
+  }
+
+  if (candidate.pickupWindowRequired && !candidate.pickupWindow) {
+    pushGap("missing_pickup_window")
+  }
+
+  const blocked = gapCodes.some((code) =>
+    ["connection_not_ready", "mode_mismatch", "legacy_context_stale"].includes(code)
+  )
+  const aligned =
+    candidatePresent &&
+    legacyContext?.legacy_is_committed &&
+    legacyContext.legacy_selection_fresh &&
+    modeAlignment === "aligned" &&
+    candidate.connection.ready &&
+    candidate.connection.state === "ready" &&
+    !!candidate.connection.connection_id &&
+    !!candidate.quoteType &&
+    !!candidate.quoteReference &&
+    (!candidate.pickupPointRequired || !!candidate.pickupPoint) &&
+    (!candidate.pickupWindowRequired || !!candidate.pickupWindow)
+  const verdict: DeliveryHubShippingOptionParityPreviewVerdict = blocked
+    ? "blocked"
+    : aligned
+      ? "parity_aligned"
+      : gapCodes.length > 0
+        ? candidatePresent
+          ? "parity_partial"
+          : "informational_only"
+        : "informational_only"
+
+  const summaryLabel =
+    verdict === "parity_aligned"
+      ? "Neutral candidate structurally aligns with the current legacy shipping-option semantics."
+      : verdict === "blocked"
+        ? "Neutral candidate cannot be treated as structurally aligned because readiness or mode alignment is blocked."
+        : verdict === "parity_partial"
+          ? "Neutral candidate is available, but structural parity still has shopper-safe gaps."
+          : "Parity preview remains informational only until enough legacy and neutral preview context is present."
+
+  return {
+    tone:
+      verdict === "parity_aligned"
+        ? "positive"
+        : verdict === "blocked"
+          ? "warning"
+          : "neutral",
+    verdict,
+    verdict_label:
+      verdict === "parity_aligned"
+        ? "Neutral shipping-option parity aligned"
+        : verdict === "blocked"
+          ? "Neutral shipping-option parity blocked"
+          : verdict === "parity_partial"
+            ? "Neutral shipping-option parity is partial"
+            : "Neutral shipping-option parity is informational only",
+    summary_label: summaryLabel,
+    candidate_present: candidatePresent,
+    connection_id: candidate.connection.connection_id,
+    mode_code: candidate.quoteType,
+    mode_label: getDeliveryHubQuoteTypeLabel(candidate.quoteType),
+    quote_reference_present: Boolean(candidate.quoteReference),
+    pickup_point_required: candidate.pickupPointRequired,
+    pickup_point_present: Boolean(candidate.pickupPoint),
+    pickup_window_required: candidate.pickupWindowRequired,
+    pickup_window_present: Boolean(candidate.pickupWindow),
+    connection_id_signal: buildDeliveryHubShippingOptionParitySignal({
+      label: "connection_id parity",
+      status: !candidatePresent
+        ? "informational_only"
+        : !candidate.connection.connection_id
+          ? "missing"
+          : !candidate.connection.ready || candidate.connection.state !== "ready"
+            ? "blocked"
+            : "aligned",
+      detail_label: !candidatePresent
+        ? "No neutral candidate yet."
+        : !candidate.connection.connection_id
+          ? "Neutral candidate is missing connection_id."
+          : !candidate.connection.ready || candidate.connection.state !== "ready"
+            ? `Neutral connection is ${candidate.connection.state}.`
+            : `Neutral candidate exposes ready connection_id ${candidate.connection.connection_id}.`,
+    }),
+    mode_code_signal: buildDeliveryHubShippingOptionParitySignal({
+      label: "mode_code parity",
+      status: modeAlignment,
+      detail_label:
+        modeAlignment === "aligned"
+          ? "Neutral mode_code matches the committed legacy delivery shape."
+          : modeAlignment === "mismatch"
+            ? "Neutral mode_code differs from the committed legacy delivery shape."
+            : modeAlignment === "missing"
+              ? "Neutral candidate is missing mode_code."
+              : "Legacy modality context is not committed yet, so mode parity stays informational only.",
+    }),
+    quote_reference_signal: buildDeliveryHubShippingOptionParitySignal({
+      label: "quote_reference presence",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.quoteReference
+          ? "aligned"
+          : "missing",
+      detail_label: !candidatePresent
+        ? "No neutral candidate yet."
+        : candidate.quoteReference
+          ? "Neutral candidate exposes backend-issued quote_reference."
+          : "Neutral candidate is missing backend-issued quote_reference.",
+    }),
+    pickup_point_signal: buildDeliveryHubShippingOptionParitySignal({
+      label: "pickup point expectation",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.pickupPointRequired
+          ? candidate.pickupPoint
+            ? "aligned"
+            : "missing"
+          : "not_applicable",
+      detail_label: !candidatePresent
+        ? "No neutral candidate yet."
+        : candidate.pickupPointRequired
+          ? candidate.pickupPoint
+            ? "Required pickup point is present in the neutral candidate."
+            : "Neutral candidate still lacks a required pickup point."
+          : "Current neutral candidate does not require a pickup point.",
+    }),
+    pickup_window_signal: buildDeliveryHubShippingOptionParitySignal({
+      label: "pickup window expectation",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.pickupWindowRequired
+          ? candidate.pickupWindow
+            ? "aligned"
+            : "missing"
+          : "not_applicable",
+      detail_label: !candidatePresent
+        ? "No neutral candidate yet."
+        : candidate.pickupWindowRequired
+          ? candidate.pickupWindow
+            ? "Required pickup window is present in the neutral candidate."
+            : "Neutral candidate still lacks a required pickup window."
+          : "Current neutral candidate does not require a pickup window.",
+    }),
+    gap_codes: gapCodes,
+    hint_messages: uniqueDeliveryHubMessages([
+      "Preview-only parity seam: no save, clear, submit, or shipping-method mutation is performed here.",
+      "The active checkout commit path remains legacy ApiShip.",
+      ...gapCodes.map(getDeliveryHubShippingOptionParityGapLabel),
     ]).slice(0, 6),
     dry_run_only: true,
     mutation_intent: false,
