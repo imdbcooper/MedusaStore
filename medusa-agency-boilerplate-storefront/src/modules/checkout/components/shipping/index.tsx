@@ -44,6 +44,7 @@ import {
   buildDeliveryHubNeutralSelectionRehearsalModel,
   buildDeliveryHubPersistedSelectionContractParityPreviewModel,
   buildDeliveryHubProjectedCommitParityPreviewModel,
+  buildDeliveryHubSavedSelectionSummaryModel,
   buildDeliveryHubSelectionPayloadParityPreviewModel,
   buildDeliveryHubSelectionSaveCutInPayload,
   buildDeliveryHubSelectionWriteSeamPreviewModel,
@@ -1213,6 +1214,10 @@ const Shipping: React.FC<ShippingProps> = ({
     buildDeliveryHubSelectionWriteSeamPreviewModel(
       deliveryHubRehearsalState.preview_input
     )
+  const deliveryHubSavedSelectionSummary = buildDeliveryHubSavedSelectionSummaryModel(
+    deliveryHubRehearsalState.preview_input.persisted_selection,
+    deliveryHubRehearsalState.preview_input.readiness
+  )
   const deliveryHubSelectionSaveCutInGuard =
     buildDeliveryHubSelectionSaveCutInPayload(
       deliveryHubRehearsalState.preview_input
@@ -1609,6 +1614,67 @@ const Shipping: React.FC<ShippingProps> = ({
                 <Text className="text-ui-fg-muted txt-small">
                   Controlled save/clear cut-in for the neutral cart selection contract. The active shipping method commit path remains legacy ApiShip; Delivery Hub fulfillment execution is still blocked.
                 </Text>
+                {deliveryHubSavedSelectionSummary.state !== "missing" && (
+                  <div className="rounded-rounded border border-ui-border-base bg-ui-bg-base p-3">
+                    <div className="grid gap-y-1 text-ui-fg-muted txt-small">
+                      <span className="text-ui-fg-base">
+                        {deliveryHubSavedSelectionSummary.title}: {deliveryHubSavedSelectionSummary.status_label}
+                      </span>
+                      <span>{deliveryHubSavedSelectionSummary.finality_label}</span>
+                      {deliveryHubSavedSelectionSummary.modality_label && (
+                        <span>Saved modality: {deliveryHubSavedSelectionSummary.modality_label}</span>
+                      )}
+                      {deliveryHubSavedSelectionSummary.quote_amount !== null && (
+                        <span>
+                          Saved quote: {formatPrice(
+                            deliveryHubSavedSelectionSummary.quote_amount,
+                            deliveryHubSavedSelectionSummary.currency_code
+                          )}
+                          {deliveryHubSavedSelectionSummary.quote_eta_label
+                            ? ` · ${deliveryHubSavedSelectionSummary.quote_eta_label}`
+                            : ""}
+                        </span>
+                      )}
+                      {deliveryHubSavedSelectionSummary.pickup_point_label && (
+                        <span>
+                          Saved pickup point: {deliveryHubSavedSelectionSummary.pickup_point_label}
+                          {deliveryHubSavedSelectionSummary.pickup_point_address_label
+                            ? ` · ${deliveryHubSavedSelectionSummary.pickup_point_address_label}`
+                            : ""}
+                          {deliveryHubSavedSelectionSummary.pickup_point_code_label
+                            ? ` · ${deliveryHubSavedSelectionSummary.pickup_point_code_label}`
+                            : ""}
+                        </span>
+                      )}
+                      {deliveryHubSavedSelectionSummary.pickup_window_label && (
+                        <span>Saved pickup window: {deliveryHubSavedSelectionSummary.pickup_window_label}</span>
+                      )}
+                      {deliveryHubSavedSelectionSummary.readiness_label && (
+                        <span>Readiness: {deliveryHubSavedSelectionSummary.readiness_label}</span>
+                      )}
+                      {deliveryHubSavedSelectionSummary.saved_at_label && (
+                        <span>{deliveryHubSavedSelectionSummary.saved_at_label}</span>
+                      )}
+                      {deliveryHubSavedSelectionSummary.correlation_id_label && (
+                        <span>{deliveryHubSavedSelectionSummary.correlation_id_label}</span>
+                      )}
+                    </div>
+                    {deliveryHubSavedSelectionSummary.reconciliation_messages.length > 0 && (
+                      <ul className="mt-2 list-disc pl-4 text-ui-fg-muted txt-small">
+                        {deliveryHubSavedSelectionSummary.reconciliation_messages
+                          .slice(0, 4)
+                          .map((message) => (
+                            <li key={message}>{message}</li>
+                          ))}
+                      </ul>
+                    )}
+                    {deliveryHubSavedSelectionSummary.action_label && (
+                      <Text className="mt-2 text-ui-fg-muted txt-small">
+                        {deliveryHubSavedSelectionSummary.action_label}
+                      </Text>
+                    )}
+                  </div>
+                )}
                 {deliveryHubRehearsalState.status === "loading" && (
                   <div className="flex items-center gap-x-2 text-ui-fg-muted txt-small">
                     <Loader />
@@ -2226,7 +2292,11 @@ const Shipping: React.FC<ShippingProps> = ({
               <Text className="mb-1 text-ui-fg-base txt-medium-plus">
                 {checkoutCopy.method}
               </Text>
-              <ShippingSummary cart={cart} availableShippingMethods={shippingMethods} />
+                <ShippingSummary
+                  cart={cart}
+                  availableShippingMethods={shippingMethods}
+                  deliveryHubSavedSelectionSummary={deliveryHubSavedSelectionSummary}
+                />
             </div>
           )}
         </div>

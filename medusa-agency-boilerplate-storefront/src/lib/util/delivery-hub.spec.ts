@@ -11,6 +11,7 @@ import {
   buildDeliveryHubPersistedSelectionContractParityPreviewModel,
   buildDeliveryHubPersistedSelectionPreviewModel,
   buildDeliveryHubProjectedCommitParityPreviewModel,
+  buildDeliveryHubSavedSelectionSummaryModel,
   buildDeliveryHubReadinessPreviewModel,
   buildDeliveryHubSelectionPayloadParityPreviewModel,
   buildDeliveryHubSelectionSaveCutInPayload,
@@ -513,6 +514,217 @@ test("delivery-hub preview-only helpers keep readiness and summary semantics for
     issue_messages: ["Pickup point required"],
     updated_at: "2026-04-22T07:00:00.000Z",
   })
+})
+
+test("buildDeliveryHubSavedSelectionSummaryModel surfaces saved neutral state without provider leaks or final-commit wording", () => {
+  const summary = buildDeliveryHubSavedSelectionSummaryModel(
+    {
+      ok: true,
+      cart_id: "cart_saved_summary",
+      selection: {
+        version: 1,
+        provider_code: "yandex",
+        connection_id: "conn_saved_summary",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_saved_summary",
+          version: 2,
+        },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 799,
+          currency_code: "RUB",
+          delivery_eta_min: 2,
+          delivery_eta_max: 4,
+          pickup_point_required: true,
+          pickup_window_required: true,
+        },
+        pickup_point: {
+          provider_point_id: "point_saved_summary_internal_id",
+          provider_point_code: "PVZ-42",
+          name: "Central pickup point",
+          address: "Tverskaya 42",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: {
+          date: "2026-04-24",
+          time_from: "12:00",
+          time_to: "16:00",
+          interval_utc: {
+            from: "2026-04-24T09:00:00.000Z",
+            to: "2026-04-24T13:00:00.000Z",
+          },
+          label: "24 Apr · 12:00–16:00",
+        },
+        correlation_id: "corr_saved_summary",
+        updated_at: "2026-04-23T07:00:00.000Z",
+      },
+    },
+    {
+      ok: true,
+      cart_id: "cart_saved_summary",
+      status: "ready",
+      issues: [],
+      selection: null,
+      quote_context: null,
+    }
+  )
+
+  assert.deepEqual(summary, {
+    tone: "positive",
+    state: "saved",
+    title: "Delivery Hub saved neutral selection",
+    status_label: "Saved neutral selection is available",
+    finality_label:
+      "Saved Delivery Hub metadata only: no Medusa shipping method commit and no fulfillment execution.",
+    modality_label: "Warehouse → pickup point",
+    quote_amount: 799,
+    currency_code: "RUB",
+    quote_eta_label: "ETA 2–4 days",
+    pickup_point_label: "Central pickup point",
+    pickup_point_address_label: "Tverskaya 42",
+    pickup_point_code_label: "Pickup point code: PVZ-42",
+    pickup_window_label: "24 Apr · 12:00–16:00",
+    readiness_label: "Selection ready",
+    saved_at_label: "Saved at 2026-04-23T07:00:00.000Z",
+    correlation_id_label: "Correlation corr_saved_summary",
+    reconciliation_messages: [
+      "Persisted selection currently passes readiness checks.",
+      "Readiness currently reconciles with the saved neutral selection. Shipping method commit remains separate.",
+    ],
+    action_label:
+      "Continue using the committed Medusa shipping method until Delivery Hub shipping-method commit is enabled separately.",
+  })
+
+  const serialized = JSON.stringify(summary)
+  assert.equal(serialized.includes("point_saved_summary_internal_id"), false)
+  assert.equal(serialized.includes("provider_code"), false)
+  assert.equal(serialized.includes("yandex"), false)
+  assert.equal(serialized.includes("secret"), false)
+  assert.equal(serialized.includes("raw_reference"), false)
+  assert.equal(serialized.includes("quote_key"), false)
+})
+
+test("buildDeliveryHubSavedSelectionSummaryModel reconciles stale or invalid saved neutral selection explicitly", () => {
+  const summary = buildDeliveryHubSavedSelectionSummaryModel(
+    {
+      ok: true,
+      cart_id: "cart_stale_summary",
+      selection: {
+        version: 1,
+        connection_id: "conn_stale_summary",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_stale_summary",
+          version: 1,
+        },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: null,
+          delivery_eta_max: 5,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "point_stale_summary_internal_id",
+          provider_point_code: null,
+          name: "Stale pickup point",
+          address: "Old address 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-23T06:00:00.000Z",
+      },
+    },
+    {
+      ok: true,
+      cart_id: "cart_stale_summary",
+      status: "invalid_selection",
+      issues: [
+        {
+          code: "selection_invalid",
+          message: "Saved selection is no longer valid for current cart context",
+          field: "selection",
+        },
+      ],
+      selection: {
+        version: 1,
+        connection_id: "conn_other",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_other",
+          version: 1,
+        },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 500,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "point_other",
+          provider_point_code: null,
+          name: "Other point",
+          address: "Other address",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-23T06:30:00.000Z",
+      },
+      quote_context: null,
+    }
+  )
+
+  assert.equal(summary.tone, "warning")
+  assert.equal(summary.state, "stale_or_invalid")
+  assert.equal(summary.status_label, "Saved neutral selection needs reconciliation")
+  assert.equal(summary.readiness_label, "Selection invalid")
+  assert.equal(
+    summary.reconciliation_messages.includes(
+      "Readiness selection context differs from the persisted neutral selection snapshot. Save the Delivery Hub selection again after refreshing checkout context."
+    ),
+    true
+  )
+  assert.equal(
+    summary.reconciliation_messages.includes(
+      "Do not treat this saved metadata as final shipping. Clear it or save a fresh neutral selection after resolving checkout context."
+    ),
+    true
+  )
+  assert.equal(
+    summary.action_label,
+    "Clear the stale neutral selection or save again after choosing a fresh Delivery Hub candidate."
+  )
+  assert.equal(JSON.stringify(summary).includes("point_stale_summary_internal_id"), false)
 })
 
 test("normalizeDeliveryHubReadinessResponse preserves neutral readiness summary only", () => {

@@ -1017,6 +1017,27 @@ export type DeliveryHubPersistedSelectionPreviewModel = {
   updated_at: string | null
 }
 
+export type DeliveryHubSavedSelectionSummaryModel = {
+  tone: "neutral" | "positive" | "warning"
+  state: "missing" | "saved" | "stale_or_invalid"
+  title: string
+  status_label: string
+  finality_label: string
+  modality_label: string | null
+  quote_amount: number | null
+  currency_code: string | null
+  quote_eta_label: string | null
+  pickup_point_label: string | null
+  pickup_point_address_label: string | null
+  pickup_point_code_label: string | null
+  pickup_window_label: string | null
+  readiness_label: string | null
+  saved_at_label: string | null
+  correlation_id_label: string | null
+  reconciliation_messages: string[]
+  action_label: string | null
+}
+
 export type DeliveryHubShadowCatalogPreviewState = {
   status: "idle" | "loading" | "ready" | "error"
   default_connection_label: string | null
@@ -2643,6 +2664,96 @@ export function buildDeliveryHubPersistedSelectionPreviewModel(
     readiness_label: readiness ? getDeliveryHubReadinessStatusLabel(readiness.status) : null,
     hint_messages: buildDeliveryHubPersistedSelectionRelationHints(selection, readiness),
     updated_at: selection.updated_at,
+  }
+}
+
+export function buildDeliveryHubSavedSelectionSummaryModel(
+  selectionResponse: DeliveryHubSelectionResponse | null | undefined,
+  readiness: DeliveryHubReadinessResponse | null | undefined
+): DeliveryHubSavedSelectionSummaryModel {
+  const selection = selectionResponse?.selection ?? null
+  const readinessLabel = readiness ? getDeliveryHubReadinessStatusLabel(readiness.status) : null
+
+  if (!selection) {
+    return {
+      tone: readiness?.status === "missing_selection" ? "neutral" : "warning",
+      state: "missing",
+      title: "Delivery Hub saved neutral selection",
+      status_label: "No saved neutral Delivery Hub selection",
+      finality_label:
+        "Delivery Hub metadata is not a committed Medusa shipping method and does not execute fulfillment.",
+      modality_label: null,
+      quote_amount: null,
+      currency_code: null,
+      quote_eta_label: null,
+      pickup_point_label: null,
+      pickup_point_address_label: null,
+      pickup_point_code_label: null,
+      pickup_window_label: null,
+      readiness_label: readinessLabel,
+      saved_at_label: null,
+      correlation_id_label: null,
+      reconciliation_messages: buildDeliveryHubPersistedSelectionRelationHints(null, readiness),
+      action_label:
+        readiness?.status === "missing_selection"
+          ? null
+          : "Review the Delivery Hub selection and save it again from checkout before treating it as ready.",
+    }
+  }
+
+  const readinessMessages = buildDeliveryHubPersistedSelectionRelationHints(selection, readiness)
+  const staleOrInvalid =
+    readiness?.status === "invalid_selection" ||
+    readiness?.status === "not_ready" ||
+    readiness?.status === "missing_selection"
+  const readinessMismatch = Boolean(
+    readiness?.selection &&
+      (readiness.selection.connection_id !== selection.connection_id ||
+        readiness.selection.quote_type !== selection.quote_type ||
+        readiness.selection.quote_reference.id !== selection.quote_reference.id ||
+        readiness.selection.quote_reference.version !== selection.quote_reference.version)
+  )
+  const needsAttention = staleOrInvalid || readinessMismatch
+  const codeLabel = selection.pickup_point.provider_point_code
+    ? `Pickup point code: ${selection.pickup_point.provider_point_code}`
+    : null
+  const correlationId = readOptionalString(selection.correlation_id)
+
+  return {
+    tone: needsAttention ? "warning" : readiness?.status === "ready" ? "positive" : "neutral",
+    state: needsAttention ? "stale_or_invalid" : "saved",
+    title: "Delivery Hub saved neutral selection",
+    status_label: needsAttention
+      ? "Saved neutral selection needs reconciliation"
+      : "Saved neutral selection is available",
+    finality_label:
+      "Saved Delivery Hub metadata only: no Medusa shipping method commit and no fulfillment execution.",
+    modality_label: getDeliveryHubQuoteTypeLabel(selection.quote_type),
+    quote_amount: selection.quote.amount,
+    currency_code: selection.quote.currency_code,
+    quote_eta_label: formatDeliveryHubEtaLabel(
+      selection.quote.delivery_eta_min,
+      selection.quote.delivery_eta_max
+    ),
+    pickup_point_label: selection.pickup_point.name || selection.pickup_point.address,
+    pickup_point_address_label: selection.pickup_point.address || null,
+    pickup_point_code_label: codeLabel,
+    pickup_window_label: selection.pickup_window?.label ?? null,
+    readiness_label: readinessLabel,
+    saved_at_label: selection.updated_at ? `Saved at ${selection.updated_at}` : null,
+    correlation_id_label: correlationId ? `Correlation ${correlationId}` : null,
+    reconciliation_messages: uniqueDeliveryHubMessages([
+      ...readinessMessages,
+      readinessMismatch
+        ? "Readiness selection context differs from the persisted neutral selection snapshot. Save the Delivery Hub selection again after refreshing checkout context."
+        : null,
+      needsAttention
+        ? "Do not treat this saved metadata as final shipping. Clear it or save a fresh neutral selection after resolving checkout context."
+        : "Readiness currently reconciles with the saved neutral selection. Shipping method commit remains separate.",
+    ]),
+    action_label: needsAttention
+      ? "Clear the stale neutral selection or save again after choosing a fresh Delivery Hub candidate."
+      : "Continue using the committed Medusa shipping method until Delivery Hub shipping-method commit is enabled separately.",
   }
 }
 
