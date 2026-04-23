@@ -3,6 +3,10 @@ import {
   DELIVERY_HUB_MODE_CODE,
   DELIVERY_HUB_PROVIDER_YANDEX,
 } from "./constants"
+import {
+  materializeYandexCreateShipmentPayloadPreview,
+  type YandexCreateShipmentMaterializerBlockedReasonCode,
+} from "./adapters/yandex/create-shipment-materializer"
 import type { DeliveryConnectionRecord } from "./domain/connection"
 import type {
   DeliveryHubExecutionIdentityPreview,
@@ -75,6 +79,39 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
     live_adapter_call_performed: false
     persisted_execution_ledger_write_performed: false
   }
+  provider_payload_materialization: {
+    provider_code: typeof DELIVERY_HUB_PROVIDER_YANDEX
+    operation: "create_shipment"
+    mode: "preview_only"
+    status: "ready" | "blocked" | "not_attempted"
+    attempted: boolean
+    ready: boolean
+    blocked_reason_code:
+      | YandexCreateShipmentMaterializerBlockedReasonCode
+      | "not_applicable_before_dispatch_contract"
+      | null
+    blocked_reason: string | null
+    provider_execution_reference_present: boolean
+    provider_origin_dispatch_context_present: boolean
+    preview_summary: {
+      source_type: "warehouse" | "dropoff_point" | null
+      destination_pickup_point_present: boolean
+      pickup_interval_present: boolean
+      recipient_contact_present: boolean
+      packages_present: boolean
+      package_count: number
+      item_count: number
+      connection_mode: string | null
+      order_reference_present: boolean
+      masked_correlation_id_present: boolean
+    }
+    anti_leak_confirmations: {
+      credentials_included: false
+      auth_headers_included: false
+      raw_execution_token_included: false
+      raw_provider_payload_included: false
+    }
+  }
   execution_identity: {
     provider_operation_reference: string | null
     idempotency_key_preview: string | null
@@ -108,6 +145,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
   connection_lookup_available: boolean
   persisted_execution_reference: DeliveryHubProviderExecutionReference | null
   provider_origin_dispatch_context: DeliveryHubProviderOriginDispatchContext | null
+  fulfillment_data: Record<string, unknown>
   shipment_execution_enabled: boolean
 }): DeliveryHubControlledFulfillmentExecutionResult {
   const modeCode = input.handoff?.quote_type ?? null
@@ -132,7 +170,9 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection: input.connection,
       connection_lookup_available: input.connection_lookup_available,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
       provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
+      fulfillment_data: input.fulfillment_data,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
@@ -153,7 +193,9 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection: null,
       connection_lookup_available: false,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
       provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
+      fulfillment_data: input.fulfillment_data,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
@@ -174,7 +216,9 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
       provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
+      fulfillment_data: input.fulfillment_data,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
@@ -195,7 +239,9 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
       provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
+      fulfillment_data: input.fulfillment_data,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
@@ -216,7 +262,9 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
       provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
+      fulfillment_data: input.fulfillment_data,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
@@ -237,7 +285,9 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
       provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
+      fulfillment_data: input.fulfillment_data,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
@@ -258,7 +308,9 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
       provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
+      fulfillment_data: input.fulfillment_data,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: modeSupported,
@@ -279,7 +331,9 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: providerExecutionReferencePresent,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
       provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
+      fulfillment_data: input.fulfillment_data,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: false,
@@ -300,7 +354,9 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: false,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
       provider_origin_dispatch_context_present: providerOriginDispatchContextPresent,
+      fulfillment_data: input.fulfillment_data,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: true,
@@ -323,7 +379,9 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: true,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
       provider_origin_dispatch_context_present: false,
+      fulfillment_data: input.fulfillment_data,
       shipment_execution_enabled: input.shipment_execution_enabled,
       mode_code: modeCode,
       mode_supported: true,
@@ -343,7 +401,9 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       connection,
       connection_lookup_available: true,
       persisted_execution_reference_present: true,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
       provider_origin_dispatch_context_present: true,
+      fulfillment_data: input.fulfillment_data,
       shipment_execution_enabled: false,
       mode_code: modeCode,
       mode_supported: true,
@@ -363,7 +423,9 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
     connection,
     connection_lookup_available: true,
     persisted_execution_reference_present: true,
+    provider_origin_dispatch_context: input.provider_origin_dispatch_context,
     provider_origin_dispatch_context_present: true,
+    fulfillment_data: input.fulfillment_data,
     shipment_execution_enabled: true,
     mode_code: modeCode,
     mode_supported: true,
@@ -384,7 +446,9 @@ type BuildBlockedResultInput = {
   mode_code: DeliveryHubFulfillmentModeCode | null
   mode_supported: boolean
   persisted_execution_reference_present: boolean
+  provider_origin_dispatch_context: DeliveryHubProviderOriginDispatchContext | null
   provider_origin_dispatch_context_present: boolean
+  fulfillment_data: Record<string, unknown>
   shipment_execution_enabled: boolean
   blocked_reason_code: DeliveryHubControlledFulfillmentExecutionBlockReasonCode
   blocked_reason: string
@@ -393,9 +457,14 @@ type BuildBlockedResultInput = {
   blocking_stage: DeliveryHubControlledFulfillmentExecutionResult["blocking_stage"]
 }
 
+type DeliveryHubProviderPayloadMaterializationSummary =
+  DeliveryHubControlledFulfillmentExecutionResult["provider_payload_materialization"]
+
 function buildBlockedResult(
   input: BuildBlockedResultInput
 ): DeliveryHubControlledFulfillmentExecutionResult {
+  const providerPayloadMaterialization = buildProviderPayloadMaterializationSummary(input)
+
   return {
     version: DELIVERY_HUB_CONTROLLED_FULFILLMENT_EXECUTION_RESULT_VERSION,
     provider_code: DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,
@@ -438,6 +507,7 @@ function buildBlockedResult(
       live_adapter_call_performed: false,
       persisted_execution_ledger_write_performed: false,
     },
+    provider_payload_materialization: providerPayloadMaterialization,
     execution_identity: {
       provider_operation_reference:
         input.execution_plan_preview.execution_identity?.provider_operation_reference ?? null,
@@ -466,6 +536,234 @@ function buildBlockedResult(
       raw_offer_ids_included: false,
     },
   }
+}
+
+function buildProviderPayloadMaterializationSummary(
+  input: BuildBlockedResultInput
+): DeliveryHubProviderPayloadMaterializationSummary {
+  const baseSummary: DeliveryHubProviderPayloadMaterializationSummary = {
+    provider_code: DELIVERY_HUB_PROVIDER_YANDEX,
+    operation: "create_shipment",
+    mode: "preview_only",
+    status: "not_attempted",
+    attempted: false,
+    ready: false,
+    blocked_reason_code: "not_applicable_before_dispatch_contract",
+    blocked_reason:
+      "Yandex create-shipment payload preview is not attempted before the controlled execution seam reaches provider dispatch contract evaluation.",
+    provider_execution_reference_present: input.persisted_execution_reference_present,
+    provider_origin_dispatch_context_present: input.provider_origin_dispatch_context_present,
+    preview_summary: {
+      source_type: null,
+      destination_pickup_point_present: false,
+      pickup_interval_present: false,
+      recipient_contact_present: false,
+      packages_present: false,
+      package_count: 0,
+      item_count: 0,
+      connection_mode: input.connection?.mode ?? null,
+      order_reference_present: false,
+      masked_correlation_id_present: false,
+    },
+    anti_leak_confirmations: {
+      credentials_included: false,
+      auth_headers_included: false,
+      raw_execution_token_included: false,
+      raw_provider_payload_included: false,
+    },
+  }
+
+  const modeCode = input.handoff?.quote_type ?? input.mode_code
+
+  if (
+    input.blocking_stage !== "provider_dispatch_contract" ||
+    !isDirectYandexModeSupported(modeCode) ||
+    input.connection?.provider_code !== DELIVERY_HUB_PROVIDER_YANDEX
+  ) {
+    return baseSummary
+  }
+
+  const result = materializeYandexCreateShipmentPayloadPreview({
+    mode: modeCode,
+    provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+    destination_pickup_point: {
+      provider_point_id:
+        input.execution_plan_preview.normalized.delivery?.fulfillment_data.pickup_point.provider_point_id ?? null,
+      provider_point_code:
+        input.execution_plan_preview.normalized.delivery?.fulfillment_data.pickup_point.provider_point_code ?? null,
+      name: input.handoff?.pickup_point_summary.name ?? null,
+      address: input.handoff?.pickup_point_summary.address ?? null,
+      city: input.handoff?.pickup_point_summary.city ?? null,
+    },
+    pickup_interval_utc: input.handoff?.pickup_window_summary?.interval_utc ?? null,
+    order: {
+      order_id: input.execution_plan_preview.normalized.order?.id ?? null,
+      display_id: input.execution_plan_preview.normalized.order?.display_id ?? null,
+      currency_code: input.execution_plan_preview.normalized.order?.currency_code ?? null,
+      total: input.handoff?.quote_summary.amount ?? null,
+    },
+    recipient: {
+      full_name: resolveRecipientName(input.fulfillment_data, input.execution_plan_preview),
+      email: resolveFulfillmentEmail(input.fulfillment_data),
+      phone: resolveFulfillmentPhone(input.fulfillment_data),
+    },
+    address: {
+      country_code: resolveFulfillmentShippingAddressField(input.fulfillment_data, "country_code"),
+      city:
+        resolveFulfillmentShippingAddressField(input.fulfillment_data, "city") ??
+        input.handoff?.pickup_point_summary.city ??
+        null,
+      region:
+        resolveFulfillmentShippingAddressField(input.fulfillment_data, "province") ??
+        input.handoff?.pickup_point_summary.region ??
+        null,
+      postal_code:
+        resolveFulfillmentShippingAddressField(input.fulfillment_data, "postal_code") ??
+        input.handoff?.pickup_point_summary.postal_code ??
+        null,
+      address_line:
+        buildFulfillmentShippingAddressLine(input.fulfillment_data) ??
+        input.handoff?.pickup_point_summary.address ??
+        null,
+    },
+    packages: buildProviderPayloadPreviewPackages(input.execution_plan_preview),
+    connection: {
+      connection_id: input.connection?.id ?? null,
+      provider_code: input.connection?.provider_code ?? null,
+      mode: input.connection?.mode ?? null,
+      provider_account_reference: null,
+    },
+    quote_reference: input.handoff?.quote_reference ?? null,
+    correlation_id: input.handoff?.correlation_id ?? null,
+  })
+
+  if (result.status === "blocked") {
+    const firstBlockedReason = result.blocked_reasons[0] ?? null
+
+    return {
+      ...baseSummary,
+      status: "blocked",
+      attempted: true,
+      blocked_reason_code: firstBlockedReason?.code ?? null,
+      blocked_reason: firstBlockedReason?.message ?? null,
+    }
+  }
+
+  return {
+    ...baseSummary,
+    status: "ready",
+    attempted: true,
+    ready: true,
+    blocked_reason_code: null,
+    blocked_reason: null,
+    preview_summary: {
+      source_type: result.preview.payload.source.type,
+      destination_pickup_point_present: !!result.preview.payload.destination.pickup_point_id,
+      pickup_interval_present: result.preview.payload.pickup_interval_utc !== null,
+      recipient_contact_present:
+        result.preview.payload.recipient_contact.name_present &&
+        (!!result.preview.payload.recipient_contact.email ||
+          !!result.preview.payload.recipient_contact.phone),
+      packages_present: result.preview.payload.packages.length > 0,
+      package_count: result.preview.payload.packages.length,
+      item_count: result.preview.payload.packages.reduce((total, pkg) => total + pkg.item_count, 0),
+      connection_mode: result.preview.payload.connection.mode,
+      order_reference_present: !!result.preview.payload.order.order_reference,
+      masked_correlation_id_present: !!result.preview.payload.correlation_id,
+    },
+  }
+}
+
+function buildProviderPayloadPreviewPackages(
+  executionPlanPreview: DeliveryHubShipmentExecutionPlanPreview
+) {
+  const items = executionPlanPreview.normalized.items ?? []
+
+  if (!items.length) {
+    return []
+  }
+
+  return [
+    {
+      package_reference: executionPlanPreview.execution_identity?.provider_operation_reference ?? null,
+      items: items.map((item) => ({
+        sku: item.line_item_id,
+        quantity: item.quantity,
+      })),
+    },
+  ]
+}
+
+function resolveRecipientName(
+  fulfillmentData: Record<string, unknown>,
+  executionPlanPreview: DeliveryHubShipmentExecutionPlanPreview
+) {
+  const shippingAddress = readFulfillmentShippingAddressRecord(fulfillmentData)
+  const firstName = normalizeRecordString(shippingAddress?.first_name)
+  const lastName = normalizeRecordString(shippingAddress?.last_name)
+  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim()
+
+  if (fullName) {
+    return fullName
+  }
+
+  const order = executionPlanPreview.normalized.order
+
+  if (order?.id) {
+    return `Order ${order.id}`
+  }
+
+  if (order?.display_id !== null && order?.display_id !== undefined) {
+    return `Order ${String(order.display_id)}`
+  }
+
+  const email = resolveFulfillmentEmail(fulfillmentData)
+
+  return email ? `Order recipient ${email}` : null
+}
+
+function resolveFulfillmentEmail(fulfillmentData: Record<string, unknown>) {
+  return normalizeRecordString(fulfillmentData.email)
+}
+
+function resolveFulfillmentPhone(fulfillmentData: Record<string, unknown>) {
+  const shippingAddress = readFulfillmentShippingAddressRecord(fulfillmentData)
+
+  return normalizeRecordString(shippingAddress?.phone) ?? normalizeRecordString(fulfillmentData.phone)
+}
+
+function resolveFulfillmentShippingAddressField(
+  fulfillmentData: Record<string, unknown>,
+  field: "country_code" | "city" | "province" | "postal_code"
+) {
+  return normalizeRecordString(readFulfillmentShippingAddressRecord(fulfillmentData)?.[field])
+}
+
+function buildFulfillmentShippingAddressLine(fulfillmentData: Record<string, unknown>) {
+  const shippingAddress = readFulfillmentShippingAddressRecord(fulfillmentData)
+
+  if (!shippingAddress) {
+    return null
+  }
+
+  const line1 = normalizeRecordString(shippingAddress.address_1)
+  const line2 = normalizeRecordString(shippingAddress.address_2)
+  const line3 = normalizeRecordString(shippingAddress.company)
+  const value = [line1, line2, line3].filter(Boolean).join(", ").trim()
+
+  return value || null
+}
+
+function readFulfillmentShippingAddressRecord(fulfillmentData: Record<string, unknown>) {
+  const shippingAddress = fulfillmentData.shipping_address
+
+  return shippingAddress && typeof shippingAddress === "object"
+    ? (shippingAddress as Record<string, unknown>)
+    : null
+}
+
+function normalizeRecordString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null
 }
 
 function isDirectYandexModeSupported(modeCode: DeliveryHubFulfillmentModeCode | null) {

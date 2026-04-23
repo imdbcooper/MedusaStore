@@ -242,6 +242,7 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       provider_origin_dispatch_context: persistedExecutionReference
         ? readDeliveryHubProviderExecutionReferenceOriginContext(persistedExecutionReference)
         : null,
+      fulfillment_data: handoffInput,
       shipment_execution_enabled: isDeliveryHubShipmentExecutionEnabled(),
     })
 
@@ -261,6 +262,7 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
         },
         connection: controlledExecution.connection,
         dispatch_preparation: controlledExecution.dispatch_preparation,
+        provider_payload_materialization: controlledExecution.provider_payload_materialization,
         execution_identity: controlledExecution.execution_identity,
         evidence: controlledExecution.evidence,
         contour: controlledExecution.contour,

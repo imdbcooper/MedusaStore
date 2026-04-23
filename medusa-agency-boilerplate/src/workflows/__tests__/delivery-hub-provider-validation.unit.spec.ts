@@ -32,12 +32,21 @@ describe("Delivery Hub provider validation seam", () => {
     const optionData = buildValidOptionData()
     const fulfillmentData = buildValidFulfillmentData()
 
-    await expect(provider.validateFulfillmentData(optionData, fulfillmentData)).resolves.toEqual(
-      expect.objectContaining({
-        ...fulfillmentData,
-        quote_reference: expect.objectContaining(fulfillmentData.quote_reference),
-      })
-    )
+    await expect(provider.validateFulfillmentData(optionData, fulfillmentData)).resolves.toMatchObject({
+      version: 1,
+      connection_id: "conn_ready",
+      mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+      quote: {
+        carrier_code: "yandex",
+        currency_code: "RUB",
+        pickup_point_required: true,
+      },
+      pickup_point: {
+        provider_point_id: "pvz_2",
+        name: "PVZ 2",
+      },
+      pickup_window: null,
+    })
 
     await expect(
       provider.createFulfillment(
@@ -283,6 +292,36 @@ describe("Delivery Hub provider validation seam", () => {
             live_adapter_call_performed: false,
             persisted_execution_ledger_write_performed: false,
           }),
+          provider_payload_materialization: expect.objectContaining({
+            provider_code: "yandex",
+            operation: "create_shipment",
+            mode: "preview_only",
+            status: "ready",
+            attempted: true,
+            ready: true,
+            blocked_reason_code: null,
+            blocked_reason: null,
+            provider_execution_reference_present: true,
+            provider_origin_dispatch_context_present: true,
+            preview_summary: expect.objectContaining({
+              source_type: "dropoff_point",
+              destination_pickup_point_present: true,
+              pickup_interval_present: false,
+              recipient_contact_present: true,
+              packages_present: true,
+              package_count: 1,
+              item_count: 1,
+              connection_mode: "live",
+              order_reference_present: true,
+              masked_correlation_id_present: true,
+            }),
+            anti_leak_confirmations: {
+              credentials_included: false,
+              auth_headers_included: false,
+              raw_execution_token_included: false,
+              raw_provider_payload_included: false,
+            },
+          }),
           anti_leak_confirmations: {
             credentials_included: false,
             raw_provider_payloads_included: false,
@@ -309,6 +348,10 @@ describe("Delivery Hub provider validation seam", () => {
     expect(String(controlledExecutionLog?.[0])).toContain('"blocked_reason_code":"provider_dispatch_not_materialized"')
     expect(String(controlledExecutionLog?.[0])).toContain('"shipment_execution_enabled":false')
     expect(String(controlledExecutionLog?.[0])).toContain('"live_adapter_call_performed":false')
+    expect(String(controlledExecutionLog?.[0])).toContain('"provider_payload_materialization"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"status":"ready"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"source_type":"dropoff_point"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"masked_correlation_id_present":true')
     expect(String(controlledExecutionLog?.[0])).not.toContain("secret-token")
     expect(String(controlledExecutionLog?.[0])).not.toContain("raw-offer-id")
   })
@@ -403,6 +446,24 @@ describe("Delivery Hub provider validation seam", () => {
               provider_execution_reference_present: true,
               provider_origin_dispatch_context_present: true,
               shipment_execution_enabled: false,
+              live_adapter_call_performed: false,
+              persisted_execution_ledger_write_performed: false,
+            }),
+            provider_payload_materialization: expect.objectContaining({
+              status: "ready",
+              attempted: true,
+              ready: true,
+              blocked_reason_code: null,
+              blocked_reason: null,
+              preview_summary: expect.objectContaining({
+                source_type: "dropoff_point",
+                destination_pickup_point_present: true,
+                pickup_interval_present: false,
+                recipient_contact_present: true,
+                packages_present: true,
+                package_count: 1,
+                item_count: 1,
+              }),
             }),
           }),
         }),
@@ -502,6 +563,24 @@ describe("Delivery Hub provider validation seam", () => {
               provider_execution_reference_present: true,
               provider_origin_dispatch_context_present: true,
               shipment_execution_enabled: true,
+              live_adapter_call_performed: false,
+              persisted_execution_ledger_write_performed: false,
+            }),
+            provider_payload_materialization: expect.objectContaining({
+              status: "ready",
+              attempted: true,
+              ready: true,
+              blocked_reason_code: null,
+              blocked_reason: null,
+              preview_summary: expect.objectContaining({
+                source_type: "dropoff_point",
+                destination_pickup_point_present: true,
+                pickup_interval_present: false,
+                recipient_contact_present: true,
+                packages_present: true,
+                package_count: 1,
+                item_count: 1,
+              }),
             }),
             anti_leak_confirmations: {
               credentials_included: false,
@@ -519,6 +598,9 @@ describe("Delivery Hub provider validation seam", () => {
 
     expect(String(controlledExecutionLog?.[0])).toContain('"shipment_execution_enabled":true')
     expect(String(controlledExecutionLog?.[0])).toContain('"provider_origin_dispatch_context_present":true')
+    expect(String(controlledExecutionLog?.[0])).toContain('"provider_payload_materialization"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"source_type":"dropoff_point"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"masked_correlation_id_present":true')
     expect(String(controlledExecutionLog?.[0])).not.toContain("quote_provider_validation")
     expect(String(controlledExecutionLog?.[0])).not.toContain("origin_dropoff_1")
   })
@@ -628,6 +710,23 @@ describe("Delivery Hub provider validation seam", () => {
               provider_execution_reference_present: true,
               provider_origin_dispatch_context_present: true,
               shipment_execution_enabled: true,
+              live_adapter_call_performed: false,
+              persisted_execution_ledger_write_performed: false,
+            }),
+            provider_payload_materialization: expect.objectContaining({
+              status: "blocked",
+              attempted: true,
+              ready: false,
+              blocked_reason_code: "missing_pickup_interval_window",
+              preview_summary: expect.objectContaining({
+                source_type: null,
+                destination_pickup_point_present: false,
+                pickup_interval_present: false,
+                recipient_contact_present: false,
+                packages_present: false,
+                package_count: 0,
+                item_count: 0,
+              }),
             }),
           }),
         }),
@@ -638,6 +737,8 @@ describe("Delivery Hub provider validation seam", () => {
       .reverse()
       .find((call) => String(call[0]).includes("controlled execution seam evaluated"))
 
+    expect(String(controlledExecutionLog?.[0])).toContain('"provider_payload_materialization"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"blocked_reason_code":"missing_pickup_interval_window"')
     expect(String(controlledExecutionLog?.[0])).not.toContain("quote_provider_validation_wh")
     expect(String(controlledExecutionLog?.[0])).not.toContain("provider_wh_1")
   })
@@ -734,6 +835,26 @@ describe("Delivery Hub provider validation seam", () => {
               provider_execution_reference_present: true,
               provider_origin_dispatch_context_present: false,
               shipment_execution_enabled: true,
+              live_adapter_call_performed: false,
+              persisted_execution_ledger_write_performed: false,
+            }),
+            provider_payload_materialization: expect.objectContaining({
+              status: "blocked",
+              attempted: true,
+              ready: false,
+              blocked_reason_code: "missing_provider_origin_dispatch_context",
+              blocked_reason: "Yandex create_shipment payload preview requires backend-only provider origin dispatch context.",
+              preview_summary: expect.objectContaining({
+                source_type: null,
+                destination_pickup_point_present: false,
+                pickup_interval_present: false,
+                recipient_contact_present: false,
+                packages_present: false,
+                package_count: 0,
+                item_count: 0,
+                order_reference_present: false,
+                masked_correlation_id_present: false,
+              }),
             }),
           }),
         }),
@@ -745,6 +866,8 @@ describe("Delivery Hub provider validation seam", () => {
       .find((call) => String(call[0]).includes("controlled execution seam evaluated"))
 
     expect(String(controlledExecutionLog?.[0])).toContain('"provider_origin_dispatch_context_present":false')
+    expect(String(controlledExecutionLog?.[0])).toContain('"provider_payload_materialization"')
+    expect(String(controlledExecutionLog?.[0])).toContain('"blocked_reason_code":"missing_provider_origin_dispatch_context"')
     expect(String(controlledExecutionLog?.[0])).not.toContain("provider_wh_wrong")
     expect(String(controlledExecutionLog?.[0])).not.toContain("quote_mismatch_context")
   })
@@ -1247,5 +1370,16 @@ function buildValidFulfillmentData() {
       payment_methods: ["card"],
     },
     pickup_window: null,
+    shipping_address: {
+      first_name: "Ivan",
+      last_name: "Petrov",
+      phone: "+79990000010",
+      address_1: "Arbat 10",
+      city: "Moscow",
+      province: "Moscow",
+      postal_code: "119019",
+      country_code: "RU",
+    },
+    email: "ivan@example.com",
   }
 }
