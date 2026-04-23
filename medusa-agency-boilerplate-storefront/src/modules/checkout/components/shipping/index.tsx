@@ -42,6 +42,7 @@ import {
   buildDeliveryHubNeutralSelectionRehearsalModel,
   buildDeliveryHubPersistedSelectionContractParityPreviewModel,
   buildDeliveryHubProjectedCommitParityPreviewModel,
+  buildDeliveryHubSelectionPayloadParityPreviewModel,
   buildDeliveryHubSelectionWriteSeamPreviewModel,
   buildDeliveryHubShippingOptionParityPreviewModel,
   buildDeliveryHubWriteIntentContractPreviewModel,
@@ -1124,6 +1125,10 @@ const Shipping: React.FC<ShippingProps> = ({
     buildDeliveryHubProjectedCommitParityPreviewModel(
       deliveryHubRehearsalState.preview_input
     )
+  const deliveryHubSelectionPayloadParityPreview =
+    buildDeliveryHubSelectionPayloadParityPreviewModel(
+      deliveryHubRehearsalState.preview_input
+    )
   const deliveryHubSelectionWriteSeamPreview =
     buildDeliveryHubSelectionWriteSeamPreviewModel(
       deliveryHubRehearsalState.preview_input
@@ -1750,6 +1755,81 @@ const Shipping: React.FC<ShippingProps> = ({
                     <div className="text-ui-fg-muted txt-small">
                       Parity blockers: shopper-safe projected commit preview remains unavailable until the current delivery option aligns with the committed checkout context.
                     </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="border-t border-ui-border-base pt-4">
+                <div className="flex flex-col gap-y-2">
+                  <Text className="text-ui-fg-base txt-medium-plus">
+                    Delivery Hub selection payload parity preview
+                  </Text>
+                  <Text className="text-ui-fg-muted txt-small">
+                    Preview-only selection payload parity seam. This block compares the projected storefront payload shape for POST /store/delivery/selection with the expected neutral save-contract shape using shopper-safe diagnostic fields only.
+                  </Text>
+                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
+                    <span>{deliveryHubSelectionPayloadParityPreview.verdict_label}</span>
+                    <span>{deliveryHubSelectionPayloadParityPreview.summary_label}</span>
+                    <span>{deliveryHubSelectionPayloadParityPreview.projected_payload_label}</span>
+                    <span>{deliveryHubSelectionPayloadParityPreview.expected_contract_label}</span>
+                    <span>{deliveryHubSelectionPayloadParityPreview.payload_target_label}</span>
+                    <span>Preview verdict: {deliveryHubSelectionPayloadParityPreview.verdict}</span>
+                    <span>
+                      matched fields: {deliveryHubSelectionPayloadParityPreview.matched_field_count}
+                      {` · incomplete fields: ${deliveryHubSelectionPayloadParityPreview.incomplete_field_count}`}
+                      {` · blocked fields: ${deliveryHubSelectionPayloadParityPreview.blocked_field_count}`}
+                    </span>
+                    <span>
+                      connection_id: {deliveryHubSelectionPayloadParityPreview.connection_id ?? "missing"}
+                    </span>
+                    <span>
+                      quote_type: {deliveryHubSelectionPayloadParityPreview.quote_type ?? "missing"}
+                    </span>
+                    {deliveryHubSelectionPayloadParityPreview.quote_type_label && (
+                      <span>
+                        Quote type label: {deliveryHubSelectionPayloadParityPreview.quote_type_label}
+                      </span>
+                    )}
+                    <span>
+                      quote_reference: {deliveryHubSelectionPayloadParityPreview.quote_reference_present ? "present" : "missing"}
+                    </span>
+                    <span>
+                      pickup point: {deliveryHubSelectionPayloadParityPreview.pickup_point_present ? "present" : "missing"}
+                      {deliveryHubSelectionPayloadParityPreview.pickup_point_required
+                        ? " · required"
+                        : " · not required"}
+                    </span>
+                    <span>
+                      pickup window: {deliveryHubSelectionPayloadParityPreview.pickup_window_present ? "present" : "missing"}
+                      {deliveryHubSelectionPayloadParityPreview.pickup_window_required
+                        ? " · required"
+                        : " · not required"}
+                    </span>
+                    <span>
+                      selection_version: {deliveryHubSelectionPayloadParityPreview.selection_version ?? "missing"}
+                    </span>
+                    <span>
+                      shape completeness: {deliveryHubSelectionPayloadParityPreview.shape_completeness}
+                    </span>
+                    {deliveryHubSelectionPayloadParityPreview.fields.map((field) => (
+                      <span key={field.key}>
+                        {field.label}: {field.status} · {field.detail_label}
+                      </span>
+                    ))}
+                  </div>
+                  {deliveryHubSelectionPayloadParityPreview.blocked_reasons.length > 0 && (
+                    <div className="text-ui-fg-muted txt-small">
+                      Parity notes: {deliveryHubSelectionPayloadParityPreview.blocked_reasons.join(", ")}
+                    </div>
+                  )}
+                  {deliveryHubSelectionPayloadParityPreview.hint_messages.length > 0 && (
+                    <ul className="list-disc pl-4 text-ui-fg-muted txt-small">
+                      {deliveryHubSelectionPayloadParityPreview.hint_messages
+                        .slice(0, 4)
+                        .map((message) => (
+                          <li key={message}>{message}</li>
+                        ))}
+                    </ul>
                   )}
                 </div>
               </div>

@@ -1974,6 +1974,73 @@ export type DeliveryHubWriteIntentContractPreviewModel = {
   dry_run_only: true
 }
 
+export type DeliveryHubSelectionPayloadParityPreviewVerdict =
+  | "informational_only"
+  | "matched"
+  | "incomplete"
+  | "blocked"
+
+export type DeliveryHubSelectionPayloadParityPreviewFieldKey =
+  | "connection_id"
+  | "quote_type"
+  | "quote_reference"
+  | "pickup_point"
+  | "pickup_window"
+  | "selection_version"
+  | "shape_completeness"
+  | "blocked_reasons"
+
+export type DeliveryHubSelectionPayloadParityPreviewFieldStatus =
+  | "matched"
+  | "incomplete"
+  | "blocked"
+  | "informational_only"
+  | "not_required"
+
+export type DeliveryHubSelectionPayloadParityPreviewField = {
+  key: DeliveryHubSelectionPayloadParityPreviewFieldKey
+  label: string
+  status: DeliveryHubSelectionPayloadParityPreviewFieldStatus
+  detail_label: string
+}
+
+export type DeliveryHubSelectionPayloadParityPreviewBlockedReason =
+  | DeliveryHubSelectionWriteSeamPreviewBlocker
+  | "quote_reference_missing"
+  | "pickup_point_missing"
+  | "pickup_window_missing"
+  | "selection_version_missing"
+
+export type DeliveryHubSelectionPayloadParityPreviewModel = {
+  tone: "neutral" | "positive" | "warning"
+  verdict: DeliveryHubSelectionPayloadParityPreviewVerdict
+  verdict_label: string
+  summary_label: string
+  projected_payload_label: string
+  expected_contract_label: string
+  payload_target_label: string
+  shopper_safe_payload_target: "POST /store/delivery/selection"
+  connection_id: string | null
+  quote_type: DeliveryHubQuoteType | null
+  quote_type_label: string | null
+  quote_reference_present: boolean
+  pickup_point_required: boolean
+  pickup_point_present: boolean
+  pickup_window_required: boolean
+  pickup_window_present: boolean
+  selection_version: number | null
+  shape_completeness: DeliveryHubSelectionWriteSeamPreviewModel["shape_completeness"]
+  matched_field_count: number
+  incomplete_field_count: number
+  blocked_field_count: number
+  fields: DeliveryHubSelectionPayloadParityPreviewField[]
+  blocked_reasons: DeliveryHubSelectionPayloadParityPreviewBlockedReason[]
+  hint_messages: string[]
+  dry_run_only: true
+  mutation_intent: false
+  network_required_now: false
+}
+
 export type DeliveryHubShippingOptionParityPreviewVerdict =
   | "informational_only"
   | "parity_partial"
@@ -5098,6 +5165,15 @@ function buildDeliveryHubWriteIntentContractPreviewPrerequisite(input: {
   return input
 }
 
+function buildDeliveryHubSelectionPayloadParityPreviewField(input: {
+  key: DeliveryHubSelectionPayloadParityPreviewFieldKey
+  label: string
+  status: DeliveryHubSelectionPayloadParityPreviewFieldStatus
+  detail_label: string
+}): DeliveryHubSelectionPayloadParityPreviewField {
+  return input
+}
+
 export function buildDeliveryHubSelectionWriteSeamPreviewModel(
   input: DeliveryHubNeutralSelectionRehearsalInput = {}
 ): DeliveryHubSelectionWriteSeamPreviewModel {
@@ -5727,6 +5803,275 @@ export function buildDeliveryHubWriteIntentContractPreviewModel(
     submit_enabled: false,
     network_required_now: false,
     dry_run_only: true,
+  }
+}
+
+export function buildDeliveryHubSelectionPayloadParityPreviewModel(
+  input: DeliveryHubNeutralSelectionRehearsalInput = {}
+): DeliveryHubSelectionPayloadParityPreviewModel {
+  const candidate = getDeliveryHubNeutralRehearsalCandidate(input)
+  const selectionWriteSeam = buildDeliveryHubSelectionWriteSeamPreviewModel(input)
+  const candidatePresent = Boolean(
+    input.cart_id ||
+      candidate.quoteSummary ||
+      candidate.quoteReference ||
+      candidate.quoteType ||
+      candidate.connection.connection_id
+  )
+  const blockedReasons = Array.from(
+    new Set<DeliveryHubSelectionPayloadParityPreviewBlockedReason>([
+      ...selectionWriteSeam.blocked_codes,
+      ...(candidate.quoteReference ? [] : (["quote_reference_missing"] as const)),
+      ...(candidate.pickupPointRequired && !candidate.pickupPoint
+        ? (["pickup_point_missing"] as const)
+        : []),
+      ...(candidate.pickupWindowRequired && !candidate.pickupWindow
+        ? (["pickup_window_missing"] as const)
+        : []),
+      ...(selectionWriteSeam.selection_version !== null
+        ? []
+        : (["selection_version_missing"] as const)),
+    ])
+  )
+  const blocked = selectionWriteSeam.verdict === "blocked"
+
+  const fields: DeliveryHubSelectionPayloadParityPreviewField[] = [
+    buildDeliveryHubSelectionPayloadParityPreviewField({
+      key: "connection_id",
+      label: "connection_id",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.connection.connection_id
+          ? blocked
+            ? "blocked"
+            : "matched"
+          : "incomplete",
+      detail_label: !candidatePresent
+        ? "Payload parity preview stays informational until shopper-safe neutral context is visible."
+        : candidate.connection.connection_id
+          ? `Projected payload preview currently matches expected connection_id ${candidate.connection.connection_id}.`
+          : "Projected payload preview still lacks expected connection_id.",
+    }),
+    buildDeliveryHubSelectionPayloadParityPreviewField({
+      key: "quote_type",
+      label: "quote_type",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.quoteType
+          ? blocked
+            ? "blocked"
+            : "matched"
+          : "incomplete",
+      detail_label: !candidatePresent
+        ? "Payload parity preview stays informational until shopper-safe neutral context is visible."
+        : candidate.quoteType
+          ? `Projected payload preview currently matches expected quote_type ${candidate.quoteType}.`
+          : "Projected payload preview still lacks expected quote_type.",
+    }),
+    buildDeliveryHubSelectionPayloadParityPreviewField({
+      key: "quote_reference",
+      label: "quote_reference",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.quoteReference
+          ? blocked
+            ? "blocked"
+            : "matched"
+          : "incomplete",
+      detail_label: !candidatePresent
+        ? "Payload parity preview stays informational until shopper-safe neutral context is visible."
+        : candidate.quoteReference
+          ? "Projected payload preview currently matches the expected backend-issued quote_reference fragment."
+          : "Projected payload preview still lacks the expected backend-issued quote_reference fragment.",
+    }),
+    buildDeliveryHubSelectionPayloadParityPreviewField({
+      key: "pickup_point",
+      label: "pickup_point",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.pickupPointRequired
+          ? candidate.pickupPoint
+            ? blocked
+              ? "blocked"
+              : "matched"
+            : "incomplete"
+          : candidate.pickupPoint
+            ? blocked
+              ? "blocked"
+              : "matched"
+            : "not_required",
+      detail_label: !candidatePresent
+        ? "Payload parity preview stays informational until shopper-safe neutral context is visible."
+        : candidate.pickupPointRequired
+          ? candidate.pickupPoint
+            ? "Projected payload preview currently matches the expected required pickup_point fragment."
+            : "Projected payload preview still lacks the expected required pickup_point fragment."
+          : candidate.pickupPoint
+            ? "Projected payload preview already includes an optional pickup_point fragment."
+            : "Projected payload preview does not currently require pickup_point.",
+    }),
+    buildDeliveryHubSelectionPayloadParityPreviewField({
+      key: "pickup_window",
+      label: "pickup_window",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.pickupWindowRequired
+          ? candidate.pickupWindow
+            ? blocked
+              ? "blocked"
+              : "matched"
+            : "incomplete"
+          : candidate.pickupWindow
+            ? blocked
+              ? "blocked"
+              : "matched"
+            : "not_required",
+      detail_label: !candidatePresent
+        ? "Payload parity preview stays informational until shopper-safe neutral context is visible."
+        : candidate.pickupWindowRequired
+          ? candidate.pickupWindow
+            ? "Projected payload preview currently matches the expected required pickup_window fragment."
+            : "Projected payload preview still lacks the expected required pickup_window fragment."
+          : candidate.pickupWindow
+            ? "Projected payload preview already includes an optional pickup_window fragment."
+            : "Projected payload preview does not currently require pickup_window.",
+    }),
+    buildDeliveryHubSelectionPayloadParityPreviewField({
+      key: "selection_version",
+      label: "selection_version",
+      status: !candidatePresent
+        ? "informational_only"
+        : selectionWriteSeam.selection_version !== null
+          ? blocked
+            ? "blocked"
+            : "matched"
+          : "incomplete",
+      detail_label: !candidatePresent
+        ? "Payload parity preview stays informational until shopper-safe neutral context is visible."
+        : selectionWriteSeam.selection_version !== null
+          ? `Projected payload preview is anchored to neutral selection version ${selectionWriteSeam.selection_version}.`
+          : "Projected payload preview still lacks a stable neutral selection version anchor.",
+    }),
+    buildDeliveryHubSelectionPayloadParityPreviewField({
+      key: "shape_completeness",
+      label: "shape_completeness",
+      status:
+        selectionWriteSeam.shape_completeness === "complete"
+          ? "matched"
+          : selectionWriteSeam.shape_completeness === "blocked"
+            ? "blocked"
+            : selectionWriteSeam.shape_completeness === "partial"
+              ? "incomplete"
+              : "informational_only",
+      detail_label:
+        selectionWriteSeam.shape_completeness === "complete"
+          ? "Projected payload preview currently matches the expected shopper-safe save-contract shape."
+          : selectionWriteSeam.shape_completeness === "blocked"
+            ? "Projected payload preview remains blocked by readiness or parity blockers already visible in preview surfaces."
+            : selectionWriteSeam.shape_completeness === "partial"
+              ? "Projected payload preview still lacks one or more shopper-safe fragments for expected save-contract parity."
+              : "Projected payload preview completeness stays informational until shopper-safe neutral context is visible.",
+    }),
+    buildDeliveryHubSelectionPayloadParityPreviewField({
+      key: "blocked_reasons",
+      label: "blocked_reasons",
+      status: !candidatePresent
+        ? "informational_only"
+        : blocked
+          ? "blocked"
+          : blockedReasons.length > 0
+            ? "incomplete"
+            : "matched",
+      detail_label: !candidatePresent
+        ? "Payload parity preview stays informational until shopper-safe neutral context is visible."
+        : blocked
+          ? `Projected payload parity remains blocked by preview blockers: ${blockedReasons.join(", ")}.`
+          : blockedReasons.length > 0
+            ? `Projected payload parity still has shopper-safe parity gaps: ${blockedReasons.join(", ")}.`
+            : "Projected payload parity currently has no shopper-safe blocked reasons.",
+    }),
+  ]
+
+  const matchedFieldCount = fields.filter((field) =>
+    ["matched", "not_required"].includes(field.status)
+  ).length
+  const incompleteFieldCount = fields.filter((field) => field.status === "incomplete").length
+  const blockedFieldCount = fields.filter((field) => field.status === "blocked").length
+  const verdict: DeliveryHubSelectionPayloadParityPreviewVerdict = !candidatePresent
+    ? "informational_only"
+    : blocked
+      ? "blocked"
+      : incompleteFieldCount > 0
+        ? "incomplete"
+        : "matched"
+
+  return {
+    tone:
+      verdict === "matched"
+        ? "positive"
+        : verdict === "blocked"
+          ? "warning"
+          : "neutral",
+    verdict,
+    verdict_label:
+      verdict === "matched"
+        ? "Selection payload parity preview looks structurally matched"
+        : verdict === "blocked"
+          ? "Selection payload parity preview is blocked"
+          : verdict === "incomplete"
+            ? "Selection payload parity preview is still incomplete"
+            : "Selection payload parity preview is informational only",
+    summary_label:
+      verdict === "matched"
+        ? "Existing read-only preview surfaces already project a shopper-safe payload shape that matches the expected neutral selection contract fields."
+        : verdict === "blocked"
+          ? "Selection payload parity remains diagnostic-only because readiness or parity blockers are still visible in the current preview stack."
+          : verdict === "incomplete"
+            ? "Existing read-only preview surfaces expose part of the expected neutral selection contract payload shape, but one or more shopper-safe fields are still incomplete."
+            : "Selection payload parity preview remains diagnostic-only until enough shopper-safe neutral context is available.",
+    projected_payload_label:
+      "Projected storefront payload preview · shopper-safe only · no write path · no network path",
+    expected_contract_label:
+      "Expected neutral selection contract preview · shopper-safe only · preview vocabulary preserved",
+    payload_target_label:
+      "Future payload target preview: POST /store/delivery/selection",
+    shopper_safe_payload_target: "POST /store/delivery/selection",
+    connection_id: candidate.connection.connection_id,
+    quote_type: candidate.quoteType,
+    quote_type_label: getDeliveryHubQuoteTypeLabel(candidate.quoteType),
+    quote_reference_present: Boolean(candidate.quoteReference),
+    pickup_point_required: candidate.pickupPointRequired,
+    pickup_point_present: Boolean(candidate.pickupPoint),
+    pickup_window_required: candidate.pickupWindowRequired,
+    pickup_window_present: Boolean(candidate.pickupWindow),
+    selection_version: selectionWriteSeam.selection_version,
+    shape_completeness: selectionWriteSeam.shape_completeness,
+    matched_field_count: matchedFieldCount,
+    incomplete_field_count: incompleteFieldCount,
+    blocked_field_count: blockedFieldCount,
+    fields,
+    blocked_reasons: blockedReasons,
+    hint_messages: uniqueDeliveryHubMessages([
+      "Preview-only selection payload parity layer: no persistence, clearing, checkout action, or shipping-method mutation is performed here.",
+      "This parity preview is diagnostic only and does not create network intent for POST /store/delivery/selection.",
+      "The active checkout commit path remains legacy ApiShip.",
+      ...selectionWriteSeam.mismatch_reasons,
+      blockedReasons.includes("quote_reference_missing")
+        ? "Backend-issued quote_reference is still required for shopper-safe payload parity."
+        : null,
+      blockedReasons.includes("pickup_point_missing")
+        ? "Required pickup_point fragment is still missing from the shopper-safe payload preview."
+        : null,
+      blockedReasons.includes("pickup_window_missing")
+        ? "Required pickup_window fragment is still missing from the shopper-safe payload preview."
+        : null,
+      blockedReasons.includes("selection_version_missing")
+        ? "Neutral selection_version anchor is still missing from the shopper-safe payload parity layer."
+        : null,
+    ]).slice(0, 6),
+    dry_run_only: true,
+    mutation_intent: false,
+    network_required_now: false,
   }
 }
 
