@@ -18,6 +18,10 @@ import {
 import { getVkIdRuntime } from "./src/modules/vk-id"
 import { isYooKassaConfigured } from "./src/modules/yookassa"
 import { DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE } from "./src/modules/delivery-hub/provider-surface"
+import {
+  getDefaultFulfillmentContourContract,
+  getLegacyApiShipDeprecationContract,
+} from "./src/modules/fulfillment-contour-contract"
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd())
 
@@ -80,6 +84,9 @@ const paymentProviders = isYooKassaConfigured(yookassaProviderOptions)
   : []
 
 const apiShipProviderOptions = getApiShipProviderOptionsFromEnv()
+const defaultFulfillmentContour = getDefaultFulfillmentContourContract()
+const legacyApiShipDeprecation = getLegacyApiShipDeprecationContract()
+
 const fulfillmentProviders = [
   {
     resolve: "@medusajs/medusa/fulfillment-manual",
@@ -90,13 +97,19 @@ const fulfillmentProviders = [
         {
           resolve: "./src/modules/apiship",
           id: "apiship",
-          options: apiShipProviderOptions,
+          options: {
+            ...apiShipProviderOptions,
+            deprecation: legacyApiShipDeprecation,
+          },
         },
       ]
     : []),
   {
     resolve: "./src/modules/deliveryhub",
     id: DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,
+    options: {
+      default_contour: defaultFulfillmentContour,
+    },
   },
 ]
 

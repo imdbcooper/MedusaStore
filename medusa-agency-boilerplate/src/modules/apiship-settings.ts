@@ -2,6 +2,8 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 export const APISHIP_TO_DOOR_OPTION_ID = "apiship_to_door"
 export const APISHIP_TO_POINT_OPTION_ID = "apiship_to_point"
+export const APISHIP_SETTINGS_DEPRECATION_NOTICE =
+  "ApiShip settings are deprecated legacy compatibility controls and should not be enabled for fresh templates; configure Delivery Hub/direct Yandex instead."
 
 export const APISHIP_SHOPPER_MODE_KEYS = [
   APISHIP_TO_DOOR_OPTION_ID,
@@ -109,6 +111,8 @@ export function getApiShipPgConnection(container: any) {
   ) as PgConnectionLike
 }
 
+// Deprecated legacy compatibility defaults. Keep disabled-by-default until the
+// staged ApiShip removal packages delete the settings surface.
 export function getDefaultApiShipSettings(
   input?: {
     enabled?: boolean

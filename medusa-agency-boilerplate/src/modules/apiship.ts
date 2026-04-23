@@ -21,6 +21,8 @@ const DEFAULT_PACKAGE_WEIGHT = 20
 
 export const APISHIP_PROVIDER_ID = "apiship_apiship"
 export const APISHIP_COURIER_OPTION_ID = "apiship_courier_to_address"
+export const APISHIP_LEGACY_DEPRECATION_NOTICE =
+  "ApiShip is deprecated legacy compatibility surface for existing templates only; Delivery Hub/direct Yandex is the default fulfillment contour for new stores and ApiShip is scheduled for staged removal."
 
 const LEGACY_APISHIP_FULFILLMENT_OPTIONS: FulfillmentOption[] = [
   {
@@ -34,6 +36,7 @@ const LEGACY_APISHIP_FULFILLMENT_OPTIONS: FulfillmentOption[] = [
 export type ApiShipProviderOptions = {
   token: string
   isTest?: boolean
+  deprecation?: Record<string, unknown>
 }
 
 type InjectedDependencies = {
@@ -115,6 +118,8 @@ export function getApiShipBaseUrl(options: ApiShipProviderOptions) {
 export async function requestApiShip<T>(input: ApiShipRequestInput): Promise<T> {
   const options = input.options ?? getApiShipProviderOptionsFromEnv()
 
+  input.logger?.debug?.(APISHIP_LEGACY_DEPRECATION_NOTICE)
+
   if (!isApiShipConfigured(options)) {
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
@@ -187,6 +192,9 @@ export async function requestApiShip<T>(input: ApiShipRequestInput): Promise<T> 
   return (await response.json()) as T
 }
 
+// Deprecated legacy compatibility provider. Do not use for fresh template stores;
+// Delivery Hub/direct Yandex is the default fulfillment contour and ApiShip is
+// intentionally retained only until staged removal packages delete this surface.
 class ApiShipFulfillmentProvider extends AbstractFulfillmentProviderService {
   static identifier = "apiship"
 
@@ -198,6 +206,7 @@ class ApiShipFulfillmentProvider extends AbstractFulfillmentProviderService {
 
     this.logger_ = logger
     this.options_ = options
+    this.logger_.warn(APISHIP_LEGACY_DEPRECATION_NOTICE)
   }
 
   static validateOptions(options: Record<string, unknown>) {
@@ -212,6 +221,8 @@ class ApiShipFulfillmentProvider extends AbstractFulfillmentProviderService {
   }
 
   async getFulfillmentOptions(): Promise<FulfillmentOption[]> {
+    this.logger_.warn(APISHIP_LEGACY_DEPRECATION_NOTICE)
+
     return LEGACY_APISHIP_FULFILLMENT_OPTIONS
   }
 
