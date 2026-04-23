@@ -36,6 +36,11 @@ import {
 } from "./delivery-hub/provider-surface"
 import { getDeliveryConnectionByIdReadOnly } from "./delivery-hub/storage/connections-repository"
 import { getDeliveryHubPgConnection } from "./delivery-hub/storage/pg"
+import {
+  buildDeliveryHubShipmentPersistenceRequestSummary,
+  buildDeliveryHubShipmentPersistenceResponseSummary,
+  upsertDeliveryShipment,
+} from "./delivery-hub/storage/shipments-repository"
 
 type InjectedDependencies = {
   logger: Logger
@@ -245,6 +250,14 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       fulfillment_data: handoffInput,
       shipment_execution_enabled: isDeliveryHubShipmentExecutionEnabled(),
     })
+    const persistedShipment = await this.persistControlledExecutionShipment({
+      controlled_execution: controlledExecution,
+      execution_plan_preview: executionPlanPreview,
+      handoff: fulfillmentHandoff,
+      fulfillment: fulfillmentRecord,
+      order: orderRecord,
+      pg_connection: pgConnection,
+    })
 
     this.logger_.info(
       `Delivery Hub createFulfillment controlled execution seam evaluated: ${JSON.stringify({
@@ -278,6 +291,22 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
         provider_dispatch_result: controlledExecution.provider_dispatch_result,
         dispatch_result: controlledExecution.dispatch_result,
         execution_identity: controlledExecution.execution_identity,
+        shipment_persistence: persistedShipment
+          ? {
+              id: persistedShipment.id,
+              execution_reference: persistedShipment.execution_reference,
+              outcome: persistedShipment.outcome,
+              status: persistedShipment.status,
+              accepted: persistedShipment.accepted,
+              succeeded: persistedShipment.succeeded,
+              provider_shipment_reference_present:
+                persistedShipment.provider_shipment_reference_present,
+              provider_correlation_reference_present:
+                persistedShipment.provider_correlation_reference_present,
+              label_document_present: persistedShipment.label_document_present,
+              attachment_document_present: persistedShipment.attachment_document_present,
+            }
+          : null,
         evidence: controlledExecution.evidence,
         contour: controlledExecution.contour,
         anti_leak_confirmations: controlledExecution.anti_leak_confirmations,
@@ -288,6 +317,24 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       data: {
         provider_code: DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,
         controlled_execution: controlledExecution,
+        shipment_persistence: persistedShipment
+          ? {
+              id: persistedShipment.id,
+              execution_reference: persistedShipment.execution_reference,
+              outcome: persistedShipment.outcome,
+              status: persistedShipment.status,
+              accepted: persistedShipment.accepted,
+              succeeded: persistedShipment.succeeded,
+              provider_shipment_reference_present:
+                persistedShipment.provider_shipment_reference_present,
+              provider_correlation_reference_present:
+                persistedShipment.provider_correlation_reference_present,
+              label_document_present: persistedShipment.label_document_present,
+              attachment_document_present: persistedShipment.attachment_document_present,
+              created_at: persistedShipment.created_at,
+              updated_at: persistedShipment.updated_at,
+            }
+          : null,
       },
       labels: [],
     }
@@ -319,6 +366,125 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
   async retrieveDocuments(): Promise<void> {
     return
   }
+  protected async persistControlledExecutionShipment(input: {
+    controlled_execution: Awaited<ReturnType<typeof buildDeliveryHubControlledFulfillmentExecutionResult>>
+    execution_plan_preview: ReturnType<typeof buildDeliveryHubShipmentExecutionPlanPreview>
+    handoff: ReturnType<typeof buildDeliveryHubFulfillmentHandoffSnapshot> | null
+    order: Record<string, unknown> | undefined
+    fulfillment: Record<string, unknown>
+    pg_connection: ReturnType<typeof getDeliveryHubPgConnection> | null
+  }) {
+    if (!input.pg_connection || input.controlled_execution.status !== "dispatch_attempted") {
+      return null
+    }
+
+    const executionReference = input.controlled_execution.execution_identity.provider_operation_reference
+    if (!executionReference) {
+      return null
+    }
+
+    const requestSummary = buildDeliveryHubShipmentPersistenceRequestSummary({
+      provider_code: input.controlled_execution.provider_code,
+      operation: "create_shipment",
+      execution_reference: executionReference,
+      idempotency_key: input.controlled_execution.execution_identity.idempotency_key_preview,
+      mode_code: input.handoff?.quote_type ?? null,
+      order_id: input.execution_plan_preview.normalized.order?.id ?? null,
+      fulfillment_id:
+        typeof input.fulfillment.id === "string" && input.fulfillment.id.trim()
+          ? input.fulfillment.id.trim()
+          : null,
+      cart_id: input.handoff?.references.cart_id ?? null,
+      quote_reference_id: input.handoff?.quote_reference.id ?? null,
+      quote_reference_version: input.handoff?.quote_reference.version ?? null,
+      country_code: null,
+    })
+    const responseSummary = buildDeliveryHubShipmentPersistenceResponseSummary({
+      outcome: input.controlled_execution.provider_dispatch_result?.succeeded ? "accepted" : "failed",
+      status: input.controlled_execution.provider_dispatch_result?.succeeded
+        ? "dispatch_accepted"
+        : "dispatch_failed",
+      accepted: input.controlled_execution.provider_dispatch_result?.accepted ?? false,
+      succeeded: input.controlled_execution.provider_dispatch_result?.succeeded ?? false,
+      status_category: input.controlled_execution.provider_dispatch_result?.status_category ?? null,
+      provider_shipment_reference_present:
+        input.controlled_execution.provider_dispatch_result?.provider_shipment_reference_present ?? false,
+      provider_correlation_reference_present:
+        !!input.controlled_execution.provider_dispatch_result?.correlation_id_masked,
+      label_document_present: input.controlled_execution.provider_dispatch_result?.label_available ?? false,
+      attachment_document_present:
+        input.controlled_execution.provider_dispatch_result?.documents_available ?? false,
+      safe_message: input.controlled_execution.dispatch_result.safe_message,
+    })
+
+    const persistedShipment = await upsertDeliveryShipment(input.pg_connection, {
+      execution_reference: executionReference,
+      idempotency_key: input.controlled_execution.execution_identity.idempotency_key_preview,
+      provider_code: input.controlled_execution.provider_code,
+      connection_id: input.handoff?.connection_id ?? null,
+      mode_code: input.handoff?.quote_type ?? null,
+      order_id: input.execution_plan_preview.normalized.order?.id ?? null,
+      fulfillment_id:
+        typeof input.fulfillment.id === "string" && input.fulfillment.id.trim()
+          ? input.fulfillment.id.trim()
+          : null,
+      cart_id: input.handoff?.references.cart_id ?? null,
+      shipping_option_id: input.handoff?.references.shipping_option_id ?? null,
+      location_id: input.handoff?.references.location_id ?? null,
+      quote_reference_id: input.handoff?.quote_reference.id ?? null,
+      quote_reference_version: input.handoff?.quote_reference.version ?? null,
+      correlation_id: input.handoff?.correlation_id ?? null,
+      outcome: input.controlled_execution.provider_dispatch_result?.succeeded ? "accepted" : "failed",
+      status: input.controlled_execution.provider_dispatch_result?.succeeded
+        ? "dispatch_accepted"
+        : "dispatch_failed",
+      accepted: input.controlled_execution.provider_dispatch_result?.accepted ?? false,
+      succeeded: input.controlled_execution.provider_dispatch_result?.succeeded ?? false,
+      provider_shipment_reference_present:
+        input.controlled_execution.provider_dispatch_result?.provider_shipment_reference_present ?? false,
+      provider_correlation_reference_present:
+        !!input.controlled_execution.provider_dispatch_result?.correlation_id_masked,
+      label_document_present: input.controlled_execution.provider_dispatch_result?.label_available ?? false,
+      attachment_document_present:
+        input.controlled_execution.provider_dispatch_result?.documents_available ?? false,
+      request_summary: requestSummary,
+      response_summary: responseSummary,
+      metadata: {
+        provider_code: input.controlled_execution.provider_code,
+        execution_path: input.controlled_execution.execution_path,
+        redacted: true,
+      },
+    })
+
+    input.controlled_execution.dispatch_result.persistence_performed = persistedShipment !== null
+    input.controlled_execution.dispatch_result.safe_message = persistedShipment
+      ? input.controlled_execution.provider_dispatch_result?.succeeded
+        ? "Direct Yandex create_shipment was attempted and accepted in runtime, with a redacted result returned and shipment persistence materialized; no execution-ledger persistence and no order or fulfillment mutation were performed."
+        : `Direct Yandex create_shipment was attempted in runtime and returned a redacted failure category (${input.controlled_execution.provider_dispatch_result?.status_category ?? "unknown"}); shipment persistence was materialized, while execution-ledger persistence and order or fulfillment mutation were not performed.`
+      : input.controlled_execution.dispatch_result.safe_message
+
+    if (persistedShipment !== null) {
+      this.logger_.info(
+        `Delivery Hub shipment persistence materialized: ${JSON.stringify({
+          id: persistedShipment.id,
+          execution_reference: persistedShipment.execution_reference,
+          outcome: persistedShipment.outcome,
+          status: persistedShipment.status,
+          accepted: persistedShipment.accepted,
+          succeeded: persistedShipment.succeeded,
+          provider_shipment_reference_present:
+            persistedShipment.provider_shipment_reference_present,
+          provider_correlation_reference_present:
+            persistedShipment.provider_correlation_reference_present,
+          label_document_present: persistedShipment.label_document_present,
+          attachment_document_present: persistedShipment.attachment_document_present,
+        })}`
+      )
+    }
+
+    return persistedShipment
+  }
+
   protected resolvePgConnection() {
     try {
       return getDeliveryHubPgConnection(this.container_)

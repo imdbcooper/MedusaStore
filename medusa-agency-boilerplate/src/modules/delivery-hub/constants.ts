@@ -2,6 +2,7 @@ export const DELIVERY_HUB_MODULE_KEY = "deliveryHub"
 export const DELIVERY_HUB_CONNECTIONS_TABLE = "delivery_connections"
 export const DELIVERY_HUB_WAREHOUSES_TABLE = "delivery_warehouses"
 export const DELIVERY_HUB_EVENT_LOGS_TABLE = "delivery_event_logs"
+export const DELIVERY_HUB_SHIPMENTS_TABLE = "delivery_shipments"
 export const DELIVERY_HUB_DEFAULT_COUNTRY_CODE = "RU"
 export const DELIVERY_HUB_PROVIDER_YANDEX = "yandex"
 export const DELIVERY_HUB_SUPPORTED_PUBLIC_PROVIDER_CODES = [DELIVERY_HUB_PROVIDER_YANDEX] as const

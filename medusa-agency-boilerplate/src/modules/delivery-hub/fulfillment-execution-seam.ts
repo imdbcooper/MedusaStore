@@ -140,7 +140,7 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
     performed: boolean
     outcome: "not_attempted" | "accepted" | "failed"
     redacted: boolean
-    persistence_performed: false
+    persistence_performed: boolean
     execution_ledger_persistence_performed: false
     order_mutation_performed: false
     fulfillment_mutation_performed: false

@@ -83,6 +83,7 @@ describe("Delivery Hub provider validation seam", () => {
             raw_offer_ids_included: false,
           },
         }),
+        shipment_persistence: null,
       },
       labels: [],
     })
@@ -345,6 +346,7 @@ describe("Delivery Hub provider validation seam", () => {
             raw_offer_ids_included: false,
           },
         }),
+        shipment_persistence: null,
       },
       labels: [],
     })
@@ -641,16 +643,28 @@ describe("Delivery Hub provider validation seam", () => {
               attempted: true,
               performed: true,
               redacted: true,
-              persistence_performed: false,
+              outcome: "failed",
+              persistence_performed: true,
               execution_ledger_persistence_performed: false,
               order_mutation_performed: false,
               fulfillment_mutation_performed: false,
+              safe_message: expect.stringContaining("shipment persistence was materialized"),
             }),
             anti_leak_confirmations: {
               credentials_included: false,
               raw_provider_payloads_included: false,
               raw_offer_ids_included: false,
             },
+          }),
+          shipment_persistence: expect.objectContaining({
+            outcome: "failed",
+            status: "dispatch_failed",
+            accepted: false,
+            succeeded: false,
+            provider_shipment_reference_present: false,
+            provider_correlation_reference_present: true,
+            label_document_present: false,
+            attachment_document_present: false,
           }),
         }),
       })
@@ -791,11 +805,22 @@ describe("Delivery Hub provider validation seam", () => {
               attempted: true,
               performed: true,
               outcome: "accepted",
-              persistence_performed: false,
+              persistence_performed: true,
               execution_ledger_persistence_performed: false,
               order_mutation_performed: false,
               fulfillment_mutation_performed: false,
             }),
+          }),
+          shipment_persistence: expect.objectContaining({
+            execution_reference: expect.any(String),
+            outcome: "accepted",
+            status: "dispatch_accepted",
+            accepted: true,
+            succeeded: true,
+            provider_shipment_reference_present: true,
+            provider_correlation_reference_present: true,
+            label_document_present: true,
+            attachment_document_present: true,
           }),
         }),
       })
@@ -1124,11 +1149,22 @@ describe("Delivery Hub provider validation seam", () => {
               attempted: true,
               performed: true,
               outcome: "accepted",
-              persistence_performed: false,
+              persistence_performed: true,
               execution_ledger_persistence_performed: false,
               order_mutation_performed: false,
               fulfillment_mutation_performed: false,
             }),
+          }),
+          shipment_persistence: expect.objectContaining({
+            execution_reference: expect.any(String),
+            outcome: "accepted",
+            status: "dispatch_accepted",
+            accepted: true,
+            succeeded: true,
+            provider_shipment_reference_present: true,
+            provider_correlation_reference_present: true,
+            label_document_present: true,
+            attachment_document_present: false,
           }),
         }),
       })
@@ -1403,12 +1439,22 @@ describe("Delivery Hub provider validation seam", () => {
               attempted: true,
               performed: true,
               outcome: "failed",
-              persistence_performed: false,
+              persistence_performed: true,
               execution_ledger_persistence_performed: false,
               order_mutation_performed: false,
               fulfillment_mutation_performed: false,
-              safe_message: expect.stringContaining("redacted failure category (unknown)"),
+              safe_message: expect.stringContaining("shipment persistence was materialized"),
             }),
+          }),
+          shipment_persistence: expect.objectContaining({
+            outcome: "failed",
+            status: "dispatch_failed",
+            accepted: false,
+            succeeded: false,
+            provider_shipment_reference_present: false,
+            provider_correlation_reference_present: true,
+            label_document_present: false,
+            attachment_document_present: false,
           }),
         }),
       })
@@ -1866,14 +1912,83 @@ function buildProvider(input?: {
   })
 }
 function buildReadOnlyLookupPgConnection(rows: readonly unknown[]) {
+  const state = {
+    shipments: [] as Array<Record<string, unknown>>,
+  }
+
   return {
-    raw: async (query: unknown) => {
+    raw: async (...args: unknown[]) => {
+      const query = args[0]
+      const bindings = Array.isArray(args[1]) ? args[1] : undefined
       const sql = typeof query === "string" ? query : String(query ?? "")
 
       if (sql.includes("select to_regclass")) {
-        return {
-          rows: [{ table_name: "delivery_hub_connections" }],
+        if (sql.includes("delivery_connections")) {
+          return {
+            rows: [{ table_name: "delivery_connections" }],
+          }
         }
+
+        if (sql.includes("delivery_shipments")) {
+          return {
+            rows: [{ table_name: "delivery_shipments" }],
+          }
+        }
+
+        return {
+          rows: [{ table_name: "delivery_connections" }],
+        }
+      }
+
+      if (sql.includes("create table if not exists delivery_shipments")) {
+        return { rows: [] }
+      }
+
+      if (sql.includes("insert into delivery_shipments")) {
+        const row = {
+          id: typeof bindings?.[0] === "string" ? bindings[0] : "shipment_record_1",
+          execution_reference: typeof bindings?.[1] === "string" ? bindings[1] : "exec_ref_1",
+          idempotency_key: typeof bindings?.[2] === "string" ? bindings[2] : null,
+          provider_code: typeof bindings?.[3] === "string" ? bindings[3] : "deliveryhub",
+          connection_id: typeof bindings?.[4] === "string" ? bindings[4] : null,
+          mode_code: typeof bindings?.[5] === "string" ? bindings[5] : null,
+          order_id: typeof bindings?.[6] === "string" ? bindings[6] : null,
+          fulfillment_id: typeof bindings?.[7] === "string" ? bindings[7] : null,
+          cart_id: typeof bindings?.[8] === "string" ? bindings[8] : null,
+          shipping_option_id: typeof bindings?.[9] === "string" ? bindings[9] : null,
+          location_id: typeof bindings?.[10] === "string" ? bindings[10] : null,
+          quote_reference_id: typeof bindings?.[11] === "string" ? bindings[11] : null,
+          quote_reference_version:
+            typeof bindings?.[12] === "number" ? bindings[12] : null,
+          correlation_id: typeof bindings?.[13] === "string" ? bindings[13] : null,
+          outcome: typeof bindings?.[14] === "string" ? bindings[14] : "accepted",
+          status: typeof bindings?.[15] === "string" ? bindings[15] : "dispatch_accepted",
+          accepted: Boolean(bindings?.[16]),
+          succeeded: Boolean(bindings?.[17]),
+          provider_shipment_reference_present: Boolean(bindings?.[18]),
+          provider_correlation_reference_present: Boolean(bindings?.[19]),
+          label_document_present: Boolean(bindings?.[20]),
+          attachment_document_present: Boolean(bindings?.[21]),
+          request_summary:
+            typeof bindings?.[22] === "string" ? JSON.parse(bindings[22] as string) : {},
+          response_summary:
+            typeof bindings?.[23] === "string" ? JSON.parse(bindings[23] as string) : {},
+          metadata: typeof bindings?.[24] === "string" ? JSON.parse(bindings[24] as string) : {},
+          created_at: "2026-04-23T08:00:00.000Z",
+          updated_at: "2026-04-23T08:00:00.000Z",
+        }
+
+        const existingIndex = state.shipments.findIndex(
+          (entry) => entry.execution_reference === row.execution_reference
+        )
+
+        if (existingIndex >= 0) {
+          state.shipments[existingIndex] = row
+        } else {
+          state.shipments.push(row)
+        }
+
+        return { rows: [row] }
       }
 
       return { rows }
