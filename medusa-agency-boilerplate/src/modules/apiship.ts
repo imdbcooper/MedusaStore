@@ -22,6 +22,15 @@ const DEFAULT_PACKAGE_WEIGHT = 20
 export const APISHIP_PROVIDER_ID = "apiship_apiship"
 export const APISHIP_COURIER_OPTION_ID = "apiship_courier_to_address"
 
+const LEGACY_APISHIP_FULFILLMENT_OPTIONS: FulfillmentOption[] = [
+  {
+    id: APISHIP_COURIER_OPTION_ID,
+    name: "ApiShip courier to address",
+    deliveryType: 1,
+    pickupType: 1,
+  },
+]
+
 export type ApiShipProviderOptions = {
   token: string
   isTest?: boolean
@@ -35,6 +44,9 @@ type ApiShipTariff = {
   deliveryCost?: number
   providerKey?: string
   tariffId?: number
+  pickupTypes?: number[]
+  deliveryTypes?: number[]
+  pointIds?: number[]
 }
 
 type ApiShipTariffGroup = {
@@ -47,6 +59,23 @@ type ApiShipCalculatorResponse = {
   deliveryToPoint?: ApiShipTariffGroup[]
 }
 
+export type ApiShipSelectionData = {
+  provider_key: string
+  tariff_id: number
+  pickup_type?: number
+  delivery_type?: number
+  mode_key?: string
+  point_out_id?: number
+  provider_name?: string
+  tariff_name?: string
+  quote_key?: string
+  estimated_days_min?: number
+  estimated_days_max?: number
+  selection_mode?: string
+  point_label?: string
+  point_address?: string
+}
+
 type ApiShipErrorDetails = {
   status: number
   statusText: string
@@ -55,8 +84,15 @@ type ApiShipErrorDetails = {
   description?: string
   hint?: string
   rawBody?: string
-  contentType?: string
-  bodyKeys?: string[]
+}
+
+type ApiShipRequestInput = {
+  path: string
+  method?: "GET" | "POST"
+  options?: ApiShipProviderOptions
+  body?: Record<string, unknown>
+  query?: Record<string, string | number | boolean | null | undefined>
+  logger?: Pick<Logger, "warn" | "debug"> | null
 }
 
 export function getApiShipProviderOptionsFromEnv(): ApiShipProviderOptions {
@@ -70,6 +106,85 @@ export function isApiShipConfigured(
   options: ApiShipProviderOptions = getApiShipProviderOptionsFromEnv()
 ) {
   return !!options.token
+}
+
+export function getApiShipBaseUrl(options: ApiShipProviderOptions) {
+  return options.isTest ? APISHIP_TEST_BASE_URL : APISHIP_LIVE_BASE_URL
+}
+
+export async function requestApiShip<T>(input: ApiShipRequestInput): Promise<T> {
+  const options = input.options ?? getApiShipProviderOptionsFromEnv()
+
+  if (!isApiShipConfigured(options)) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "ApiShip shipping is not configured. Set APISHIP_TOKEN to enable ApiShip backend flows."
+    )
+  }
+
+  const url = new URL(`${getApiShipBaseUrl(options)}${input.path}`)
+
+  Object.entries(input.query || {}).forEach(([key, value]) => {
+    if (value === null || typeof value === "undefined") {
+      return
+    }
+
+    url.searchParams.set(key, String(value))
+  })
+
+  let response: Response
+
+  try {
+    response = await fetch(url.toString(), {
+      method: input.method || "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: options.token,
+        ...(input.method === "GET" ? {} : { "Content-Type": "application/json" }),
+      },
+      ...(input.method === "GET" ? {} : { body: JSON.stringify(input.body || {}) }),
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown fetch failure"
+
+    input.logger?.warn?.(
+      `ApiShip request transport failure: ${JSON.stringify({
+        path: input.path,
+        method: input.method || "POST",
+        mode: options.isTest ? "test" : "live",
+        message,
+      })}`
+    )
+
+    throw new MedusaError(
+      MedusaError.Types.UNEXPECTED_STATE,
+      `ApiShip request failed before a response was received. ${message}`
+    )
+  }
+
+  if (!response.ok) {
+    const errorDetails = await parseApiShipErrorResponse(response)
+
+    input.logger?.warn?.(
+      `ApiShip request failed: ${JSON.stringify({
+        path: input.path,
+        method: input.method || "POST",
+        mode: options.isTest ? "test" : "live",
+        ...errorDetails,
+      })}`
+    )
+
+    throw new MedusaError(
+      MedusaError.Types.UNEXPECTED_STATE,
+      formatApiShipErrorMessage(errorDetails)
+    )
+  }
+
+  if (response.status === 204) {
+    return {} as T
+  }
+
+  return (await response.json()) as T
 }
 
 class ApiShipFulfillmentProvider extends AbstractFulfillmentProviderService {
@@ -97,18 +212,11 @@ class ApiShipFulfillmentProvider extends AbstractFulfillmentProviderService {
   }
 
   async getFulfillmentOptions(): Promise<FulfillmentOption[]> {
-    return [
-      {
-        id: APISHIP_COURIER_OPTION_ID,
-        name: "ApiShip courier to address",
-        deliveryType: 1,
-        pickupType: 1,
-      },
-    ]
+    return LEGACY_APISHIP_FULFILLMENT_OPTIONS
   }
 
   async validateOption(data: Record<string, unknown>): Promise<boolean> {
-    return getNumber(data.deliveryType) === 1 && getNumber(data.pickupType) === 1
+    return getFiniteInteger(data.deliveryType) === 1 && getFiniteInteger(data.pickupType) === 1
   }
 
   async validateFulfillmentData(
@@ -127,22 +235,30 @@ class ApiShipFulfillmentProvider extends AbstractFulfillmentProviderService {
     _: CalculateShippingOptionPriceDTO["data"],
     context: CalculateShippingOptionPriceDTO["context"]
   ) {
-    const calculatorRequest = buildCalculatorRequest(optionData, context)
+    const deliveryType = 1
+    const calculatorRequest = buildCalculatorRequest({
+      optionData,
+      context,
+      deliveryType,
+      pickupType: 1,
+    })
 
     this.logger_.info(
       `ApiShip calculator request summary: ${JSON.stringify(
         summarizeCalculatorRequest(calculatorRequest)
       )}`
     )
-
     this.logger_.debug(
       `ApiShip calculator full request body: ${JSON.stringify(calculatorRequest)}`
     )
 
-    const response = await this.request<ApiShipCalculatorResponse>(
-      "/calculator",
-      calculatorRequest
-    )
+    const response = await requestApiShip<ApiShipCalculatorResponse>({
+      path: "/calculator",
+      method: "POST",
+      body: calculatorRequest,
+      options: this.options_,
+      logger: this.logger_,
+    })
 
     this.logger_.info(
       `ApiShip calculator response summary: ${JSON.stringify(
@@ -150,11 +266,8 @@ class ApiShipFulfillmentProvider extends AbstractFulfillmentProviderService {
       )}`
     )
 
-    const cheapestTariff = pickCheapestTariff(
-      response,
-      getNumber(optionData.deliveryType) || 1
-    )
-    const deliveryCost = cheapestTariff?.deliveryCost
+    const selectedTariff = pickCheapestTariff(response, deliveryType)
+    const deliveryCost = selectedTariff?.deliveryCost
 
     if (typeof deliveryCost !== "number" || !Number.isFinite(deliveryCost)) {
       this.logger_.warn(
@@ -162,7 +275,6 @@ class ApiShipFulfillmentProvider extends AbstractFulfillmentProviderService {
           summarizeCalculatorResponse(response)
         )}`
       )
-
       throw new MedusaError(
         MedusaError.Types.INVALID_DATA,
         "ApiShip returned no courier-to-address tariff for the current cart and address. Check that the ApiShip account has active delivery connections/contracts and that the route is supported."
@@ -171,9 +283,9 @@ class ApiShipFulfillmentProvider extends AbstractFulfillmentProviderService {
 
     this.logger_.info(
       `ApiShip selected cheapest tariff: ${JSON.stringify({
-        deliveryCost: cheapestTariff!.deliveryCost,
-        providerKey: cheapestTariff!.providerKey,
-        tariffId: cheapestTariff!.tariffId,
+        deliveryCost,
+        providerKey: selectedTariff?.providerKey,
+        tariffId: selectedTariff?.tariffId,
       })}`
     )
 
@@ -192,7 +304,7 @@ class ApiShipFulfillmentProvider extends AbstractFulfillmentProviderService {
   ): Promise<CreateFulfillmentResult> {
     throw new MedusaError(
       MedusaError.Types.NOT_ALLOWED,
-      "ApiShip fulfillment automation is intentionally out of scope for the first shipping slice."
+      "ApiShip fulfillment automation is intentionally out of scope for the current shipping slice."
     )
   }
 
@@ -204,12 +316,10 @@ class ApiShipFulfillmentProvider extends AbstractFulfillmentProviderService {
     return []
   }
 
-  async createReturnFulfillment(
-    _: Record<string, unknown>
-  ): Promise<CreateFulfillmentResult> {
+  async createReturnFulfillment(_: Record<string, unknown>): Promise<CreateFulfillmentResult> {
     throw new MedusaError(
       MedusaError.Types.NOT_ALLOWED,
-      "ApiShip return fulfillment automation is intentionally out of scope for the first shipping slice."
+      "ApiShip return fulfillment automation is intentionally out of scope for the current shipping slice."
     )
   }
 
@@ -224,76 +334,135 @@ class ApiShipFulfillmentProvider extends AbstractFulfillmentProviderService {
   async retrieveDocuments(): Promise<void> {
     return
   }
-
-  private async request<T>(path: string, body: Record<string, unknown>): Promise<T> {
-    if (!isApiShipConfigured(this.options_)) {
-      throw new MedusaError(
-        MedusaError.Types.INVALID_DATA,
-        "ApiShip shipping is not configured. Set APISHIP_TOKEN to enable the opt-in rate slice."
-      )
-    }
-
-    const url = `${getApiShipBaseUrl(this.options_)}${path}`
-    let response: Response
-
-    try {
-      response = await fetch(url, {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          Authorization: this.options_.token,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown fetch failure"
-
-      this.logger_.warn(
-        `ApiShip request transport failure: ${JSON.stringify({
-          path,
-          mode: this.options_.isTest ? "test" : "live",
-          message,
-        })}`
-      )
-
-      throw new MedusaError(
-        MedusaError.Types.UNEXPECTED_STATE,
-        `ApiShip tariff calculation failed before a response was received. ${message}`
-      )
-    }
-
-    if (!response.ok) {
-      const errorDetails = await parseApiShipErrorResponse(response)
-
-      this.logger_.warn(
-        `ApiShip request failed: ${JSON.stringify({
-          path,
-          mode: this.options_.isTest ? "test" : "live",
-          ...errorDetails,
-        })}`
-      )
-
-      throw new MedusaError(
-        MedusaError.Types.UNEXPECTED_STATE,
-        formatApiShipErrorMessage(errorDetails)
-      )
-    }
-
-    return (await response.json()) as T
-  }
 }
 
 export default ModuleProvider(Modules.FULFILLMENT, {
   services: [ApiShipFulfillmentProvider],
 })
 
-function buildCalculatorRequest(
-  optionData: CalculateShippingOptionPriceDTO["optionData"],
-  context: CalculateShippingOptionPriceDTO["context"]
+export function normalizeApiShipSelectionData(data?: Record<string, unknown>) {
+  if (!data) {
+    return {}
+  }
+
+  const providerKey = getString(data.provider_key)
+  const tariffId = getFiniteInteger(data.tariff_id)
+  const pickupType = getFiniteInteger(data.pickup_type)
+  const deliveryType = getFiniteInteger(data.delivery_type)
+  const pointOutId = getFiniteInteger(data.point_out_id)
+  const normalized: Record<string, unknown> = {}
+  const hasSelectionIdentity =
+    Object.prototype.hasOwnProperty.call(data, "provider_key") ||
+    Object.prototype.hasOwnProperty.call(data, "tariff_id")
+
+  if (hasSelectionIdentity && (!providerKey || tariffId === null)) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "ApiShip shipping selection must include both provider_key and tariff_id."
+    )
+  }
+
+  if (providerKey && tariffId !== null) {
+    normalized.provider_key = providerKey
+    normalized.tariff_id = tariffId
+  }
+
+  if (pickupType !== null) {
+    normalized.pickup_type = pickupType
+  }
+
+  if (deliveryType !== null) {
+    normalized.delivery_type = deliveryType
+  }
+
+  if ((pickupType !== null || deliveryType !== null) && (pickupType === null || deliveryType === null)) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "ApiShip shipping selection must include both pickup_type and delivery_type when one of them is provided."
+    )
+  }
+
+  if (deliveryType === 2 && hasSelectionIdentity && pointOutId === null) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      "ApiShip pickup-point selection must include point_out_id before the shipping method can be confirmed."
+    )
+  }
+
+  if (pointOutId !== null) {
+    normalized.point_out_id = pointOutId
+  }
+
+  copyStringField(normalized, data, "provider_name")
+  copyStringField(normalized, data, "tariff_name")
+  copyStringField(normalized, data, "quote_key")
+  copyStringField(normalized, data, "selection_mode")
+  copyStringField(normalized, data, "mode_key")
+  copyStringField(normalized, data, "point_label")
+  copyStringField(normalized, data, "point_address")
+  copyIntegerField(normalized, data, "estimated_days_min")
+  copyIntegerField(normalized, data, "estimated_days_max")
+
+  return normalized
+}
+
+export function parseApiShipSelectionData(
+  data?: Record<string, unknown>
+): ApiShipSelectionData | null {
+  const normalized = normalizeApiShipSelectionData(data)
+  const providerKey = getString(normalized.provider_key)
+  const tariffId = getFiniteInteger(normalized.tariff_id)
+
+  if (!providerKey || tariffId === null) {
+    return null
+  }
+
+  return {
+    provider_key: providerKey,
+    tariff_id: tariffId,
+    pickup_type: getFiniteInteger(normalized.pickup_type) ?? undefined,
+    delivery_type: getFiniteInteger(normalized.delivery_type) ?? undefined,
+    point_out_id: getFiniteInteger(normalized.point_out_id) ?? undefined,
+    provider_name: getString(normalized.provider_name) || undefined,
+    tariff_name: getString(normalized.tariff_name) || undefined,
+    quote_key: getString(normalized.quote_key) || undefined,
+    estimated_days_min: getFiniteInteger(normalized.estimated_days_min) ?? undefined,
+    estimated_days_max: getFiniteInteger(normalized.estimated_days_max) ?? undefined,
+    selection_mode: getString(normalized.selection_mode) || undefined,
+    mode_key: getString(normalized.mode_key) || undefined,
+    point_label: getString(normalized.point_label) || undefined,
+    point_address: getString(normalized.point_address) || undefined,
+  }
+}
+
+export function formatApiShipProviderLabel(
+  providerKey: string,
+  providerName?: string | null
 ) {
-  const shippingAddress = context.shipping_address
-  const stockLocationAddress = context.from_location?.address
+  const normalizedProviderName = providerName?.trim()
+
+  if (normalizedProviderName) {
+    return normalizedProviderName
+  }
+
+  const normalizedKey = providerKey.trim().toLowerCase()
+
+  if (normalizedKey === "yataxi" || normalizedKey.includes("yandex")) {
+    return "Яндекс.Доставка"
+  }
+
+  return providerKey.trim() || null
+}
+
+function buildCalculatorRequest(input: {
+  optionData: CalculateShippingOptionPriceDTO["optionData"]
+  context: CalculateShippingOptionPriceDTO["context"]
+  deliveryType: number
+  pickupType: number
+}) {
+  const shippingAddress = input.context.shipping_address
+  const stockLocationAddress = input.context.from_location?.address
+  const items = input.context.items ?? []
 
   if (!shippingAddress?.country_code || !shippingAddress.city || !shippingAddress.address_1) {
     throw new MedusaError(
@@ -308,8 +477,6 @@ function buildCalculatorRequest(
       "Stock location must include country and city before ApiShip rate calculation."
     )
   }
-
-  const items = context.items ?? []
 
   if (!items.length) {
     throw new MedusaError(
@@ -343,20 +510,15 @@ function buildCalculatorRequest(
     },
     places: items.flatMap((item) => {
       const quantity = Math.max(Number(item.quantity) || 0, 1)
-      const weight = getNumber(item.variant?.weight) || DEFAULT_PACKAGE_WEIGHT
-      const height = getNumber(item.variant?.height) || DEFAULT_PACKAGE_DIMENSION
-      const length = getNumber(item.variant?.length) || DEFAULT_PACKAGE_DIMENSION
-      const width = getNumber(item.variant?.width) || DEFAULT_PACKAGE_DIMENSION
+      const weight = getFiniteNumber(item.variant?.weight) ?? DEFAULT_PACKAGE_WEIGHT
+      const height = getFiniteNumber(item.variant?.height) ?? DEFAULT_PACKAGE_DIMENSION
+      const length = getFiniteNumber(item.variant?.length) ?? DEFAULT_PACKAGE_DIMENSION
+      const width = getFiniteNumber(item.variant?.width) ?? DEFAULT_PACKAGE_DIMENSION
 
-      return Array.from({ length: quantity }, () => ({
-        height,
-        length,
-        width,
-        weight,
-      }))
+      return Array.from({ length: quantity }, () => ({ height, length, width, weight }))
     }),
-    pickupTypes: [getNumber(optionData.pickupType) || 1],
-    deliveryTypes: [getNumber(optionData.deliveryType) || 1],
+    pickupTypes: [input.pickupType],
+    deliveryTypes: [input.deliveryType],
     assessedCost: items.reduce((sum, item) => {
       return sum + (Number(item.unit_price) || 0) * (Number(item.quantity) || 0)
     }, 0),
@@ -365,25 +527,10 @@ function buildCalculatorRequest(
   }
 }
 
-function pickCheapestTariff(
-  response: ApiShipCalculatorResponse,
-  deliveryType: number
-) {
-  const groups =
-    deliveryType === 1 ? response.deliveryToDoor ?? [] : response.deliveryToPoint ?? []
-
-  return groups
-    .flatMap((group) => {
-      return (group.tariffs ?? []).map((tariff) => ({
-        ...tariff,
-        providerKey: tariff.providerKey ?? group.providerKey,
-      }))
-    })
-    .reduce<ApiShipTariff | null>((cheapest, current) => {
-      if (
-        typeof current.deliveryCost !== "number" ||
-        !Number.isFinite(current.deliveryCost)
-      ) {
+function pickCheapestTariff(response: ApiShipCalculatorResponse, deliveryType: number) {
+  return listTariffsForDeliveryType(response, deliveryType).reduce<ApiShipTariff | null>(
+    (cheapest, current) => {
+      if (typeof current.deliveryCost !== "number" || !Number.isFinite(current.deliveryCost)) {
         return cheapest
       }
 
@@ -392,78 +539,90 @@ function pickCheapestTariff(
       }
 
       return cheapest
-    }, null)
+    },
+    null
+  )
 }
 
-function getApiShipBaseUrl(options: ApiShipProviderOptions) {
-  return options.isTest ? APISHIP_TEST_BASE_URL : APISHIP_LIVE_BASE_URL
+function pickRequestedTariff(
+  response: ApiShipCalculatorResponse,
+  selection: Required<Pick<ApiShipSelectionData, "provider_key" | "tariff_id">> & {
+    delivery_type: number
+    pickup_type: number
+    point_out_id?: number
+  }
+) {
+  return (
+    listTariffsForDeliveryType(response, selection.delivery_type).find((tariff) => {
+      if (tariff.providerKey !== selection.provider_key || tariff.tariffId !== selection.tariff_id) {
+        return false
+      }
+
+      if (Array.isArray(tariff.pickupTypes) && tariff.pickupTypes.length) {
+        if (!tariff.pickupTypes.includes(selection.pickup_type)) {
+          return false
+        }
+      }
+
+      if (
+        typeof selection.point_out_id === "number" &&
+        Array.isArray(tariff.pointIds) &&
+        tariff.pointIds.length &&
+        !tariff.pointIds.includes(selection.point_out_id)
+      ) {
+        return false
+      }
+
+      return true
+    }) ?? null
+  )
 }
 
-function compactAddress(parts: Array<string | null | undefined>) {
-  const value = parts
-    .map((part) => part?.trim())
-    .filter(Boolean)
-    .join(", ")
+function listTariffsForDeliveryType(
+  response: ApiShipCalculatorResponse,
+  deliveryType: number
+) {
+  const groups = deliveryType === 2 ? response.deliveryToPoint ?? [] : response.deliveryToDoor ?? []
 
-  return value || undefined
-}
-
-function getString(value: unknown) {
-  return typeof value === "string" ? value.trim() : ""
-}
-
-function getNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+  return groups.flatMap((group) => {
+    return (group.tariffs ?? []).map((tariff) => ({
+      ...tariff,
+      providerKey: tariff.providerKey ?? group.providerKey,
+    }))
+  })
 }
 
 function summarizeCalculatorRequest(request: ReturnType<typeof buildCalculatorRequest>) {
   return {
-    from: {
-      countryCode: request.from.countryCode,
-      city: request.from.city,
-      index: request.from.index,
-      region: request.from.region,
-    },
-    to: {
-      countryCode: request.to.countryCode,
-      city: request.to.city,
-      index: request.to.index,
-      region: request.to.region,
-    },
+    from: request.from.city,
+    to: request.to.city,
     placesCount: request.places.length,
-    totalWeight: request.places.reduce((sum, place) => sum + (place.weight || 0), 0),
     pickupTypes: request.pickupTypes,
     deliveryTypes: request.deliveryTypes,
     assessedCost: request.assessedCost,
-    codCost: request.codCost,
-    includeFees: request.includeFees,
   }
 }
 
 function summarizeCalculatorResponse(response: ApiShipCalculatorResponse) {
-  const deliveryToDoor = response.deliveryToDoor ?? []
-  const deliveryToPoint = response.deliveryToPoint ?? []
-
   return {
-    deliveryToDoorProviders: deliveryToDoor.length,
-    deliveryToDoorTariffs: countTariffs(deliveryToDoor),
-    deliveryToPointProviders: deliveryToPoint.length,
-    deliveryToPointTariffs: countTariffs(deliveryToPoint),
+    deliveryToDoorProviders: response.deliveryToDoor?.length ?? 0,
+    deliveryToPointProviders: response.deliveryToPoint?.length ?? 0,
     cheapestDoorCost: pickCheapestTariff(response, 1)?.deliveryCost ?? null,
     cheapestPointCost: pickCheapestTariff(response, 2)?.deliveryCost ?? null,
   }
 }
 
-function countTariffs(groups: ApiShipTariffGroup[]) {
-  return groups.reduce((sum, group) => sum + (group.tariffs?.length ?? 0), 0)
+function compactAddress(parts: Array<string | null | undefined>) {
+  const value = parts.map((part) => part?.trim()).filter(Boolean).join(", ")
+  return value || undefined
 }
 
 function parseApiShipTestMode(value: string | undefined) {
-  if (typeof value !== "string" || !value.trim()) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : ""
+
+  if (!normalized) {
     return true
   }
-
-  const normalized = value.trim().toLowerCase()
 
   if (["1", "true", "yes", "on"].includes(normalized)) {
     return true
@@ -477,107 +636,98 @@ function parseApiShipTestMode(value: string | undefined) {
 }
 
 async function parseApiShipErrorResponse(response: Response): Promise<ApiShipErrorDetails> {
-  const contentType = response.headers.get("content-type") || undefined
   const rawBody = truncateForLogs(await response.text())
   const parsedBody = tryParseJson(rawBody)
   const body = isRecord(parsedBody) ? parsedBody : undefined
   const nestedError = isRecord(body?.error) ? body.error : undefined
   const primarySource = nestedError ?? body
-  const message =
-    getErrorString(primarySource?.message) ||
-    getErrorString(body?.message) ||
-    getErrorString(body?.error) ||
-    response.statusText ||
-    undefined
-  const description =
-    getErrorString(primarySource?.description) ||
-    getErrorString(body?.description) ||
-    getErrorString(primarySource?.details) ||
-    getErrorString(body?.details)
-  const code =
-    getErrorString(primarySource?.code) ||
-    getErrorString(body?.code) ||
-    getErrorString(body?.statusCode) ||
-    getErrorString(body?.errorCode)
 
   return {
     status: response.status,
     statusText: response.statusText,
-    code,
-    message,
-    description,
-    hint: getApiShipErrorHint(response.status, message, description),
-    rawBody:
-      message || description || code || body
-        ? undefined
-        : rawBody || undefined,
-    contentType,
-    bodyKeys: body ? Object.keys(body).slice(0, 10) : undefined,
+    code: getErrorString(primarySource?.code) || getErrorString(body?.code),
+    message:
+      getErrorString(primarySource?.message) ||
+      getErrorString(body?.message) ||
+      getErrorString(body?.error) ||
+      response.statusText ||
+      undefined,
+    description:
+      getErrorString(primarySource?.description) ||
+      getErrorString(body?.description) ||
+      getErrorString(primarySource?.details) ||
+      getErrorString(body?.details),
+    hint: getApiShipErrorHint(response.status),
+    rawBody: rawBody || undefined,
   }
 }
 
 function formatApiShipErrorMessage(error: ApiShipErrorDetails) {
-  const parts = [`ApiShip tariff calculation failed (HTTP ${error.status})`]
-
-  if (error.code) {
-    parts.push(`code: ${error.code}`)
-  }
-
-  if (error.message) {
-    parts.push(error.message)
-  }
-
-  if (error.description && error.description !== error.message) {
-    parts.push(error.description)
-  }
-
-  if (error.hint) {
-    parts.push(error.hint)
-  }
-
-  return parts.join(". ")
+  return [
+    `ApiShip request failed (HTTP ${error.status})`,
+    error.code ? `code: ${error.code}` : null,
+    error.message || null,
+    error.description && error.description !== error.message ? error.description : null,
+    error.hint || null,
+  ]
+    .filter(Boolean)
+    .join(". ")
 }
 
-function getApiShipErrorHint(
-  status: number,
-  message?: string,
-  description?: string
-) {
-  const combined = `${message || ""} ${description || ""}`.toLowerCase()
-
-  if (
-    status === 401 ||
-    combined.includes("token") ||
-    combined.includes("auth") ||
-    combined.includes("unauthorized")
-  ) {
+function getApiShipErrorHint(status: number) {
+  if (status === 401) {
     return "Check ApiShip token validity and account access configuration."
   }
 
-  if (
-    status === 402 ||
-    combined.includes("billing") ||
-    combined.includes("balance") ||
-    combined.includes("payment required")
-  ) {
+  if (status === 402) {
     return "Check ApiShip billing and account balance state."
   }
 
-  if (
-    status === 403 ||
-    combined.includes("contract") ||
-    combined.includes("connection") ||
-    combined.includes("provider") ||
-    combined.includes("not available")
-  ) {
-    return "Check ApiShip carrier connections, contracts, and cabinet configuration for the requested route."
+  if (status === 403) {
+    return "Check ApiShip carrier connections, contracts, and cabinet configuration."
   }
 
-  if (status === 422 || combined.includes("validation") || combined.includes("address")) {
+  if (status === 422) {
     return "Check shipping address, stock location data, and ApiShip request payload mapping."
   }
 
   return "Check ApiShip account state, billing, carrier connections/contracts, and request configuration."
+}
+
+function copyStringField(target: Record<string, unknown>, source: Record<string, unknown>, key: string) {
+  const value = getString(source[key])
+
+  if (value) {
+    target[key] = value
+  }
+}
+
+function copyIntegerField(target: Record<string, unknown>, source: Record<string, unknown>, key: string) {
+  const value = getFiniteInteger(source[key])
+
+  if (value !== null) {
+    target[key] = value
+  }
+}
+
+function getString(value: unknown) {
+  return typeof value === "string" ? value.trim() : ""
+}
+
+function getFiniteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+function getFiniteInteger(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) ? value : null
+}
+
+function getFiniteIntegerArray(value: unknown) {
+  return Array.isArray(value)
+    ? value
+        .map((entry) => getFiniteInteger(entry))
+        .filter((entry): entry is number => entry !== null)
+    : []
 }
 
 function truncateForLogs(value: string, limit = 1000) {
