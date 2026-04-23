@@ -1,6 +1,7 @@
 import { DELIVERY_HUB_MODE_CODE, DELIVERY_HUB_PROVIDER_YANDEX } from "../../constants"
 import type { DeliveryQuote } from "../../domain/quote"
 import type { DeliveryPickupPoint } from "../../domain/pickup-point"
+import { DeliveryHubError } from "../../errors"
 import type { DeliveryPickupWindow } from "../../domain/pickup-window"
 import type {
   YandexPickupPointDto,
@@ -52,12 +53,21 @@ export function mapYandexQuote(
     pickup_window_options?: DeliveryPickupWindow[]
   }
 ): DeliveryQuote {
-  const amount = normalizeNumber(offer.price?.amount) ?? 0
-  const currency = normalizeString(offer.price?.currency, "RUB")
-  const quoteKey = normalizeString(
-    offer.offer_id,
-    `${DELIVERY_HUB_PROVIDER_YANDEX}:${input.mode_code}:${input.destination_point_id}`
-  )
+  const amount = normalizeNumber(offer.price?.amount)
+  const currency = normalizeNullableString(offer.price?.currency)
+  const quoteKey = normalizeNullableString(offer.offer_id)
+
+  if (amount === null || amount < 0) {
+    throw createYandexOfferShapeError("price.amount", offer, "missing_or_invalid_amount")
+  }
+
+  if (!currency) {
+    throw createYandexOfferShapeError("price.currency", offer, "missing_or_invalid_currency")
+  }
+
+  if (!quoteKey) {
+    throw createYandexOfferShapeError("offer_id", offer, "missing_or_invalid_offer_id")
+  }
 
   return {
     carrier_code: DELIVERY_HUB_PROVIDER_YANDEX,
@@ -75,9 +85,41 @@ export function mapYandexQuote(
       input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
     pickup_window_options: input.pickup_window_options ?? [],
     raw_reference: {
-      provider_offer_id: offer.offer_id ?? null,
+      provider_offer_id: quoteKey,
       provider: DELIVERY_HUB_PROVIDER_YANDEX,
     },
+  }
+}
+
+function createYandexOfferShapeError(
+  field: string,
+  offer: YandexPricingOfferDto,
+  reason: string
+) {
+  return new DeliveryHubError({
+    code: "DELIVERY_HUB_PROVIDER_ERROR",
+    message: `Yandex Delivery response shape drift: invalid quote offer ${field}`,
+    status: 502,
+    details: {
+      provider_status: "ok",
+      error_category: "provider_shape",
+      reason,
+      expected_field: field,
+      offer_shape: describeYandexOfferShape(offer),
+    },
+  })
+}
+
+function describeYandexOfferShape(offer: YandexPricingOfferDto): Record<string, unknown> {
+  const root = offer && typeof offer === "object" ? offer as Record<string, unknown> : {}
+  const price = root.price && typeof root.price === "object" ? root.price as Record<string, unknown> : null
+  const eta = root.eta && typeof root.eta === "object" ? root.eta as Record<string, unknown> : null
+
+  return {
+    type: offer && typeof offer === "object" ? "object" : typeof offer,
+    keys: Object.keys(root).sort(),
+    price_keys: price ? Object.keys(price).sort() : null,
+    eta_keys: eta ? Object.keys(eta).sort() : null,
   }
 }
 

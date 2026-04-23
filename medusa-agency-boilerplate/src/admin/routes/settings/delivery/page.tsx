@@ -19,8 +19,11 @@ import {
   deriveShippingOptionManualSyncRenderState,
   deriveShippingOptionPreviewRenderState,
   formatTimestamp,
+  getDiagnosticsSummaryText,
   getFilteredEventLogs,
   getObservedEncryptionDisabled,
+  getQuoteInputEchoLines,
+  getQuoteModeHint,
   getShippingOptionSyncCapability,
   getWarehouseOptionLabel,
   getYandexConnections,
@@ -37,6 +40,8 @@ import {
   type DeliveryConnection,
   type DeliveryConnectionForm,
   type DeliveryEventLog,
+  type DeliveryHubDiagnosticsSummary,
+  type DeliveryHubTestQuoteInputEcho,
   type DeliveryHubExecutionPlanObservabilityReadModel,
   type DeliveryHubFulfillmentBridgeReadinessPreview,
   type DeliveryHubShippingOptionManualSyncResponse,
@@ -50,6 +55,7 @@ type DeliveryTestConnectionResult = {
   ok: boolean
   provider_code: string
   diagnostics: Record<string, unknown>
+  diagnostics_summary?: DeliveryHubDiagnosticsSummary
 }
 
 type DeliveryQuote = {
@@ -74,6 +80,8 @@ type DeliveryTestQuoteResponse = {
   connection: DeliveryConnection
   quotes: DeliveryQuote[]
   correlation_id: string
+  input_echo: DeliveryHubTestQuoteInputEcho
+  diagnostics_summary: DeliveryHubDiagnosticsSummary
 }
 
 type DeliveryTestQuoteForm = {
@@ -979,9 +987,12 @@ const DeliverySettingsPage = () => {
                     <Text className="text-ui-fg-subtle mt-1 text-sm">Provider-level response snapshot from the latest admin test call.</Text>
                   </div>
                   <span className={`rounded-full border px-2 py-1 text-xs ${logSuccessToneClass(testConnectionResult.ok)}`}>
-                    {testConnectionResult.ok ? "ok" : "failed"}
+                    {testConnectionResult.ok ? "ready" : "failed"}
                   </span>
                 </div>
+                <Text className="text-ui-fg-subtle mt-3 text-sm">
+                  {getDiagnosticsSummaryText(testConnectionResult.diagnostics_summary)}
+                </Text>
                 <pre className="mt-3 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
                   {JSON.stringify(testConnectionResult.diagnostics, null, 2)}
                 </pre>
@@ -2026,8 +2037,11 @@ const DeliverySettingsPage = () => {
         <div className="rounded-lg border p-4">
           <Heading level="h2">Test quote</Heading>
           <Text className="text-ui-fg-subtle mt-2">
-            Minimal diagnostic form for Yandex supported modes in tranche-1.
+            Minimal diagnostic form for Yandex supported modes in tranche-1. Secret credentials and provider tokens are never echoed.
           </Text>
+          <div className="mt-3 rounded-md border bg-ui-bg-subtle p-3">
+            <Text className="text-ui-fg-subtle text-sm">{getQuoteModeHint(testQuoteForm.mode_code)}</Text>
+          </div>
 
           {testQuoteError ? (
             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
@@ -2074,6 +2088,7 @@ const DeliverySettingsPage = () => {
 
             <div>
               <Label htmlFor="quote-destination-point">Destination point id</Label>
+              <Text className="text-ui-fg-subtle mb-1 text-xs">Yandex pickup point identifier for the recipient side.</Text>
               <Input
                 id="quote-destination-point"
                 value={testQuoteForm.destination_point_id}
@@ -2094,6 +2109,7 @@ const DeliverySettingsPage = () => {
               <>
                 <div>
                   <Label htmlFor="quote-warehouse-id">Warehouse</Label>
+                  <Text className="text-ui-fg-subtle mb-1 text-xs">Required for warehouse_to_pickup_point; backend sends only mapped provider warehouse reference.</Text>
                   <select
                     id="quote-warehouse-id"
                     value={testQuoteForm.warehouse_id}
@@ -2130,6 +2146,7 @@ const DeliverySettingsPage = () => {
             ) : (
               <div className="md:col-span-2">
                 <Label htmlFor="quote-origin-point">Origin dropoff point id</Label>
+                <Text className="text-ui-fg-subtle mb-1 text-xs">Required for dropoff_point_to_pickup_point; should be a Yandex dropoff-capable pickup point id.</Text>
                 <Input
                   id="quote-origin-point"
                   value={testQuoteForm.origin_point_id}
@@ -2191,8 +2208,22 @@ const DeliverySettingsPage = () => {
                 </div>
               </div>
 
+              <div className="rounded-md border bg-ui-bg-subtle p-4">
+                <Text className="font-medium">Readiness summary</Text>
+                <Text className="text-ui-fg-subtle mt-1 text-sm">
+                  {getDiagnosticsSummaryText(testQuoteResult.diagnostics_summary)}
+                </Text>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {getQuoteInputEchoLines(testQuoteResult.input_echo).map((line) => (
+                    <span key={line} className="rounded-full border bg-ui-bg-base px-2 py-1 text-xs text-ui-fg-subtle">
+                      {line}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid gap-3">
-                {testQuoteResult.quotes.map((quote) => (
+                {testQuoteResult.quotes.length ? testQuoteResult.quotes.map((quote) => (
                   <div key={quote.quote_key} className="rounded-md border p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
@@ -2224,13 +2255,17 @@ const DeliverySettingsPage = () => {
                     </div>
 
                     <details className="mt-3">
-                      <summary className="cursor-pointer text-sm text-ui-fg-subtle">Raw reference</summary>
+                      <summary className="cursor-pointer text-sm text-ui-fg-subtle">Redacted provider reference</summary>
                       <pre className="mt-2 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
                         {JSON.stringify(quote.raw_reference, null, 2)}
                       </pre>
                     </details>
                   </div>
-                ))}
+                )) : (
+                  <div className="rounded-md border p-4">
+                    <Text className="text-ui-fg-subtle">No quotes returned for this diagnostic request.</Text>
+                  </div>
+                )}
               </div>
             </div>
           ) : null}

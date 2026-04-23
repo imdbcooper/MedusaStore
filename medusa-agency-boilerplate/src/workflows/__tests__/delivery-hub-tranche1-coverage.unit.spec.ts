@@ -218,7 +218,7 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
       .mockResolvedValueOnce({
         offers: [
           {
-            offer_id: null,
+            offer_id: "offer-warehouse-1",
             price: {
               amount: "499",
               currency: "RUB",
@@ -307,7 +307,7 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
         carrier_code: DELIVERY_HUB_PROVIDER_YANDEX,
         carrier_label: "Yandex Delivery",
         mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
-        quote_key: `${DELIVERY_HUB_PROVIDER_YANDEX}:${DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint}:pvz_1`,
+        quote_key: "offer-warehouse-1",
         amount: 499,
         currency_code: "rub",
         delivery_eta_min: 1,
@@ -330,7 +330,7 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
           },
         ],
         raw_reference: {
-          provider_offer_id: null,
+          provider_offer_id: "offer-warehouse-1",
           provider: DELIVERY_HUB_PROVIDER_YANDEX,
         },
       },
@@ -358,7 +358,175 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
       },
     ])
   })
+
+  it("fails closed when a 200 quote response is missing an offers array", async () => {
+    const adapter = createYandexDeliveryAdapter()
+    jest.spyOn(YandexDeliveryClient.prototype, "post").mockResolvedValue({})
+
+    await expect(adapter.quoteDropoffPointToPickupPoint(createAdapterContext(), {
+      origin_point_id: "dropoff_1",
+      destination_point_id: "pvz_1",
+      currency_code: "RUB",
+    })).rejects.toMatchObject({
+      code: "DELIVERY_HUB_PROVIDER_ERROR",
+      status: 502,
+      details: {
+        provider_status: "ok",
+        error_category: "provider_shape",
+        expected_array: "offers",
+        reason: "expected_array_missing",
+      },
+    })
+  })
+
+  it("does not accept unrelated items as quote offers", async () => {
+    const adapter = createYandexDeliveryAdapter()
+    jest.spyOn(YandexDeliveryClient.prototype, "post").mockResolvedValue({
+      items: [
+        {
+          offer_id: "unrelated-item-offer",
+          price: {
+            amount: 10,
+            currency: "RUB",
+          },
+        },
+      ],
+    })
+
+    await expect(adapter.quoteDropoffPointToPickupPoint(createAdapterContext(), {
+      origin_point_id: "dropoff_1",
+      destination_point_id: "pvz_1",
+      currency_code: "RUB",
+    })).rejects.toMatchObject({
+      code: "DELIVERY_HUB_PROVIDER_ERROR",
+      details: {
+        error_category: "provider_shape",
+        expected_array: "offers",
+        response_shape: {
+          keys: ["items"],
+        },
+      },
+    })
+  })
+
+  it.each([
+    ["missing price", { offer_id: "offer-1", price: { currency: "RUB" } }, "price.amount"],
+    ["missing id", { price: { amount: 0, currency: "RUB" } }, "offer_id"],
+    ["missing currency", { offer_id: "offer-1", price: { amount: 10 } }, "price.currency"],
+  ])("rejects malformed quote offers instead of producing zero or synthetic quotes: %s", async (_case, offer, expectedField) => {
+    const adapter = createYandexDeliveryAdapter()
+    jest.spyOn(YandexDeliveryClient.prototype, "post").mockResolvedValue({
+      offers: [offer],
+    })
+
+    await expect(adapter.quoteDropoffPointToPickupPoint(createAdapterContext(), {
+      origin_point_id: "dropoff_1",
+      destination_point_id: "pvz_1",
+      currency_code: "RUB",
+    })).rejects.toMatchObject({
+      code: "DELIVERY_HUB_PROVIDER_ERROR",
+      status: 502,
+      details: {
+        provider_status: "ok",
+        error_category: "provider_shape",
+        expected_field: expectedField,
+      },
+    })
+  })
+
+  it("accepts explicit zero amount when offer id and currency are present", async () => {
+    const adapter = createYandexDeliveryAdapter()
+    jest.spyOn(YandexDeliveryClient.prototype, "post").mockResolvedValue({
+      data: {
+        offers: [
+          {
+            offer_id: "offer-free-1",
+            price: {
+              amount: 0,
+              currency: "RUB",
+            },
+          },
+        ],
+      },
+    })
+
+    const quotes = await adapter.quoteDropoffPointToPickupPoint(createAdapterContext(), {
+      origin_point_id: "dropoff_1",
+      destination_point_id: "pvz_1",
+      currency_code: "RUB",
+    })
+
+    expect(quotes).toEqual([
+      expect.objectContaining({
+        quote_key: "offer-free-1",
+        amount: 0,
+        currency_code: "rub",
+        raw_reference: {
+          provider_offer_id: "offer-free-1",
+          provider: DELIVERY_HUB_PROVIDER_YANDEX,
+        },
+      }),
+    ])
+  })
+
+  it("distinguishes valid empty pickup arrays from missing pickup array keys", async () => {
+    const adapter = createYandexDeliveryAdapter()
+    const postSpy = jest
+      .spyOn(YandexDeliveryClient.prototype, "post")
+      .mockResolvedValueOnce({ points: [] })
+      .mockResolvedValueOnce({})
+
+    await expect(adapter.listPickupPoints(createAdapterContext(), {
+      city: "Moscow",
+      country_code: "RU",
+    })).resolves.toEqual([])
+
+    await expect(adapter.listPickupPoints(createAdapterContext(), {
+      city: "Moscow",
+      country_code: "RU",
+    })).rejects.toMatchObject({
+      code: "DELIVERY_HUB_PROVIDER_ERROR",
+      details: {
+        error_category: "provider_shape",
+        expected_array: "points",
+        reason: "expected_array_missing",
+      },
+    })
+    expect(postSpy).toHaveBeenCalledTimes(2)
+  })
 })
+
+  it("normalizes and redacts Yandex provider HTTP errors without leaking auth", async () => {
+    process.env.DELIVERY_HUB_ENCRYPTION_KEY = Buffer.alloc(32, 18).toString("base64")
+    const client = new YandexDeliveryClient(createConnectionRecord({
+      credentials_envelope: encryptDeliveryHubCredentials(
+        { token: "client-secret-token" },
+        { mode: "sealed", key: Buffer.alloc(32, 18) }
+      ),
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+    }) as any)
+    const fetchSpy = jest.spyOn(globalThis, "fetch" as any).mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: async () => JSON.stringify({ message: "Authorization: Bearer leaked-token" }),
+    } as any)
+
+    await expect(client.post("/pickup-points/list", { token: "payload-secret" }, "corr_1")).rejects.toMatchObject({
+      code: "DELIVERY_HUB_CREDENTIALS_INVALID",
+      details: {
+        provider_status: 401,
+        error_category: "auth",
+        request: {
+          headers: { Authorization: "***" },
+          payload: { token: "***" },
+        },
+        response: {
+          message: "Authorization: Bearer ***",
+        },
+      },
+    })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
 
 describe("Delivery Hub service contract seams", () => {
   it("records successful connection tests with pickup-point sampling via service seam", async () => {
@@ -394,6 +562,13 @@ describe("Delivery Hub service contract seams", () => {
         provider_status: "ok",
         pickup_points_count: 2,
         correlation_id: expect.any(String),
+      },
+      diagnostics_summary: {
+        status: "ok",
+        provider_status: "ok",
+        error_category: null,
+        correlation_id: expect.any(String),
+        redacted: true,
       },
     })
     expect(testConnectionSpy).toHaveBeenCalledWith(
@@ -476,6 +651,21 @@ describe("Delivery Hub service contract seams", () => {
       ok: true,
       quotes: [quote],
       correlation_id: expect.any(String),
+      input_echo: {
+        connection_id: connection.id,
+        mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+        destination_point_id: "pvz_1",
+        origin_point_id: "dropoff_1",
+        warehouse_id: null,
+        currency_code: "RUB",
+        item_count: 1,
+      },
+      diagnostics_summary: {
+        status: "ok",
+        provider_status: null,
+        error_category: null,
+        redacted: true,
+      },
       connection: {
         id: connection.id,
         provider_code: DELIVERY_HUB_PROVIDER_YANDEX,
@@ -502,16 +692,23 @@ describe("Delivery Hub service contract seams", () => {
     const eventLogCall = pg.calls.find((call) => call.sql.includes("insert into delivery_event_logs"))
     expect(eventLogCall).toBeDefined()
     expect(JSON.parse(String(eventLogCall?.params[6]))).toEqual({
+      connection_id: connection.id,
       mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
       destination_point_id: "pvz_1",
       origin_point_id: "dropoff_1",
       warehouse_id: null,
-      provider_warehouse_id: null,
       interval_utc: null,
+      currency_code: "RUB",
+      item_count: 1,
+      provider_warehouse_id_present: false,
     })
-    expect(JSON.parse(String(eventLogCall?.params[7]))).toEqual({
+    expect(JSON.parse(String(eventLogCall?.params[7]))).toMatchObject({
       quotes_count: 1,
       quote_keys: ["quote_dropoff_1"],
+      diagnostics_summary: {
+        status: "ok",
+        redacted: true,
+      },
     })
   })
 })

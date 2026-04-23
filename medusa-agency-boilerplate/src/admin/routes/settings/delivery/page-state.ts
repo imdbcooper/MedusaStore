@@ -86,6 +86,67 @@ export type DeliveryEventLog = {
   created_at: string
 }
 
+
+export type DeliveryHubDiagnosticsSummary = {
+  status: "ok" | "error"
+  provider_status: string | null
+  error_category: string | null
+  message: string | null
+  correlation_id: string | null
+  checked_at: string
+  redacted: true
+}
+
+export type DeliveryHubTestQuoteInputEcho = {
+  connection_id: string
+  mode_code: "warehouse_to_pickup_point" | "dropoff_point_to_pickup_point"
+  destination_point_id: string
+  origin_point_id: string | null
+  warehouse_id: string | null
+  interval_utc: { from: string; to: string } | null
+  currency_code: string | null
+  item_count: number
+}
+
+export function getDiagnosticsSummaryText(summary: DeliveryHubDiagnosticsSummary | null | undefined) {
+  if (!summary) {
+    return "Diagnostics summary unavailable"
+  }
+
+  const provider = summary.provider_status ? `provider=${summary.provider_status}` : "provider=n/a"
+  const category = summary.error_category ? `category=${summary.error_category}` : "category=n/a"
+
+  return `${summary.status} · ${provider} · ${category} · correlation=${summary.correlation_id ?? "n/a"}`
+}
+
+export function getQuoteModeHint(modeCode: DeliveryHubTestQuoteInputEcho["mode_code"] | string) {
+  if (modeCode === "warehouse_to_pickup_point") {
+    return "Uses a mapped Delivery Hub warehouse as Yandex source and a destination pickup point id; interval is optional and can be sampled from pickup windows."
+  }
+
+  if (modeCode === "dropoff_point_to_pickup_point") {
+    return "Uses an origin Yandex dropoff pickup point id and a destination pickup point id; no warehouse mapping is sent."
+  }
+
+  return "Select a supported Yandex diagnostic quote mode."
+}
+
+export function getQuoteInputEchoLines(echo: DeliveryHubTestQuoteInputEcho | null | undefined) {
+  if (!echo) {
+    return []
+  }
+
+  return [
+    `mode=${echo.mode_code}`,
+    `destination=${echo.destination_point_id}`,
+    echo.warehouse_id ? `warehouse=${echo.warehouse_id}` : null,
+    echo.origin_point_id ? `origin=${echo.origin_point_id}` : null,
+    echo.currency_code ? `currency=${echo.currency_code}` : null,
+    `items=${echo.item_count}`,
+    echo.interval_utc ? `interval=${echo.interval_utc.from} → ${echo.interval_utc.to}` : null,
+  ].filter((line): line is string => !!line)
+}
+
 export type DeliveryHubShippingOptionData = {
   version: number
   provider_code: string

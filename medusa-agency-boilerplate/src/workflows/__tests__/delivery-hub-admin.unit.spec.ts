@@ -331,6 +331,15 @@ describe("Delivery Hub admin routes", () => {
         correlation_id: "corr-connection-test",
         pickup_points_count: 3,
       },
+      diagnostics_summary: {
+        status: "ok",
+        provider_status: "ok",
+        error_category: null,
+        message: null,
+        correlation_id: "corr-connection-test",
+        checked_at: "2026-04-21T10:00:00.000Z",
+        redacted: true,
+      },
     }
 
     const testSpy = jest
@@ -405,6 +414,83 @@ describe("Delivery Hub admin routes", () => {
         },
       },
     })
+  })
+
+
+  it("redacts secret-like quote raw references and preserves structured quote diagnostics", async () => {
+    jest.spyOn(DeliveryHubService.prototype, "testQuote").mockResolvedValue({
+      ok: true,
+      connection: {
+        id: "conn_1",
+        provider_code: "yandex",
+        name: "Yandex test",
+        status: "active",
+        mode: "test",
+        enabled: true,
+        country_code: "RU",
+        credentials_state: "sealed",
+        credentials_fingerprint: "fingerprint",
+        credentials_last_validated_at: null,
+        credentials_last_error_code: null,
+        credentials_present: true,
+        config: {},
+        metadata: {},
+        created_at: "2026-04-20T00:00:00.000Z",
+        updated_at: "2026-04-20T00:00:00.000Z",
+      },
+      quotes: [
+        {
+          quote_key: "quote_1",
+          raw_reference: { authorization: "Bearer leaked-token" },
+        },
+      ],
+      correlation_id: "corr-test-quote",
+      input_echo: {
+        connection_id: "conn_1",
+        mode_code: "warehouse_to_pickup_point",
+        destination_point_id: "pvz_1",
+        origin_point_id: null,
+        warehouse_id: "wh_1",
+        interval_utc: null,
+        currency_code: "RUB",
+        item_count: 0,
+      },
+      diagnostics_summary: {
+        status: "ok",
+        provider_status: null,
+        error_category: null,
+        message: null,
+        correlation_id: "corr-test-quote",
+        checked_at: "2026-04-21T10:00:00.000Z",
+        redacted: true,
+      },
+    } as any)
+
+    const res = createMockResponse()
+
+    await deliveryTestQuoteRoute.POST(
+      createMockRequest({
+        url: "/admin/delivery/test-quote",
+        validatedBody: {
+          connection_id: "conn_1",
+          mode_code: "warehouse_to_pickup_point",
+          warehouse_id: "wh_1",
+          destination_point_id: "pvz_1",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      input_echo: expect.objectContaining({ mode_code: "warehouse_to_pickup_point" }),
+      diagnostics_summary: expect.objectContaining({ status: "ok", redacted: true }),
+      quotes: [
+        expect.objectContaining({
+          raw_reference: { authorization: "***" },
+        }),
+      ],
+    }))
   })
 
   it("returns warehouse list payload for admin delivery warehouses GET", async () => {
@@ -3526,6 +3612,25 @@ describe("Delivery Hub admin routes", () => {
         },
       ],
       correlation_id: "corr-test-quote",
+      input_echo: {
+        connection_id: "conn_1",
+        mode_code: "warehouse_to_pickup_point",
+        destination_point_id: "pvz_1",
+        origin_point_id: null,
+        warehouse_id: "wh_1",
+        interval_utc: null,
+        currency_code: "RUB",
+        item_count: 0,
+      },
+      diagnostics_summary: {
+        status: "ok",
+        provider_status: null,
+        error_category: null,
+        message: null,
+        correlation_id: "corr-test-quote",
+        checked_at: "2026-04-21T10:00:00.000Z",
+        redacted: true,
+      },
     }
 
     const quoteSpy = jest

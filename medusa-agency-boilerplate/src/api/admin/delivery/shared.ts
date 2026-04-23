@@ -62,12 +62,45 @@ const AdminDeliveryConnectionSchema = z
   })
   .strict()
 
+const AdminDeliveryDiagnosticsSummarySchema = z
+  .object({
+    status: z.enum(["ok", "error"]),
+    provider_status: z.string().nullable(),
+    error_category: z.string().nullable(),
+    message: z.string().nullable(),
+    correlation_id: z.string().nullable(),
+    checked_at: z.string(),
+    redacted: z.literal(true),
+  })
+  .strict()
+
+const AdminDeliveryTestQuoteInputEchoSchema = z
+  .object({
+    connection_id: z.string(),
+    mode_code: z.enum(["warehouse_to_pickup_point", "dropoff_point_to_pickup_point"]),
+    destination_point_id: z.string(),
+    origin_point_id: z.string().nullable(),
+    warehouse_id: z.string().nullable(),
+    interval_utc: z
+      .object({
+        from: z.string(),
+        to: z.string(),
+      })
+      .strict()
+      .nullable(),
+    currency_code: z.string().nullable(),
+    item_count: z.number().int().min(0),
+  })
+  .strict()
+
 const AdminDeliveryTestQuoteResponseSchema = z
   .object({
     ok: z.literal(true),
     connection: AdminDeliveryConnectionSchema,
     quotes: z.array(z.record(z.unknown())),
     correlation_id: z.string(),
+    input_echo: AdminDeliveryTestQuoteInputEchoSchema,
+    diagnostics_summary: AdminDeliveryDiagnosticsSummarySchema,
   })
   .strict()
 
@@ -85,6 +118,7 @@ const AdminDeliveryConnectionTestResultSchema = z
     ok: z.boolean(),
     provider_code: z.string(),
     diagnostics: z.record(z.unknown()),
+    diagnostics_summary: AdminDeliveryDiagnosticsSummarySchema.optional(),
   })
   .strict()
 
@@ -1272,7 +1306,14 @@ export function sanitizeAdminDeliveryWarehouse(warehouse: unknown) {
 }
 
 export function sanitizeAdminDeliveryTestQuoteResponse(result: unknown) {
-  return AdminDeliveryTestQuoteResponseSchema.parse(result)
+  const root = asRecord(result)
+
+  return AdminDeliveryTestQuoteResponseSchema.parse({
+    ...root,
+    quotes: asArray(root.quotes).map(sanitizeAdminStructuredPayload),
+    input_echo: sanitizeAdminStructuredPayload(root.input_echo),
+    diagnostics_summary: sanitizeAdminStructuredPayload(root.diagnostics_summary),
+  })
 }
 
 export function sanitizeAdminDeliveryProvider(provider: unknown) {

@@ -6,8 +6,11 @@ import {
   deriveFulfillmentBridgePreviewRenderState,
   deriveShippingOptionManualSyncRenderState,
   deriveShippingOptionPreviewRenderState,
+  getDiagnosticsSummaryText,
   getFilteredEventLogs,
   getObservedEncryptionDisabled,
+  getQuoteInputEchoLines,
+  getQuoteModeHint,
   getShippingOptionSyncCapability,
   getWarehouseOptionLabel,
   getYandexConnections,
@@ -162,6 +165,42 @@ describe("delivery admin settings page state", () => {
         },
       ]).map((warehouse) => warehouse.id)
     ).toEqual(["wh_legacy", "wh_yandex"])
+  })
+
+
+  it("derives redacted diagnostics and quote input helper text for operators", () => {
+    expect(
+      getDiagnosticsSummaryText({
+        status: "ok",
+        provider_status: "ok",
+        error_category: null,
+        message: null,
+        correlation_id: "corr_1",
+        checked_at: "2026-04-21T10:00:00.000Z",
+        redacted: true,
+      })
+    ).toBe("ok · provider=ok · category=n/a · correlation=corr_1")
+
+    expect(getQuoteModeHint("warehouse_to_pickup_point")).toContain("mapped Delivery Hub warehouse")
+    expect(getQuoteModeHint("dropoff_point_to_pickup_point")).toContain("origin Yandex dropoff")
+    expect(
+      getQuoteInputEchoLines({
+        connection_id: "conn_1",
+        mode_code: "warehouse_to_pickup_point",
+        destination_point_id: "pvz_1",
+        origin_point_id: null,
+        warehouse_id: "wh_1",
+        interval_utc: null,
+        currency_code: "RUB",
+        item_count: 1,
+      })
+    ).toEqual([
+      "mode=warehouse_to_pickup_point",
+      "destination=pvz_1",
+      "warehouse=wh_1",
+      "currency=RUB",
+      "items=1",
+    ])
   })
 
   it("formats warehouse labels and warehouse form fields for operator-facing selectors", () => {

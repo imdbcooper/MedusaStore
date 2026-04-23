@@ -17,7 +17,11 @@ import type {
   DeliveryConnectionUpsertInput,
 } from "./domain/connection"
 import type { DeliveryQuote } from "./domain/quote"
-import type { DeliveryTestQuoteInput } from "./domain/test-dto"
+import type {
+  DeliveryHubDiagnosticsSummary,
+  DeliveryTestQuoteEcho,
+  DeliveryTestQuoteInput,
+} from "./domain/test-dto"
 import type {
   DeliveryWarehousePublic,
   DeliveryWarehouseRecord,
@@ -458,13 +462,20 @@ export class DeliveryHubService {
         credentials_last_error_code: null,
       })
 
+      const diagnostics = redactRecord({
+        ...result.diagnostics,
+        pickup_points_count: pickupPointsCount,
+        correlation_id: correlationId,
+      })
+
       return {
         ...result,
-        diagnostics: {
-          ...result.diagnostics,
-          pickup_points_count: pickupPointsCount,
+        diagnostics,
+        diagnostics_summary: buildDiagnosticsSummary({
+          ok: result.ok,
+          diagnostics,
           correlation_id: correlationId,
-        },
+        }),
       }
     } catch (error) {
       const normalized = normalizeDeliveryHubError(error)
@@ -478,16 +489,13 @@ export class DeliveryHubService {
         request_summary: {
           include_pickup_points: !!input?.include_pickup_points,
         },
-        response_summary: redactRecord({
-          message: normalized.message,
-          details: normalized.details ?? {},
-        }),
+        response_summary: buildProviderErrorSummary(normalized, correlationId),
       })
 
       await this.materializeConnectionFailure(connection, normalized, {
         status: DELIVERY_HUB_CONNECTION_STATUS.error,
       })
-
+      normalized.details = buildProviderErrorSummary(normalized, correlationId)
       throw normalized
     }
   }
@@ -524,30 +532,36 @@ export class DeliveryHubService {
               }
             )
 
+      const inputEcho = buildTestQuoteInputEcho(input)
+      const diagnosticsSummary = buildDiagnosticsSummary({
+        ok: true,
+        diagnostics: { quotes_count: quotes.length },
+        correlation_id: correlationId,
+      })
+
       await this.appendLog({
         connection,
         kind: DELIVERY_HUB_LOG_KIND.quote,
         correlation_id: correlationId,
         success: true,
         request_summary: redactRecord({
-          mode_code: input.mode_code,
-          destination_point_id: input.destination_point_id,
-          origin_point_id: input.origin_point_id ?? null,
-          warehouse_id: input.warehouse_id ?? null,
-          provider_warehouse_id: resolvedWarehouseId,
-          interval_utc: input.interval_utc ?? null,
+          ...inputEcho,
+          provider_warehouse_id_present: !!resolvedWarehouseId,
         }),
         response_summary: {
           quotes_count: quotes.length,
           quote_keys: quotes.map((quote) => quote.quote_key),
+          diagnostics_summary: diagnosticsSummary,
         },
       })
 
       return {
         ok: true,
         connection: serializeDeliveryConnectionPublic(connection),
-        quotes,
+        quotes: quotes.map(sanitizeAdminQuote),
         correlation_id: correlationId,
+        input_echo: inputEcho,
+        diagnostics_summary: diagnosticsSummary,
       }
     } catch (error) {
       const normalized = normalizeDeliveryHubError(error)
@@ -559,20 +573,14 @@ export class DeliveryHubService {
         success: false,
         error_code: normalized.code,
         request_summary: redactRecord({
-          mode_code: input.mode_code,
-          destination_point_id: input.destination_point_id,
-          origin_point_id: input.origin_point_id ?? null,
-          warehouse_id: input.warehouse_id ?? null,
-          provider_warehouse_id: resolvedWarehouseId,
+          ...buildTestQuoteInputEcho(input),
+          provider_warehouse_id_present: !!resolvedWarehouseId,
         }),
-        response_summary: {
-          message: normalized.message,
-          details: normalized.details ?? {},
-        },
+        response_summary: buildProviderErrorSummary(normalized, correlationId),
       })
 
       await this.materializeConnectionFailure(connection, normalized)
-
+      normalized.details = buildProviderErrorSummary(normalized, correlationId)
       throw normalized
     }
   }
@@ -1332,6 +1340,106 @@ function normalizeDeliveryHubError(error: unknown) {
     message: error instanceof Error ? error.message : "Unknown Delivery Hub error",
     status: 502,
   })
+}
+
+
+function buildDiagnosticsSummary(input: {
+  ok: boolean
+  diagnostics: Record<string, unknown>
+  correlation_id: string
+  error?: DeliveryHubError
+}): DeliveryHubDiagnosticsSummary {
+  const details = input.error?.details ?? {}
+  const providerStatus = normalizeProviderStatus(
+    input.diagnostics.provider_status ??
+      input.diagnostics.provider_status_code ??
+      details.provider_status ??
+      details.status
+  )
+
+  return {
+    status: input.ok ? "ok" : "error",
+    provider_status: providerStatus,
+    error_category: input.ok ? null : normalizeProviderErrorCategory(input.error),
+    message: input.ok ? null : input.error?.message ?? "Provider request failed",
+    correlation_id: input.correlation_id,
+    checked_at: new Date().toISOString(),
+    redacted: true,
+  }
+}
+
+function buildProviderErrorSummary(error: DeliveryHubError, correlationId: string) {
+  return redactRecord({
+    message: error.message,
+    code: error.code,
+    provider_status: normalizeProviderStatus(error.details?.provider_status),
+    error_category: normalizeProviderErrorCategory(error),
+    diagnostics_summary: buildDiagnosticsSummary({
+      ok: false,
+      diagnostics: {},
+      correlation_id: correlationId,
+      error,
+    }),
+    details: error.details ?? {},
+  })
+}
+
+function normalizeProviderStatus(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value)
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    return value.trim().toLowerCase()
+  }
+
+  return null
+}
+
+function normalizeProviderErrorCategory(error?: DeliveryHubError) {
+  if (!error) {
+    return null
+  }
+
+  if (error.code === "DELIVERY_HUB_CREDENTIALS_INVALID") {
+    return "auth"
+  }
+
+  const providerStatus = error.details?.provider_status
+
+  if (typeof providerStatus === "number") {
+    if (providerStatus === 401 || providerStatus === 403) {
+      return "auth"
+    }
+    if (providerStatus === 408 || providerStatus === 429 || providerStatus >= 500) {
+      return "provider_unavailable"
+    }
+    if (providerStatus >= 400) {
+      return "provider_rejected"
+    }
+  }
+
+  return error.status >= 500 ? "provider_error" : "validation"
+}
+
+function buildTestQuoteInputEcho(input: DeliveryTestQuoteInput): DeliveryTestQuoteEcho {
+  return {
+    connection_id: input.connection_id,
+    mode_code: input.mode_code,
+    destination_point_id: input.destination_point_id,
+    origin_point_id: input.origin_point_id ?? null,
+    warehouse_id: input.warehouse_id ?? null,
+    interval_utc: input.interval_utc ?? null,
+    currency_code: input.currency_code ?? null,
+    item_count: input.items?.length ?? 0,
+  }
+}
+
+function sanitizeAdminQuote(quote: DeliveryQuote): DeliveryQuote {
+  return {
+    ...quote,
+    raw_reference: redactRecord(quote.raw_reference ?? {}),
+  }
 }
 
 function requireString(value: string | null | undefined, field: string) {
