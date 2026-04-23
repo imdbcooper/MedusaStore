@@ -5,6 +5,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
 import {
+  buildDeliveryHubCommitEligibilityModel,
   buildDeliveryHubHandoffContractMatrixPreviewModel,
   buildDeliveryHubHandoffPreviewModel,
   buildDeliveryHubNeutralSelectionRehearsalModel,
@@ -725,6 +726,445 @@ test("buildDeliveryHubSavedSelectionSummaryModel reconciles stale or invalid sav
     "Clear the stale neutral selection or save again after choosing a fresh Delivery Hub candidate."
   )
   assert.equal(JSON.stringify(summary).includes("point_stale_summary_internal_id"), false)
+})
+
+test("buildDeliveryHubCommitEligibilityModel returns ready handoff only for saved neutral selection with matching deliveryhub option", () => {
+  const model = buildDeliveryHubCommitEligibilityModel({
+    persisted_selection: {
+      ok: true,
+      cart_id: "cart_commit_ready",
+      selection: {
+        version: 1,
+        connection_id: "conn_commit_ready",
+        provider_code: "yandex",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_commit_ready",
+          version: 2,
+        },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 599,
+          currency_code: "RUB",
+          delivery_eta_min: 2,
+          delivery_eta_max: 3,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_commit_ready",
+          provider_point_code: "SAFE-1",
+          name: "Commit-ready PVZ",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-23T07:00:00.000Z",
+      },
+    },
+    readiness: {
+      ok: true,
+      cart_id: "cart_commit_ready",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 1,
+        connection_id: "conn_commit_ready",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_commit_ready",
+          version: 2,
+        },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 599,
+          currency_code: "RUB",
+          delivery_eta_min: 2,
+          delivery_eta_max: 3,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_commit_ready",
+          provider_point_code: null,
+          name: "Commit-ready PVZ",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-23T07:00:00.000Z",
+      },
+      quote_context: null,
+    },
+    available_shipping_options: [
+      {
+        id: "deliveryhub:warehouse_to_pickup_point",
+        name: "Delivery Hub Pickup",
+        provider_id: "deliveryhub_deliveryhub",
+        data: {
+          provider_code: "deliveryhub",
+          id: "deliveryhub:warehouse_to_pickup_point",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: {
+            id: "leaked_quote_key_should_not_matter",
+          },
+          raw_reference: {
+            offer_id: "unsafe-offer-id",
+          },
+        },
+      },
+    ],
+    current_shipping_method: {
+      shipping_option_id: "manual-flat-rate",
+    },
+  })
+
+  assert.equal(model.status, "ready")
+  assert.equal(model.shipping_option_id, "deliveryhub:warehouse_to_pickup_point")
+  assert.equal(model.expected_shipping_option_id, "deliveryhub:warehouse_to_pickup_point")
+  assert.equal(model.current_shipping_option_id, "manual-flat-rate")
+  assert.equal(model.reason_codes.length, 0)
+  assert.equal(
+    model.hint_messages.some((message) => message.includes("raw_reference")),
+    true
+  )
+  const serialized = JSON.stringify(model)
+  assert.equal(serialized.includes("unsafe-offer-id"), false)
+  assert.equal(serialized.includes("leaked_quote_key_should_not_matter"), false)
+})
+
+test("buildDeliveryHubCommitEligibilityModel blocks stale or mismatched saved neutral selection", () => {
+  const model = buildDeliveryHubCommitEligibilityModel({
+    persisted_selection: {
+      ok: true,
+      cart_id: "cart_commit_stale",
+      selection: {
+        version: 1,
+        connection_id: "conn_commit_stale",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_commit_stale",
+          version: 1,
+        },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 450,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_commit_stale",
+          provider_point_code: null,
+          name: "Stale PVZ",
+          address: "Old street 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-23T06:00:00.000Z",
+      },
+    },
+    readiness: {
+      ok: true,
+      cart_id: "cart_commit_stale",
+      status: "invalid_selection",
+      issues: [
+        {
+          code: "selection_invalid",
+          message: "Selection drifted",
+          field: "selection",
+        },
+      ],
+      selection: {
+        version: 1,
+        connection_id: "conn_other",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_other",
+          version: 1,
+        },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 451,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_other",
+          provider_point_code: null,
+          name: "Other PVZ",
+          address: "Other street 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-23T06:30:00.000Z",
+      },
+      quote_context: null,
+    },
+    available_shipping_options: [
+      {
+        id: "deliveryhub:warehouse_to_pickup_point",
+        name: "Delivery Hub Pickup",
+        provider_id: "deliveryhub_deliveryhub",
+        data: {
+          provider_code: "deliveryhub",
+          id: "deliveryhub:warehouse_to_pickup_point",
+          mode_code: "warehouse_to_pickup_point",
+        },
+      },
+    ],
+    current_shipping_method: {
+      shipping_option_id: "manual-flat-rate",
+    },
+  })
+
+  assert.equal(model.status, "blocked")
+  assert.equal(model.reason_codes.includes("selection_not_ready"), true)
+  assert.equal(model.reason_codes.includes("selection_mismatch"), true)
+  assert.equal(model.is_committed, false)
+})
+
+test("buildDeliveryHubCommitEligibilityModel blocks when no matching Delivery Hub shipping option exists on the cart", () => {
+  const model = buildDeliveryHubCommitEligibilityModel({
+    persisted_selection: {
+      ok: true,
+      cart_id: "cart_commit_no_option",
+      selection: {
+        version: 1,
+        connection_id: "conn_commit_no_option",
+        quote_type: "dropoff_point_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_commit_no_option",
+          version: 3,
+        },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 700,
+          currency_code: "RUB",
+          delivery_eta_min: 2,
+          delivery_eta_max: 4,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_commit_no_option",
+          provider_point_code: null,
+          name: "No-option PVZ",
+          address: "Nevsky 10",
+          city: "Saint Petersburg",
+          region: "Saint Petersburg",
+          postal_code: "190000",
+          lat: 59.93,
+          lng: 30.33,
+          is_origin_dropoff_allowed: true,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-23T07:10:00.000Z",
+      },
+    },
+    readiness: {
+      ok: true,
+      cart_id: "cart_commit_no_option",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 1,
+        connection_id: "conn_commit_no_option",
+        quote_type: "dropoff_point_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_commit_no_option",
+          version: 3,
+        },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 700,
+          currency_code: "RUB",
+          delivery_eta_min: 2,
+          delivery_eta_max: 4,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_commit_no_option",
+          provider_point_code: null,
+          name: "No-option PVZ",
+          address: "Nevsky 10",
+          city: "Saint Petersburg",
+          region: "Saint Petersburg",
+          postal_code: "190000",
+          lat: 59.93,
+          lng: 30.33,
+          is_origin_dropoff_allowed: true,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-23T07:10:00.000Z",
+      },
+      quote_context: null,
+    },
+    available_shipping_options: [
+      {
+        id: "manual-flat-rate",
+        name: "Flat rate",
+        provider_id: "manual_manual",
+        data: null,
+      },
+    ],
+    current_shipping_method: {
+      shipping_option_id: "manual-flat-rate",
+    },
+  })
+
+  assert.equal(model.status, "blocked")
+  assert.equal(model.reason_codes.includes("missing_delivery_hub_option"), true)
+  assert.equal(model.shipping_option_id, null)
+  assert.equal(model.expected_shipping_option_id, "deliveryhub:dropoff_point_to_pickup_point")
+})
+
+test("buildDeliveryHubCommitEligibilityModel degrades stale committed snapshot to blocked when matching Delivery Hub option is no longer available", () => {
+  const model = buildDeliveryHubCommitEligibilityModel({
+    persisted_selection: {
+      ok: true,
+      cart_id: "cart_commit_stale_snapshot",
+      selection: {
+        version: 1,
+        connection_id: "conn_commit_stale_snapshot",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_commit_stale_snapshot",
+          version: 5,
+        },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 650,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_commit_stale_snapshot",
+          provider_point_code: null,
+          name: "Stale snapshot PVZ",
+          address: "Tverskaya 5",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-23T07:15:00.000Z",
+      },
+    },
+    readiness: {
+      ok: true,
+      cart_id: "cart_commit_stale_snapshot",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 1,
+        connection_id: "conn_commit_stale_snapshot",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_commit_stale_snapshot",
+          version: 5,
+        },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 650,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_commit_stale_snapshot",
+          provider_point_code: null,
+          name: "Stale snapshot PVZ",
+          address: "Tverskaya 5",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-23T07:15:00.000Z",
+      },
+      quote_context: null,
+    },
+    available_shipping_options: [
+      {
+        id: "manual-flat-rate",
+        name: "Flat rate",
+        provider_id: "manual_manual",
+        data: null,
+      },
+    ],
+    current_shipping_method: {
+      shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
+    },
+  })
+
+  assert.equal(model.status, "blocked")
+  assert.equal(model.is_committed, false)
+  assert.equal(model.reason_codes.includes("missing_delivery_hub_option"), true)
+  assert.equal(model.current_shipping_option_id, "deliveryhub:warehouse_to_pickup_point")
+  assert.equal(model.expected_shipping_option_id, "deliveryhub:warehouse_to_pickup_point")
+  assert.equal(model.shipping_option_id, null)
 })
 
 test("normalizeDeliveryHubReadinessResponse preserves neutral readiness summary only", () => {

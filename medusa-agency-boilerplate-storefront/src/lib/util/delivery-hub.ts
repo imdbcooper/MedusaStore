@@ -1038,6 +1038,40 @@ export type DeliveryHubSavedSelectionSummaryModel = {
   action_label: string | null
 }
 
+export type DeliveryHubCommitEligibleShippingOption = {
+  id: string
+  name: string | null
+}
+
+export type DeliveryHubCommitEligibilityReasonCode =
+  | "missing_saved_selection"
+  | "missing_mode_code"
+  | "selection_not_ready"
+  | "selection_mismatch"
+  | "missing_delivery_hub_option"
+  | "provider_mismatch"
+
+export type DeliveryHubCommitEligibilityStatus =
+  | "missing_selection"
+  | "blocked"
+  | "ready"
+  | "committed"
+
+export type DeliveryHubCommitEligibilityModel = {
+  tone: "neutral" | "positive" | "warning"
+  status: DeliveryHubCommitEligibilityStatus
+  status_label: string
+  detail_label: string
+  action_label: string | null
+  shipping_option_id: string | null
+  shipping_option_label: string | null
+  expected_shipping_option_id: string | null
+  current_shipping_option_id: string | null
+  is_committed: boolean
+  reason_codes: DeliveryHubCommitEligibilityReasonCode[]
+  hint_messages: string[]
+}
+
 export type DeliveryHubShadowCatalogPreviewState = {
   status: "idle" | "loading" | "ready" | "error"
   default_connection_label: string | null
@@ -2754,6 +2788,238 @@ export function buildDeliveryHubSavedSelectionSummaryModel(
     action_label: needsAttention
       ? "Clear the stale neutral selection or save again after choosing a fresh Delivery Hub candidate."
       : "Continue using the committed Medusa shipping method until Delivery Hub shipping-method commit is enabled separately.",
+  }
+}
+
+function readDeliveryHubCommitModeCodeFromOption(
+  option:
+    | {
+        id?: string | null
+        provider_id?: string | null
+        data?: Record<string, unknown> | null
+      }
+    | null
+    | undefined
+): DeliveryHubQuoteType | null {
+  const optionData = option?.data ?? null
+  const modeCode =
+    readOptionalString(optionData?.mode_code) ??
+    readOptionalString(optionData?.id)?.replace(/^deliveryhub:/, "") ??
+    readOptionalString(option?.id)?.replace(/^deliveryhub:/, "") ??
+    null
+
+  return isDeliveryHubQuoteType(modeCode) ? modeCode : null
+}
+
+function isDeliveryHubCommitEligibleOption(
+  option:
+    | {
+        id?: string | null
+        name?: string | null
+        provider_id?: string | null
+        data?: Record<string, unknown> | null
+      }
+    | null
+    | undefined,
+  expectedShippingOptionId: string,
+  expectedModeCode: DeliveryHubQuoteType
+) {
+  if (!option?.id) {
+    return false
+  }
+
+  const optionData = option.data ?? null
+  const providerId = readOptionalString(option.provider_id)
+  const providerCode = readOptionalString(optionData?.provider_code)
+  const optionDataId = readOptionalString(optionData?.id)
+  const modeCode = readDeliveryHubCommitModeCodeFromOption(option)
+  const matchesExpectedId =
+    option.id === expectedShippingOptionId || optionDataId === expectedShippingOptionId
+  const looksDeliveryHubScoped =
+    option.id.startsWith("deliveryhub:") ||
+    optionDataId?.startsWith("deliveryhub:") ||
+    providerId === "deliveryhub_deliveryhub" ||
+    providerCode === "deliveryhub"
+
+  return looksDeliveryHubScoped && matchesExpectedId && modeCode === expectedModeCode
+}
+
+function hasDeliveryHubPersistedSelectionMismatch(
+  selection: DeliveryHubSelection | null,
+  readiness: DeliveryHubReadinessResponse | null | undefined
+) {
+  if (!selection || !readiness?.selection) {
+    return false
+  }
+
+  return (
+    readiness.selection.connection_id !== selection.connection_id ||
+    readiness.selection.quote_type !== selection.quote_type ||
+    readiness.selection.quote_reference.id !== selection.quote_reference.id ||
+    readiness.selection.quote_reference.version !== selection.quote_reference.version
+  )
+}
+
+export function buildDeliveryHubCommitEligibilityModel(input: {
+  persisted_selection?: DeliveryHubSelectionResponse | null
+  readiness?: DeliveryHubReadinessResponse | null
+  available_shipping_options?: Array<{
+    id?: string | null
+    name?: string | null
+    provider_id?: string | null
+    data?: Record<string, unknown> | null
+  }> | null
+  current_shipping_method?: {
+    shipping_option_id?: string | null
+  } | null
+} = {}): DeliveryHubCommitEligibilityModel {
+  const selection = input.persisted_selection?.selection ?? null
+  const readiness = input.readiness ?? null
+  const currentShippingOptionId =
+    readOptionalString(input.current_shipping_method?.shipping_option_id) ?? null
+  const reasonCodes: DeliveryHubCommitEligibilityReasonCode[] = []
+  const pushReason = (code: DeliveryHubCommitEligibilityReasonCode) => {
+    if (!reasonCodes.includes(code)) {
+      reasonCodes.push(code)
+    }
+  }
+
+  if (!selection) {
+    pushReason("missing_saved_selection")
+
+    return {
+      tone: "neutral",
+      status: "missing_selection",
+      status_label: "Delivery Hub saved selection is missing",
+      detail_label:
+        "Commit stays blocked until a neutral Delivery Hub selection is saved to cart metadata.",
+      action_label: "Save a neutral Delivery Hub selection before attempting shipping-method commit.",
+      shipping_option_id: null,
+      shipping_option_label: null,
+      expected_shipping_option_id: null,
+      current_shipping_option_id: currentShippingOptionId,
+      is_committed: false,
+      reason_codes: reasonCodes,
+      hint_messages: [
+        "Only the persisted neutral Delivery Hub contract is eligible for storefront handoff; raw provider payloads are never used here.",
+      ],
+    }
+  }
+
+  const expectedShippingOptionId = `deliveryhub:${selection.quote_type}`
+  const matchedOption =
+    input.available_shipping_options?.find((option) =>
+      isDeliveryHubCommitEligibleOption(option, expectedShippingOptionId, selection.quote_type)
+    ) ?? null
+  const currentModeCode = readDeliveryHubCommitModeCodeFromOption(
+    input.available_shipping_options?.find((option) => option.id === currentShippingOptionId) ?? null
+  )
+  const currentLooksDeliveryHub = Boolean(
+    currentShippingOptionId?.startsWith("deliveryhub:") || currentModeCode
+  )
+  const readinessMismatch = hasDeliveryHubPersistedSelectionMismatch(selection, readiness)
+
+  if (readiness?.status !== "ready") {
+    pushReason("selection_not_ready")
+  }
+
+  if (readinessMismatch) {
+    pushReason("selection_mismatch")
+  }
+
+  if (!matchedOption) {
+    pushReason("missing_delivery_hub_option")
+  }
+
+  if (
+    currentLooksDeliveryHub &&
+    currentShippingOptionId !== null &&
+    currentShippingOptionId !== expectedShippingOptionId
+  ) {
+    pushReason("provider_mismatch")
+  }
+
+  const isCommitted =
+    matchedOption !== null &&
+    currentShippingOptionId === expectedShippingOptionId &&
+    !reasonCodes.includes("selection_not_ready") &&
+    !reasonCodes.includes("selection_mismatch") &&
+    !reasonCodes.includes("provider_mismatch") &&
+    !reasonCodes.includes("missing_delivery_hub_option")
+
+  if (isCommitted) {
+    return {
+      tone: "positive",
+      status: "committed",
+      status_label: "Delivery Hub shipping method is committed",
+      detail_label:
+        "The cart currently points at the Delivery Hub shipping option that matches the saved neutral selection.",
+      action_label: null,
+      shipping_option_id: matchedOption?.id ?? expectedShippingOptionId,
+      shipping_option_label: matchedOption?.name ?? null,
+      expected_shipping_option_id: expectedShippingOptionId,
+      current_shipping_option_id: currentShippingOptionId,
+      is_committed: true,
+      reason_codes: reasonCodes.filter((code) => code !== "missing_delivery_hub_option"),
+      hint_messages: [
+        "This only commits the Medusa shipping method id; fulfillment execution remains blocked separately in the backend.",
+      ],
+    }
+  }
+
+  if (reasonCodes.length === 0 && matchedOption) {
+    return {
+      tone: "positive",
+      status: "ready",
+      status_label: "Delivery Hub shipping-method commit is available",
+      detail_label:
+        "Saved neutral selection reconciles with readiness and a matching Delivery Hub shipping option is available on the cart.",
+      action_label:
+        "You can now commit the matching Delivery Hub shipping method without sending raw provider payloads.",
+      shipping_option_id: matchedOption.id ?? null,
+      shipping_option_label: matchedOption.name ?? null,
+      expected_shipping_option_id: expectedShippingOptionId,
+      current_shipping_option_id: currentShippingOptionId,
+      is_committed: false,
+      reason_codes: [],
+      hint_messages: [
+        "Commit uses only the matched Medusa shipping option id derived from the saved neutral Delivery Hub selection.",
+        "No quote_key, raw_reference, provider offer ids, credentials, headers or arbitrary metadata are included in the commit handoff.",
+      ],
+    }
+  }
+
+  return {
+    tone: "warning",
+    status: "blocked",
+    status_label: "Delivery Hub shipping-method commit is blocked",
+    detail_label:
+      "Saved neutral selection exists, but storefront commit cannot proceed until readiness and the current Delivery Hub shipping-option path align.",
+    action_label:
+      matchedOption === null
+        ? "Keep using the currently committed shipping method until a matching Delivery Hub shipping option is available on this cart."
+        : "Refresh the Delivery Hub selection and checkout context before retrying the commit handoff.",
+    shipping_option_id: matchedOption?.id ?? null,
+    shipping_option_label: matchedOption?.name ?? null,
+    expected_shipping_option_id: expectedShippingOptionId,
+    current_shipping_option_id: currentShippingOptionId,
+    is_committed: false,
+    reason_codes: reasonCodes,
+    hint_messages: uniqueDeliveryHubMessages([
+      reasonCodes.includes("selection_not_ready")
+        ? "Readiness must report ready before the storefront can cut in the Delivery Hub shipping-method commit path."
+        : null,
+      reasonCodes.includes("selection_mismatch")
+        ? "Persisted selection and readiness snapshots currently diverge, so the saved neutral selection is treated as stale for commit purposes."
+        : null,
+      reasonCodes.includes("missing_delivery_hub_option")
+        ? `Expected Delivery Hub shipping option ${expectedShippingOptionId} is not currently available on this cart.`
+        : null,
+      reasonCodes.includes("provider_mismatch")
+        ? "The cart is currently committed to a different Delivery Hub contour than the saved neutral selection, so no automatic switch is attempted."
+        : null,
+      "Saved Delivery Hub metadata is never treated as fulfillment confirmation or shipment creation.",
+    ]),
   }
 }
 
