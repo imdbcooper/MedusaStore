@@ -15,4 +15,5 @@ medusa-agency-boilerplate-storefront/.middleware-check.log
 # Generated app/runtime artifacts
 payload-cms/.next/
 payload-cms/node_modules/
+payload-cms/tsconfig.tsbuildinfo
 tmp-payload-orchestration.*/
