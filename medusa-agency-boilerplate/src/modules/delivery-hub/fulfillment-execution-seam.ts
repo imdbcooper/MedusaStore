@@ -14,6 +14,7 @@ import {
   DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,
   DELIVERY_HUB_FULFILLMENT_PROVIDER_ID,
 } from "./provider-surface"
+import type { DeliveryHubProviderExecutionReference } from "./cart-selection"
 import type { DeliveryHubFulfillmentModeCode } from "./shipping-option-contract"
 
 export const DELIVERY_HUB_CONTROLLED_FULFILLMENT_EXECUTION_RESULT_VERSION = 1
@@ -28,6 +29,7 @@ export type DeliveryHubControlledFulfillmentExecutionBlockReasonCode =
   | "delivery_connection_provider_not_supported"
   | "delivery_mode_not_supported"
   | "provider_execution_reference_unavailable"
+  | "provider_dispatch_not_materialized"
 
 export type DeliveryHubControlledFulfillmentExecutionResult = {
   version: typeof DELIVERY_HUB_CONTROLLED_FULFILLMENT_EXECUTION_RESULT_VERSION
@@ -64,7 +66,7 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
     operation: "create_shipment"
     mode_code: DeliveryHubFulfillmentModeCode | null
     mode_supported: boolean
-    provider_execution_reference_present: false
+    provider_execution_reference_present: boolean
     live_adapter_call_performed: false
     persisted_execution_ledger_write_performed: false
   }
@@ -99,10 +101,12 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
   execution_ledger_evidence: DeliveryHubExecutionLedgerEvidenceArtifactAssemblyResult | null
   connection: DeliveryConnectionRecord | null
   connection_lookup_available: boolean
+  persisted_execution_reference: DeliveryHubProviderExecutionReference | null
 }): DeliveryHubControlledFulfillmentExecutionResult {
   const modeCode = input.handoff?.quote_type ?? null
   const modeSupported = isDirectYandexModeSupported(modeCode)
   const connection = input.connection
+  const providerExecutionReferencePresent = input.persisted_execution_reference !== null
   const connectionReady =
     connection !== null &&
     connection.enabled &&
@@ -116,6 +120,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       execution_ledger_evidence: input.execution_ledger_evidence,
       connection: input.connection,
       connection_lookup_available: input.connection_lookup_available,
+      persisted_execution_reference_present: providerExecutionReferencePresent,
       mode_code: modeCode,
       mode_supported: modeSupported,
       blocked_reason_code: "delivery_hub_handoff_missing",
@@ -134,6 +139,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       execution_ledger_evidence: input.execution_ledger_evidence,
       connection: null,
       connection_lookup_available: false,
+      persisted_execution_reference_present: providerExecutionReferencePresent,
       mode_code: modeCode,
       mode_supported: modeSupported,
       blocked_reason_code: "delivery_connection_lookup_unavailable",
@@ -152,6 +158,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       execution_ledger_evidence: input.execution_ledger_evidence,
       connection,
       connection_lookup_available: true,
+      persisted_execution_reference_present: providerExecutionReferencePresent,
       mode_code: modeCode,
       mode_supported: modeSupported,
       blocked_reason_code: "delivery_connection_missing",
@@ -170,6 +177,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       execution_ledger_evidence: input.execution_ledger_evidence,
       connection,
       connection_lookup_available: true,
+      persisted_execution_reference_present: providerExecutionReferencePresent,
       mode_code: modeCode,
       mode_supported: modeSupported,
       blocked_reason_code: "delivery_connection_disabled",
@@ -188,6 +196,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       execution_ledger_evidence: input.execution_ledger_evidence,
       connection,
       connection_lookup_available: true,
+      persisted_execution_reference_present: providerExecutionReferencePresent,
       mode_code: modeCode,
       mode_supported: modeSupported,
       blocked_reason_code: "delivery_connection_not_active",
@@ -206,6 +215,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       execution_ledger_evidence: input.execution_ledger_evidence,
       connection,
       connection_lookup_available: true,
+      persisted_execution_reference_present: providerExecutionReferencePresent,
       mode_code: modeCode,
       mode_supported: modeSupported,
       blocked_reason_code: "delivery_connection_credentials_not_ready",
@@ -224,6 +234,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       execution_ledger_evidence: input.execution_ledger_evidence,
       connection,
       connection_lookup_available: true,
+      persisted_execution_reference_present: providerExecutionReferencePresent,
       mode_code: modeCode,
       mode_supported: modeSupported,
       blocked_reason_code: "delivery_connection_provider_not_supported",
@@ -242,6 +253,7 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
       execution_ledger_evidence: input.execution_ledger_evidence,
       connection,
       connection_lookup_available: true,
+      persisted_execution_reference_present: providerExecutionReferencePresent,
       mode_code: modeCode,
       mode_supported: false,
       blocked_reason_code: "delivery_mode_not_supported",
@@ -253,21 +265,41 @@ export function buildDeliveryHubControlledFulfillmentExecutionResult(input: {
     })
   }
 
+  if (!providerExecutionReferencePresent) {
+    return buildBlockedResult({
+      execution_plan_preview: input.execution_plan_preview,
+      handoff: input.handoff,
+      execution_ledger_evidence: input.execution_ledger_evidence,
+      connection,
+      connection_lookup_available: true,
+      persisted_execution_reference_present: false,
+      mode_code: modeCode,
+      mode_supported: true,
+      blocked_reason_code: "provider_execution_reference_unavailable",
+      blocked_reason:
+        "Direct Yandex create-shipment dispatch remains blocked because the committed Delivery Hub cart no longer yields a valid backend-only persisted execution reference for provider dispatch preparation.",
+      status: connectionReady ? "dispatch_prepared" : "blocked",
+      result_decision: connectionReady
+        ? "dispatch_prepared_but_blocked"
+        : "blocked_before_preparation",
+      blocking_stage: "provider_dispatch_contract",
+    })
+  }
+
   return buildBlockedResult({
     execution_plan_preview: input.execution_plan_preview,
     handoff: input.handoff,
     execution_ledger_evidence: input.execution_ledger_evidence,
     connection,
     connection_lookup_available: true,
+    persisted_execution_reference_present: true,
     mode_code: modeCode,
     mode_supported: true,
-    blocked_reason_code: "provider_execution_reference_unavailable",
+    blocked_reason_code: "provider_dispatch_not_materialized",
     blocked_reason:
-      "Direct Yandex create-shipment dispatch remains blocked at the final boundary because the committed neutral handoff stores only an opaque quote_reference and does not persist the provider execution reference required for shipment creation.",
-    status: connectionReady ? "dispatch_prepared" : "blocked",
-    result_decision: connectionReady
-      ? "dispatch_prepared_but_blocked"
-      : "blocked_before_preparation",
+      "Direct Yandex create-shipment dispatch now has a backend-only persisted execution reference, but the live provider dispatch adapter path is still intentionally not materialized in createFulfillment().",
+    status: "dispatch_prepared",
+    result_decision: "dispatch_prepared_but_blocked",
     blocking_stage: "provider_dispatch_contract",
   })
 }
@@ -280,6 +312,7 @@ type BuildBlockedResultInput = {
   connection_lookup_available: boolean
   mode_code: DeliveryHubFulfillmentModeCode | null
   mode_supported: boolean
+  persisted_execution_reference_present: boolean
   blocked_reason_code: DeliveryHubControlledFulfillmentExecutionBlockReasonCode
   blocked_reason: string
   status: DeliveryHubControlledFulfillmentExecutionResult["status"]
@@ -326,7 +359,7 @@ function buildBlockedResult(
       operation: "create_shipment",
       mode_code: input.handoff?.quote_type ?? input.mode_code,
       mode_supported: input.mode_supported,
-      provider_execution_reference_present: false,
+      provider_execution_reference_present: input.persisted_execution_reference_present,
       live_adapter_call_performed: false,
       persisted_execution_ledger_write_performed: false,
     },
