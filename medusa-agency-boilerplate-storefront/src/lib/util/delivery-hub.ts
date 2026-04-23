@@ -1628,6 +1628,7 @@ export type DeliveryHubNeutralSelectionLegacyContext = {
 }
 
 export type DeliveryHubNeutralSelectionRehearsalInput = {
+  cart_id?: string | null
   settings?: DeliveryHubStoreSettingsResponse | null
   catalog?: DeliveryHubCatalogResponse | null
   quotes?: DeliveryHubQuotesResponse | null
@@ -1826,6 +1827,81 @@ export type DeliveryHubProjectedCommitParityPreviewModel = {
   mismatch_reasons: string[]
   blocked_readiness_codes: DeliveryHubProjectedCommitParityPreviewReadinessBlocker[]
   blocked_parity_codes: DeliveryHubProjectedCommitParityPreviewParityBlocker[]
+  dry_run_only: true
+  mutation_intent: false
+}
+
+export type DeliveryHubSelectionWriteSeamPreviewVerdict =
+  | "informational_only"
+  | "write_shape_preview_available"
+  | "write_shape_preview_incomplete"
+  | "blocked"
+
+export type DeliveryHubSelectionWriteSeamPreviewFieldKey =
+  | "cart_id"
+  | "connection_id"
+  | "quote_type"
+  | "quote_reference"
+  | "quote"
+  | "pickup_point"
+  | "pickup_window"
+  | "selection_version"
+  | "shape_completeness"
+
+export type DeliveryHubSelectionWriteSeamPreviewFieldStatus =
+  | "projected"
+  | "missing"
+  | "blocked"
+  | "informational_only"
+  | "not_required"
+
+export type DeliveryHubSelectionWriteSeamPreviewField = {
+  key: DeliveryHubSelectionWriteSeamPreviewFieldKey
+  label: string
+  status: DeliveryHubSelectionWriteSeamPreviewFieldStatus
+  detail_label: string
+}
+
+export type DeliveryHubSelectionWriteSeamPreviewBlocker =
+  | "selection_unavailable"
+  | "connection_unavailable"
+  | "delivery_option_unavailable"
+  | "selection_alignment_unavailable"
+
+export type DeliveryHubSelectionWriteSeamPreviewProjectedPayload = {
+  cart_id: string | null
+  connection_id: string | null
+  quote_type: DeliveryHubQuoteType | null
+  quote_reference: DeliveryHubQuoteReference | null
+  quote: DeliveryHubSelectionQuoteSummary | null
+  pickup_point: DeliveryHubSelectionPickupPoint | null
+  pickup_window: DeliveryHubSelectionPickupWindow | null
+}
+
+export type DeliveryHubSelectionWriteSeamPreviewModel = {
+  tone: "neutral" | "positive" | "warning"
+  verdict: DeliveryHubSelectionWriteSeamPreviewVerdict
+  verdict_label: string
+  summary_label: string
+  projected_request_label: string
+  cart_id: string | null
+  connection_id: string | null
+  quote_type: DeliveryHubQuoteType | null
+  quote_type_label: string | null
+  quote_reference_present: boolean
+  quote_present: boolean
+  pickup_point_required: boolean
+  pickup_point_present: boolean
+  pickup_window_required: boolean
+  pickup_window_present: boolean
+  selection_version: number | null
+  shape_completeness: "informational_only" | "partial" | "complete" | "blocked"
+  projected_payload: DeliveryHubSelectionWriteSeamPreviewProjectedPayload | null
+  fields: DeliveryHubSelectionWriteSeamPreviewField[]
+  projected_field_count: number
+  missing_field_count: number
+  blocked_codes: DeliveryHubSelectionWriteSeamPreviewBlocker[]
+  mismatch_reasons: string[]
   dry_run_only: true
   mutation_intent: false
 }
@@ -4931,6 +5007,323 @@ export function buildDeliveryHubProjectedCommitParityPreviewModel(
     mismatch_reasons: mismatchReasons,
     blocked_readiness_codes: readinessBlockedCodes,
     blocked_parity_codes: parityBlockedCodes,
+    dry_run_only: true,
+    mutation_intent: false,
+  }
+}
+
+function buildDeliveryHubSelectionWriteSeamPreviewField(input: {
+  key: DeliveryHubSelectionWriteSeamPreviewFieldKey
+  label: string
+  status: DeliveryHubSelectionWriteSeamPreviewFieldStatus
+  detail_label: string
+}): DeliveryHubSelectionWriteSeamPreviewField {
+  return input
+}
+
+export function buildDeliveryHubSelectionWriteSeamPreviewModel(
+  input: DeliveryHubNeutralSelectionRehearsalInput = {}
+): DeliveryHubSelectionWriteSeamPreviewModel {
+  const candidate = getDeliveryHubNeutralRehearsalCandidate(input)
+  const readiness = input.readiness ?? null
+  const parityPreview = buildDeliveryHubShippingOptionParityPreviewModel(input)
+  const blockedCodes = Array.from(
+    new Set<DeliveryHubSelectionWriteSeamPreviewBlocker>([
+      ...sanitizeDeliveryHubProjectedCommitReadinessBlockers(
+        (readiness?.issues ?? [])
+          .map((issue) => issue.code)
+          .filter((code) =>
+            [
+              "selection_invalid",
+              "connection_missing",
+              "connection_not_found",
+              "connection_disabled",
+              "connection_inactive",
+              "connection_credentials_not_ready",
+            ].includes(code)
+          )
+      ),
+      ...sanitizeDeliveryHubProjectedCommitParityBlockers(
+        parityPreview.gap_codes.filter((code) =>
+          ["connection_not_ready", "mode_mismatch", "legacy_context_stale"].includes(code)
+        )
+      ),
+    ])
+  )
+  const candidatePresent = Boolean(
+    input.cart_id ||
+      candidate.quoteSummary ||
+      candidate.quoteReference ||
+      candidate.quoteType ||
+      candidate.connection.connection_id
+  )
+  const blocked = blockedCodes.length > 0
+  const projectedPayload = candidatePresent
+    ? {
+        cart_id: input.cart_id?.trim() || null,
+        connection_id: candidate.connection.connection_id,
+        quote_type: candidate.quoteType,
+        quote_reference: candidate.quoteReference,
+        quote: candidate.quoteSummary,
+        pickup_point: candidate.pickupPoint,
+        pickup_window:
+          candidate.pickupWindowRequired || candidate.pickupWindow ? candidate.pickupWindow : null,
+      }
+    : null
+  const selectionVersion = candidate.selection?.version ?? null
+  const shapeCompleteness: DeliveryHubSelectionWriteSeamPreviewModel["shape_completeness"] =
+    !candidatePresent
+      ? "informational_only"
+      : blocked
+        ? "blocked"
+        : [
+              Boolean(input.cart_id?.trim()),
+              Boolean(candidate.connection.connection_id),
+              Boolean(candidate.quoteType),
+              Boolean(candidate.quoteReference),
+              Boolean(candidate.quoteSummary),
+              !candidate.pickupPointRequired || Boolean(candidate.pickupPoint),
+              !candidate.pickupWindowRequired || Boolean(candidate.pickupWindow),
+              selectionVersion !== null,
+            ].every(Boolean)
+          ? "complete"
+          : "partial"
+
+  const fields: DeliveryHubSelectionWriteSeamPreviewField[] = [
+    buildDeliveryHubSelectionWriteSeamPreviewField({
+      key: "cart_id",
+      label: "cart_id",
+      status: !candidatePresent
+        ? "informational_only"
+        : input.cart_id?.trim()
+          ? blocked
+            ? "blocked"
+            : "projected"
+          : "missing",
+      detail_label: !candidatePresent
+        ? "Selection write seam preview stays informational until shopper-safe neutral context is visible."
+        : input.cart_id?.trim()
+          ? `Projected request preview would scope to cart_id ${input.cart_id.trim()}.`
+          : "Projected request preview still lacks cart_id context.",
+    }),
+    buildDeliveryHubSelectionWriteSeamPreviewField({
+      key: "connection_id",
+      label: "connection_id",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.connection.connection_id
+          ? blocked
+            ? "blocked"
+            : "projected"
+          : "missing",
+      detail_label: !candidatePresent
+        ? "Selection write seam preview stays informational until shopper-safe neutral context is visible."
+        : candidate.connection.connection_id
+          ? `Projected request preview would currently carry connection_id ${candidate.connection.connection_id}.`
+          : "Projected request preview still lacks connection_id.",
+    }),
+    buildDeliveryHubSelectionWriteSeamPreviewField({
+      key: "quote_type",
+      label: "quote_type",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.quoteType
+          ? blocked
+            ? "blocked"
+            : "projected"
+          : "missing",
+      detail_label: !candidatePresent
+        ? "Selection write seam preview stays informational until shopper-safe neutral context is visible."
+        : candidate.quoteType
+          ? `Projected request preview would currently carry quote_type ${candidate.quoteType}.`
+          : "Projected request preview still lacks quote_type.",
+    }),
+    buildDeliveryHubSelectionWriteSeamPreviewField({
+      key: "quote_reference",
+      label: "quote_reference",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.quoteReference
+          ? blocked
+            ? "blocked"
+            : "projected"
+          : "missing",
+      detail_label: !candidatePresent
+        ? "Selection write seam preview stays informational until shopper-safe neutral context is visible."
+        : candidate.quoteReference
+          ? "Projected request preview would currently carry a backend-issued quote_reference."
+          : "Projected request preview still lacks a backend-issued quote_reference.",
+    }),
+    buildDeliveryHubSelectionWriteSeamPreviewField({
+      key: "quote",
+      label: "quote",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.quoteSummary
+          ? blocked
+            ? "blocked"
+            : "projected"
+          : "missing",
+      detail_label: !candidatePresent
+        ? "Selection write seam preview stays informational until shopper-safe neutral context is visible."
+        : candidate.quoteSummary
+          ? "Projected request preview would currently carry shopper-safe quote summary fields."
+          : "Projected request preview still lacks shopper-safe quote summary fields.",
+    }),
+    buildDeliveryHubSelectionWriteSeamPreviewField({
+      key: "pickup_point",
+      label: "pickup_point",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.pickupPointRequired
+          ? candidate.pickupPoint
+            ? blocked
+              ? "blocked"
+              : "projected"
+            : "missing"
+          : candidate.pickupPoint
+            ? blocked
+              ? "blocked"
+              : "projected"
+            : "not_required",
+      detail_label: !candidatePresent
+        ? "Selection write seam preview stays informational until shopper-safe neutral context is visible."
+        : candidate.pickupPointRequired
+          ? candidate.pickupPoint
+            ? "Projected request preview currently has the required pickup_point fragment."
+            : "Projected request preview still lacks a required pickup_point fragment."
+          : candidate.pickupPoint
+            ? "Projected request preview already includes an optional pickup_point fragment."
+            : "Projected request preview does not currently require pickup_point.",
+    }),
+    buildDeliveryHubSelectionWriteSeamPreviewField({
+      key: "pickup_window",
+      label: "pickup_window",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.pickupWindowRequired
+          ? candidate.pickupWindow
+            ? blocked
+              ? "blocked"
+              : "projected"
+            : "missing"
+          : candidate.pickupWindow
+            ? blocked
+              ? "blocked"
+              : "projected"
+            : "not_required",
+      detail_label: !candidatePresent
+        ? "Selection write seam preview stays informational until shopper-safe neutral context is visible."
+        : candidate.pickupWindowRequired
+          ? candidate.pickupWindow
+            ? "Projected request preview currently has the required pickup_window fragment."
+            : "Projected request preview still lacks a required pickup_window fragment."
+          : candidate.pickupWindow
+            ? "Projected request preview already includes an optional pickup_window fragment."
+            : "Projected request preview does not currently require pickup_window.",
+    }),
+    buildDeliveryHubSelectionWriteSeamPreviewField({
+      key: "selection_version",
+      label: "selection_version",
+      status: !candidatePresent
+        ? "informational_only"
+        : selectionVersion !== null
+          ? blocked
+            ? "blocked"
+            : "projected"
+          : "missing",
+      detail_label: !candidatePresent
+        ? "Selection write seam preview stays informational until shopper-safe neutral context is visible."
+        : selectionVersion !== null
+          ? `Projected request preview is currently derived from neutral selection version ${selectionVersion}.`
+          : "Projected request preview still lacks a stable neutral selection version anchor.",
+    }),
+    buildDeliveryHubSelectionWriteSeamPreviewField({
+      key: "shape_completeness",
+      label: "shape_completeness",
+      status:
+        shapeCompleteness === "complete"
+          ? "projected"
+          : shapeCompleteness === "blocked"
+            ? "blocked"
+            : shapeCompleteness === "partial"
+              ? "missing"
+              : "informational_only",
+      detail_label:
+        shapeCompleteness === "complete"
+          ? "Projected request preview currently exposes a complete shopper-safe request shape for the future selection write seam."
+          : shapeCompleteness === "blocked"
+            ? "Projected request preview remains blocked by readiness or parity blockers already visible in preview surfaces."
+            : shapeCompleteness === "partial"
+              ? "Projected request preview is still missing one or more shopper-safe fragments for a complete future selection write seam shape."
+              : "Projected request shape completeness stays informational until shopper-safe neutral context is visible.",
+    }),
+  ]
+
+  const missingFieldCount = fields.filter((field) => field.status === "missing").length
+  const projectedFieldCount = fields.filter((field) =>
+    ["projected", "not_required"].includes(field.status)
+  ).length
+  const mismatchReasons = uniqueDeliveryHubMessages([
+    ...fields.filter((field) => field.status === "missing").map((field) => field.detail_label),
+    blocked
+      ? `Selection write seam preview blockers remain visible from existing preview surfaces: ${blockedCodes
+          .map((code) => code.replace(/_/g, " "))
+          .join(", ")}.`
+      : null,
+  ])
+  const verdict: DeliveryHubSelectionWriteSeamPreviewVerdict = !candidatePresent
+    ? "informational_only"
+    : blocked
+      ? "blocked"
+      : missingFieldCount > 0
+        ? "write_shape_preview_incomplete"
+        : "write_shape_preview_available"
+
+  return {
+    tone:
+      verdict === "write_shape_preview_available"
+        ? "positive"
+        : verdict === "blocked"
+          ? "warning"
+          : "neutral",
+    verdict,
+    verdict_label:
+      verdict === "write_shape_preview_available"
+        ? "Selection write seam preview looks structurally derivable"
+        : verdict === "blocked"
+          ? "Selection write seam preview is blocked"
+          : verdict === "write_shape_preview_incomplete"
+            ? "Selection write seam preview is still incomplete"
+            : "Selection write seam preview is informational only",
+    summary_label:
+      verdict === "write_shape_preview_available"
+        ? "Current neutral preview already exposes a shopper-safe request shape that could be prepared for a future selection write seam."
+        : verdict === "blocked"
+          ? "Selection write seam preview remains diagnostic-only because readiness or parity blockers are still visible."
+          : verdict === "write_shape_preview_incomplete"
+            ? "Current neutral preview exposes a partial shopper-safe request shape, but one or more write-seam fragments are still missing."
+            : "Selection write seam preview remains diagnostic-only until enough shopper-safe neutral context is available.",
+    projected_request_label:
+      "Future POST /store/delivery/selection request preview · shopper-safe only · no write path · no network path",
+    cart_id: input.cart_id?.trim() || null,
+    connection_id: candidate.connection.connection_id,
+    quote_type: candidate.quoteType,
+    quote_type_label: getDeliveryHubQuoteTypeLabel(candidate.quoteType),
+    quote_reference_present: Boolean(candidate.quoteReference),
+    quote_present: Boolean(candidate.quoteSummary),
+    pickup_point_required: candidate.pickupPointRequired,
+    pickup_point_present: Boolean(candidate.pickupPoint),
+    pickup_window_required: candidate.pickupWindowRequired,
+    pickup_window_present: Boolean(candidate.pickupWindow),
+    selection_version: selectionVersion,
+    shape_completeness: shapeCompleteness,
+    projected_payload: projectedPayload,
+    fields,
+    projected_field_count: projectedFieldCount,
+    missing_field_count: missingFieldCount,
+    blocked_codes: blockedCodes,
+    mismatch_reasons: mismatchReasons,
     dry_run_only: true,
     mutation_intent: false,
   }

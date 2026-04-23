@@ -42,6 +42,7 @@ import {
   buildDeliveryHubNeutralSelectionRehearsalModel,
   buildDeliveryHubPersistedSelectionContractParityPreviewModel,
   buildDeliveryHubProjectedCommitParityPreviewModel,
+  buildDeliveryHubSelectionWriteSeamPreviewModel,
   buildDeliveryHubShippingOptionParityPreviewModel,
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
   type DeliveryHubNeutralSelectionRehearsalInput,
@@ -775,6 +776,7 @@ const Shipping: React.FC<ShippingProps> = ({
         }
 
         const previewInput: DeliveryHubNeutralSelectionRehearsalInput = {
+          cart_id: cart.id,
           settings,
           quotes,
           pickup_points: pickupPoints,
@@ -808,6 +810,7 @@ const Shipping: React.FC<ShippingProps> = ({
         }
 
         const previewInput: DeliveryHubNeutralSelectionRehearsalInput = {
+          cart_id: cart.id,
           legacy_context: {
             active_commit_path: "legacy_apiship",
             legacy_is_committed: Boolean(preferredCartShippingMethodId),
@@ -1118,6 +1121,10 @@ const Shipping: React.FC<ShippingProps> = ({
     )
   const deliveryHubProjectedCommitParityPreview =
     buildDeliveryHubProjectedCommitParityPreviewModel(
+      deliveryHubRehearsalState.preview_input
+    )
+  const deliveryHubSelectionWriteSeamPreview =
+    buildDeliveryHubSelectionWriteSeamPreviewModel(
       deliveryHubRehearsalState.preview_input
     )
   const deliveryHubHandoffContractMatrixPreview =
@@ -1737,6 +1744,78 @@ const Shipping: React.FC<ShippingProps> = ({
                   {deliveryHubProjectedCommitParityPreview.blocked_parity_codes.length > 0 && (
                     <div className="text-ui-fg-muted txt-small">
                       Parity blockers: shopper-safe projected commit preview remains unavailable until the current delivery option aligns with the committed checkout context.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="border-t border-ui-border-base pt-4">
+                <div className="flex flex-col gap-y-2">
+                  <Text className="text-ui-fg-base txt-medium-plus">
+                    Delivery Hub selection write seam preview
+                  </Text>
+                  <Text className="text-ui-fg-muted txt-small">
+                    Preview-only selection write seam. This block shows which shopper-safe request shape could someday be prepared for POST /store/delivery/selection using existing read-only preview surfaces only.
+                  </Text>
+                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
+                    <span>{deliveryHubSelectionWriteSeamPreview.verdict_label}</span>
+                    <span>{deliveryHubSelectionWriteSeamPreview.summary_label}</span>
+                    <span>{deliveryHubSelectionWriteSeamPreview.projected_request_label}</span>
+                    <span>Preview verdict: {deliveryHubSelectionWriteSeamPreview.verdict}</span>
+                    <span>
+                      shape completeness: {deliveryHubSelectionWriteSeamPreview.shape_completeness}
+                    </span>
+                    <span>
+                      projected fields: {deliveryHubSelectionWriteSeamPreview.projected_field_count}
+                      {` · missing fields: ${deliveryHubSelectionWriteSeamPreview.missing_field_count}`}
+                    </span>
+                    <span>cart_id: {deliveryHubSelectionWriteSeamPreview.cart_id ?? "missing"}</span>
+                    <span>
+                      connection_id: {deliveryHubSelectionWriteSeamPreview.connection_id ?? "missing"}
+                    </span>
+                    <span>
+                      quote_type: {deliveryHubSelectionWriteSeamPreview.quote_type ?? "missing"}
+                    </span>
+                    {deliveryHubSelectionWriteSeamPreview.quote_type_label && (
+                      <span>
+                        Quote type label: {deliveryHubSelectionWriteSeamPreview.quote_type_label}
+                      </span>
+                    )}
+                    <span>
+                      quote_reference: {deliveryHubSelectionWriteSeamPreview.quote_reference_present ? "present" : "missing"}
+                    </span>
+                    <span>
+                      quote: {deliveryHubSelectionWriteSeamPreview.quote_present ? "present" : "missing"}
+                    </span>
+                    <span>
+                      pickup point: {deliveryHubSelectionWriteSeamPreview.pickup_point_present ? "present" : "missing"}
+                      {deliveryHubSelectionWriteSeamPreview.pickup_point_required
+                        ? " · required"
+                        : " · not required"}
+                    </span>
+                    <span>
+                      pickup window: {deliveryHubSelectionWriteSeamPreview.pickup_window_present ? "present" : "missing"}
+                      {deliveryHubSelectionWriteSeamPreview.pickup_window_required
+                        ? " · required"
+                        : " · not required"}
+                    </span>
+                    <span>
+                      selection_version: {deliveryHubSelectionWriteSeamPreview.selection_version ?? "missing"}
+                    </span>
+                    {deliveryHubSelectionWriteSeamPreview.fields.map((field) => (
+                      <span key={field.key}>
+                        {field.label}: {field.status} · {field.detail_label}
+                      </span>
+                    ))}
+                  </div>
+                  {deliveryHubSelectionWriteSeamPreview.mismatch_reasons.length > 0 && (
+                    <div className="text-ui-fg-muted txt-small">
+                      Shape notes: {deliveryHubSelectionWriteSeamPreview.mismatch_reasons.join(" | ")}
+                    </div>
+                  )}
+                  {deliveryHubSelectionWriteSeamPreview.blocked_codes.length > 0 && (
+                    <div className="text-ui-fg-muted txt-small">
+                      Preview blockers: {deliveryHubSelectionWriteSeamPreview.blocked_codes.join(", ")}
                     </div>
                   )}
                 </div>

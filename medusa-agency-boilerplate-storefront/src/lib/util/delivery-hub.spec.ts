@@ -12,6 +12,7 @@ import {
   buildDeliveryHubPersistedSelectionPreviewModel,
   buildDeliveryHubProjectedCommitParityPreviewModel,
   buildDeliveryHubReadinessPreviewModel,
+  buildDeliveryHubSelectionWriteSeamPreviewModel,
   buildDeliveryHubShadowCatalogPreviewModel,
   buildDeliveryHubShadowCutoverBlockersPreviewModel,
   buildDeliveryHubShadowCutoverNextStepsPreviewModel,
@@ -2323,6 +2324,303 @@ test("buildDeliveryHubProjectedCommitParityPreviewModel stays shopper-safe and p
   ]) {
     assert.equal(serialized.includes(forbidden), false, forbidden)
   }
+})
+
+test("buildDeliveryHubSelectionWriteSeamPreviewModel reports fully derivable shopper-safe write shape", () => {
+  const preview = buildDeliveryHubSelectionWriteSeamPreviewModel({
+    cart_id: "cart_write_preview_ready",
+    readiness: {
+      ok: true,
+      cart_id: "cart_write_preview_ready",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 3,
+        connection_id: "conn_write_preview_ready",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_write_preview_ready", version: 4 },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: true,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_write_ready",
+          provider_point_code: null,
+          name: "Write ready PVZ",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: {
+          date: "2026-04-22",
+          time_from: "10:00",
+          time_to: "14:00",
+          interval_utc: {
+            from: "2026-04-22T07:00:00.000Z",
+            to: "2026-04-22T11:00:00.000Z",
+          },
+          label: "22 Apr · 10:00–14:00",
+        },
+        updated_at: "2026-04-22T11:30:00.000Z",
+      },
+      quote_context: {
+        connection: {
+          connection_id: "conn_write_preview_ready",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_write_preview_ready", version: 4 },
+        pickup_point_required: true,
+        pickup_window_required: true,
+        updated_at: "2026-04-22T11:30:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  assert.equal(preview.verdict, "write_shape_preview_available")
+  assert.equal(preview.shape_completeness, "complete")
+  assert.equal(preview.projected_payload?.cart_id, "cart_write_preview_ready")
+  assert.equal(preview.projected_payload?.connection_id, "conn_write_preview_ready")
+  assert.equal(preview.projected_payload?.quote_type, "warehouse_to_pickup_point")
+  assert.equal(preview.projected_payload?.quote_reference?.id, "quote_write_preview_ready")
+  assert.equal(preview.projected_payload?.pickup_point?.provider_point_id, "pvz_write_ready")
+  assert.equal(preview.projected_payload?.pickup_window?.date, "2026-04-22")
+  assert.equal(preview.selection_version, 3)
+  assert.equal(preview.mutation_intent, false)
+  assert.equal(preview.dry_run_only, true)
+})
+
+test("buildDeliveryHubSelectionWriteSeamPreviewModel reports incomplete shape when required pickup point is missing", () => {
+  const preview = buildDeliveryHubSelectionWriteSeamPreviewModel({
+    cart_id: "cart_write_preview_missing_point",
+    readiness: {
+      ok: true,
+      cart_id: "cart_write_preview_missing_point",
+      status: "not_ready",
+      issues: [
+        {
+          code: "pickup_point_missing",
+          message: "Pickup point is required",
+          field: "pickup_point",
+        },
+      ],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_write_preview_missing_point",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_write_preview_missing_point", version: 1 },
+        pickup_point_required: true,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T11:40:00.000Z",
+      },
+    },
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "quote_write_preview_missing_point", version: 1 },
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_point_ids: [],
+          pickup_window_required: false,
+        },
+      ],
+    },
+    pickup_points: { ok: true, points: [] },
+  })
+
+  assert.equal(preview.verdict, "write_shape_preview_incomplete")
+  assert.equal(preview.shape_completeness, "partial")
+  assert.equal(preview.pickup_point_required, true)
+  assert.equal(preview.pickup_point_present, false)
+  assert.equal(preview.fields.find((field) => field.key === "pickup_point")?.status, "missing")
+})
+
+test("buildDeliveryHubSelectionWriteSeamPreviewModel reports incomplete shape when required pickup window is missing", () => {
+  const preview = buildDeliveryHubSelectionWriteSeamPreviewModel({
+    cart_id: "cart_write_preview_missing_window",
+    readiness: {
+      ok: true,
+      cart_id: "cart_write_preview_missing_window",
+      status: "not_ready",
+      issues: [
+        {
+          code: "pickup_window_missing",
+          message: "Pickup window is required",
+          field: "pickup_window",
+        },
+      ],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_write_preview_missing_window",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_write_preview_missing_window", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: true,
+        updated_at: "2026-04-22T11:50:00.000Z",
+      },
+    },
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "quote_write_preview_missing_window", version: 1 },
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: false,
+          pickup_point_ids: [],
+          pickup_window_required: true,
+        },
+      ],
+    },
+    pickup_windows: { ok: true, pickup_windows: [] },
+  })
+
+  assert.equal(preview.verdict, "write_shape_preview_incomplete")
+  assert.equal(preview.shape_completeness, "partial")
+  assert.equal(preview.pickup_window_required, true)
+  assert.equal(preview.pickup_window_present, false)
+  assert.equal(preview.fields.find((field) => field.key === "pickup_window")?.status, "missing")
+})
+
+test("buildDeliveryHubSelectionWriteSeamPreviewModel reports incomplete shape for missing quote reference or connection context", () => {
+  const missingQuoteReference = buildDeliveryHubSelectionWriteSeamPreviewModel({
+    cart_id: "cart_write_preview_missing_quote_reference",
+    readiness: {
+      ok: true,
+      cart_id: "cart_write_preview_missing_quote_reference",
+      status: "ready",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_write_preview_missing_quote_reference",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: null as never,
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T12:00:00.000Z",
+      },
+    } as any,
+  })
+
+  const missingConnection = buildDeliveryHubSelectionWriteSeamPreviewModel({
+    cart_id: "cart_write_preview_missing_connection",
+    readiness: {
+      ok: true,
+      cart_id: "cart_write_preview_missing_connection",
+      status: "ready",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: null as never,
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_write_preview_missing_connection", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T12:05:00.000Z",
+      },
+    } as any,
+  })
+
+  assert.equal(missingQuoteReference.verdict, "write_shape_preview_incomplete")
+  assert.equal(missingQuoteReference.quote_reference_present, false)
+  assert.equal(
+    missingQuoteReference.fields.find((field) => field.key === "quote_reference")?.status,
+    "missing"
+  )
+
+  assert.equal(missingConnection.verdict, "write_shape_preview_incomplete")
+  assert.equal(missingConnection.connection_id, null)
+  assert.equal(
+    missingConnection.fields.find((field) => field.key === "connection_id")?.status,
+    "missing"
+  )
+})
+
+test("buildDeliveryHubSelectionWriteSeamPreviewModel stays shopper-safe preview-only with no mutation wording or network intent", () => {
+  const preview = buildDeliveryHubSelectionWriteSeamPreviewModel({
+    cart_id: "cart_write_preview_safe",
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: false,
+      legacy_flow_kind: null,
+      legacy_selection_fresh: false,
+      legacy_method_label: null,
+    },
+  }) as Record<string, unknown>
+  const serialized = JSON.stringify(preview).toLowerCase()
+
+  assert.equal(preview["mutation_intent"], false)
+  assert.equal(preview["dry_run_only"], true)
+  assert.equal(serialized.includes("activation"), false)
+  assert.equal(serialized.includes("save"), false)
+  assert.equal(serialized.includes("submit"), false)
+  for (const forbidden of [
+    "provider_code",
+    "quote_key",
+    "raw_reference",
+    "token",
+    "secret",
+    "credentials",
+    "provider_quote_id",
+  ]) {
+    assert.equal(serialized.includes(forbidden), false, forbidden)
+  }
+})
+
+test("delivery-hub util preview stack remains no-network only for selection write seam", () => {
+  const source = readFileSync(new URL("./delivery-hub.ts", import.meta.url), "utf8")
+
+  assert.equal(source.includes("fetch("), false)
+  assert.equal(source.includes("axios"), false)
+  assert.equal(source.includes("XMLHttpRequest"), false)
 })
 
 test("delivery-hub util preview stack remains no-network only for projected commit parity seam", () => {
