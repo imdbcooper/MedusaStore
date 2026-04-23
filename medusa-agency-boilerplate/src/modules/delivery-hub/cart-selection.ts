@@ -37,6 +37,17 @@ export type DeliveryHubQuoteReference = {
   version: number
 }
 
+export type DeliveryHubProviderExecutionReference = {
+  version: number
+  token: string
+}
+
+export type DeliveryHubProviderExecutionReferenceValidationContext = {
+  connection_id: string
+  quote_type: DeliveryHubCartSelectionQuoteType
+  quote_reference: DeliveryHubQuoteReference
+}
+
 export type DeliveryHubCartSelectionPublic = {
   version: number
   provider_code: string
@@ -58,6 +69,7 @@ export type DeliveryHubCartSelectionWriteInput = {
   pickup_point: DeliveryHubCartSelectionPickupPoint
   pickup_window?: DeliveryHubCartSelectionPickupWindow | null
   correlation_id?: string | null
+  provider_execution_reference?: DeliveryHubProviderExecutionReference | null
 } & ({
   quote_reference: DeliveryHubQuoteReference
 } | {
@@ -83,7 +95,9 @@ export type DeliveryHubCartSelectionRecord = {
   metadata?: unknown
 }
 
-type DeliveryHubCartSelectionPersisted = DeliveryHubCartSelectionPublic
+type DeliveryHubCartSelectionPersisted = DeliveryHubCartSelectionPublic & {
+  backend_execution_reference?: DeliveryHubProviderExecutionReference
+}
 
 export async function getDeliveryHubCartById(
   query: DeliveryHubQueryGraphLike,
@@ -122,7 +136,26 @@ export function requireDeliveryHubCart(
 export function readDeliveryHubCartSelection(
   metadata?: unknown
 ): DeliveryHubCartSelectionPublic | null {
-  return readPersistedDeliveryHubCartSelection(metadata)
+  const selection = readPersistedDeliveryHubCartSelection(metadata)
+
+  if (!selection) {
+    return null
+  }
+
+  return stripBackendOnlyCartSelectionFields(selection)
+}
+
+export function readDeliveryHubCartSelectionBackendExecutionReference(
+  metadata?: unknown
+): DeliveryHubProviderExecutionReference | null {
+  return readPersistedDeliveryHubCartSelection(metadata)?.backend_execution_reference ?? null
+}
+
+export function validateDeliveryHubProviderExecutionReference(
+  reference: DeliveryHubProviderExecutionReference,
+  context: DeliveryHubProviderExecutionReferenceValidationContext
+): DeliveryHubProviderExecutionReference | null {
+  return readProviderExecutionReference(reference, context)
 }
 
 export function buildDeliveryHubCartSelectionMetadata(
@@ -226,6 +259,18 @@ function readPersistedDeliveryHubCartSelection(metadata?: unknown) {
     return null
   }
 
+  const backendExecutionReference =
+    connectionId && quoteType && quoteReferenceId && quoteReferenceVersion === DELIVERY_HUB_CART_SELECTION_VERSION
+      ? readProviderExecutionReference(selection.backend_execution_reference, {
+          connection_id: connectionId,
+          quote_type: quoteType,
+          quote_reference: {
+            id: quoteReferenceId,
+            version: quoteReferenceVersion,
+          },
+        })
+      : null
+
   return {
     version,
     provider_code: providerCode,
@@ -249,6 +294,11 @@ function readPersistedDeliveryHubCartSelection(metadata?: unknown) {
     pickup_window: pickupWindow,
     correlation_id: correlationId,
     updated_at: updatedAt,
+    ...(backendExecutionReference
+      ? {
+          backend_execution_reference: backendExecutionReference,
+        }
+      : {}),
   } satisfies DeliveryHubCartSelectionPersisted
 }
 
@@ -257,6 +307,12 @@ function buildPersistedDeliveryHubCartSelection(input: DeliveryHubCartSelectionW
   const connectionId = requireNonEmptyString(input.connection_id, "connection_id")
   const quoteType = requireQuoteType(input.quote_type)
   const quoteReference = resolveQuoteReference(connectionId, quoteType, input)
+  const providerExecutionReference = resolveProviderExecutionReference(
+    connectionId,
+    quoteType,
+    quoteReference,
+    input
+  )
   const updatedAt = new Date().toISOString()
 
   return {
@@ -279,6 +335,11 @@ function buildPersistedDeliveryHubCartSelection(input: DeliveryHubCartSelectionW
     pickup_window: input.pickup_window ? normalizePickupWindow(input.pickup_window) : null,
     correlation_id: normalizeNullableString(input.correlation_id),
     updated_at: updatedAt,
+    ...(providerExecutionReference
+      ? {
+          backend_execution_reference: providerExecutionReference,
+        }
+      : {}),
   } satisfies DeliveryHubCartSelectionPersisted
 }
 
@@ -498,6 +559,121 @@ function resolveQuoteReference(
   })
 }
 
+function resolveProviderExecutionReference(
+  connectionId: string,
+  quoteType: DeliveryHubCartSelectionQuoteType,
+  quoteReference: DeliveryHubQuoteReference,
+  input: DeliveryHubCartSelectionWriteInput
+): DeliveryHubProviderExecutionReference | null {
+  if (input.provider_execution_reference) {
+    return requireProviderExecutionReference(input.provider_execution_reference, {
+      connection_id: connectionId,
+      quote_type: quoteType,
+      quote_reference: quoteReference,
+    })
+  }
+
+  if ("quote_key" in input) {
+    return createDeliveryHubProviderExecutionReference({
+      connection_id: connectionId,
+      quote_type: quoteType,
+      quote_key: requireNonEmptyString(input.quote_key, "quote_key"),
+    })
+  }
+
+  return null
+}
+
+export function createDeliveryHubProviderExecutionReference(input: {
+  connection_id: string
+  quote_type: string
+  quote_key: string
+}): DeliveryHubProviderExecutionReference | null {
+  const quoteKey = requireNonEmptyString(input.quote_key, "quote_key")
+  const token = encryptDeliveryHubProviderExecutionReference({
+    connection_id: requireNonEmptyString(input.connection_id, "connection_id"),
+    quote_type: requireNonEmptyString(input.quote_type, "quote_type"),
+    quote_key: quoteKey,
+    provider_quote_reference: quoteKey,
+  })
+
+  if (!token) {
+    return null
+  }
+
+  return {
+    version: DELIVERY_HUB_CART_SELECTION_VERSION,
+    token,
+  }
+}
+
+export function decryptDeliveryHubProviderExecutionReference(
+  reference: DeliveryHubProviderExecutionReference
+) {
+  return decryptProviderExecutionReferenceToken(reference.token)
+}
+
+function requireProviderExecutionReference(
+  value: unknown,
+  context?: DeliveryHubProviderExecutionReferenceValidationContext
+): DeliveryHubProviderExecutionReference {
+  const record = asRecord(value)
+  const version = requireFiniteNumber(record.version, "backend_execution_reference.version")
+  const token = requireNonEmptyString(record.token, "backend_execution_reference.token")
+
+  if (version !== DELIVERY_HUB_CART_SELECTION_VERSION) {
+    throw new DeliveryHubError({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      message: `Field "backend_execution_reference.version" must equal ${DELIVERY_HUB_CART_SELECTION_VERSION}`,
+      status: 400,
+      details: {
+        field: "backend_execution_reference.version",
+      },
+    })
+  }
+
+  const payload = decryptProviderExecutionReferenceToken(token)
+
+  if (context && !providerExecutionReferenceMatchesContext(payload, context)) {
+    throw new DeliveryHubError({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      message: 'Field "backend_execution_reference.token" must match the current Delivery Hub selection context',
+      status: 400,
+      details: {
+        field: "backend_execution_reference.token",
+      },
+    })
+  }
+
+  return {
+    version,
+    token,
+  }
+}
+
+function readProviderExecutionReference(
+  value: unknown,
+  context?: DeliveryHubProviderExecutionReferenceValidationContext
+): DeliveryHubProviderExecutionReference | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null
+  }
+
+  try {
+    return requireProviderExecutionReference(value, context)
+  } catch {
+    return null
+  }
+}
+
+function stripBackendOnlyCartSelectionFields(
+  selection: DeliveryHubCartSelectionPersisted
+): DeliveryHubCartSelectionPublic {
+  const { backend_execution_reference: _backendExecutionReference, ...publicSelection } = selection
+
+  return publicSelection
+}
+
 function requireQuoteReference(value: unknown): DeliveryHubQuoteReference {
   const record = asRecord(value)
   const id = requireQuoteReferenceId(record.id)
@@ -620,6 +796,142 @@ function readNullableNumber(value: unknown) {
 
 function normalizeNullableFiniteNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+function encryptDeliveryHubProviderExecutionReference(payload: {
+  connection_id: string
+  quote_type: string
+  quote_key: string
+  provider_quote_reference: string
+}) {
+  const secret = getConfiguredDeliveryHubProviderExecutionReferenceSecret()
+
+  if (!secret) {
+    return null
+  }
+
+  const iv = crypto.randomBytes(12)
+  const cipher = crypto.createCipheriv("aes-256-gcm", secret, iv)
+  const plaintext = Buffer.from(JSON.stringify(payload), "utf8")
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()])
+  const tag = cipher.getAuthTag()
+
+  return [iv.toString("base64"), tag.toString("base64"), ciphertext.toString("base64")].join(".")
+}
+
+function decryptProviderExecutionReferenceToken(token: string): {
+  connection_id: string
+  quote_type: string
+  quote_key: string
+  provider_quote_reference: string
+} {
+  const segments = token.split(".")
+
+  if (segments.length !== 3 || segments.some((segment) => !segment)) {
+    throw new DeliveryHubError({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      message: 'Field "backend_execution_reference.token" must be a valid Delivery Hub backend execution reference token',
+      status: 400,
+      details: {
+        field: "backend_execution_reference.token",
+      },
+    })
+  }
+
+  try {
+    const [iv, tag, ciphertext] = segments
+    const secret = getDeliveryHubProviderExecutionReferenceSecret()
+    const decipher = crypto.createDecipheriv(
+      "aes-256-gcm",
+      secret,
+      Buffer.from(iv!, "base64")
+    )
+    decipher.setAuthTag(Buffer.from(tag!, "base64"))
+    const plaintext = Buffer.concat([
+      decipher.update(Buffer.from(ciphertext!, "base64")),
+      decipher.final(),
+    ])
+    const payload = asRecord(JSON.parse(plaintext.toString("utf8")))
+
+    return {
+      connection_id: requireNonEmptyString(
+        payload.connection_id,
+        "backend_execution_reference.payload.connection_id"
+      ),
+      quote_type: requireNonEmptyString(
+        payload.quote_type,
+        "backend_execution_reference.payload.quote_type"
+      ),
+      quote_key: requireNonEmptyString(
+        payload.quote_key,
+        "backend_execution_reference.payload.quote_key"
+      ),
+      provider_quote_reference: requireNonEmptyString(
+        payload.provider_quote_reference,
+        "backend_execution_reference.payload.provider_quote_reference"
+      ),
+    }
+  } catch {
+    throw new DeliveryHubError({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      message: 'Field "backend_execution_reference.token" must be a valid Delivery Hub backend execution reference token',
+      status: 400,
+      details: {
+        field: "backend_execution_reference.token",
+      },
+    })
+  }
+}
+
+function getDeliveryHubProviderExecutionReferenceSecret() {
+  const secret = getConfiguredDeliveryHubProviderExecutionReferenceSecret()
+
+  if (secret) {
+    return secret
+  }
+
+  throw new DeliveryHubError({
+    code: "DELIVERY_HUB_VALIDATION_ERROR",
+    message:
+      'Field "backend_execution_reference.token" is unavailable because DELIVERY_HUB_ENCRYPTION_KEY is not configured',
+    status: 400,
+    details: {
+      field: "backend_execution_reference.token",
+    },
+  })
+}
+
+function getConfiguredDeliveryHubProviderExecutionReferenceSecret() {
+  const encryptionKey = process.env.DELIVERY_HUB_ENCRYPTION_KEY?.trim()
+
+  return encryptionKey ? normalizeProviderExecutionReferenceSecret(encryptionKey) : null
+}
+
+function normalizeProviderExecutionReferenceSecret(rawSecret: string) {
+  return crypto.createHash("sha256").update(rawSecret, "utf8").digest()
+}
+
+function providerExecutionReferenceMatchesContext(
+  payload: {
+    connection_id: string
+    quote_type: string
+    quote_key: string
+    provider_quote_reference: string
+  },
+  context: DeliveryHubProviderExecutionReferenceValidationContext
+) {
+  const expectedQuoteReference = createDeliveryHubQuoteReference({
+    connection_id: payload.connection_id,
+    quote_type: payload.quote_type,
+    quote_key: payload.quote_key,
+  })
+
+  return (
+    payload.connection_id === context.connection_id &&
+    payload.quote_type === context.quote_type &&
+    expectedQuoteReference.id === context.quote_reference.id &&
+    expectedQuoteReference.version === context.quote_reference.version
+  )
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

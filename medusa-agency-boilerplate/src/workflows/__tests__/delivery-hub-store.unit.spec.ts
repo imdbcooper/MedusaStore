@@ -532,6 +532,77 @@ describe("Delivery Hub store routes", () => {
     })
   })
 
+  it("rejects selection GET payloads that try to expose backend-only execution references", async () => {
+    deliverySelectionRoute.storeDeliverySelectionDeps.getDeliveryHubCartById =
+      jest.fn(async () => ({
+        id: "cart_1",
+        metadata: {
+          keep: true,
+        },
+      })) as any
+    deliverySelectionRoute.storeDeliverySelectionDeps.requireDeliveryHubCart =
+      jest.fn((cart) => cart) as any
+    deliverySelectionRoute.storeDeliverySelectionDeps.readDeliveryHubCartSelection =
+      jest.fn(() => ({
+        version: 1,
+        provider_code: "yandex",
+        connection_id: "conn_1",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_0123456789abcdef0123456789abcdef",
+          version: 1,
+        },
+        quote: {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_1",
+          provider_point_code: "code_1",
+          name: "PVZ 1",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: null,
+        correlation_id: null,
+        updated_at: "2026-04-21T03:00:00.000Z",
+        backend_execution_reference: {
+          version: 1,
+          token: "opaque_backend_only_token",
+        },
+      })) as any
+
+    const res = createMockResponse()
+
+    await deliverySelectionRoute.GET(
+      createMockRequest({
+        validatedQuery: {
+          cart_id: "cart_1",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(res.status).toHaveBeenCalledWith(400)
+    const payload = (res.json as jest.Mock).mock.calls[0][0] as any
+    expect(payload.error.code).toBe("DELIVERY_HUB_VALIDATION_ERROR")
+    expect(payload.error.message).toBe("Store delivery request validation failed")
+    expect(JSON.stringify(payload.error.details)).toContain("backend_execution_reference")
+  })
+
   it("rejects selection GET payloads that try to expose internal selection fragments", async () => {
     deliverySelectionRoute.storeDeliverySelectionDeps.getDeliveryHubCartById =
       jest.fn(async () => ({

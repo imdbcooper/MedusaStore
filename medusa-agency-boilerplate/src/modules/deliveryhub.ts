@@ -22,6 +22,13 @@ import {
 } from "./delivery-hub/fulfillment-provider-bridge"
 import { buildDeliveryHubControlledFulfillmentExecutionResult } from "./delivery-hub/fulfillment-execution-seam"
 import {
+  getDeliveryHubCartById,
+  getDeliveryHubQuery,
+  readDeliveryHubCartSelection,
+  readDeliveryHubCartSelectionBackendExecutionReference,
+  validateDeliveryHubProviderExecutionReference,
+} from "./delivery-hub/cart-selection"
+import {
   DELIVERY_HUB_FULFILLMENT_OPTION_DEFINITIONS,
   DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,
   normalizeDeliveryHubFulfillmentOptionData,
@@ -199,8 +206,19 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
 
     const pgConnection = this.resolvePgConnection()
     const committedConnectionId = fulfillmentHandoff?.connection_id ?? null
-    let committedConnection = null
+    const committedCartId =
+      fulfillmentHandoff?.references.cart_id ??
+      (typeof handoffInput.cart_id === "string" && handoffInput.cart_id.trim()
+        ? handoffInput.cart_id.trim()
+        : null)
+    let committedConnection: Awaited<ReturnType<typeof getDeliveryConnectionByIdReadOnly>> = null
     let connectionLookupAvailable = pgConnection !== null
+    const persistedExecutionReference = await this.resolvePersistedExecutionReference({
+      cart_id: committedCartId,
+      connection_id: fulfillmentHandoff?.connection_id ?? null,
+      quote_type: fulfillmentHandoff?.quote_type ?? null,
+      quote_reference: fulfillmentHandoff?.quote_reference ?? null,
+    })
 
     if (pgConnection && committedConnectionId) {
       try {
@@ -219,6 +237,7 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       execution_ledger_evidence: executionLedgerEvidence,
       connection: committedConnection,
       connection_lookup_available: connectionLookupAvailable,
+      persisted_execution_reference: persistedExecutionReference,
     })
 
     this.logger_.info(
@@ -282,6 +301,46 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
   protected resolvePgConnection() {
     try {
       return getDeliveryHubPgConnection(this.container_)
+    } catch {
+      return null
+    }
+  }
+
+  protected async resolvePersistedExecutionReference(input: {
+    cart_id: string | null
+    connection_id: string | null
+    quote_type: string | null
+    quote_reference: { id: string; version: number } | null
+  }) {
+    if (
+      !input.cart_id ||
+      !input.connection_id ||
+      !input.quote_type ||
+      !input.quote_reference
+    ) {
+      return null
+    }
+
+    try {
+      const query = getDeliveryHubQuery(this.container_)
+      const cart = await getDeliveryHubCartById(query, input.cart_id)
+
+      if (!cart) {
+        return null
+      }
+
+      const selection = readDeliveryHubCartSelection(cart.metadata)
+      const reference = readDeliveryHubCartSelectionBackendExecutionReference(cart.metadata)
+
+      if (!selection || !reference) {
+        return null
+      }
+
+      return validateDeliveryHubProviderExecutionReference(reference, {
+        connection_id: input.connection_id,
+        quote_type: input.quote_type as any,
+        quote_reference: input.quote_reference,
+      })
     } catch {
       return null
     }

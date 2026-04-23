@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, jest } from "@jest/globals"
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import * as deliveryReadinessRoute from "../../api/store/delivery/readiness/route"
 import * as deliverySelectionRoute from "../../api/store/delivery/selection/route"
@@ -6,8 +6,12 @@ import { DeliveryHubService } from "../../modules/delivery-hub/service"
 import {
   DELIVERY_HUB_CART_METADATA_NAMESPACE,
   buildDeliveryHubCartSelectionMetadata,
+  createDeliveryHubProviderExecutionReference,
   createDeliveryHubQuoteReference,
+  decryptDeliveryHubProviderExecutionReference,
   readDeliveryHubCartSelection,
+  readDeliveryHubCartSelectionBackendExecutionReference,
+  validateDeliveryHubProviderExecutionReference,
 } from "../../modules/delivery-hub/cart-selection"
 
 const originalStoreDeliverySelectionDeps = {
@@ -18,7 +22,18 @@ const originalStoreDeliverySelectionReadinessDeps = {
 }
 
 describe("Delivery Hub cart selection contract", () => {
+  const originalEncryptionKey = process.env.DELIVERY_HUB_ENCRYPTION_KEY
+
+  beforeEach(() => {
+    process.env.DELIVERY_HUB_ENCRYPTION_KEY = "test-delivery-hub-key"
+  })
+
   afterEach(() => {
+    if (typeof originalEncryptionKey === "string") {
+      process.env.DELIVERY_HUB_ENCRYPTION_KEY = originalEncryptionKey
+    } else {
+      delete process.env.DELIVERY_HUB_ENCRYPTION_KEY
+    }
     Object.assign(
       deliverySelectionRoute.storeDeliverySelectionDeps,
       originalStoreDeliverySelectionDeps
@@ -173,6 +188,229 @@ describe("Delivery Hub cart selection contract", () => {
     expect((publicSelection?.pickup_point as Record<string, unknown>).metadata).toBeUndefined()
     expect((publicSelection?.pickup_window as Record<string, unknown>).metadata).toBeUndefined()
     expect((nextMetadata as Record<string, unknown>).existing).toBe(true)
+  })
+
+  it("persists backend-only execution reference while keeping the public selection contract opaque", () => {
+    const nextMetadata = buildDeliveryHubCartSelectionMetadata(
+      {},
+      {
+        connection_id: "conn_exec",
+        quote_type: "warehouse_to_pickup_point",
+        quote_key: "offer_backend_only_123",
+        quote: {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          amount: 499,
+          currency_code: "rub",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_exec",
+          provider_point_code: null,
+          name: "PVZ Exec",
+          address: "Tverskaya 10",
+          city: "Moscow",
+          region: null,
+          postal_code: null,
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      }
+    ) as Record<string, any>
+
+    const persistedSelection = nextMetadata[DELIVERY_HUB_CART_METADATA_NAMESPACE].selection
+    const publicSelection = readDeliveryHubCartSelection(nextMetadata)
+    const backendReference = readDeliveryHubCartSelectionBackendExecutionReference(nextMetadata)
+
+    expect(persistedSelection.backend_execution_reference).toEqual({
+      version: 1,
+      token: expect.any(String),
+    })
+    expect(JSON.stringify(persistedSelection)).not.toContain("offer_backend_only_123")
+    expect(publicSelection).not.toBeNull()
+    expect((publicSelection as Record<string, unknown>).backend_execution_reference).toBeUndefined()
+    expect(JSON.stringify(publicSelection)).not.toContain("offer_backend_only_123")
+    expect(backendReference).toEqual({
+      version: 1,
+      token: expect.any(String),
+    })
+    expect(decryptDeliveryHubProviderExecutionReference(backendReference!)).toEqual({
+      connection_id: "conn_exec",
+      quote_type: "warehouse_to_pickup_point",
+      quote_key: "offer_backend_only_123",
+      provider_quote_reference: "offer_backend_only_123",
+    })
+  })
+
+  it("does not materialize backend execution reference when DELIVERY_HUB_ENCRYPTION_KEY is absent", () => {
+    delete process.env.DELIVERY_HUB_ENCRYPTION_KEY
+
+    const nextMetadata = buildDeliveryHubCartSelectionMetadata(
+      {},
+      {
+        connection_id: "conn_exec",
+        quote_type: "warehouse_to_pickup_point",
+        quote_key: "offer_backend_only_123",
+        quote: {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          amount: 499,
+          currency_code: "rub",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_exec",
+          provider_point_code: null,
+          name: "PVZ Exec",
+          address: "Tverskaya 10",
+          city: "Moscow",
+          region: null,
+          postal_code: null,
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      }
+    ) as Record<string, any>
+
+    const persistedSelection = nextMetadata[DELIVERY_HUB_CART_METADATA_NAMESPACE].selection
+
+    expect(persistedSelection.backend_execution_reference).toBeUndefined()
+    expect(readDeliveryHubCartSelectionBackendExecutionReference(nextMetadata)).toBeNull()
+    expect(readDeliveryHubCartSelection(nextMetadata)).toEqual(
+      expect.objectContaining({
+        connection_id: "conn_exec",
+        quote_type: "warehouse_to_pickup_point",
+      })
+    )
+  })
+
+  it("accepts explicitly supplied backend-only execution reference without leaking it through the public reader", () => {
+    const providerExecutionReference = createDeliveryHubProviderExecutionReference({
+      connection_id: "conn_exec_manual",
+      quote_type: "dropoff_point_to_pickup_point",
+      quote_key: "offer_manual_exec_1",
+    })
+    const nextMetadata = buildDeliveryHubCartSelectionMetadata(
+      {},
+      {
+        connection_id: "conn_exec_manual",
+        quote_type: "dropoff_point_to_pickup_point",
+        quote_reference: createDeliveryHubQuoteReference({
+          connection_id: "conn_exec_manual",
+          quote_type: "dropoff_point_to_pickup_point",
+          quote_key: "offer_manual_exec_1",
+        }),
+        provider_execution_reference: providerExecutionReference,
+        quote: {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          amount: 599,
+          currency_code: "rub",
+          delivery_eta_min: 1,
+          delivery_eta_max: 3,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_exec_manual",
+          provider_point_code: null,
+          name: "PVZ Exec Manual",
+          address: "Arbat 1",
+          city: "Moscow",
+          region: null,
+          postal_code: null,
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      }
+    ) as Record<string, any>
+
+    const persistedSelection = nextMetadata[DELIVERY_HUB_CART_METADATA_NAMESPACE].selection
+
+    expect(persistedSelection.backend_execution_reference).toEqual(providerExecutionReference)
+    expect(readDeliveryHubCartSelectionBackendExecutionReference(nextMetadata)).toEqual(
+      providerExecutionReference
+    )
+    expect((readDeliveryHubCartSelection(nextMetadata) as Record<string, unknown>).backend_execution_reference).toBeUndefined()
+  })
+
+  it("rejects mismatched backend execution reference context and strips stale persisted token", () => {
+    const providerExecutionReference = createDeliveryHubProviderExecutionReference({
+      connection_id: "conn_exec_manual",
+      quote_type: "dropoff_point_to_pickup_point",
+      quote_key: "offer_manual_exec_1",
+    })!
+
+    expect(
+      validateDeliveryHubProviderExecutionReference(providerExecutionReference, {
+        connection_id: "conn_other",
+        quote_type: "dropoff_point_to_pickup_point",
+        quote_reference: createDeliveryHubQuoteReference({
+          connection_id: "conn_other",
+          quote_type: "dropoff_point_to_pickup_point",
+          quote_key: "offer_manual_exec_1",
+        }),
+      })
+    ).toBeNull()
+
+    expect(() =>
+      buildDeliveryHubCartSelectionMetadata(
+        {},
+        {
+          connection_id: "conn_exec_manual",
+          quote_type: "dropoff_point_to_pickup_point",
+          quote_reference: createDeliveryHubQuoteReference({
+            connection_id: "conn_exec_manual",
+            quote_type: "dropoff_point_to_pickup_point",
+            quote_key: "offer_manual_exec_1",
+          }),
+          provider_execution_reference: createDeliveryHubProviderExecutionReference({
+            connection_id: "conn_other",
+            quote_type: "dropoff_point_to_pickup_point",
+            quote_key: "offer_manual_exec_1",
+          })!,
+          quote: {
+            carrier_code: "yandex",
+            carrier_label: "Yandex Delivery",
+            amount: 599,
+            currency_code: "rub",
+            delivery_eta_min: 1,
+            delivery_eta_max: 3,
+            pickup_point_required: true,
+            pickup_window_required: false,
+          },
+          pickup_point: {
+            provider_point_id: "pvz_exec_manual",
+            provider_point_code: null,
+            name: "PVZ Exec Manual",
+            address: "Arbat 1",
+            city: "Moscow",
+            region: null,
+            postal_code: null,
+            lat: null,
+            lng: null,
+            is_origin_dropoff_allowed: false,
+            is_destination_pickup_allowed: true,
+            payment_methods: [],
+          },
+        }
+      )
+    ).toThrow('Field "backend_execution_reference.token" must match the current Delivery Hub selection context')
   })
 
   it("clears selection while preserving unrelated cart metadata", () => {
