@@ -41,6 +41,7 @@ import {
   buildDeliveryHubHandoffPreviewModel,
   buildDeliveryHubNeutralSelectionRehearsalModel,
   buildDeliveryHubPersistedSelectionContractParityPreviewModel,
+  buildDeliveryHubProjectedCommitParityPreviewModel,
   buildDeliveryHubShippingOptionParityPreviewModel,
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
   type DeliveryHubNeutralSelectionRehearsalInput,
@@ -1115,6 +1116,10 @@ const Shipping: React.FC<ShippingProps> = ({
     buildDeliveryHubPersistedSelectionContractParityPreviewModel(
       deliveryHubRehearsalState.preview_input
     )
+  const deliveryHubProjectedCommitParityPreview =
+    buildDeliveryHubProjectedCommitParityPreviewModel(
+      deliveryHubRehearsalState.preview_input
+    )
   const deliveryHubHandoffContractMatrixPreview =
     buildDeliveryHubHandoffContractMatrixPreviewModel(
       deliveryHubRehearsalState.preview_input
@@ -1664,6 +1669,74 @@ const Shipping: React.FC<ShippingProps> = ({
                   {deliveryHubPersistedSelectionContractParityPreview.blocked_parity_codes.length > 0 && (
                     <div className="text-ui-fg-muted txt-small">
                       Parity blockers: shopper-safe preview remains unavailable until the current delivery option aligns with the committed checkout context.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="border-t border-ui-border-base pt-4">
+                <div className="flex flex-col gap-y-2">
+                  <Text className="text-ui-fg-base txt-medium-plus">
+                    Delivery Hub projected commit parity preview
+                  </Text>
+                  <Text className="text-ui-fg-muted txt-small">
+                    Preview-only projected commit seam. This block compares the current neutral delivery-hub selection preview with the future shipping-option commit contract shape using shopper-safe diagnostic fields only.
+                  </Text>
+                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
+                    <span>{deliveryHubProjectedCommitParityPreview.verdict_label}</span>
+                    <span>{deliveryHubProjectedCommitParityPreview.summary_label}</span>
+                    <span>{deliveryHubProjectedCommitParityPreview.projected_commit_label}</span>
+                    <span>Preview verdict: {deliveryHubProjectedCommitParityPreview.verdict}</span>
+                    <span>
+                      commit payload readiness: {deliveryHubProjectedCommitParityPreview.commit_payload_readiness}
+                    </span>
+                    <span>
+                      matched fields: {deliveryHubProjectedCommitParityPreview.matched_field_count}
+                      {` · mismatched fields: ${deliveryHubProjectedCommitParityPreview.mismatched_field_count}`}
+                    </span>
+                    <span>
+                      connection_id: {deliveryHubProjectedCommitParityPreview.connection_id ?? "missing"}
+                    </span>
+                    <span>
+                      mode_code: {deliveryHubProjectedCommitParityPreview.mode_code ?? "missing"}
+                    </span>
+                    {deliveryHubProjectedCommitParityPreview.mode_label && (
+                      <span>Mode label: {deliveryHubProjectedCommitParityPreview.mode_label}</span>
+                    )}
+                    <span>
+                      quote_reference: {deliveryHubProjectedCommitParityPreview.quote_reference_present ? "present" : "missing"}
+                    </span>
+                    <span>
+                      pickup point: {deliveryHubProjectedCommitParityPreview.pickup_point_present ? "present" : "missing"}
+                      {deliveryHubProjectedCommitParityPreview.pickup_point_required
+                        ? " · required"
+                        : " · not required"}
+                    </span>
+                    <span>
+                      pickup window: {deliveryHubProjectedCommitParityPreview.pickup_window_present ? "present" : "missing"}
+                      {deliveryHubProjectedCommitParityPreview.pickup_window_required
+                        ? " · required"
+                        : " · not required"}
+                    </span>
+                    {deliveryHubProjectedCommitParityPreview.fields.map((field) => (
+                      <span key={field.key}>
+                        {field.label}: {field.status} · {field.detail_label}
+                      </span>
+                    ))}
+                  </div>
+                  {deliveryHubProjectedCommitParityPreview.mismatch_reasons.length > 0 && (
+                    <div className="text-ui-fg-muted txt-small">
+                      Mismatch reasons: {deliveryHubProjectedCommitParityPreview.mismatch_reasons.join(" | ")}
+                    </div>
+                  )}
+                  {deliveryHubProjectedCommitParityPreview.blocked_readiness_codes.length > 0 && (
+                    <div className="text-ui-fg-muted txt-small">
+                      Readiness blockers: shopper-safe projected commit preview remains unavailable until the current delivery selection context is ready.
+                    </div>
+                  )}
+                  {deliveryHubProjectedCommitParityPreview.blocked_parity_codes.length > 0 && (
+                    <div className="text-ui-fg-muted txt-small">
+                      Parity blockers: shopper-safe projected commit preview remains unavailable until the current delivery option aligns with the committed checkout context.
                     </div>
                   )}
                 </div>

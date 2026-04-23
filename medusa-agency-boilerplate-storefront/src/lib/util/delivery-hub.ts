@@ -1769,6 +1769,67 @@ export type DeliveryHubPersistedSelectionContractParityPreviewModel = {
   mutation_intent: false
 }
 
+export type DeliveryHubProjectedCommitParityPreviewVerdict =
+  | "informational_only"
+  | "projected_commit_matched"
+  | "projected_commit_mismatched"
+  | "blocked"
+
+export type DeliveryHubProjectedCommitParityPreviewFieldKey =
+  | "connection_id"
+  | "mode_code"
+  | "quote_reference"
+  | "pickup_point"
+  | "pickup_window"
+  | "commit_payload_readiness"
+
+export type DeliveryHubProjectedCommitParityPreviewFieldStatus =
+  | "matched"
+  | "mismatched"
+  | "blocked"
+  | "informational_only"
+  | "not_required"
+
+export type DeliveryHubProjectedCommitParityPreviewField = {
+  key: DeliveryHubProjectedCommitParityPreviewFieldKey
+  label: string
+  status: DeliveryHubProjectedCommitParityPreviewFieldStatus
+  detail_label: string
+}
+
+export type DeliveryHubProjectedCommitParityPreviewReadinessBlocker =
+  | "selection_unavailable"
+  | "connection_unavailable"
+
+export type DeliveryHubProjectedCommitParityPreviewParityBlocker =
+  | "delivery_option_unavailable"
+  | "selection_alignment_unavailable"
+
+export type DeliveryHubProjectedCommitParityPreviewModel = {
+  tone: "neutral" | "positive" | "warning"
+  verdict: DeliveryHubProjectedCommitParityPreviewVerdict
+  verdict_label: string
+  summary_label: string
+  projected_commit_label: string
+  connection_id: string | null
+  mode_code: DeliveryHubQuoteType | null
+  mode_label: string | null
+  quote_reference_present: boolean
+  pickup_point_required: boolean
+  pickup_point_present: boolean
+  pickup_window_required: boolean
+  pickup_window_present: boolean
+  commit_payload_readiness: "informational_only" | "partial" | "matched" | "blocked"
+  matched_field_count: number
+  mismatched_field_count: number
+  fields: DeliveryHubProjectedCommitParityPreviewField[]
+  mismatch_reasons: string[]
+  blocked_readiness_codes: DeliveryHubProjectedCommitParityPreviewReadinessBlocker[]
+  blocked_parity_codes: DeliveryHubProjectedCommitParityPreviewParityBlocker[]
+  dry_run_only: true
+  mutation_intent: false
+}
+
 export type DeliveryHubShippingOptionParityPreviewVerdict =
   | "informational_only"
   | "parity_partial"
@@ -2014,6 +2075,49 @@ function sanitizeDeliveryHubPersistedSelectionReadinessBlockers(
 function sanitizeDeliveryHubPersistedSelectionParityBlockers(
   blockers: DeliveryHubShippingOptionParityPreviewGapCode[]
 ): DeliveryHubPersistedSelectionContractParityPreviewParityBlocker[] {
+  return Array.from(
+    new Set(
+      blockers.flatMap((blocker) => {
+        switch (blocker) {
+          case "connection_not_ready":
+            return ["delivery_option_unavailable"]
+          case "mode_mismatch":
+          case "legacy_context_stale":
+            return ["selection_alignment_unavailable"]
+          default:
+            return []
+        }
+      })
+    )
+  )
+}
+
+function sanitizeDeliveryHubProjectedCommitReadinessBlockers(
+  blockers: DeliveryHubSelectionReadinessIssueCode[]
+): DeliveryHubProjectedCommitParityPreviewReadinessBlocker[] {
+  return Array.from(
+    new Set(
+      blockers.flatMap((blocker) => {
+        switch (blocker) {
+          case "selection_invalid":
+            return ["selection_unavailable"]
+          case "connection_missing":
+          case "connection_not_found":
+          case "connection_disabled":
+          case "connection_inactive":
+          case "connection_credentials_not_ready":
+            return ["connection_unavailable"]
+          default:
+            return []
+        }
+      })
+    )
+  )
+}
+
+function sanitizeDeliveryHubProjectedCommitParityBlockers(
+  blockers: DeliveryHubShippingOptionParityPreviewGapCode[]
+): DeliveryHubProjectedCommitParityPreviewParityBlocker[] {
   return Array.from(
     new Set(
       blockers.flatMap((blocker) => {
@@ -4563,6 +4667,264 @@ export function buildDeliveryHubPersistedSelectionContractParityPreviewModel(
     pickup_point_present: Boolean(candidate.pickupPoint),
     pickup_window_required: candidate.pickupWindowRequired,
     pickup_window_present: Boolean(candidate.pickupWindow),
+    matched_field_count: matchedFieldCount,
+    mismatched_field_count: mismatchedFieldCount,
+    fields,
+    mismatch_reasons: mismatchReasons,
+    blocked_readiness_codes: readinessBlockedCodes,
+    blocked_parity_codes: parityBlockedCodes,
+    dry_run_only: true,
+    mutation_intent: false,
+  }
+}
+
+function buildDeliveryHubProjectedCommitParityPreviewField(input: {
+  key: DeliveryHubProjectedCommitParityPreviewFieldKey
+  label: string
+  status: DeliveryHubProjectedCommitParityPreviewFieldStatus
+  detail_label: string
+}): DeliveryHubProjectedCommitParityPreviewField {
+  return input
+}
+
+export function buildDeliveryHubProjectedCommitParityPreviewModel(
+  input: DeliveryHubNeutralSelectionRehearsalInput = {}
+): DeliveryHubProjectedCommitParityPreviewModel {
+  const candidate = getDeliveryHubNeutralRehearsalCandidate(input)
+  const readiness = input.readiness ?? null
+  const parityPreview = buildDeliveryHubShippingOptionParityPreviewModel(input)
+  const readinessBlockedCodes = sanitizeDeliveryHubProjectedCommitReadinessBlockers(
+    (readiness?.issues ?? [])
+      .map((issue) => issue.code)
+      .filter((code) =>
+        [
+          "selection_invalid",
+          "connection_missing",
+          "connection_not_found",
+          "connection_disabled",
+          "connection_inactive",
+          "connection_credentials_not_ready",
+        ].includes(code)
+      )
+  )
+  const parityBlockedCodes = sanitizeDeliveryHubProjectedCommitParityBlockers(
+    parityPreview.gap_codes.filter((code) =>
+      ["connection_not_ready", "mode_mismatch", "legacy_context_stale"].includes(code)
+    )
+  )
+  const candidatePresent = Boolean(
+    candidate.quoteSummary ||
+      candidate.quoteReference ||
+      candidate.quoteType ||
+      candidate.connection.connection_id
+  )
+  const blocked = readinessBlockedCodes.length > 0 || parityBlockedCodes.length > 0
+  const commitPayloadReadiness: DeliveryHubProjectedCommitParityPreviewModel["commit_payload_readiness"] =
+    !candidatePresent
+      ? "informational_only"
+      : blocked
+        ? "blocked"
+        : [
+              Boolean(candidate.connection.connection_id),
+              Boolean(candidate.quoteType),
+              Boolean(candidate.quoteReference),
+              !candidate.pickupPointRequired || Boolean(candidate.pickupPoint),
+              !candidate.pickupWindowRequired || Boolean(candidate.pickupWindow),
+            ].every(Boolean)
+          ? "matched"
+          : "partial"
+
+  const fields: DeliveryHubProjectedCommitParityPreviewField[] = [
+    buildDeliveryHubProjectedCommitParityPreviewField({
+      key: "connection_id",
+      label: "connection_id",
+      status: !candidatePresent
+        ? "informational_only"
+        : blocked
+          ? candidate.connection.connection_id
+            ? "blocked"
+            : "mismatched"
+          : candidate.connection.connection_id
+            ? "matched"
+            : "mismatched",
+      detail_label: !candidatePresent
+        ? "Projected commit preview stays informational until a neutral candidate is visible."
+        : candidate.connection.connection_id
+          ? `Projected commit preview would currently carry connection_id ${candidate.connection.connection_id}.`
+          : "Projected commit preview still lacks connection_id.",
+    }),
+    buildDeliveryHubProjectedCommitParityPreviewField({
+      key: "mode_code",
+      label: "mode_code",
+      status: !candidatePresent
+        ? "informational_only"
+        : parityBlockedCodes.includes("selection_alignment_unavailable")
+          ? "blocked"
+          : candidate.quoteType
+            ? "matched"
+            : "mismatched",
+      detail_label: !candidatePresent
+        ? "Projected commit preview stays informational until a neutral candidate is visible."
+        : parityBlockedCodes.includes("selection_alignment_unavailable")
+          ? "Projected commit preview mode_code remains shopper-safe only while selection alignment is unavailable."
+          : candidate.quoteType
+            ? `Projected commit preview would currently carry mode_code ${candidate.quoteType}.`
+            : "Projected commit preview still lacks mode_code.",
+    }),
+    buildDeliveryHubProjectedCommitParityPreviewField({
+      key: "quote_reference",
+      label: "quote_reference",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.quoteReference
+          ? "matched"
+          : "mismatched",
+      detail_label: !candidatePresent
+        ? "Projected commit preview stays informational until a neutral candidate is visible."
+        : candidate.quoteReference
+          ? "Projected commit preview would currently carry a backend-issued quote_reference."
+          : "Projected commit preview still lacks a backend-issued quote_reference.",
+    }),
+    buildDeliveryHubProjectedCommitParityPreviewField({
+      key: "pickup_point",
+      label: "pickup_point",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.pickupPointRequired
+          ? candidate.pickupPoint
+            ? blocked
+              ? "blocked"
+              : "matched"
+            : "mismatched"
+          : candidate.pickupPoint
+            ? blocked
+              ? "blocked"
+              : "matched"
+            : "not_required",
+      detail_label: !candidatePresent
+        ? "Projected commit preview stays informational until a neutral candidate is visible."
+        : candidate.pickupPointRequired
+          ? candidate.pickupPoint
+            ? "Projected commit preview currently has the required pickup_point fragment."
+            : "Projected commit preview still lacks a required pickup_point fragment."
+          : candidate.pickupPoint
+            ? "Projected commit preview already includes an optional pickup_point fragment."
+            : "Projected commit preview does not currently require pickup_point.",
+    }),
+    buildDeliveryHubProjectedCommitParityPreviewField({
+      key: "pickup_window",
+      label: "pickup_window",
+      status: !candidatePresent
+        ? "informational_only"
+        : candidate.pickupWindowRequired
+          ? candidate.pickupWindow
+            ? blocked
+              ? "blocked"
+              : "matched"
+            : "mismatched"
+          : candidate.pickupWindow
+            ? blocked
+              ? "blocked"
+              : "matched"
+            : "not_required",
+      detail_label: !candidatePresent
+        ? "Projected commit preview stays informational until a neutral candidate is visible."
+        : candidate.pickupWindowRequired
+          ? candidate.pickupWindow
+            ? "Projected commit preview currently has the required pickup_window fragment."
+            : "Projected commit preview still lacks a required pickup_window fragment."
+          : candidate.pickupWindow
+            ? "Projected commit preview already includes an optional pickup_window fragment."
+            : "Projected commit preview does not currently require pickup_window.",
+    }),
+    buildDeliveryHubProjectedCommitParityPreviewField({
+      key: "commit_payload_readiness",
+      label: "commit_payload_readiness",
+      status:
+        commitPayloadReadiness === "matched"
+          ? "matched"
+          : commitPayloadReadiness === "blocked"
+            ? "blocked"
+            : commitPayloadReadiness === "partial"
+              ? "mismatched"
+              : "informational_only",
+      detail_label:
+        commitPayloadReadiness === "matched"
+          ? "Projected commit payload preview currently exposes the shopper-safe fragments expected by the future commit contract shape."
+          : commitPayloadReadiness === "blocked"
+            ? "Projected commit payload preview remains blocked by readiness or parity blockers already visible in preview surfaces."
+            : commitPayloadReadiness === "partial"
+              ? "Projected commit payload preview is still missing one or more shopper-safe fragments for the future commit contract shape."
+              : "Projected commit payload readiness stays informational until a neutral candidate is visible.",
+    }),
+  ]
+
+  const mismatchedFieldCount = fields.filter((field) => field.status === "mismatched").length
+  const matchedFieldCount = fields.filter((field) =>
+    ["matched", "not_required"].includes(field.status)
+  ).length
+  const mismatchReasons = uniqueDeliveryHubMessages([
+    ...fields
+      .filter((field) => field.status === "mismatched")
+      .map((field) => field.detail_label),
+    blocked
+      ? `Projected commit preview blockers remain visible from readiness/parity surfaces: ${[
+          ...readinessBlockedCodes.map((code) =>
+            code === "selection_unavailable"
+              ? "selection context unavailable"
+              : "connection context unavailable"
+          ),
+          ...parityBlockedCodes.map((code) =>
+            code === "delivery_option_unavailable"
+              ? "delivery option unavailable"
+              : "selection alignment unavailable"
+          ),
+        ].join(", ")}.`
+      : null,
+  ])
+  const verdict: DeliveryHubProjectedCommitParityPreviewVerdict = !candidatePresent
+    ? "informational_only"
+    : blocked
+      ? "blocked"
+      : mismatchedFieldCount > 0
+        ? "projected_commit_mismatched"
+        : "projected_commit_matched"
+
+  return {
+    tone:
+      verdict === "projected_commit_matched"
+        ? "positive"
+        : verdict === "blocked"
+          ? "warning"
+          : "neutral",
+    verdict,
+    verdict_label:
+      verdict === "projected_commit_matched"
+        ? "Projected commit parity preview looks structurally matched"
+        : verdict === "blocked"
+          ? "Projected commit parity preview is blocked"
+          : verdict === "projected_commit_mismatched"
+            ? "Projected commit parity preview still has shopper-safe mismatches"
+            : "Projected commit parity preview is informational only",
+    summary_label:
+      verdict === "projected_commit_matched"
+        ? "Current neutral selection preview already resembles the future shipping-option commit contract shape on shopper-safe fields."
+        : verdict === "blocked"
+          ? "Projected commit parity remains diagnostic-only because readiness or parity blockers are still visible."
+          : verdict === "projected_commit_mismatched"
+            ? "Current neutral selection preview exposes comparable shopper-safe structure, but projected commit fragments are still missing or incomplete."
+            : "Projected commit parity remains diagnostic-only until enough neutral preview context is available.",
+    projected_commit_label:
+      "Future shipping-option commit contract preview · shopper-safe only · no write path · no network path",
+    connection_id: candidate.connection.connection_id,
+    mode_code: candidate.quoteType,
+    mode_label: getDeliveryHubQuoteTypeLabel(candidate.quoteType),
+    quote_reference_present: Boolean(candidate.quoteReference),
+    pickup_point_required: candidate.pickupPointRequired,
+    pickup_point_present: Boolean(candidate.pickupPoint),
+    pickup_window_required: candidate.pickupWindowRequired,
+    pickup_window_present: Boolean(candidate.pickupWindow),
+    commit_payload_readiness: commitPayloadReadiness,
     matched_field_count: matchedFieldCount,
     mismatched_field_count: mismatchedFieldCount,
     fields,
