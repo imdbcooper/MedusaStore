@@ -35,4 +35,5 @@ export const DELIVERY_HUB_LOG_KIND = {
   pickupWindows: "pickup_windows",
   quote: "quote",
   credentials: "credentials",
+  shippingOptionManualSync: "shipping_option_manual_sync",
 } as const

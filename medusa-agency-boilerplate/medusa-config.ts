@@ -17,6 +17,7 @@ import {
 } from "./src/modules/notification-vk"
 import { getVkIdRuntime } from "./src/modules/vk-id"
 import { isYooKassaConfigured } from "./src/modules/yookassa"
+import { DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE } from "./src/modules/delivery-hub/provider-surface"
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd())
 
@@ -93,6 +94,10 @@ const fulfillmentProviders = [
         },
       ]
     : []),
+  {
+    resolve: "./src/modules/deliveryhub",
+    id: DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,
+  },
 ]
 
 module.exports = defineConfig({

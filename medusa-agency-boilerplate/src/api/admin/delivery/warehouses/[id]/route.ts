@@ -8,6 +8,7 @@ import {
   getDeliveryHubService,
   getRouteParam,
   handleDeliveryHubError,
+  sanitizeAdminDeliveryWarehouse,
 } from "../../shared"
 
 export const AdminUpdateDeliveryWarehouseSchema = DeliveryHubUpdateWarehouseSchema
@@ -21,7 +22,9 @@ export async function PUT(
   try {
     const id = getRouteParam(req, "id")
     const service = getDeliveryHubService(req)
-    const warehouse = await service.updateWarehouse(id, req.validatedBody)
+    const warehouse = sanitizeAdminDeliveryWarehouse(
+      await service.updateWarehouse(id, req.validatedBody)
+    )
 
     res.status(200).json({
       ok: true,

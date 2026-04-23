@@ -5,6 +5,7 @@ import {
   getStoreDeliveryHubService,
   getStoreQuery,
   handleStoreDeliveryHubError,
+  sanitizeStoreDeliveryReadinessResponse,
 } from "../shared"
 
 export const StoreDeliverySelectionReadinessQuerySchema =
@@ -40,10 +41,12 @@ export async function GET(
       validatedQuery.cart_id
     )
     const service = getStoreDeliveryHubService(req)
-    const result = await service.getStoreSelectionReadiness({
-      cart_id: existingCart.id,
-      metadata: existingCart.metadata,
-    })
+    const result = sanitizeStoreDeliveryReadinessResponse(
+      await service.getStoreSelectionReadiness({
+        cart_id: existingCart.id,
+        metadata: existingCart.metadata,
+      })
+    )
 
     res.status(200).json(result)
   } catch (error) {

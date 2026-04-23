@@ -2,6 +2,8 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 export type RawSqlRowsResult<T> = {
   rows?: T[]
+  rowCount?: number
+  rowsAffected?: number | number[]
 }
 
 export type DeliveryHubPgConnection = {

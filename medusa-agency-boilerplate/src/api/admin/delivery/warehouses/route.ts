@@ -4,7 +4,11 @@ import type {
 } from "@medusajs/framework/http"
 import { z } from "@medusajs/framework/zod"
 import { DeliveryHubCreateWarehouseSchema } from "../../../../modules/delivery-hub"
-import { getDeliveryHubService, handleDeliveryHubError } from "../shared"
+import {
+  getDeliveryHubService,
+  handleDeliveryHubError,
+  sanitizeAdminDeliveryWarehouse,
+} from "../shared"
 
 export const AdminCreateDeliveryWarehouseSchema = DeliveryHubCreateWarehouseSchema
 
@@ -13,7 +17,7 @@ type AdminCreateDeliveryWarehouseBody = z.infer<typeof AdminCreateDeliveryWareho
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   try {
     const service = getDeliveryHubService(req)
-    const warehouses = await service.listWarehouses()
+    const warehouses = (await service.listWarehouses()).map(sanitizeAdminDeliveryWarehouse)
 
     res.status(200).json({
       ok: true,
@@ -30,7 +34,9 @@ export async function POST(
 ) {
   try {
     const service = getDeliveryHubService(req)
-    const warehouse = await service.createWarehouse(req.validatedBody)
+    const warehouse = sanitizeAdminDeliveryWarehouse(
+      await service.createWarehouse(req.validatedBody)
+    )
 
     res.status(201).json({
       ok: true,

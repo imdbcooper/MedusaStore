@@ -108,6 +108,14 @@ export const DeliveryHubStoreCartSelectionQuerySchema = z.object({
   cart_id: z.string().trim().min(1),
 })
 
+export const DeliveryHubStoreSelectionReadinessQuerySchema = z.object({
+  cart_id: z.string().trim().min(1),
+})
+
+export const DeliveryHubStoreCatalogQuerySchema = z.object({})
+
+export const DeliveryHubStoreSettingsQuerySchema = z.object({})
+
 export const DeliveryHubStoreCartSelectionQuoteSchema = z.object({
   carrier_code: z.string().trim().min(1),
   carrier_label: z.string().trim().min(1),
@@ -149,11 +157,18 @@ export const DeliveryHubStoreCartSelectionPickupWindowSchema = z
   })
   .strict()
 
+export const DeliveryHubStoreQuoteReferenceSchema = z
+  .object({
+    id: z.string().trim().min(1),
+    version: z.number().int().positive(),
+  })
+  .strict()
+
 export const DeliveryHubStoreUpsertCartSelectionBodySchema = z.object({
   cart_id: z.string().trim().min(1),
   connection_id: z.string().trim().min(1),
   quote_type: z.enum(["warehouse_to_pickup_point", "dropoff_point_to_pickup_point"]),
-  quote_key: z.string().trim().min(1),
+  quote_reference: DeliveryHubStoreQuoteReferenceSchema,
   quote: DeliveryHubStoreCartSelectionQuoteSchema,
   pickup_point: DeliveryHubStoreCartSelectionPickupPointSchema,
   pickup_window: DeliveryHubStoreCartSelectionPickupWindowSchema.nullable().optional(),

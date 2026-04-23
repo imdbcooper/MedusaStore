@@ -14,6 +14,16 @@ import type { DeliveryHubCredentialsEnvelope } from "../domain/credentials"
 import { getRawRows, type DeliveryHubPgConnection } from "./pg"
 import { parseJsonObject } from "./serializers"
 
+async function hasDeliveryConnectionsTable(pg: DeliveryHubPgConnection) {
+  const rows = getRawRows<{ table_name: string | null }>(
+    await pg.raw(`
+      select to_regclass(?) as table_name
+    `, [DELIVERY_HUB_CONNECTIONS_TABLE])
+  )
+
+  return !!rows[0]?.table_name
+}
+
 export async function ensureDeliveryConnectionsTable(pg: DeliveryHubPgConnection) {
   await pg.raw(`
     create table if not exists ${DELIVERY_HUB_CONNECTIONS_TABLE} (
@@ -58,6 +68,24 @@ type DeliveryConnectionRow = {
 
 export async function listDeliveryConnections(pg: DeliveryHubPgConnection) {
   await ensureDeliveryConnectionsTable(pg)
+
+  const rows = getRawRows<DeliveryConnectionRow>(
+    await pg.raw(`
+      select *
+      from ${DELIVERY_HUB_CONNECTIONS_TABLE}
+      order by created_at desc, id desc
+    `)
+  )
+
+  return rows.map(normalizeDeliveryConnectionRow)
+}
+
+export async function listDeliveryConnectionsReadOnly(pg: DeliveryHubPgConnection) {
+  const hasTable = await hasDeliveryConnectionsTable(pg)
+
+  if (!hasTable) {
+    return []
+  }
 
   const rows = getRawRows<DeliveryConnectionRow>(
     await pg.raw(`

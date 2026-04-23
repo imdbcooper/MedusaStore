@@ -1,7 +1,11 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "@medusajs/framework/zod"
 import { DeliveryHubStorePickupWindowsQuerySchema } from "../../../../modules/delivery-hub"
-import { getStoreDeliveryHubService, handleStoreDeliveryHubError } from "../shared"
+import {
+  getStoreDeliveryHubService,
+  handleStoreDeliveryHubError,
+  sanitizeStoreDeliveryPickupWindowsResponse,
+} from "../shared"
 
 export const StoreDeliveryPickupWindowsQuerySchema = DeliveryHubStorePickupWindowsQuerySchema
 
@@ -13,7 +17,9 @@ export async function GET(
 ) {
   try {
     const service = getStoreDeliveryHubService(req)
-    const result = await service.listStorePickupWindows(req.validatedQuery ?? {})
+    const result = sanitizeStoreDeliveryPickupWindowsResponse(
+      await service.listStorePickupWindows(req.validatedQuery ?? {})
+    )
 
     res.status(200).json(result)
   } catch (error) {

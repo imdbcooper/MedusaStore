@@ -8,6 +8,7 @@ import {
   getDeliveryHubService,
   getRouteParam,
   handleDeliveryHubError,
+  sanitizeAdminDeliveryConnection,
 } from "../../shared"
 
 export const AdminUpdateDeliveryConnectionSchema = DeliveryHubUpdateConnectionSchema
@@ -21,7 +22,9 @@ export async function PUT(
   try {
     const id = getRouteParam(req, "id")
     const service = getDeliveryHubService(req)
-    const connection = await service.updateConnection(id, req.validatedBody)
+    const connection = sanitizeAdminDeliveryConnection(
+      await service.updateConnection(id, req.validatedBody)
+    )
 
     res.status(200).json({
       ok: true,

@@ -10,6 +10,7 @@ import { AdminCreateDeliveryConnectionSchema } from "./admin/delivery/connection
 import { AdminUpdateDeliveryConnectionSchema } from "./admin/delivery/connections/[id]/route"
 import { AdminDeliveryConnectionTestSchema } from "./admin/delivery/connections/[id]/test/route"
 import { AdminDeliveryEventLogsQuerySchema } from "./admin/delivery/logs/route"
+import { AdminDeliveryShippingOptionManualSyncSchema } from "./admin/delivery/shipping-options/sync/route"
 import { AdminDeliveryTestQuoteSchema } from "./admin/delivery/test-quote/route"
 import { AdminCreateDeliveryWarehouseSchema } from "./admin/delivery/warehouses/route"
 import { AdminUpdateDeliveryWarehouseSchema } from "./admin/delivery/warehouses/[id]/route"
@@ -23,10 +24,12 @@ import { AdminVkNotificationSmokeSchema } from "./admin/notifications/smoke/vk/r
 import { StoreApiShipPointsSchema } from "./store/apiship/points/route"
 import { StoreApiShipRatesSchema } from "./store/apiship/rates/route"
 import { StoreCustomerMarketingPreferencesSchema } from "./store/customers/me/marketing-preferences/route"
+import { StoreDeliveryCatalogQuerySchema } from "./store/delivery/catalog/route"
 import { StoreDeliveryPickupPointsQuerySchema } from "./store/delivery/pickup-points/route"
 import { StoreDeliveryPickupWindowsQuerySchema } from "./store/delivery/pickup-windows/route"
 import { StoreDeliveryQuotesQuerySchema } from "./store/delivery/quotes/route"
 import { StoreDeliverySelectionReadinessQuerySchema } from "./store/delivery/readiness/route"
+import { StoreDeliverySettingsQuerySchema } from "./store/delivery/settings/route"
 import {
   StoreDeliveryCartSelectionQuerySchema,
   StoreDeliveryDeleteCartSelectionBodySchema,
@@ -55,6 +58,26 @@ export default defineMiddlewares({
       matcher: "/admin/delivery/providers",
       methods: ["GET"],
       middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/delivery/shipping-options/preview",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/delivery/fulfillment-bridge/preview",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/delivery/execution-plan/preview",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/delivery/shipping-options/sync",
+      methods: ["POST"],
+      middlewares: [adminAuth, validateAndTransformBody(AdminDeliveryShippingOptionManualSyncSchema)],
     },
     {
       matcher: "/admin/delivery/connections",
@@ -193,6 +216,26 @@ export default defineMiddlewares({
       methods: ["GET"],
       middlewares: [
         validateAndTransformQuery(StoreApiShipPointsSchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/store/delivery/catalog",
+      methods: ["GET"],
+      middlewares: [
+        validateAndTransformQuery(StoreDeliveryCatalogQuerySchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/store/delivery/settings",
+      methods: ["GET"],
+      middlewares: [
+        validateAndTransformQuery(StoreDeliverySettingsQuerySchema, {
           defaults: [],
           isList: false,
         }),

@@ -6,7 +6,11 @@ import {
   DELIVERY_HUB_MODE_CODE,
   DELIVERY_HUB_PROVIDER_YANDEX,
 } from "./constants"
-import { readDeliveryHubCartSelection } from "./cart-selection"
+import {
+  createDeliveryHubQuoteReference,
+  readDeliveryHubCartSelection,
+  type DeliveryHubQuoteReference,
+} from "./cart-selection"
 import type {
   DeliveryConnectionPublic,
   DeliveryConnectionRecord,
@@ -21,6 +25,19 @@ import type {
 } from "./domain/warehouse"
 import { DeliveryHubError, isDeliveryHubError } from "./errors"
 import {
+  planDeliveryHubDesiredShippingOptions,
+  type DeliveryHubShippingOptionPlan,
+} from "./shipping-option-planner"
+import {
+  reconcileDeliveryHubShippingOptions,
+  type DeliveryHubShippingOptionReconciliation,
+  type DeliveryHubShippingOptionSnapshot,
+} from "./shipping-option-reconciliation"
+import {
+  buildDeliveryHubShippingOptionSyncOperationPlan,
+  type DeliveryHubShippingOptionSyncOperationPlan,
+} from "./shipping-option-sync-operation-plan"
+import {
   buildDeliveryHubStoreSelectionConnectionSummary,
   buildDeliveryHubStoreSelectionReadiness,
   createMissingDeliveryHubSelectionConnectionSummary,
@@ -31,10 +48,18 @@ import {
   encryptDeliveryHubCredentials,
   getDeliveryHubEncryptionState,
 } from "./security/encryption"
+import {
+  buildDeliveryHubExecutionPlanObservabilityPreview,
+  buildDeliveryHubFulfillmentBridgePreview,
+  type DeliveryHubExecutionPlanObservabilityPreview,
+  type DeliveryHubFulfillmentBridgePlannerIssue,
+  type DeliveryHubFulfillmentBridgePreview,
+} from "./fulfillment-provider-bridge"
 import { redactRecord } from "./security/redaction"
 import {
   getDeliveryConnectionById,
   listDeliveryConnections,
+  listDeliveryConnectionsReadOnly,
   upsertDeliveryConnection,
 } from "./storage/connections-repository"
 import {
@@ -50,6 +75,7 @@ import {
 import {
   getDeliveryWarehouseById,
   listDeliveryWarehouses,
+  listDeliveryWarehousesReadOnly,
   upsertDeliveryWarehouse,
 } from "./storage/warehouses-repository"
 
@@ -60,6 +86,113 @@ export type DeliveryHubEventLogListInput = {
 }
 
 export type DeliveryHubEventLogPublic = DeliveryHubEventLogRecord
+
+export type DeliveryHubShippingOptionPreviewSummary = {
+  current_option_count: number
+  desired_option_count: number
+  deferred_option_count: number
+  deferred_issue_count: number
+  connection_plan_count: number
+  create_candidate_count: number
+  update_candidate_count: number
+  unchanged_count: number
+  orphaned_managed_option_count: number
+  ignored_foreign_option_count: number
+}
+
+export type DeliveryHubShippingOptionPreview = {
+  provider_code: DeliveryHubShippingOptionPlan["provider_code"]
+  provider_id: DeliveryHubShippingOptionPlan["provider_id"]
+  current_options: DeliveryHubShippingOptionSnapshot[]
+  plan: DeliveryHubShippingOptionPlan
+  reconciliation: DeliveryHubShippingOptionReconciliation
+  summary: DeliveryHubShippingOptionPreviewSummary
+}
+
+export type DeliveryHubFulfillmentBridgePreviewSummary = {
+  mode_count: number
+  ready_mode_count: number
+  error_mode_count: number
+  projected_mode_count: number
+  deferred_mode_count: number
+}
+
+export type DeliveryHubFulfillmentBridgeReadinessPreview = {
+  provider_code: DeliveryHubShippingOptionPlan["provider_code"]
+  provider_id: DeliveryHubShippingOptionPlan["provider_id"]
+  shipping_option_preview: DeliveryHubShippingOptionPreview
+  bridge_preview: DeliveryHubFulfillmentBridgePreview
+  summary: DeliveryHubFulfillmentBridgePreviewSummary
+}
+
+export type DeliveryHubExecutionPlanObservabilityPreviewSummary = {
+  mode_count: number
+  ready_mode_count: number
+  blocked_mode_count: number
+  projected_mode_count: number
+  deferred_mode_count: number
+  unconfigured_mode_count: number
+}
+
+export type DeliveryHubExecutionPlanObservabilityReadModel = {
+  provider_code: DeliveryHubShippingOptionPlan["provider_code"]
+  provider_id: DeliveryHubShippingOptionPlan["provider_id"]
+  shipping_option_preview: DeliveryHubShippingOptionPreview
+  execution_plan_preview: DeliveryHubExecutionPlanObservabilityPreview
+  summary: DeliveryHubExecutionPlanObservabilityPreviewSummary
+}
+
+type DeliveryStoreQuotePublic = Omit<
+  DeliveryQuote,
+  "quote_key" | "pickup_points_embedded" | "pickup_window_options" | "raw_reference"
+> & {
+  quote_reference: DeliveryHubQuoteReference
+}
+
+export type DeliveryHubStoreSettingsStatus =
+  | "unavailable"
+  | "informational_only"
+  | "available"
+
+export type DeliveryHubStoreSettingsPreviewVisibility = {
+  shadow_settings: boolean
+  readiness: boolean
+  persisted_selection: boolean
+  shadow_catalog: boolean
+  shadow_pickup_points: boolean
+  shadow_quotes: boolean
+  shadow_pickup_windows: boolean
+}
+
+export type DeliveryHubStoreSettingsResponse = {
+  ok: true
+  settings: {
+    enabled: boolean
+    status: DeliveryHubStoreSettingsStatus
+    summary: {
+      enabled_connection_count: number
+      ready_connection_count: number
+      default_connection_label: string | null
+      modality_codes: Array<DeliveryStoreQuotePublic["mode_code"]>
+      supports_pickup_points: boolean
+      supports_pickup_windows: boolean
+      supports_dropoff: boolean
+    }
+    preview_visibility: DeliveryHubStoreSettingsPreviewVisibility
+    hints: string[]
+  }
+}
+
+type DeliveryHubStoreCatalogConnection = {
+  connection_id: string
+  label: string
+  state: ReturnType<typeof buildDeliveryHubStoreSelectionConnectionSummary>["state"]
+  ready: boolean
+  quote_types: Array<DeliveryStoreQuotePublic["mode_code"]>
+  supports_pickup_points: boolean
+  supports_pickup_windows: boolean
+  supports_dropoff: boolean
+}
 
 export class DeliveryHubService {
   constructor(private readonly pg: DeliveryHubPgConnection) {}
@@ -79,6 +212,138 @@ export class DeliveryHubService {
   async listWarehouses(): Promise<DeliveryWarehousePublic[]> {
     const records = await listDeliveryWarehouses(this.pg)
     return records.map(serializeDeliveryWarehousePublic)
+  }
+
+  async planDesiredShippingOptions(): Promise<DeliveryHubShippingOptionPlan> {
+    const [connections, warehouses] = await Promise.all([
+      listDeliveryConnectionsReadOnly(this.pg),
+      listDeliveryWarehousesReadOnly(this.pg),
+    ])
+
+    return planDeliveryHubDesiredShippingOptions({
+      connections,
+      warehouses,
+    })
+  }
+
+  async buildShippingOptionPreview(
+    currentOptions: DeliveryHubShippingOptionSnapshot[]
+  ): Promise<DeliveryHubShippingOptionPreview> {
+    const plan = await this.planDesiredShippingOptions()
+    const reconciliation = reconcileDeliveryHubShippingOptions({
+      desired_options: plan.desired_options,
+      current_options: currentOptions,
+    })
+
+    return {
+      provider_code: plan.provider_code,
+      provider_id: plan.provider_id,
+      current_options: currentOptions,
+      plan,
+      reconciliation,
+      summary: {
+        current_option_count: currentOptions.length,
+        desired_option_count: plan.desired_options.length,
+        deferred_option_count: plan.deferred_options.length,
+        deferred_issue_count: plan.deferred_options.reduce(
+          (total, deferredOption) => total + deferredOption.issues.length,
+          0
+        ),
+        connection_plan_count: plan.connection_plans.length,
+        create_candidate_count: reconciliation.create_candidates.length,
+        update_candidate_count: reconciliation.update_candidates.length,
+        unchanged_count: reconciliation.unchanged.length,
+        orphaned_managed_option_count: reconciliation.orphaned_managed_options.length,
+        ignored_foreign_option_count: reconciliation.ignored_foreign_options.length,
+      },
+    }
+  }
+
+  async buildFulfillmentBridgeReadinessPreview(
+    currentOptions: DeliveryHubShippingOptionSnapshot[]
+  ): Promise<DeliveryHubFulfillmentBridgeReadinessPreview> {
+    const shippingOptionPreview = await this.buildShippingOptionPreview(currentOptions)
+    const bridgePreview = buildDeliveryHubFulfillmentBridgePreview({
+      projected_modes: shippingOptionPreview.plan.desired_options.map((option) => ({
+        mode_code: option.mode_code,
+        supporting_connection_ids: option.supporting_connection_ids,
+      })),
+      deferred_modes: shippingOptionPreview.plan.deferred_options.map((option) => ({
+        mode_code: option.mode_code,
+        issues: option.issues.map<DeliveryHubFulfillmentBridgePlannerIssue>((issue) => ({
+          connection_id: issue.connection_id,
+          provider_code: issue.provider_code,
+          code: issue.code,
+          message: issue.message,
+          mode_code: issue.mode_code,
+        })),
+      })),
+    })
+
+    return {
+      provider_code: shippingOptionPreview.provider_code,
+      provider_id: shippingOptionPreview.provider_id,
+      shipping_option_preview: shippingOptionPreview,
+      bridge_preview: bridgePreview,
+      summary: {
+        mode_count: bridgePreview.summary.mode_count,
+        ready_mode_count: bridgePreview.summary.ready_mode_count,
+        error_mode_count: bridgePreview.summary.error_mode_count,
+        projected_mode_count: bridgePreview.summary.projected_mode_count,
+        deferred_mode_count: bridgePreview.summary.deferred_mode_count,
+      },
+    }
+  }
+
+  async buildExecutionPlanObservabilityPreview(
+    currentOptions: DeliveryHubShippingOptionSnapshot[]
+  ): Promise<DeliveryHubExecutionPlanObservabilityReadModel> {
+    const shippingOptionPreview = await this.buildShippingOptionPreview(currentOptions)
+    const executionPlanPreview = buildDeliveryHubExecutionPlanObservabilityPreview({
+      projected_modes: shippingOptionPreview.plan.desired_options.map((option) => ({
+        mode_code: option.mode_code,
+        supporting_connection_ids: option.supporting_connection_ids,
+      })),
+      deferred_modes: shippingOptionPreview.plan.deferred_options.map((option) => ({
+        mode_code: option.mode_code,
+        issues: option.issues.map<DeliveryHubFulfillmentBridgePlannerIssue>((issue) => ({
+          connection_id: issue.connection_id,
+          provider_code: issue.provider_code,
+          code: issue.code,
+          message: issue.message,
+          mode_code: issue.mode_code,
+        })),
+      })),
+    })
+
+    return {
+      provider_code: shippingOptionPreview.provider_code,
+      provider_id: shippingOptionPreview.provider_id,
+      shipping_option_preview: shippingOptionPreview,
+      execution_plan_preview: executionPlanPreview,
+      summary: {
+        mode_count: executionPlanPreview.summary.mode_count,
+        ready_mode_count: executionPlanPreview.summary.ready_mode_count,
+        blocked_mode_count: executionPlanPreview.summary.blocked_mode_count,
+        projected_mode_count: executionPlanPreview.summary.projected_mode_count,
+        deferred_mode_count: executionPlanPreview.summary.deferred_mode_count,
+        unconfigured_mode_count: executionPlanPreview.summary.unconfigured_mode_count,
+      },
+    }
+  }
+
+  async reconcileShippingOptions(
+    currentOptions: DeliveryHubShippingOptionSnapshot[]
+  ): Promise<DeliveryHubShippingOptionReconciliation> {
+    const preview = await this.buildShippingOptionPreview(currentOptions)
+    return preview.reconciliation
+  }
+
+  async buildShippingOptionSyncOperationPlan(
+    currentOptions: DeliveryHubShippingOptionSnapshot[]
+  ): Promise<DeliveryHubShippingOptionSyncOperationPlan> {
+    const reconciliation = await this.reconcileShippingOptions(currentOptions)
+    return buildDeliveryHubShippingOptionSyncOperationPlan(reconciliation)
   }
 
   async listEventLogs(input: DeliveryHubEventLogListInput = {}): Promise<DeliveryHubEventLogPublic[]> {
@@ -499,7 +764,7 @@ export class DeliveryHubService {
 
       return {
         ok: true,
-        quotes: quotes.map((quote) => sanitizeStoreQuote(quote)),
+        quotes: quotes.map((quote) => sanitizeStoreQuote(connection.id, quote)),
       }
     } catch (error) {
       const normalized = normalizeDeliveryHubError(error)
@@ -556,6 +821,97 @@ export class DeliveryHubService {
         metadata: input.metadata,
         connection,
       }),
+    }
+  }
+
+  async listStoreCatalog() {
+    const { connections, defaultConnectionId } = await this.buildStoreCatalogSnapshot()
+
+    return {
+      ok: true,
+      default_connection_id: defaultConnectionId,
+      connections,
+    }
+  }
+
+  async getStoreSettings(): Promise<DeliveryHubStoreSettingsResponse> {
+    const { connections, defaultConnectionId } = await this.buildStoreCatalogSnapshot()
+    const readyConnectionCount = connections.filter((connection) => connection.ready).length
+    const modalityCodes = Array.from(
+      new Set(connections.flatMap((connection) => connection.quote_types))
+    )
+    const defaultConnectionLabel =
+      connections.find((connection) => connection.connection_id === defaultConnectionId)?.label ?? null
+
+    return {
+      ok: true,
+      settings: {
+        enabled: connections.length > 0,
+        status:
+          connections.length === 0
+            ? "unavailable"
+            : readyConnectionCount > 0
+              ? "available"
+              : "informational_only",
+        summary: {
+          enabled_connection_count: connections.length,
+          ready_connection_count: readyConnectionCount,
+          default_connection_label: defaultConnectionLabel,
+          modality_codes: modalityCodes,
+          supports_pickup_points: connections.some((connection) => connection.supports_pickup_points),
+          supports_pickup_windows: connections.some((connection) => connection.supports_pickup_windows),
+          supports_dropoff: connections.some((connection) => connection.supports_dropoff),
+        },
+        preview_visibility: {
+          shadow_settings: true,
+          readiness: true,
+          persisted_selection: true,
+          shadow_catalog: true,
+          shadow_pickup_points: true,
+          shadow_quotes: true,
+          shadow_pickup_windows: true,
+        },
+        hints: buildStoreSettingsHints({
+          connection_count: connections.length,
+          ready_connection_count: readyConnectionCount,
+          default_connection_label: defaultConnectionLabel,
+          supports_pickup_points: connections.some((connection) => connection.supports_pickup_points),
+          supports_pickup_windows: connections.some((connection) => connection.supports_pickup_windows),
+          supports_dropoff: connections.some((connection) => connection.supports_dropoff),
+        }),
+      },
+    }
+  }
+
+  private async buildStoreCatalogSnapshot(): Promise<{
+    connections: DeliveryHubStoreCatalogConnection[]
+    defaultConnectionId: string | null
+  }> {
+    const records = await listDeliveryConnections(this.pg)
+    const connections: DeliveryHubStoreCatalogConnection[] = records
+      .filter((connection) => connection.enabled)
+      .map((connection) => {
+        const readiness = buildDeliveryHubStoreSelectionConnectionSummary({
+          id: connection.id,
+          enabled: connection.enabled,
+          status: connection.status,
+          credentials_state: connection.credentials_state,
+        })
+        const capabilities = buildStoreCatalogCapabilities(connection)
+
+        return {
+          connection_id: connection.id,
+          label: connection.name,
+          state: readiness.state,
+          ready: readiness.ready,
+          ...capabilities,
+        }
+      })
+    const readyConnections = connections.filter((connection) => connection.ready)
+
+    return {
+      connections,
+      defaultConnectionId: readyConnections.length === 1 ? readyConnections[0].connection_id : null,
     }
   }
 
@@ -995,9 +1351,89 @@ function normalizeNullableText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null
 }
 
-function sanitizeStoreQuote(quote: DeliveryQuote): DeliveryQuote {
+function buildStoreCatalogCapabilities(
+  connection: DeliveryConnectionRecord
+): Pick<
+  DeliveryHubStoreCatalogConnection,
+  "quote_types" | "supports_pickup_points" | "supports_pickup_windows" | "supports_dropoff"
+> {
+  const adapter = getDeliveryHubAdapter(connection.provider_code)
+  const quote_types = adapter.definition.supported_mode_codes.filter(
+    (modeCode): modeCode is DeliveryStoreQuotePublic["mode_code"] => isStoreCatalogQuoteType(modeCode)
+  )
+
   return {
-    ...quote,
-    raw_reference: {},
+    quote_types,
+    supports_pickup_points: adapter.definition.capabilities.includes("list_pickup_points"),
+    supports_pickup_windows:
+      quote_types.includes(DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint) &&
+      adapter.definition.capabilities.includes("list_pickup_windows"),
+    supports_dropoff: quote_types.includes(DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint),
+  }
+}
+
+function buildStoreSettingsHints(input: {
+  connection_count: number
+  ready_connection_count: number
+  default_connection_label: string | null
+  supports_pickup_points: boolean
+  supports_pickup_windows: boolean
+  supports_dropoff: boolean
+}) {
+  const hints = [
+    input.connection_count === 0
+      ? "Delivery Hub storefront visibility is currently unavailable because no shopper-visible connections are enabled."
+      : input.ready_connection_count > 0
+        ? `Delivery Hub currently exposes ${input.ready_connection_count} ready connection${input.ready_connection_count === 1 ? "" : "s"} for read-only storefront visibility.`
+        : "Delivery Hub storefront visibility is currently informational only because no ready connection is exposed.",
+    input.default_connection_label
+      ? `Default neutral storefront connection is ${input.default_connection_label}.`
+      : input.connection_count > 1
+        ? "No default neutral storefront connection is exposed while multiple shopper-visible connections remain available."
+        : input.connection_count === 1
+          ? "Returned neutral storefront connection set does not expose a separate default hint."
+          : null,
+    input.supports_pickup_points
+      ? "Returned neutral settings indicate pickup-point visibility support."
+      : null,
+    input.supports_pickup_windows
+      ? "Returned neutral settings indicate pickup-window visibility support."
+      : null,
+    input.supports_dropoff
+      ? "Returned neutral settings indicate dropoff-origin modality visibility."
+      : null,
+    "This settings surface is read-only and does not save selection state, commit checkout delivery, or replace the active legacy ApiShip shopper flow.",
+  ]
+
+  return Array.from(new Set(hints.filter((hint): hint is string => !!hint)))
+}
+
+function isStoreCatalogQuoteType(modeCode: string) {
+  return (
+    modeCode === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint ||
+    modeCode === DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint
+  )
+}
+
+function sanitizeStoreQuote(
+  connectionId: string,
+  quote: DeliveryQuote
+): DeliveryStoreQuotePublic {
+  return {
+    carrier_code: quote.carrier_code,
+    carrier_label: quote.carrier_label,
+    mode_code: quote.mode_code,
+    amount: quote.amount,
+    currency_code: quote.currency_code,
+    delivery_eta_min: quote.delivery_eta_min,
+    delivery_eta_max: quote.delivery_eta_max,
+    pickup_point_required: quote.pickup_point_required,
+    pickup_point_ids: quote.pickup_point_ids,
+    pickup_window_required: quote.pickup_window_required,
+    quote_reference: createDeliveryHubQuoteReference({
+      connection_id: connectionId,
+      quote_type: quote.mode_code,
+      quote_key: quote.quote_key,
+    }),
   }
 }

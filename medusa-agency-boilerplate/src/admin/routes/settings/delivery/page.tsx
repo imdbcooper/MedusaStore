@@ -2,79 +2,49 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { HandTruck } from "@medusajs/icons"
 import { Button, Container, Heading, Input, Label, Switch, Text } from "@medusajs/ui"
 import { useEffect, useMemo, useState } from "react"
-
-type DeliveryProviderDefinition = {
-  code: string
-  label: string
-  capabilities: string[]
-  supported_mode_codes: string[]
-}
-
-type DeliveryConnection = {
-  id: string
-  provider_code: string
-  name: string
-  status: "draft" | "active" | "error" | "disabled"
-  mode: "test" | "live"
-  enabled: boolean
-  country_code: string
-  credentials_state: "empty" | "sealed" | "disabled" | "invalid"
-  credentials_fingerprint: string | null
-  credentials_last_validated_at: string | null
-  credentials_last_error_code: string | null
-  credentials_present: boolean
-  config: Record<string, unknown>
-  metadata: Record<string, unknown>
-  created_at: string
-  updated_at: string
-}
-
-type DeliveryWarehouse = {
-  id: string
-  name: string
-  enabled: boolean
-  country_code: string
-  city: string | null
-  address_line_1: string | null
-  contact_name: string | null
-  contact_phone: string | null
-  provider_code: string | null
-  provider_warehouse_id: string | null
-  metadata: Record<string, unknown>
-  created_at: string
-  updated_at: string
-}
-
-type DeliveryConfig = {
-  auto_confirm?: boolean
-  label_format?: string
-  default_warehouse_id?: string
-  default_warehouse?: DeliveryWarehouse
-}
-
-type DeliveryConnectionForm = {
-  provider_code: string
-  name: string
-  mode: "test" | "live"
-  enabled: boolean
-  country_code: string
-  token: string
-  auto_confirm: boolean
-  label_format: string
-  default_warehouse_id: string
-}
-
-type DeliveryWarehouseForm = {
-  name: string
-  enabled: boolean
-  country_code: string
-  city: string
-  address_line_1: string
-  contact_name: string
-  contact_phone: string
-  provider_code: string
-  provider_warehouse_id: string
-}
+import {
+  DELIVERY_HUB_MANUAL_SYNC_EXECUTE_GUARD,
+  buildDeliveryHubShippingOptionManualSyncDryRunRequest,
+  buildDeliveryHubShippingOptionManualSyncExecuteRequest,
+  type DeliveryHubShippingOptionManualSyncErrorMode,
+  type DeliveryHubShippingOptionManualSyncMode,
+} from "./manual-sync"
+import {
+  capabilityLabels,
+  connectionToForm,
+  defaultConnectionForm,
+  defaultWarehouseForm,
+  deriveExecutionPlanObservabilityRenderState,
+  deriveFulfillmentBridgePreviewRenderState,
+  deriveShippingOptionManualSyncRenderState,
+  deriveShippingOptionPreviewRenderState,
+  formatTimestamp,
+  getFilteredEventLogs,
+  getObservedEncryptionDisabled,
+  getShippingOptionSyncCapability,
+  getWarehouseOptionLabel,
+  getYandexConnections,
+  getYandexWarehouses,
+  labelFormatOptions,
+  logSuccessToneClass,
+  modeLabels,
+  normalizeConfig,
+  plannerStatusToneClass,
+  statusToneClass,
+  warehouseToForm,
+  type ApiErrorPayload,
+  type DeliveryConfig,
+  type DeliveryConnection,
+  type DeliveryConnectionForm,
+  type DeliveryEventLog,
+  type DeliveryHubExecutionPlanObservabilityReadModel,
+  type DeliveryHubFulfillmentBridgeReadinessPreview,
+  type DeliveryHubShippingOptionManualSyncResponse,
+  type DeliveryHubShippingOptionPreview,
+  type DeliveryProviderDefinition,
+  type DeliveryWarehouse,
+  type DeliveryWarehouseForm,
+} from "./page-state"
 
 type DeliveryTestConnectionResult = {
   ok: boolean
@@ -106,19 +76,6 @@ type DeliveryTestQuoteResponse = {
   correlation_id: string
 }
 
-type DeliveryEventLog = {
-  id: string
-  connection_id: string | null
-  provider_code: string
-  kind: string
-  correlation_id: string
-  success: boolean
-  request_summary: Record<string, unknown>
-  response_summary: Record<string, unknown>
-  error_code: string | null
-  created_at: string
-}
-
 type DeliveryTestQuoteForm = {
   connection_id: string
   mode_code: "warehouse_to_pickup_point" | "dropoff_point_to_pickup_point"
@@ -133,37 +90,6 @@ type DeliveryTestQuoteForm = {
   item_price: string
 }
 
-type ApiErrorPayload = {
-  status: number
-  code: string
-  message: string
-  details: unknown
-}
-
-const defaultConnectionForm: DeliveryConnectionForm = {
-  provider_code: "yandex",
-  name: "",
-  mode: "test",
-  enabled: false,
-  country_code: "RU",
-  token: "",
-  auto_confirm: false,
-  label_format: "",
-  default_warehouse_id: "",
-}
-
-const defaultWarehouseForm: DeliveryWarehouseForm = {
-  name: "",
-  enabled: true,
-  country_code: "RU",
-  city: "",
-  address_line_1: "",
-  contact_name: "",
-  contact_phone: "",
-  provider_code: "yandex",
-  provider_warehouse_id: "",
-}
-
 const defaultTestQuoteForm: DeliveryTestQuoteForm = {
   connection_id: "",
   mode_code: "warehouse_to_pickup_point",
@@ -176,99 +102,6 @@ const defaultTestQuoteForm: DeliveryTestQuoteForm = {
   item_quantity: "1",
   item_weight_grams: "500",
   item_price: "0",
-}
-
-const capabilityLabels: Record<string, string> = {
-  test_connection: "Test connection",
-  list_pickup_points: "List pickup points",
-  list_pickup_windows: "List pickup windows",
-  quote_warehouse_to_pickup_point: "Quote warehouse → pickup point",
-  quote_dropoff_point_to_pickup_point: "Quote dropoff point → pickup point",
-}
-
-const modeLabels: Record<string, string> = {
-  warehouse_to_pickup_point: "warehouse_to_pickup_point",
-  dropoff_point_to_pickup_point: "dropoff_point_to_pickup_point",
-}
-
-const labelFormatOptions = ["", "pdf", "zpl"]
-
-const formatTimestamp = (value: string | null) => {
-  if (!value) {
-    return "—"
-  }
-
-  const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-
-  return new Intl.DateTimeFormat("ru-RU", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date)
-}
-
-const normalizeConfig = (form: DeliveryConnectionForm): DeliveryConfig => {
-  const nextConfig: DeliveryConfig = {}
-
-  if (form.auto_confirm) {
-    nextConfig.auto_confirm = true
-  }
-
-  if (form.label_format.trim()) {
-    nextConfig.label_format = form.label_format.trim()
-  }
-
-  if (form.default_warehouse_id.trim()) {
-    nextConfig.default_warehouse_id = form.default_warehouse_id.trim()
-  }
-
-  return nextConfig
-}
-
-const connectionToForm = (connection: DeliveryConnection): DeliveryConnectionForm => {
-  const config = connection.config as DeliveryConfig
-
-  return {
-    provider_code: connection.provider_code,
-    name: connection.name,
-    mode: connection.mode,
-    enabled: connection.enabled,
-    country_code: connection.country_code,
-    token: "",
-    auto_confirm: !!config.auto_confirm,
-    label_format:
-      typeof config.label_format === "string" && config.label_format.trim()
-        ? config.label_format
-        : "",
-    default_warehouse_id:
-      typeof config.default_warehouse_id === "string" && config.default_warehouse_id.trim()
-        ? config.default_warehouse_id
-        : "",
-  }
-}
-
-const warehouseToForm = (warehouse: DeliveryWarehouse): DeliveryWarehouseForm => {
-  return {
-    name: warehouse.name,
-    enabled: warehouse.enabled,
-    country_code: warehouse.country_code,
-    city: warehouse.city || "",
-    address_line_1: warehouse.address_line_1 || "",
-    contact_name: warehouse.contact_name || "",
-    contact_phone: warehouse.contact_phone || "",
-    provider_code: warehouse.provider_code || "yandex",
-    provider_warehouse_id: warehouse.provider_warehouse_id || "",
-  }
-}
-
-const getWarehouseOptionLabel = (warehouse: DeliveryWarehouse) => {
-  const location = [warehouse.city, warehouse.address_line_1].filter(Boolean).join(", ")
-  const providerRef = warehouse.provider_warehouse_id ? ` · provider: ${warehouse.provider_warehouse_id}` : ""
-
-  return `${warehouse.name}${location ? ` · ${location}` : ""}${providerRef}`
 }
 
 const getApiError = async (response: Response): Promise<ApiErrorPayload> => {
@@ -309,28 +142,6 @@ const requestJson = async <T,>(input: RequestInfo | URL, init?: RequestInit): Pr
   return (await response.json()) as T
 }
 
-const statusToneClass = (value: string) => {
-  if (value === "active" || value === "sealed") {
-    return "border-green-200 bg-green-50 text-green-700"
-  }
-
-  if (value === "error" || value === "invalid") {
-    return "border-red-200 bg-red-50 text-red-700"
-  }
-
-  if (value === "disabled") {
-    return "border-amber-200 bg-amber-50 text-amber-700"
-  }
-
-  return "border-ui-border-base bg-ui-bg-subtle text-ui-fg-subtle"
-}
-
-const logSuccessToneClass = (success: boolean) => {
-  return success
-    ? "border-green-200 bg-green-50 text-green-700"
-    : "border-red-200 bg-red-50 text-red-700"
-}
-
 const DeliverySettingsPage = () => {
   const [providers, setProviders] = useState<DeliveryProviderDefinition[]>([])
   const [connections, setConnections] = useState<DeliveryConnection[]>([])
@@ -358,6 +169,21 @@ const DeliverySettingsPage = () => {
   const [testQuoteError, setTestQuoteError] = useState<ApiErrorPayload | null>(null)
   const [isTestingQuote, setIsTestingQuote] = useState(false)
   const [eventLogs, setEventLogs] = useState<DeliveryEventLog[]>([])
+  const [shippingOptionPreview, setShippingOptionPreview] =
+    useState<DeliveryHubShippingOptionPreview | null>(null)
+  const [fulfillmentBridgePreview, setFulfillmentBridgePreview] =
+    useState<DeliveryHubFulfillmentBridgeReadinessPreview | null>(null)
+  const [executionPlanPreview, setExecutionPlanPreview] =
+    useState<DeliveryHubExecutionPlanObservabilityReadModel | null>(null)
+  const [shippingOptionSyncResult, setShippingOptionSyncResult] =
+    useState<DeliveryHubShippingOptionManualSyncResponse | null>(null)
+  const [shippingOptionSyncError, setShippingOptionSyncError] = useState<ApiErrorPayload | null>(null)
+  const [isRunningShippingOptionSync, setIsRunningShippingOptionSync] = useState(false)
+  const [shippingOptionSyncErrorMode, setShippingOptionSyncErrorMode] =
+    useState<DeliveryHubShippingOptionManualSyncErrorMode>("abort")
+  const [shippingOptionSyncExecuteGuard, setShippingOptionSyncExecuteGuard] = useState("")
+  const [shippingOptionSyncServiceZoneId, setShippingOptionSyncServiceZoneId] = useState("")
+  const [shippingOptionSyncShippingProfileId, setShippingOptionSyncShippingProfileId] = useState("")
 
   const activeConnection = useMemo(() => {
     if (!activeConnectionId) {
@@ -381,31 +207,67 @@ const DeliverySettingsPage = () => {
   )
 
   const observedEncryptionDisabled = useMemo(() => {
-    return (
-      connections.some((connection) => connection.credentials_state === "disabled") ||
-      activeConnection?.credentials_state === "disabled" ||
-      formError?.code === "DELIVERY_HUB_ENCRYPTION_DISABLED" ||
-      testConnectionError?.code === "DELIVERY_HUB_ENCRYPTION_DISABLED"
-    )
+    return getObservedEncryptionDisabled({
+      connections,
+      activeConnection,
+      formError,
+      testConnectionError,
+    })
   }, [activeConnection, connections, formError, testConnectionError])
 
-  const yandexConnections = useMemo(
-    () => connections.filter((connection) => connection.provider_code === "yandex"),
-    [connections]
-  )
+  const yandexConnections = useMemo(() => getYandexConnections(connections), [connections])
 
-  const yandexWarehouses = useMemo(
-    () => warehouses.filter((warehouse) => !warehouse.provider_code || warehouse.provider_code === "yandex"),
-    [warehouses]
-  )
+  const yandexWarehouses = useMemo(() => getYandexWarehouses(warehouses), [warehouses])
 
   const filteredEventLogs = useMemo(() => {
-    if (!activeConnectionId) {
-      return eventLogs
-    }
-
-    return eventLogs.filter((log) => log.connection_id === activeConnectionId)
+    return getFilteredEventLogs(eventLogs, activeConnectionId)
   }, [activeConnectionId, eventLogs])
+
+  const shippingOptionSyncCapability = useMemo(() => {
+    return getShippingOptionSyncCapability({
+      executeGuard: shippingOptionSyncExecuteGuard,
+      serviceZoneId: shippingOptionSyncServiceZoneId,
+      shippingProfileId: shippingOptionSyncShippingProfileId,
+    })
+  }, [
+    shippingOptionSyncExecuteGuard,
+    shippingOptionSyncServiceZoneId,
+    shippingOptionSyncShippingProfileId,
+  ])
+
+  const shippingOptionSyncExecuteGuardConfirmed = shippingOptionSyncCapability.guardConfirmed
+  const canExecuteShippingOptionSync = shippingOptionSyncCapability.canExecute
+
+  const previewRenderState = useMemo(
+    () => deriveShippingOptionPreviewRenderState(shippingOptionPreview),
+    [shippingOptionPreview]
+  )
+
+  const manualSyncRenderState = useMemo(
+    () =>
+      deriveShippingOptionManualSyncRenderState({
+        result: shippingOptionSyncResult,
+        executeGuard: shippingOptionSyncExecuteGuard,
+        serviceZoneId: shippingOptionSyncServiceZoneId,
+        shippingProfileId: shippingOptionSyncShippingProfileId,
+      }),
+    [
+      shippingOptionSyncExecuteGuard,
+      shippingOptionSyncResult,
+      shippingOptionSyncServiceZoneId,
+      shippingOptionSyncShippingProfileId,
+    ]
+  )
+
+  const fulfillmentBridgeRenderState = useMemo(
+    () => deriveFulfillmentBridgePreviewRenderState(fulfillmentBridgePreview),
+    [fulfillmentBridgePreview]
+  )
+
+  const executionPlanRenderState = useMemo(
+    () => deriveExecutionPlanObservabilityRenderState(executionPlanPreview),
+    [executionPlanPreview]
+  )
 
   const loadData = async (silent = false) => {
     if (silent) {
@@ -415,7 +277,15 @@ const DeliverySettingsPage = () => {
     }
 
     try {
-      const [providersPayload, connectionsPayload, warehousesPayload, logsPayload] = await Promise.all([
+      const [
+        providersPayload,
+        connectionsPayload,
+        warehousesPayload,
+        logsPayload,
+        previewPayload,
+        fulfillmentBridgePayload,
+        executionPlanPayload,
+      ] = await Promise.all([
         requestJson<{ providers: DeliveryProviderDefinition[] }>("/admin/delivery/providers", {
           method: "GET",
         }),
@@ -428,12 +298,33 @@ const DeliverySettingsPage = () => {
         requestJson<{ logs: DeliveryEventLog[] }>("/admin/delivery/logs?provider_code=yandex&limit=20", {
           method: "GET",
         }),
+        requestJson<{ preview: DeliveryHubShippingOptionPreview }>(
+          "/admin/delivery/shipping-options/preview",
+          {
+            method: "GET",
+          }
+        ),
+        requestJson<{ preview: DeliveryHubFulfillmentBridgeReadinessPreview }>(
+          "/admin/delivery/fulfillment-bridge/preview",
+          {
+            method: "GET",
+          }
+        ),
+        requestJson<{ preview: DeliveryHubExecutionPlanObservabilityReadModel }>(
+          "/admin/delivery/execution-plan/preview",
+          {
+            method: "GET",
+          }
+        ),
       ])
 
       setProviders(providersPayload.providers || [])
       setConnections(connectionsPayload.connections || [])
       setWarehouses(warehousesPayload.warehouses || [])
       setEventLogs(logsPayload.logs || [])
+      setShippingOptionPreview(previewPayload.preview || null)
+      setFulfillmentBridgePreview(fulfillmentBridgePayload.preview || null)
+      setExecutionPlanPreview(executionPlanPayload.preview || null)
       setPageError(null)
 
       const nextConnections = connectionsPayload.connections || []
@@ -726,6 +617,54 @@ const DeliverySettingsPage = () => {
     }
   }
 
+  const handleShippingOptionSync = async (mode: DeliveryHubShippingOptionManualSyncMode) => {
+    setIsRunningShippingOptionSync(true)
+    setShippingOptionSyncError(null)
+
+    try {
+      const payload =
+        mode === "execute"
+          ? buildDeliveryHubShippingOptionManualSyncExecuteRequest({
+              confirm_execute: shippingOptionSyncExecuteGuard,
+              service_zone_id: shippingOptionSyncServiceZoneId,
+              shipping_profile_id: shippingOptionSyncShippingProfileId,
+              on_error: shippingOptionSyncErrorMode,
+            })
+          : buildDeliveryHubShippingOptionManualSyncDryRunRequest({
+              on_error: shippingOptionSyncErrorMode,
+            })
+
+      const result = await requestJson<{ ok: boolean; sync: DeliveryHubShippingOptionManualSyncResponse }>(
+        "/admin/delivery/shipping-options/sync",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      )
+
+      setShippingOptionSyncResult(result.sync)
+
+      if (mode === "execute") {
+        setShippingOptionSyncExecuteGuard("")
+      }
+
+      await loadData(true)
+    } catch (error) {
+      if (error instanceof Error) {
+        setShippingOptionSyncError({
+          status: 400,
+          code: "DELIVERY_HUB_MANUAL_SYNC_UI_ERROR",
+          message: error.message,
+          details: null,
+        })
+      } else {
+        setShippingOptionSyncError(error as ApiErrorPayload)
+      }
+    } finally {
+      setIsRunningShippingOptionSync(false)
+    }
+  }
+
   return (
     <Container className="divide-y p-0">
       <div className="flex items-center justify-between gap-4 px-6 py-4">
@@ -859,230 +798,165 @@ const DeliverySettingsPage = () => {
                     <div className="mt-3 grid gap-1 text-sm text-ui-fg-subtle">
                       <Text>Credentials present: {connection.credentials_present ? "yes" : "no"}</Text>
                       <Text>
-                        Last validated: {formatTimestamp(connection.credentials_last_validated_at)}
+                        Fingerprint: {connection.credentials_fingerprint || "—"} · validated:{" "}
+                        {formatTimestamp(connection.credentials_last_validated_at)}
                       </Text>
-                      <Text>
-                        Last credentials error: {connection.credentials_last_error_code || "—"}
-                      </Text>
+                      <Text>Last credential error: {connection.credentials_last_error_code || "—"}</Text>
                       <Text>Updated: {formatTimestamp(connection.updated_at)}</Text>
                     </div>
                   </button>
                 )
               })
             ) : (
-              <Text className="text-ui-fg-subtle">No Yandex connections yet.</Text>
+              <Text className="text-ui-fg-subtle">No Yandex connections configured yet.</Text>
             )}
           </div>
-        </div>
 
-        <div className="rounded-lg border p-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <Heading level="h2">Yandex connection</Heading>
-              <Text className="text-ui-fg-subtle mt-2">
-                Create or update one connection. Token is write-only and never echoed back from backend.
-              </Text>
-            </div>
-            <Text className="text-ui-fg-subtle text-sm">
-              {activeConnectionId ? `Editing ${activeConnectionId}` : "Creating new draft"}
+          <div className="mt-6 rounded-md border p-4">
+            <Heading level="h3">{activeConnectionId ? "Edit selected connection" : "Create Yandex connection"}</Heading>
+            <Text className="text-ui-fg-subtle mt-1 text-sm">
+              Token remains write-only in admin UI. Existing sealed credentials never round-trip back to operators.
             </Text>
-          </div>
 
-          {yandexProvider ? null : (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
-              <Text className="text-amber-800">Yandex provider is not reported by backend providers list.</Text>
-            </div>
-          )}
+            {formError ? (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+                <Text className="text-ui-fg-error font-medium">{formError.message}</Text>
+                <Text className="text-ui-fg-subtle mt-1">
+                  {formError.code} · HTTP {formError.status}
+                </Text>
+              </div>
+            ) : null}
 
-          {formNotice ? <Text className="mt-4 text-ui-fg-interactive">{formNotice}</Text> : null}
-          {formError ? (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
-              <Text className="text-ui-fg-error font-medium">{formError.message}</Text>
-              <Text className="text-ui-fg-subtle mt-1">{formError.code}</Text>
-            </div>
-          ) : null}
+            {formNotice ? (
+              <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4">
+                <Text className="font-medium text-green-800">{formNotice}</Text>
+              </div>
+            ) : null}
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <div>
-              <Label htmlFor="delivery-name">Connection name</Label>
-              <Input
-                id="delivery-name"
-                value={connectionForm.name}
-                onChange={(event) => handleFormField("name", event.target.value)}
-                disabled={isLoading || isSaving}
-              />
-            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <Label htmlFor="connection-name">Name</Label>
+                <Input
+                  id="connection-name"
+                  value={connectionForm.name}
+                  onChange={(event) => handleFormField("name", event.target.value)}
+                  placeholder="Yandex test"
+                />
+              </div>
 
-            <div>
-              <Label htmlFor="delivery-country">Country</Label>
-              <Input
-                id="delivery-country"
-                value={connectionForm.country_code}
-                onChange={(event) => handleFormField("country_code", event.target.value)}
-                disabled={isLoading || isSaving}
-                maxLength={2}
-              />
-            </div>
+              <div>
+                <Label htmlFor="connection-country">Country code</Label>
+                <Input
+                  id="connection-country"
+                  value={connectionForm.country_code}
+                  onChange={(event) => handleFormField("country_code", event.target.value)}
+                  placeholder="RU"
+                />
+              </div>
 
-            <div>
-              <Label htmlFor="delivery-mode">Mode</Label>
-              <select
-                id="delivery-mode"
-                value={connectionForm.mode}
-                onChange={(event) => handleFormField("mode", event.target.value as "test" | "live")}
-                disabled={isLoading || isSaving}
-                className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active h-10 w-full rounded-md px-3 outline-none"
-              >
-                <option value="test">test</option>
-                <option value="live">live</option>
-              </select>
-            </div>
+              <div>
+                <Label htmlFor="connection-mode">Mode</Label>
+                <select
+                  id="connection-mode"
+                  value={connectionForm.mode}
+                  onChange={(event) => handleFormField("mode", event.target.value as DeliveryConnectionForm["mode"])}
+                  className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active h-10 w-full rounded-md px-3 outline-none"
+                >
+                  <option value="test">test</option>
+                  <option value="live">live</option>
+                </select>
+              </div>
 
-            <div>
-              <Label htmlFor="delivery-provider">Provider</Label>
-              <Input id="delivery-provider" readOnly value="yandex" />
-            </div>
+              <div>
+                <Label htmlFor="connection-label-format">Label format</Label>
+                <select
+                  id="connection-label-format"
+                  value={connectionForm.label_format}
+                  onChange={(event) => handleFormField("label_format", event.target.value)}
+                  className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active h-10 w-full rounded-md px-3 outline-none"
+                >
+                  {labelFormatOptions.map((option) => (
+                    <option key={option || "default"} value={option}>
+                      {option || "Default provider format"}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="md:col-span-2">
-              <Label htmlFor="delivery-token">Token</Label>
-              <Input
-                id="delivery-token"
-                type="password"
-                placeholder={activeConnection?.credentials_present ? "Stored token is not shown. Enter only to replace." : "Paste Yandex token"}
-                value={connectionForm.token}
-                onChange={(event) => handleFormField("token", event.target.value)}
-                disabled={isLoading || isSaving}
-              />
-              <Text className="text-ui-fg-subtle mt-2 text-sm">
-                Write-only field. Saved token is never rendered in admin UI, docs or logs.
-              </Text>
-            </div>
+              <div className="md:col-span-2">
+                <Label htmlFor="connection-default-warehouse">Default warehouse</Label>
+                <select
+                  id="connection-default-warehouse"
+                  value={connectionForm.default_warehouse_id}
+                  onChange={(event) => handleFormField("default_warehouse_id", event.target.value)}
+                  className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active h-10 w-full rounded-md px-3 outline-none"
+                >
+                  <option value="">No default warehouse</option>
+                  {yandexWarehouses.map((warehouse) => (
+                    <option key={warehouse.id} value={warehouse.id}>
+                      {getWarehouseOptionLabel(warehouse)}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div>
-              <Label htmlFor="delivery-label-format">Label format</Label>
-              <select
-                id="delivery-label-format"
-                value={connectionForm.label_format}
-                onChange={(event) => handleFormField("label_format", event.target.value)}
-                disabled={isLoading || isSaving}
-                className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active h-10 w-full rounded-md px-3 outline-none"
-              >
-                {labelFormatOptions.map((option) => (
-                  <option key={option || "default"} value={option}>
-                    {option || "backend default"}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div className="md:col-span-2">
+                <Label htmlFor="connection-token">Write-only token</Label>
+                <Input
+                  id="connection-token"
+                  type="password"
+                  value={connectionForm.token}
+                  onChange={(event) => handleFormField("token", event.target.value)}
+                  placeholder={activeConnectionId ? "Leave empty to keep existing sealed token" : "Paste Yandex token"}
+                />
+              </div>
 
-            <div>
-              <Label htmlFor="delivery-warehouse">Default warehouse</Label>
-              <select
-                id="delivery-warehouse"
-                value={connectionForm.default_warehouse_id}
-                onChange={(event) => handleFormField("default_warehouse_id", event.target.value)}
-                disabled={isLoading || isSaving}
-                className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active h-10 w-full rounded-md px-3 outline-none"
-              >
-                <option value="">No default warehouse</option>
-                {yandexWarehouses.map((warehouse) => (
-                  <option key={warehouse.id} value={warehouse.id}>
-                    {getWarehouseOptionLabel(warehouse)}
-                  </option>
-                ))}
-              </select>
-              <Text className="text-ui-fg-subtle mt-2 text-sm">
-                Stored as a materialized warehouse entity and resolved to provider warehouse id on backend.
-              </Text>
-            </div>
-
-            <div className="rounded-md border p-3 md:col-span-2">
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center justify-between rounded-md border p-4">
                 <div>
-                  <Label>Enabled</Label>
-                  <Text className="text-ui-fg-subtle mt-1 text-sm">
-                    Controls whether this connection is available for backend delivery orchestration.
-                  </Text>
+                  <Text className="font-medium">Enabled</Text>
+                  <Text className="text-ui-fg-subtle text-sm">Connection can participate in diagnostics and planner state.</Text>
                 </div>
                 <Switch
                   checked={connectionForm.enabled}
                   onCheckedChange={(checked) => handleFormField("enabled", checked)}
-                  disabled={isLoading || isSaving}
                 />
               </div>
-            </div>
 
-            <div className="rounded-md border p-3 md:col-span-2">
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center justify-between rounded-md border p-4">
                 <div>
-                  <Label>Auto confirm</Label>
-                  <Text className="text-ui-fg-subtle mt-1 text-sm">
-                    Stored in connection config for Yandex adapter calls.
-                  </Text>
+                  <Text className="font-medium">Auto confirm</Text>
+                  <Text className="text-ui-fg-subtle text-sm">Persist auto_confirm inside delivery config when enabled.</Text>
                 </div>
                 <Switch
                   checked={connectionForm.auto_confirm}
                   onCheckedChange={(checked) => handleFormField("auto_confirm", checked)}
-                  disabled={isLoading || isSaving}
                 />
               </div>
             </div>
-          </div>
 
-          {activeConnection ? (
-            <div className="mt-4 grid gap-3 rounded-lg border p-4 md:grid-cols-2">
-              <div>
-                <Label>Status</Label>
-                <Input readOnly value={activeConnection.status} />
-              </div>
-              <div>
-                <Label>Credentials state</Label>
-                <Input readOnly value={activeConnection.credentials_state} />
-              </div>
-              <div>
-                <Label>Credentials fingerprint</Label>
-                <Input readOnly value={activeConnection.credentials_fingerprint || "—"} />
-              </div>
-              <div>
-                <Label>Last credentials error</Label>
-                <Input readOnly value={activeConnection.credentials_last_error_code || "—"} />
-              </div>
-              <div className="md:col-span-2">
-                <Label>Default warehouse binding</Label>
-                <Input
-                  readOnly
-                  value={
-                    activeConnection.config.default_warehouse &&
-                    typeof activeConnection.config.default_warehouse === "object"
-                      ? getWarehouseOptionLabel(activeConnection.config.default_warehouse as DeliveryWarehouse)
-                      : activeConnection.config.default_warehouse_id?.toString() || "—"
-                  }
-                />
-              </div>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button type="button" onClick={() => void handleSave()} isLoading={isSaving} disabled={isLoading}>
+                {activeConnectionId ? "Save connection" : "Create connection"}
+              </Button>
+              <Button type="button" variant="secondary" onClick={startCreate} disabled={isSaving}>
+                Reset form
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void handleTestConnection()}
+                isLoading={isTestingConnection}
+                disabled={isLoading}
+              >
+                Test connection
+              </Button>
             </div>
-          ) : null}
 
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Button type="button" onClick={handleSave} isLoading={isSaving} disabled={isLoading}>
-              {activeConnectionId ? "Save changes" : "Create connection"}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={handleTestConnection}
-              isLoading={isTestingConnection}
-              disabled={isLoading}
-            >
-              Test connection
-            </Button>
-          </div>
-
-          <div className="mt-4 rounded-lg border p-4">
-            <div className="flex items-center justify-between gap-4">
+            <div className="mt-4 flex items-center justify-between rounded-md border p-4">
               <div>
-                <Heading level="h3">Connection diagnostics</Heading>
-                <Text className="text-ui-fg-subtle mt-1 text-sm">
-                  Optional pickup points listing extends the connection test for Yandex pickup flows.
+                <Text className="font-medium">Include pickup points during connection test</Text>
+                <Text className="text-ui-fg-subtle text-sm">
+                  Keeps test surface operator-controlled while staying no-write on backend.
                 </Text>
               </div>
               <Switch checked={includePickupPoints} onCheckedChange={setIncludePickupPoints} />
@@ -1091,22 +965,26 @@ const DeliverySettingsPage = () => {
             {testConnectionError ? (
               <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
                 <Text className="text-ui-fg-error font-medium">{testConnectionError.message}</Text>
-                <Text className="text-ui-fg-subtle mt-1">{testConnectionError.code}</Text>
+                <Text className="text-ui-fg-subtle mt-1">
+                  {testConnectionError.code} · HTTP {testConnectionError.status}
+                </Text>
               </div>
             ) : null}
 
             {testConnectionResult ? (
-              <div className="mt-4 grid gap-3">
-                <div>
-                  <Label>Provider</Label>
-                  <Input readOnly value={testConnectionResult.provider_code} />
+              <div className="mt-4 rounded-md border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <Heading level="h3">Connection diagnostics</Heading>
+                    <Text className="text-ui-fg-subtle mt-1 text-sm">Provider-level response snapshot from the latest admin test call.</Text>
+                  </div>
+                  <span className={`rounded-full border px-2 py-1 text-xs ${logSuccessToneClass(testConnectionResult.ok)}`}>
+                    {testConnectionResult.ok ? "ok" : "failed"}
+                  </span>
                 </div>
-                <div>
-                  <Label>Diagnostics</Label>
-                  <pre className="mt-2 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
-                    {JSON.stringify(testConnectionResult.diagnostics, null, 2)}
-                  </pre>
-                </div>
+                <pre className="mt-3 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
+                  {JSON.stringify(testConnectionResult.diagnostics, null, 2)}
+                </pre>
               </div>
             ) : null}
           </div>
@@ -1117,7 +995,7 @@ const DeliverySettingsPage = () => {
             <div>
               <Heading level="h2">Warehouses</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Minimal admin-managed warehouse surface for diagnostics and connection default binding.
+                Delivery origin records used by Yandex quote diagnostics and default config mapping.
               </Text>
             </div>
             <Button type="button" variant="secondary" onClick={startCreateWarehouse}>
@@ -1142,156 +1020,948 @@ const DeliverySettingsPage = () => {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <Text className="font-medium">{warehouse.name}</Text>
-                        <Text className="text-ui-fg-subtle text-sm">
-                          {warehouse.country_code}
-                          {warehouse.city ? ` · ${warehouse.city}` : ""}
-                          {warehouse.address_line_1 ? ` · ${warehouse.address_line_1}` : ""}
-                        </Text>
+                        <Text className="text-ui-fg-subtle text-sm">{getWarehouseOptionLabel(warehouse)}</Text>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        <span className="rounded-full border border-ui-border-base px-2 py-1 text-xs">
-                          {warehouse.enabled ? "enabled" : "disabled"}
-                        </span>
-                        {warehouse.provider_warehouse_id ? (
-                          <span className="rounded-full border border-ui-border-base px-2 py-1 text-xs">
-                            provider: {warehouse.provider_warehouse_id}
-                          </span>
-                        ) : null}
-                      </div>
+                      <span className="rounded-full border border-ui-border-base px-2 py-1 text-xs">
+                        {warehouse.enabled ? "enabled" : "disabled"}
+                      </span>
                     </div>
                   </button>
                 )
               })
             ) : (
-              <Text className="text-ui-fg-subtle">No warehouses yet.</Text>
+              <Text className="text-ui-fg-subtle">No Yandex warehouses configured yet.</Text>
             )}
           </div>
 
-          <div className="mt-6 border-t pt-6">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <Heading level="h3">Warehouse editor</Heading>
-                <Text className="text-ui-fg-subtle mt-1 text-sm">
-                  Minimal local warehouse record with optional provider warehouse mapping.
-                </Text>
-              </div>
-              <Text className="text-ui-fg-subtle text-sm">
-                {activeWarehouseId ? `Editing ${activeWarehouseId}` : "Creating new warehouse"}
-              </Text>
-            </div>
+          <div className="mt-6 rounded-md border p-4">
+            <Heading level="h3">{activeWarehouseId ? "Edit selected warehouse" : "Create warehouse"}</Heading>
 
-            {warehouseFormNotice ? <Text className="mt-4 text-ui-fg-interactive">{warehouseFormNotice}</Text> : null}
             {warehouseFormError ? (
               <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
                 <Text className="text-ui-fg-error font-medium">{warehouseFormError.message}</Text>
-                <Text className="text-ui-fg-subtle mt-1">{warehouseFormError.code}</Text>
+                <Text className="text-ui-fg-subtle mt-1">
+                  {warehouseFormError.code} · HTTP {warehouseFormError.status}
+                </Text>
+              </div>
+            ) : null}
+
+            {warehouseFormNotice ? (
+              <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4">
+                <Text className="font-medium text-green-800">{warehouseFormNotice}</Text>
               </div>
             ) : null}
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
-                <Label htmlFor="warehouse-name">Warehouse name</Label>
+                <Label htmlFor="warehouse-name">Name</Label>
                 <Input
                   id="warehouse-name"
                   value={warehouseForm.name}
                   onChange={(event) => handleWarehouseField("name", event.target.value)}
-                  disabled={isLoading || isSavingWarehouse}
                 />
               </div>
+
               <div>
-                <Label htmlFor="warehouse-country">Country</Label>
+                <Label htmlFor="warehouse-country">Country code</Label>
                 <Input
                   id="warehouse-country"
                   value={warehouseForm.country_code}
                   onChange={(event) => handleWarehouseField("country_code", event.target.value)}
-                  disabled={isLoading || isSavingWarehouse}
-                  maxLength={2}
                 />
               </div>
+
               <div>
                 <Label htmlFor="warehouse-city">City</Label>
                 <Input
                   id="warehouse-city"
                   value={warehouseForm.city}
                   onChange={(event) => handleWarehouseField("city", event.target.value)}
-                  disabled={isLoading || isSavingWarehouse}
                 />
               </div>
+
               <div>
                 <Label htmlFor="warehouse-address">Address</Label>
                 <Input
                   id="warehouse-address"
                   value={warehouseForm.address_line_1}
                   onChange={(event) => handleWarehouseField("address_line_1", event.target.value)}
-                  disabled={isLoading || isSavingWarehouse}
                 />
               </div>
+
               <div>
                 <Label htmlFor="warehouse-contact-name">Contact name</Label>
                 <Input
                   id="warehouse-contact-name"
                   value={warehouseForm.contact_name}
                   onChange={(event) => handleWarehouseField("contact_name", event.target.value)}
-                  disabled={isLoading || isSavingWarehouse}
                 />
               </div>
+
               <div>
                 <Label htmlFor="warehouse-contact-phone">Contact phone</Label>
                 <Input
                   id="warehouse-contact-phone"
                   value={warehouseForm.contact_phone}
                   onChange={(event) => handleWarehouseField("contact_phone", event.target.value)}
-                  disabled={isLoading || isSavingWarehouse}
                 />
               </div>
+
               <div>
-                <Label htmlFor="warehouse-provider-code">Provider</Label>
+                <Label htmlFor="warehouse-provider-code">Provider code</Label>
                 <Input
                   id="warehouse-provider-code"
                   value={warehouseForm.provider_code}
                   onChange={(event) => handleWarehouseField("provider_code", event.target.value)}
-                  disabled={isLoading || isSavingWarehouse}
                 />
               </div>
+
               <div>
                 <Label htmlFor="warehouse-provider-id">Provider warehouse id</Label>
                 <Input
                   id="warehouse-provider-id"
                   value={warehouseForm.provider_warehouse_id}
                   onChange={(event) => handleWarehouseField("provider_warehouse_id", event.target.value)}
-                  disabled={isLoading || isSavingWarehouse}
                 />
               </div>
-              <div className="rounded-md border p-3 md:col-span-2">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <Label>Enabled</Label>
-                    <Text className="text-ui-fg-subtle mt-1 text-sm">
-                      Disabled warehouses cannot be selected as default connection warehouse or used in test quote.
-                    </Text>
-                  </div>
-                  <Switch
-                    checked={warehouseForm.enabled}
-                    onCheckedChange={(checked) => handleWarehouseField("enabled", checked)}
-                    disabled={isLoading || isSavingWarehouse}
-                  />
+
+              <div className="md:col-span-2 flex items-center justify-between rounded-md border p-4">
+                <div>
+                  <Text className="font-medium">Enabled</Text>
+                  <Text className="text-ui-fg-subtle text-sm">Only enabled warehouses are offered in warehouse-to-pickup-point quote diagnostics.</Text>
                 </div>
+                <Switch
+                  checked={warehouseForm.enabled}
+                  onCheckedChange={(checked) => handleWarehouseField("enabled", checked)}
+                />
               </div>
             </div>
 
             <div className="mt-6 flex flex-wrap gap-3">
               <Button
                 type="button"
-                onClick={handleSaveWarehouse}
+                onClick={() => void handleSaveWarehouse()}
                 isLoading={isSavingWarehouse}
                 disabled={isLoading}
               >
                 {activeWarehouseId ? "Save warehouse" : "Create warehouse"}
               </Button>
+              <Button type="button" variant="secondary" onClick={startCreateWarehouse} disabled={isSavingWarehouse}>
+                Reset form
+              </Button>
             </div>
           </div>
         </div>
 
+        <div className="rounded-lg border p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Heading level="h2">Shipping option preview</Heading>
+              <Text className="text-ui-fg-subtle mt-2">
+                Admin-only read preview for desired and reconciled deliveryhub shipping-option state. No sync or write side-effects.
+              </Text>
+            </div>
+            <Text className="text-ui-fg-subtle text-sm">{previewRenderState.headerText}</Text>
+          </div>
+
+          {shippingOptionPreview ? (
+            <div className="mt-4 grid gap-6">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                {previewRenderState.summaryCards.map((card) => (
+                  <div key={card.key} className="rounded-md border p-3">
+                    <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
+                    <Text className="mt-2 font-medium">{card.value}</Text>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="rounded-md border p-4">
+                  <Heading level="h3">Desired projected options</Heading>
+                  <Text className="text-ui-fg-subtle mt-1 text-sm">
+                    Canonical deliveryhub options that planner currently considers rollout-ready.
+                  </Text>
+                  <div className="mt-4 grid gap-3">
+                    {previewRenderState.desiredOptions.length ? (
+                      previewRenderState.desiredOptions.map((option) => (
+                        <div key={option.key} className="rounded-md border p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <Text className="font-medium">{option.modeCode}</Text>
+                              <Text className="text-ui-fg-subtle text-sm">{option.id}</Text>
+                            </div>
+                            <span className="rounded-full border border-green-200 bg-green-50 px-2 py-1 text-xs text-green-700">
+                              projected
+                            </span>
+                          </div>
+                          <Text className="text-ui-fg-subtle mt-3 text-sm">
+                            Supporting connections: {option.supportingConnectionsText}
+                          </Text>
+                        </div>
+                      ))
+                    ) : (
+                      <Text className="text-ui-fg-subtle">{previewRenderState.desiredEmptyText}</Text>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-md border p-4">
+                  <Heading level="h3">Deferred rollout state</Heading>
+                  <Text className="text-ui-fg-subtle mt-1 text-sm">
+                    Deferred options and truthful planner issues blocking deliveryhub shipping-option rollout.
+                  </Text>
+                  <div className="mt-4 grid gap-3">
+                    {previewRenderState.deferredOptions.length ? (
+                      previewRenderState.deferredOptions.map((option) => (
+                        <div key={option.key} className="rounded-md border p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <Text className="font-medium">{option.modeCode}</Text>
+                              <Text className="text-ui-fg-subtle text-sm">{option.id}</Text>
+                            </div>
+                            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-700">
+                              deferred
+                            </span>
+                          </div>
+                          <div className="mt-3 grid gap-2">
+                            {option.issues.map((issue) => (
+                              <div key={issue.key} className="rounded-md border border-amber-200 bg-amber-50 p-3">
+                                <Text className="font-medium text-amber-800">{issue.code}</Text>
+                                <Text className="mt-1 text-sm text-amber-700">{issue.message}</Text>
+                                <Text className="mt-2 text-xs text-amber-700">{issue.connectionText}</Text>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <Text className="text-ui-fg-subtle">{previewRenderState.deferredEmptyText}</Text>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-md border p-4">
+                <Heading level="h3">Reconciliation buckets</Heading>
+                <Text className="text-ui-fg-subtle mt-1 text-sm">
+                  Summary over create, update, unchanged, orphaned managed and ignored foreign shipping options. Preview remains read-only.
+                </Text>
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  <div className="rounded-md border p-3">
+                    <Text className="text-ui-fg-subtle text-xs">create_candidates</Text>
+                    <Text className="mt-2 font-medium">{previewRenderState.reconciliationCounts.createCandidates}</Text>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <Text className="text-ui-fg-subtle text-xs">update_candidates</Text>
+                    <Text className="mt-2 font-medium">{previewRenderState.reconciliationCounts.updateCandidates}</Text>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <Text className="text-ui-fg-subtle text-xs">unchanged</Text>
+                    <Text className="mt-2 font-medium">{previewRenderState.reconciliationCounts.unchanged}</Text>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <Text className="text-ui-fg-subtle text-xs">orphaned_managed_options</Text>
+                    <Text className="mt-2 font-medium">{previewRenderState.reconciliationCounts.orphanedManaged}</Text>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <Text className="text-ui-fg-subtle text-xs">ignored_foreign_options</Text>
+                    <Text className="mt-2 font-medium">{previewRenderState.reconciliationCounts.ignoredForeign}</Text>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3">
+                  <details className="rounded-md border p-3">
+                    <summary className="cursor-pointer text-sm font-medium">
+                      Create candidates ({previewRenderState.createCandidates.length})
+                    </summary>
+                    <div className="mt-3 grid gap-2">
+                      {previewRenderState.createCandidates.length ? (
+                        previewRenderState.createCandidates.map((candidate) => (
+                          <div key={candidate.key} className="rounded-md border p-3">
+                            <Text className="font-medium">{candidate.title}</Text>
+                            <Text className="text-ui-fg-subtle mt-1 text-sm">{candidate.subtitle}</Text>
+                          </div>
+                        ))
+                      ) : (
+                        <Text className="text-ui-fg-subtle text-sm">No create candidates.</Text>
+                      )}
+                    </div>
+                  </details>
+
+                  <details className="rounded-md border p-3">
+                    <summary className="cursor-pointer text-sm font-medium">
+                      Update candidates ({previewRenderState.updateCandidates.length})
+                    </summary>
+                    <div className="mt-3 grid gap-2">
+                      {previewRenderState.updateCandidates.length ? (
+                        previewRenderState.updateCandidates.map((candidate) => (
+                          <div key={candidate.key} className="rounded-md border p-3">
+                            <Text className="font-medium">{candidate.title}</Text>
+                            <Text className="text-ui-fg-subtle mt-1 text-sm">{candidate.subtitle}</Text>
+                          </div>
+                        ))
+                      ) : (
+                        <Text className="text-ui-fg-subtle text-sm">No update candidates.</Text>
+                      )}
+                    </div>
+                  </details>
+
+                  <details className="rounded-md border p-3">
+                    <summary className="cursor-pointer text-sm font-medium">
+                      Unchanged ({previewRenderState.unchangedEntries.length})
+                    </summary>
+                    <div className="mt-3 grid gap-2">
+                      {previewRenderState.unchangedEntries.length ? (
+                        previewRenderState.unchangedEntries.map((entry) => (
+                          <div key={entry.key} className="rounded-md border p-3">
+                            <Text className="font-medium">{entry.title}</Text>
+                            <Text className="text-ui-fg-subtle mt-1 text-sm">{entry.subtitle}</Text>
+                          </div>
+                        ))
+                      ) : (
+                        <Text className="text-ui-fg-subtle text-sm">No unchanged managed options.</Text>
+                      )}
+                    </div>
+                  </details>
+
+                  <details className="rounded-md border p-3">
+                    <summary className="cursor-pointer text-sm font-medium">
+                      Orphaned managed ({previewRenderState.orphanedManagedEntries.length})
+                    </summary>
+                    <div className="mt-3 grid gap-2">
+                      {previewRenderState.orphanedManagedEntries.length ? (
+                        previewRenderState.orphanedManagedEntries.map((entry) => (
+                          <div key={entry.key} className="rounded-md border p-3">
+                            <Text className="font-medium">{entry.title}</Text>
+                            <Text className="text-ui-fg-subtle mt-1 text-sm">{entry.subtitle}</Text>
+                          </div>
+                        ))
+                      ) : (
+                        <Text className="text-ui-fg-subtle text-sm">No orphaned managed options.</Text>
+                      )}
+                    </div>
+                  </details>
+
+                  <details className="rounded-md border p-3">
+                    <summary className="cursor-pointer text-sm font-medium">
+                      Ignored foreign ({previewRenderState.ignoredForeignEntries.length})
+                    </summary>
+                    <div className="mt-3 grid gap-2">
+                      {previewRenderState.ignoredForeignEntries.length ? (
+                        previewRenderState.ignoredForeignEntries.map((entry) => (
+                          <div key={entry.key} className="rounded-md border p-3">
+                            <Text className="font-medium">{entry.title}</Text>
+                            <Text className="text-ui-fg-subtle mt-1 text-sm">{entry.subtitle}</Text>
+                          </div>
+                        ))
+                      ) : (
+                        <Text className="text-ui-fg-subtle text-sm">No ignored foreign options.</Text>
+                      )}
+                    </div>
+                  </details>
+                </div>
+              </div>
+
+              <div className="rounded-md border p-4">
+                <Heading level="h3">Per-connection planner state</Heading>
+                <Text className="text-ui-fg-subtle mt-1 text-sm">
+                  Read-only planner status for each configured delivery connection.
+                </Text>
+                <div className="mt-4 grid gap-3">
+                  {previewRenderState.connectionPlans.length ? (
+                    previewRenderState.connectionPlans.map((plan) => (
+                      <div key={plan.key} className="rounded-md border p-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <Text className="font-medium">{plan.connectionId}</Text>
+                            <Text className="text-ui-fg-subtle text-sm">provider: {plan.providerCode}</Text>
+                          </div>
+                          <span className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(plan.status)}`}>
+                            {plan.status}
+                          </span>
+                        </div>
+                        <Text className="text-ui-fg-subtle mt-3 text-sm">
+                          projected modes: {plan.projectedModesText}
+                        </Text>
+                        {plan.issues.length ? (
+                          <div className="mt-3 grid gap-2">
+                            {plan.issues.map((issue) => (
+                              <div key={issue.key} className="rounded-md border bg-ui-bg-subtle p-3">
+                                <Text className="font-medium">{issue.code}</Text>
+                                <Text className="text-ui-fg-subtle mt-1 text-sm">{issue.message}</Text>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <Text className="text-ui-fg-subtle">{previewRenderState.connectionPlansEmptyText}</Text>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <Text className="text-ui-fg-subtle mt-4">No shipping-option preview returned by backend.</Text>
+          )}
+        </div>
+
+        <div className="rounded-lg border p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Heading level="h2">Fulfillment bridge readiness preview</Heading>
+              <Text className="text-ui-fg-subtle mt-2">
+                Read-only backend/admin preview for deliveryhub fulfillment bridge payload assembly. No shipment execution, checkout cutover or state mutation occurs.
+              </Text>
+            </div>
+            <Text className="text-ui-fg-subtle text-sm">{fulfillmentBridgeRenderState.headerText}</Text>
+          </div>
+
+          {fulfillmentBridgePreview ? (
+            <div className="mt-4 grid gap-6">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                {fulfillmentBridgeRenderState.summaryCards.map((card) => (
+                  <div key={card.key} className="rounded-md border p-3">
+                    <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
+                    <Text className="mt-2 font-medium">{card.value}</Text>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-3">
+                {fulfillmentBridgeRenderState.modePreviews.map((mode) => (
+                  <div key={mode.key} className="rounded-md border p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <Text className="font-medium">{mode.modeCode}</Text>
+                        <Text className="text-ui-fg-subtle mt-1 text-sm">
+                          supporting connections: {mode.supportingConnectionsText}
+                        </Text>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(mode.rolloutStatus)}`}>
+                          rollout: {mode.rolloutStatus}
+                        </span>
+                        <span className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(mode.status === "ready" ? "projected" : "deferred")}`}>
+                          bridge: {mode.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                      <div className="rounded-md border p-3">
+                        <Text className="text-ui-fg-subtle text-xs">Validated steps</Text>
+                        <Text className="mt-2 font-medium">{mode.stepReadinessText}</Text>
+                      </div>
+                      <div className="rounded-md border p-3 md:col-span-2">
+                        <Text className="text-ui-fg-subtle text-xs">Shipment execution</Text>
+                        <Text className="mt-2 text-sm">{mode.shipmentExecutionText}</Text>
+                      </div>
+                    </div>
+
+                    {mode.issueBadges.length ? (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {mode.issueBadges.map((issue) => (
+                          <span
+                            key={issue.key}
+                            className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-700"
+                          >
+                            {issue.label}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {mode.errorText ? (
+                      <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3">
+                        <Text className="font-medium text-red-700">Preview error</Text>
+                        <Text className="mt-1 text-sm text-red-700">{mode.errorText}</Text>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <Text className="text-ui-fg-subtle mt-4">{fulfillmentBridgeRenderState.emptyText}</Text>
+          )}
+        </div>
+
+        <div className="rounded-lg border p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Heading level="h2">Execution-plan observability preview</Heading>
+              <Text className="text-ui-fg-subtle mt-2">
+                Admin-only diagnostic preview for exact redacted shipment planning state. No network calls, shipment execution or checkout cutover occurs.
+              </Text>
+            </div>
+            <Text className="text-ui-fg-subtle text-sm">{executionPlanRenderState.headerText}</Text>
+          </div>
+
+          {executionPlanPreview ? (
+            <div className="mt-4 grid gap-6">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                {executionPlanRenderState.summaryCards.map((card) => (
+                  <div key={card.key} className="rounded-md border p-3">
+                    <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
+                    <Text className="mt-2 font-medium">{card.value}</Text>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-3">
+                {executionPlanRenderState.modePreviews.map((mode) => (
+                  <div key={mode.key} className="rounded-md border p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <Text className="font-medium">{mode.modeCode}</Text>
+                        <Text className="text-ui-fg-subtle mt-1 text-sm">
+                          supporting connections: {mode.supportingConnectionsText}
+                        </Text>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(mode.rolloutStatus)}`}>
+                          rollout: {mode.rolloutStatus}
+                        </span>
+                        <span
+                          className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(
+                            mode.status === "ready" ? "projected" : "deferred"
+                          )}`}
+                        >
+                          preview: {mode.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                      <div className="rounded-md border p-3">
+                        <Text className="text-ui-fg-subtle text-xs">Readiness verdict</Text>
+                        <Text className="mt-2 text-sm">{mode.readinessText}</Text>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <Text className="text-ui-fg-subtle text-xs">Validated steps</Text>
+                        <Text className="mt-2 font-medium">{mode.stepReadinessText}</Text>
+                      </div>
+                      <div className="rounded-md border p-3 xl:col-span-2">
+                        <Text className="text-ui-fg-subtle text-xs">Blocked reasons</Text>
+                        <Text className="mt-2 text-sm">{mode.blockedReasonsText}</Text>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <Text className="text-ui-fg-subtle text-xs">Execution plan</Text>
+                        <Text className="mt-2 text-sm">{mode.executionPlanText}</Text>
+                      </div>
+                      <div className="rounded-md border p-3">
+                        <Text className="text-ui-fg-subtle text-xs">Shipment execution</Text>
+                        <Text className="mt-2 text-sm">{mode.shipmentExecutionText}</Text>
+                      </div>
+                      <div className="rounded-md border p-3 xl:col-span-2">
+                        <Text className="text-ui-fg-subtle text-xs">Execution gate / preflight eligibility</Text>
+                        <Text className="mt-2 text-sm">{mode.preflightEligibilityText}</Text>
+                        <Text className="text-ui-fg-subtle mt-2 text-xs">
+                          Future prerequisites: {mode.preflightPrerequisitesText}
+                        </Text>
+                        <Text className="text-ui-fg-subtle mt-1 text-xs">
+                          Blocked live actions: {mode.blockedLiveActionsText}
+                        </Text>
+                      </div>
+                      <div className="rounded-md border p-3 xl:col-span-2">
+                        <Text className="text-ui-fg-subtle text-xs">Provider dispatch command preview</Text>
+                        <Text className="mt-2 text-sm">{mode.providerDispatchText}</Text>
+                        <Text className="text-ui-fg-subtle mt-2 text-xs">
+                          Blocked dispatch actions: {mode.blockedDispatchActionsText}
+                        </Text>
+                      </div>
+                      <div className="rounded-md border p-3 xl:col-span-2">
+                        <Text className="text-ui-fg-subtle text-xs">Normalized shipment result preview</Text>
+                        <Text className="mt-2 text-sm">{mode.shipmentResultText}</Text>
+                        <Text className="text-ui-fg-subtle mt-2 text-xs">
+                          Blocked materialization actions: {mode.blockedMaterializationActionsText}
+                        </Text>
+                      </div>
+                      <div className="rounded-md border p-3 xl:col-span-2">
+                        <Text className="text-ui-fg-subtle text-xs">Fulfillment application mutation preview</Text>
+                        <Text className="mt-2 text-sm">{mode.applicationPreviewText}</Text>
+                        <Text className="text-ui-fg-subtle mt-2 text-xs">
+                          Blocked application actions: {mode.blockedApplicationActionsText}
+                        </Text>
+                      </div>
+                      <div className="rounded-md border p-3 xl:col-span-2">
+                        <Text className="text-ui-fg-subtle text-xs">Execution lifecycle timeline preview</Text>
+                        <Text className="mt-2 text-sm">{mode.lifecycleStatusText}</Text>
+                        <Text className="text-ui-fg-subtle mt-2 text-xs">
+                          Phase sequence: {mode.lifecyclePhaseSequenceText}
+                        </Text>
+                        <Text className="text-ui-fg-subtle mt-1 text-xs">
+                          Identity correlation: {mode.lifecycleIdentityText}
+                        </Text>
+                        <Text className="text-ui-fg-subtle mt-1 text-xs">
+                          Disabled live confirmations: {mode.lifecycleDisabledActionsText}
+                        </Text>
+                        <div className="mt-3 overflow-auto rounded-md border">
+                          <table className="min-w-full divide-y text-left text-xs">
+                            <thead className="bg-ui-bg-subtle">
+                              <tr>
+                                <th className="px-3 py-2 font-medium">#</th>
+                                <th className="px-3 py-2 font-medium">Phase</th>
+                                <th className="px-3 py-2 font-medium">Status</th>
+                                <th className="px-3 py-2 font-medium">Readiness</th>
+                                <th className="px-3 py-2 font-medium">Linked previews</th>
+                                <th className="px-3 py-2 font-medium">Block reasons</th>
+                                <th className="px-3 py-2 font-medium">Disabled actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                              {mode.lifecyclePhaseRows.map((phase) => (
+                                <tr key={phase.key}>
+                                  <td className="px-3 py-2 align-top">{phase.order}</td>
+                                  <td className="px-3 py-2 align-top">{phase.code}</td>
+                                  <td className="px-3 py-2 align-top">{phase.status}</td>
+                                  <td className="px-3 py-2 align-top">{phase.readiness}</td>
+                                  <td className="px-3 py-2 align-top">{phase.linkedArtifactsText}</td>
+                                  <td className="px-3 py-2 align-top">{phase.blockReasonsText}</td>
+                                  <td className="px-3 py-2 align-top">{phase.disabledActionsText}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                      <div className="rounded-md border p-3 xl:col-span-2">
+                        <Text className="text-ui-fg-subtle text-xs">Failure handling and compensation preview</Text>
+                        <Text className="mt-2 text-sm">{mode.failureHandlingText}</Text>
+                        <Text className="text-ui-fg-subtle mt-2 text-xs">
+                          Retry posture: {mode.retryPostureText}
+                        </Text>
+                        <Text className="text-ui-fg-subtle mt-1 text-xs">
+                          Compensation posture: {mode.compensationPostureText}
+                        </Text>
+                        <Text className="text-ui-fg-subtle mt-1 text-xs">
+                          Blocked failure actions: {mode.blockedFailureActionsText}
+                        </Text>
+                      </div>
+                      <div className="rounded-md border p-3 xl:col-span-2">
+                        <Text className="text-ui-fg-subtle text-xs">Deterministic execution identity</Text>
+                        <pre className="mt-2 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
+                          {mode.executionIdentityText}
+                        </pre>
+                      </div>
+                      <div className="rounded-md border p-3 xl:col-span-2">
+                        <Text className="text-ui-fg-subtle text-xs">Persistence and audit preview</Text>
+                        <pre className="mt-2 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
+                          {mode.persistenceAuditText}
+                        </pre>
+                      </div>
+                    </div>
+
+                    {mode.issueBadges.length ? (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {mode.issueBadges.map((issue) => (
+                          <span
+                            key={issue.key}
+                            className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-700"
+                          >
+                            {issue.label}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <details className="mt-4 rounded-md border p-3">
+                      <summary className="cursor-pointer text-sm font-medium">
+                        Redacted outbound payload preview
+                      </summary>
+                      <pre className="mt-3 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
+                        {mode.outboundRequestText}
+                      </pre>
+                    </details>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <Text className="text-ui-fg-subtle mt-4">{executionPlanRenderState.emptyText}</Text>
+          )}
+        </div>
+
+        <div className="rounded-lg border p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Heading level="h2">Shipping option manual sync</Heading>
+              <Text className="text-ui-fg-subtle mt-2">
+                Admin-only operator control surface for explicit manual sync against deliveryhub shipping options. Dry-run is the default safe path.
+              </Text>
+            </div>
+            <Text className="text-ui-fg-subtle text-sm">{manualSyncRenderState.headerText}</Text>
+          </div>
+
+          <div className="mt-4 rounded-lg border border-ui-border-base bg-ui-bg-subtle p-4">
+            <Text className="font-medium">Safe-by-default guardrails</Text>
+            <Text className="text-ui-fg-subtle mt-2 text-sm">
+              Dry-run never writes shipping options. Execute remains manual-only and requires the exact backend guard string plus explicit Medusa create context ids.
+            </Text>
+          </div>
+
+          {shippingOptionSyncError ? (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+              <Text className="text-ui-fg-error font-medium">{shippingOptionSyncError.message}</Text>
+              <Text className="text-ui-fg-subtle mt-1">
+                {shippingOptionSyncError.code} · HTTP {shippingOptionSyncError.status}
+              </Text>
+              {shippingOptionSyncError.details ? (
+                <pre className="mt-3 overflow-auto rounded-md border bg-white p-3 text-xs">
+                  {JSON.stringify(shippingOptionSyncError.details, null, 2)}
+                </pre>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="rounded-md border p-4">
+              <Heading level="h3">Dry-run</Heading>
+              <Text className="text-ui-fg-subtle mt-1 text-sm">
+                Primary action. Calls the admin route in safe mode and returns desired plan, reconciliation and operation summaries without applying Medusa mutations.
+              </Text>
+
+              <div className="mt-4">
+                <Label htmlFor="shipping-option-sync-error-mode">Execute error mode</Label>
+                <select
+                  id="shipping-option-sync-error-mode"
+                  value={shippingOptionSyncErrorMode}
+                  onChange={(event) =>
+                    setShippingOptionSyncErrorMode(
+                      event.target.value as DeliveryHubShippingOptionManualSyncErrorMode
+                    )
+                  }
+                  disabled={isLoading || isRunningShippingOptionSync}
+                  className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active mt-2 h-10 w-full rounded-md px-3 outline-none"
+                >
+                  <option value="abort">abort</option>
+                  <option value="continue">continue</option>
+                </select>
+                <Text className="text-ui-fg-subtle mt-2 text-sm">
+                  Used only if execute mode is explicitly confirmed. Dry-run remains non-mutating regardless of this selection.
+                </Text>
+              </div>
+
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Button
+                  type="button"
+                  onClick={() => void handleShippingOptionSync("dry_run")}
+                  isLoading={isRunningShippingOptionSync}
+                  disabled={isLoading}
+                >
+                  Run dry-run sync
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-md border p-4">
+              <Heading level="h3">Execute with explicit confirmation</Heading>
+              <Text className="text-ui-fg-subtle mt-1 text-sm">
+                Secondary admin-only write path. Nothing executes unless the confirmation string matches exactly and both Medusa ids are filled in.
+              </Text>
+
+              <div className="mt-4 grid gap-4">
+                <div>
+                  <Label htmlFor="shipping-option-sync-guard-expected">Expected guard string</Label>
+                  <Input
+                    id="shipping-option-sync-guard-expected"
+                    readOnly
+                    value={DELIVERY_HUB_MANUAL_SYNC_EXECUTE_GUARD}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="shipping-option-sync-guard-input">Type exact guard string to unlock execute</Label>
+                  <Input
+                    id="shipping-option-sync-guard-input"
+                    value={shippingOptionSyncExecuteGuard}
+                    onChange={(event) => setShippingOptionSyncExecuteGuard(event.target.value)}
+                    disabled={isLoading || isRunningShippingOptionSync}
+                    placeholder="deliveryhub:execute_shipping_option_sync"
+                  />
+                  <Text className="mt-2 text-sm">
+                    {manualSyncRenderState.guardConfirmed ? (
+                      <span className="text-green-700">Guard confirmed. Execute button can be enabled once Medusa ids are provided.</span>
+                    ) : (
+                      <span className="text-ui-fg-subtle">Guard not confirmed. Execute remains blocked.</span>
+                    )}
+                  </Text>
+                </div>
+
+                <div>
+                  <Label htmlFor="shipping-option-sync-service-zone">Medusa service zone id</Label>
+                  <Input
+                    id="shipping-option-sync-service-zone"
+                    value={shippingOptionSyncServiceZoneId}
+                    onChange={(event) => setShippingOptionSyncServiceZoneId(event.target.value)}
+                    disabled={isLoading || isRunningShippingOptionSync}
+                    placeholder="serzo_..."
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="shipping-option-sync-shipping-profile">Medusa shipping profile id</Label>
+                  <Input
+                    id="shipping-option-sync-shipping-profile"
+                    value={shippingOptionSyncShippingProfileId}
+                    onChange={(event) => setShippingOptionSyncShippingProfileId(event.target.value)}
+                    disabled={isLoading || isRunningShippingOptionSync}
+                    placeholder="sp_..."
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void handleShippingOptionSync("execute")}
+                  isLoading={isRunningShippingOptionSync}
+                  disabled={isLoading || !manualSyncRenderState.canExecute}
+                >
+                  Execute manual sync
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {shippingOptionSyncResult ? (
+            <div className="mt-6 grid gap-6">
+              <div className="rounded-md border p-4">
+                <Heading level="h3">Returned execution mode</Heading>
+                <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {manualSyncRenderState.modeFields.map((field) => (
+                    <div key={field.label}>
+                      <Label>{field.label}</Label>
+                      <Input readOnly value={field.value} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-3">
+                <div className="rounded-md border p-4">
+                  <Heading level="h3">Desired plan summary</Heading>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {manualSyncRenderState.desiredPlanSummaryCards.map((card) => (
+                      <div key={card.key} className="rounded-md border p-3">
+                        <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
+                        <Text className="mt-2 font-medium">{card.value}</Text>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-md border p-4">
+                  <Heading level="h3">Reconciliation summary</Heading>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {manualSyncRenderState.reconciliationSummaryCards.map((card) => (
+                      <div key={card.key} className="rounded-md border p-3">
+                        <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
+                        <Text className="mt-2 font-medium">{card.value}</Text>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-md border p-4">
+                  <Heading level="h3">Operation plan summary</Heading>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {manualSyncRenderState.operationPlanSummaryCards.map((card) => (
+                      <div key={card.key} className="rounded-md border p-3">
+                        <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
+                        <Text className="mt-2 font-medium">{card.value}</Text>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {manualSyncRenderState.executionReport ? (
+                <div className="rounded-md border p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <Heading level="h3">Execution report</Heading>
+                      <Text className="text-ui-fg-subtle mt-1 text-sm">
+                        Returned only for explicit execute runs that passed the confirmation guard and backend validation.
+                      </Text>
+                    </div>
+                    <span
+                      className={`rounded-full border px-2 py-1 text-xs ${logSuccessToneClass(
+                        manualSyncRenderState.executionReport.outcomeToneIsSuccess
+                      )}`}
+                    >
+                      {manualSyncRenderState.executionReport.outcome}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 md:grid-cols-3">
+                    <div>
+                      <Label>Aborted</Label>
+                      <Input readOnly value={manualSyncRenderState.executionReport.aborted} />
+                    </div>
+                    <div>
+                      <Label>Error mode</Label>
+                      <Input readOnly value={manualSyncRenderState.executionReport.errorMode} />
+                    </div>
+                    <div>
+                      <Label>Executed operations</Label>
+                      <Input readOnly value={manualSyncRenderState.executionReport.executedOperationCount} />
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {manualSyncRenderState.executionReport.summaryCards.map((card) => (
+                      <div key={card.key} className="rounded-md border p-3">
+                        <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
+                        <Text className="mt-2 font-medium">{card.value}</Text>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
+                  <Text className="font-medium text-amber-800">No execution report returned</Text>
+                  <Text className="mt-1 text-sm text-amber-700">{manualSyncRenderState.noExecutionReportText}</Text>
+                </div>
+              )}
+
+              <div className="grid gap-3">
+                <details className="rounded-md border p-3">
+                  <summary className="cursor-pointer text-sm font-medium">Desired plan details</summary>
+                  <pre className="mt-3 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
+                    {JSON.stringify(shippingOptionSyncResult.desired_plan, null, 2)}
+                  </pre>
+                </details>
+
+                <details className="rounded-md border p-3">
+                  <summary className="cursor-pointer text-sm font-medium">Reconciliation details</summary>
+                  <pre className="mt-3 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
+                    {JSON.stringify(shippingOptionSyncResult.reconciliation, null, 2)}
+                  </pre>
+                </details>
+
+                <details className="rounded-md border p-3">
+                  <summary className="cursor-pointer text-sm font-medium">Operation plan details</summary>
+                  <pre className="mt-3 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
+                    {JSON.stringify(shippingOptionSyncResult.operation_plan, null, 2)}
+                  </pre>
+                </details>
+
+                <details className="rounded-md border p-3">
+                  <summary className="cursor-pointer text-sm font-medium">Execution report details</summary>
+                  <pre className="mt-3 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
+                    {JSON.stringify(shippingOptionSyncResult.execution.report, null, 2)}
+                  </pre>
+                </details>
+              </div>
+            </div>
+          ) : (
+            <Text className="text-ui-fg-subtle mt-6">{manualSyncRenderState.noResultText}</Text>
+          )}
+        </div>
+ 
         <div className="rounded-lg border p-4">
           <div className="flex items-center justify-between gap-4">
             <div>

@@ -4,7 +4,11 @@ import type {
 } from "@medusajs/framework/http"
 import { z } from "@medusajs/framework/zod"
 import { DeliveryHubCreateConnectionSchema } from "../../../../modules/delivery-hub"
-import { getDeliveryHubService, handleDeliveryHubError } from "../shared"
+import {
+  getDeliveryHubService,
+  handleDeliveryHubError,
+  sanitizeAdminDeliveryConnection,
+} from "../shared"
 
 export const AdminCreateDeliveryConnectionSchema = DeliveryHubCreateConnectionSchema
 
@@ -13,7 +17,7 @@ type AdminCreateDeliveryConnectionBody = z.infer<typeof AdminCreateDeliveryConne
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   try {
     const service = getDeliveryHubService(req)
-    const connections = await service.listConnections()
+    const connections = (await service.listConnections()).map(sanitizeAdminDeliveryConnection)
 
     res.status(200).json({
       ok: true,
@@ -30,7 +34,9 @@ export async function POST(
 ) {
   try {
     const service = getDeliveryHubService(req)
-    const connection = await service.createConnection(req.validatedBody)
+    const connection = sanitizeAdminDeliveryConnection(
+      await service.createConnection(req.validatedBody)
+    )
 
     res.status(201).json({
       ok: true,

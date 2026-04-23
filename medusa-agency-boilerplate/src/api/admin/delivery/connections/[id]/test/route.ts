@@ -8,6 +8,7 @@ import {
   getDeliveryHubService,
   getRouteParam,
   handleDeliveryHubError,
+  sanitizeAdminDeliveryConnectionTestResult,
 } from "../../../shared"
 
 export const AdminDeliveryConnectionTestSchema = DeliveryHubConnectionTestSchema
@@ -21,7 +22,9 @@ export async function POST(
   try {
     const id = getRouteParam(req, "id")
     const service = getDeliveryHubService(req)
-    const result = await service.testConnection(id, req.validatedBody)
+    const result = sanitizeAdminDeliveryConnectionTestResult(
+      await service.testConnection(id, req.validatedBody)
+    )
 
     res.status(200).json({
       ok: true,

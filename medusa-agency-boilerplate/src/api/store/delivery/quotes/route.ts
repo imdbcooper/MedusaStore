@@ -10,6 +10,7 @@ import {
   handleStoreDeliveryHubError,
   parseStoreDeliveryInterval,
   parseStoreDeliveryItems,
+  sanitizeStoreDeliveryQuotesResponse,
 } from "../shared"
 
 export const StoreDeliveryQuotesQuerySchema = DeliveryHubStoreQuotesQuerySchema
@@ -30,16 +31,18 @@ export async function GET(
       parseStoreDeliveryItems(validatedQuery.items)
     )
 
-    const result = await service.listStoreQuotes({
-      connection_id: validatedQuery.connection_id,
-      mode_code: validatedQuery.mode_code,
-      currency_code: validatedQuery.currency_code,
-      destination_point_id: validatedQuery.destination_point_id,
-      origin_point_id: validatedQuery.origin_point_id,
-      warehouse_id: validatedQuery.warehouse_id,
-      interval_utc,
-      items,
-    })
+    const result = sanitizeStoreDeliveryQuotesResponse(
+      await service.listStoreQuotes({
+        connection_id: validatedQuery.connection_id,
+        mode_code: validatedQuery.mode_code,
+        currency_code: validatedQuery.currency_code,
+        destination_point_id: validatedQuery.destination_point_id,
+        origin_point_id: validatedQuery.origin_point_id,
+        warehouse_id: validatedQuery.warehouse_id,
+        interval_utc,
+        items,
+      })
+    )
 
     res.status(200).json(result)
   } catch (error) {

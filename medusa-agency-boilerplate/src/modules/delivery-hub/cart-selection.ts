@@ -27,14 +27,16 @@ export type DeliveryHubCartSelectionPickupPoint = Omit<DeliveryPickupPoint, "met
 
 export type DeliveryHubCartSelectionPickupWindow = Omit<DeliveryPickupWindow, "metadata">
 
+export type DeliveryHubQuoteReference = {
+  id: string
+  version: number
+}
+
 export type DeliveryHubCartSelectionPublic = {
   version: number
   connection_id: string
   quote_type: DeliveryHubCartSelectionQuoteType
-  quote_reference: {
-    id: string
-    version: number
-  }
+  quote_reference: DeliveryHubQuoteReference
   quote: DeliveryHubCartSelectionQuoteSummary
   pickup_point: DeliveryHubCartSelectionPickupPoint
   pickup_window: DeliveryHubCartSelectionPickupWindow | null
@@ -44,11 +46,14 @@ export type DeliveryHubCartSelectionPublic = {
 export type DeliveryHubCartSelectionWriteInput = {
   connection_id: string
   quote_type: DeliveryHubCartSelectionQuoteType
-  quote_key: string
   quote: DeliveryHubCartSelectionQuoteSummary
   pickup_point: DeliveryHubCartSelectionPickupPoint
   pickup_window?: DeliveryHubCartSelectionPickupWindow | null
-}
+} & ({
+  quote_reference: DeliveryHubQuoteReference
+} | {
+  quote_key: string
+})
 
 type QueryGraphInput = {
   entity: string
@@ -69,11 +74,7 @@ export type DeliveryHubCartSelectionRecord = {
   metadata?: unknown
 }
 
-type DeliveryHubCartSelectionPersisted = DeliveryHubCartSelectionPublic & {
-  backend: {
-    quote_key: string
-  }
-}
+type DeliveryHubCartSelectionPersisted = DeliveryHubCartSelectionPublic
 
 export async function getDeliveryHubCartById(
   query: DeliveryHubQueryGraphLike,
@@ -112,14 +113,7 @@ export function requireDeliveryHubCart(
 export function readDeliveryHubCartSelection(
   metadata?: unknown
 ): DeliveryHubCartSelectionPublic | null {
-  const persisted = readPersistedDeliveryHubCartSelection(metadata)
-
-  if (!persisted) {
-    return null
-  }
-
-  const { backend: _backend, ...selection } = persisted
-  return selection
+  return readPersistedDeliveryHubCartSelection(metadata)
 }
 
 export function buildDeliveryHubCartSelectionMetadata(
@@ -181,7 +175,6 @@ function readPersistedDeliveryHubCartSelection(metadata?: unknown) {
   const selection = asRecord(namespace.selection)
   const quoteReference = asRecord(selection.quote_reference)
   const quote = asRecord(selection.quote)
-  const backend = asRecord(selection.backend)
   const pickupPoint = readPickupPoint(selection.pickup_point)
   const pickupWindow = readPickupWindow(selection.pickup_window)
   const version = readNumber(selection.version)
@@ -190,7 +183,6 @@ function readPersistedDeliveryHubCartSelection(metadata?: unknown) {
   const quoteReferenceId = readString(quoteReference.id)
   const quoteReferenceVersion = readNumber(quoteReference.version)
   const updatedAt = readString(selection.updated_at)
-  const quoteKey = readString(backend.quote_key)
 
   if (
     version !== DELIVERY_HUB_CART_SELECTION_VERSION ||
@@ -199,7 +191,6 @@ function readPersistedDeliveryHubCartSelection(metadata?: unknown) {
     !quoteReferenceId ||
     quoteReferenceVersion !== DELIVERY_HUB_CART_SELECTION_VERSION ||
     !updatedAt ||
-    !quoteKey ||
     !pickupPoint
   ) {
     return null
@@ -244,30 +235,20 @@ function readPersistedDeliveryHubCartSelection(metadata?: unknown) {
     pickup_point: pickupPoint,
     pickup_window: pickupWindow,
     updated_at: updatedAt,
-    backend: {
-      quote_key: quoteKey,
-    },
   } satisfies DeliveryHubCartSelectionPersisted
 }
 
 function buildPersistedDeliveryHubCartSelection(input: DeliveryHubCartSelectionWriteInput) {
   const connectionId = requireNonEmptyString(input.connection_id, "connection_id")
   const quoteType = requireQuoteType(input.quote_type)
-  const quoteKey = requireNonEmptyString(input.quote_key, "quote_key")
+  const quoteReference = resolveQuoteReference(connectionId, quoteType, input)
   const updatedAt = new Date().toISOString()
 
   return {
     version: DELIVERY_HUB_CART_SELECTION_VERSION,
     connection_id: connectionId,
     quote_type: quoteType,
-    quote_reference: {
-      id: createDeliveryHubQuoteReferenceId({
-        connection_id: connectionId,
-        quote_type: quoteType,
-        quote_key: quoteKey,
-      }),
-      version: DELIVERY_HUB_CART_SELECTION_VERSION,
-    },
+    quote_reference: quoteReference,
     quote: {
       carrier_code: requireNonEmptyString(input.quote.carrier_code, "quote.carrier_code"),
       carrier_label: requireNonEmptyString(input.quote.carrier_label, "quote.carrier_label"),
@@ -281,9 +262,6 @@ function buildPersistedDeliveryHubCartSelection(input: DeliveryHubCartSelectionW
     pickup_point: normalizePickupPoint(input.pickup_point),
     pickup_window: input.pickup_window ? normalizePickupWindow(input.pickup_window) : null,
     updated_at: updatedAt,
-    backend: {
-      quote_key: quoteKey,
-    },
   } satisfies DeliveryHubCartSelectionPersisted
 }
 
@@ -304,6 +282,17 @@ async function persistDeliveryHubCartMetadata(
 
 export function getDeliveryHubQuery(container: any): DeliveryHubQueryGraphLike {
   return container.resolve(ContainerRegistrationKeys.QUERY) as DeliveryHubQueryGraphLike
+}
+
+export function createDeliveryHubQuoteReference(input: {
+  connection_id: string
+  quote_type: string
+  quote_key: string
+}): DeliveryHubQuoteReference {
+  return {
+    id: createDeliveryHubQuoteReferenceId(input),
+    version: DELIVERY_HUB_CART_SELECTION_VERSION,
+  }
 }
 
 function createDeliveryHubQuoteReferenceId(input: {
@@ -447,6 +436,44 @@ function requireQuoteType(value: unknown): DeliveryHubCartSelectionQuoteType {
       field: "quote_type",
     },
   })
+}
+
+function resolveQuoteReference(
+  connectionId: string,
+  quoteType: DeliveryHubCartSelectionQuoteType,
+  input: DeliveryHubCartSelectionWriteInput
+): DeliveryHubQuoteReference {
+  if ("quote_reference" in input) {
+    return requireQuoteReference(input.quote_reference)
+  }
+
+  return createDeliveryHubQuoteReference({
+    connection_id: connectionId,
+    quote_type: quoteType,
+    quote_key: requireNonEmptyString(input.quote_key, "quote_key"),
+  })
+}
+
+function requireQuoteReference(value: unknown): DeliveryHubQuoteReference {
+  const record = asRecord(value)
+  const id = requireNonEmptyString(record.id, "quote_reference.id")
+  const version = requireFiniteNumber(record.version, "quote_reference.version")
+
+  if (version !== DELIVERY_HUB_CART_SELECTION_VERSION) {
+    throw new DeliveryHubError({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      message: `Field "quote_reference.version" must equal ${DELIVERY_HUB_CART_SELECTION_VERSION}`,
+      status: 400,
+      details: {
+        field: "quote_reference.version",
+      },
+    })
+  }
+
+  return {
+    id,
+    version,
+  }
 }
 
 function readQuoteType(value: unknown): DeliveryHubCartSelectionQuoteType | null {

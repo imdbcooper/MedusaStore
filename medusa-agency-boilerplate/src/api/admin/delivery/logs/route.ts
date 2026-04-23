@@ -3,7 +3,11 @@ import type {
   MedusaResponse,
 } from "@medusajs/framework/http"
 import { z } from "@medusajs/framework/zod"
-import { getDeliveryHubService, handleDeliveryHubError } from "../shared"
+import {
+  getDeliveryHubService,
+  handleDeliveryHubError,
+  sanitizeAdminDeliveryEventLog,
+} from "../shared"
 
 export const AdminDeliveryEventLogsQuerySchema = z.object({
   connection_id: z.string().trim().min(1).optional(),
@@ -19,7 +23,9 @@ export async function GET(
 ) {
   try {
     const service = getDeliveryHubService(req)
-    const logs = await service.listEventLogs(req.validatedQuery ?? {})
+    const logs = (await service.listEventLogs(req.validatedQuery ?? {})).map(
+      sanitizeAdminDeliveryEventLog
+    )
 
     res.status(200).json({
       ok: true,

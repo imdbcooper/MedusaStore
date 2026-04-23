@@ -1,0 +1,1602 @@
+import { isDeliveryHubShippingOptionManualSyncGuardConfirmed } from "./manual-sync"
+
+export type DeliveryProviderDefinition = {
+  code: string
+  label: string
+  capabilities: string[]
+  supported_mode_codes: string[]
+}
+
+export type DeliveryConnection = {
+  id: string
+  provider_code: string
+  name: string
+  status: "draft" | "active" | "error" | "disabled"
+  mode: "test" | "live"
+  enabled: boolean
+  country_code: string
+  credentials_state: "empty" | "sealed" | "disabled" | "invalid"
+  credentials_fingerprint: string | null
+  credentials_last_validated_at: string | null
+  credentials_last_error_code: string | null
+  credentials_present: boolean
+  config: Record<string, unknown>
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type DeliveryWarehouse = {
+  id: string
+  name: string
+  enabled: boolean
+  country_code: string
+  city: string | null
+  address_line_1: string | null
+  contact_name: string | null
+  contact_phone: string | null
+  provider_code: string | null
+  provider_warehouse_id: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type DeliveryConfig = {
+  auto_confirm?: boolean
+  label_format?: string
+  default_warehouse_id?: string
+  default_warehouse?: DeliveryWarehouse
+}
+
+export type DeliveryConnectionForm = {
+  provider_code: string
+  name: string
+  mode: "test" | "live"
+  enabled: boolean
+  country_code: string
+  token: string
+  auto_confirm: boolean
+  label_format: string
+  default_warehouse_id: string
+}
+
+export type DeliveryWarehouseForm = {
+  name: string
+  enabled: boolean
+  country_code: string
+  city: string
+  address_line_1: string
+  contact_name: string
+  contact_phone: string
+  provider_code: string
+  provider_warehouse_id: string
+}
+
+export type DeliveryEventLog = {
+  id: string
+  connection_id: string | null
+  provider_code: string
+  kind: string
+  correlation_id: string
+  success: boolean
+  request_summary: Record<string, unknown>
+  response_summary: Record<string, unknown>
+  error_code: string | null
+  created_at: string
+}
+
+export type DeliveryHubShippingOptionData = {
+  version: number
+  provider_code: string
+  provider_id: string
+  id: string
+  mode_code: string
+}
+
+export type DeliveryHubProjectedShippingOption = {
+  status: "projected"
+  mode_code: string
+  data: DeliveryHubShippingOptionData
+  supporting_connection_ids: string[]
+}
+
+export type DeliveryHubDeferredPlannerIssue = {
+  connection_id: string
+  provider_code: string
+  code: string
+  message: string
+  mode_code: string | null
+}
+
+export type DeliveryHubDeferredShippingOption = {
+  status: "deferred"
+  mode_code: string
+  data: DeliveryHubShippingOptionData
+  issues: DeliveryHubDeferredPlannerIssue[]
+}
+
+export type DeliveryHubShippingOptionConnectionPlan = {
+  connection_id: string
+  provider_code: string
+  status: "projected" | "deferred" | "skipped"
+  projected_mode_codes: string[]
+  issues: Array<{
+    code: string
+    message: string
+    mode_code: string | null
+  }>
+}
+
+export type DeliveryHubShippingOptionSnapshot = {
+  id: string
+  name?: string | null
+  provider_id?: string | null
+  data?: Record<string, unknown> | null
+}
+
+export type DeliveryHubShippingOptionPreviewSummary = {
+  current_option_count: number
+  desired_option_count: number
+  deferred_option_count: number
+  deferred_issue_count: number
+  connection_plan_count: number
+  create_candidate_count: number
+  update_candidate_count: number
+  unchanged_count: number
+  orphaned_managed_option_count: number
+  ignored_foreign_option_count: number
+}
+
+export type DeliveryHubShippingOptionPreview = {
+  provider_code: string
+  provider_id: string
+  current_options: DeliveryHubShippingOptionSnapshot[]
+  plan: {
+    provider_code: string
+    provider_id: string
+    desired_options: DeliveryHubProjectedShippingOption[]
+    deferred_options: DeliveryHubDeferredShippingOption[]
+    connection_plans: DeliveryHubShippingOptionConnectionPlan[]
+  }
+  reconciliation: {
+    provider_code: string
+    provider_id: string
+    create_candidates: Array<{
+      desired: DeliveryHubProjectedShippingOption
+    }>
+    update_candidates: Array<{
+      desired: DeliveryHubProjectedShippingOption
+      current: DeliveryHubShippingOptionSnapshot
+      normalized_current_data: DeliveryHubShippingOptionData
+      reasons: string[]
+    }>
+    unchanged: Array<{
+      desired: DeliveryHubProjectedShippingOption
+      current: DeliveryHubShippingOptionSnapshot
+      normalized_current_data: DeliveryHubShippingOptionData
+    }>
+    orphaned_managed_options: Array<{
+      current: DeliveryHubShippingOptionSnapshot
+      normalized_current_data: DeliveryHubShippingOptionData
+      reason: string
+    }>
+    ignored_foreign_options: Array<{
+      current: DeliveryHubShippingOptionSnapshot
+    }>
+  }
+  summary: DeliveryHubShippingOptionPreviewSummary
+}
+
+export type DeliveryHubShippingOptionManualSyncExecutionMode = {
+  requested_mode: "dry_run" | "execute"
+  effective_mode: "dry_run" | "execute"
+  execute_requested: boolean
+  execute_confirmed: boolean
+  execute_guard: string
+  is_dry_run: boolean
+}
+
+export type DeliveryHubShippingOptionManualSyncDesiredPlanSummary = {
+  desired_option_count: number
+  deferred_option_count: number
+  deferred_issue_count: number
+  connection_plan_count: number
+}
+
+export type DeliveryHubShippingOptionManualSyncReconciliationSummary = {
+  create_candidate_count: number
+  update_candidate_count: number
+  unchanged_count: number
+  orphaned_managed_option_count: number
+  ignored_foreign_option_count: number
+}
+
+export type DeliveryHubShippingOptionSyncOperationPlanSummary = {
+  create_operation_count: number
+  update_operation_count: number
+  archive_operation_count: number
+  noop_count: number
+  mutation_operation_count: number
+  ignored_foreign_option_count: number
+  managed_option_count: number
+}
+
+export type DeliveryHubShippingOptionSyncExecutionSummary = {
+  create_operation_count: number
+  update_operation_count: number
+  archive_operation_count: number
+  mutation_operation_count: number
+  noop_count: number
+  ignored_foreign_option_count: number
+  attempted_operation_count: number
+  succeeded_operation_count: number
+  failed_operation_count: number
+  not_executed_operation_count: number
+}
+
+export type DeliveryHubShippingOptionSyncExecutionReport = {
+  outcome: "succeeded" | "failed" | "partial_failure"
+  aborted: boolean
+  error_mode: "abort" | "continue"
+  summary: DeliveryHubShippingOptionSyncExecutionSummary
+  create_results: unknown[]
+  update_results: unknown[]
+  archive_results: unknown[]
+  executed_operations: unknown[]
+}
+
+export type DeliveryHubShippingOptionManualSyncResponse = {
+  provider_code: string
+  provider_id: string
+  current_options: DeliveryHubShippingOptionSnapshot[]
+  desired_plan: DeliveryHubShippingOptionPreview["plan"]
+  desired_plan_summary: DeliveryHubShippingOptionManualSyncDesiredPlanSummary
+  reconciliation: DeliveryHubShippingOptionPreview["reconciliation"]
+  reconciliation_summary: DeliveryHubShippingOptionManualSyncReconciliationSummary
+  operation_plan: {
+    provider_code: string
+    provider_id: string
+    create_operations: unknown[]
+    update_operations: unknown[]
+    archive_operations: unknown[]
+    noops: unknown[]
+    ignored_foreign_options: unknown[]
+    summary: DeliveryHubShippingOptionSyncOperationPlanSummary
+  }
+  execution: {
+    mode: DeliveryHubShippingOptionManualSyncExecutionMode
+    report: DeliveryHubShippingOptionSyncExecutionReport | null
+  }
+}
+
+export type ApiErrorPayload = {
+  status: number
+  code: string
+  message: string
+  details: unknown
+}
+
+export const defaultConnectionForm: DeliveryConnectionForm = {
+  provider_code: "yandex",
+  name: "",
+  mode: "test",
+  enabled: false,
+  country_code: "RU",
+  token: "",
+  auto_confirm: false,
+  label_format: "",
+  default_warehouse_id: "",
+}
+
+export const defaultWarehouseForm: DeliveryWarehouseForm = {
+  name: "",
+  enabled: true,
+  country_code: "RU",
+  city: "",
+  address_line_1: "",
+  contact_name: "",
+  contact_phone: "",
+  provider_code: "yandex",
+  provider_warehouse_id: "",
+}
+
+export const capabilityLabels: Record<string, string> = {
+  test_connection: "Test connection",
+  list_pickup_points: "List pickup points",
+  list_pickup_windows: "List pickup windows",
+  quote_warehouse_to_pickup_point: "Quote warehouse → pickup point",
+  quote_dropoff_point_to_pickup_point: "Quote dropoff point → pickup point",
+}
+
+export const modeLabels: Record<string, string> = {
+  warehouse_to_pickup_point: "warehouse_to_pickup_point",
+  dropoff_point_to_pickup_point: "dropoff_point_to_pickup_point",
+}
+
+export const labelFormatOptions = ["", "pdf", "zpl"]
+
+const previewSummaryCards: Array<{
+  key: keyof DeliveryHubShippingOptionPreviewSummary
+  label: string
+}> = [
+  { key: "desired_option_count", label: "Desired options" },
+  { key: "deferred_option_count", label: "Deferred options" },
+  { key: "deferred_issue_count", label: "Deferred issues" },
+  { key: "create_candidate_count", label: "Create candidates" },
+  { key: "update_candidate_count", label: "Update candidates" },
+  { key: "unchanged_count", label: "Unchanged" },
+  { key: "orphaned_managed_option_count", label: "Orphaned managed" },
+  { key: "ignored_foreign_option_count", label: "Ignored foreign" },
+  { key: "current_option_count", label: "Current options scanned" },
+  { key: "connection_plan_count", label: "Connection plans" },
+]
+
+const manualSyncDesiredPlanSummaryCards: Array<{
+  key: keyof DeliveryHubShippingOptionManualSyncDesiredPlanSummary
+  label: string
+}> = [
+  { key: "desired_option_count", label: "Desired options" },
+  { key: "deferred_option_count", label: "Deferred options" },
+  { key: "deferred_issue_count", label: "Deferred issues" },
+  { key: "connection_plan_count", label: "Connection plans" },
+]
+
+const manualSyncReconciliationSummaryCards: Array<{
+  key: keyof DeliveryHubShippingOptionManualSyncReconciliationSummary
+  label: string
+}> = [
+  { key: "create_candidate_count", label: "Create candidates" },
+  { key: "update_candidate_count", label: "Update candidates" },
+  { key: "unchanged_count", label: "Unchanged" },
+  { key: "orphaned_managed_option_count", label: "Orphaned managed" },
+  { key: "ignored_foreign_option_count", label: "Ignored foreign" },
+]
+
+const manualSyncOperationPlanSummaryCards: Array<{
+  key: keyof DeliveryHubShippingOptionSyncOperationPlanSummary
+  label: string
+}> = [
+  { key: "create_operation_count", label: "Create ops" },
+  { key: "update_operation_count", label: "Update ops" },
+  { key: "archive_operation_count", label: "Archive ops" },
+  { key: "noop_count", label: "Noops" },
+  { key: "mutation_operation_count", label: "Mutation ops" },
+  { key: "ignored_foreign_option_count", label: "Ignored foreign" },
+  { key: "managed_option_count", label: "Managed total" },
+]
+
+const manualSyncExecutionSummaryCards: Array<{
+  key: keyof DeliveryHubShippingOptionSyncExecutionSummary
+  label: string
+}> = [
+  { key: "attempted_operation_count", label: "Attempted ops" },
+  { key: "succeeded_operation_count", label: "Succeeded ops" },
+  { key: "failed_operation_count", label: "Failed ops" },
+  { key: "not_executed_operation_count", label: "Not executed" },
+  { key: "mutation_operation_count", label: "Planned mutation ops" },
+  { key: "noop_count", label: "Planned noops" },
+]
+
+export type RenderCard<T extends string = string> = {
+  key: T
+  label: string
+  value: string
+}
+
+export type PreviewRenderState = {
+  headerText: string
+  summaryCards: RenderCard[]
+  desiredOptions: Array<{
+    key: string
+    modeCode: string
+    id: string
+    supportingConnectionsText: string
+  }>
+  desiredEmptyText: string
+  deferredOptions: Array<{
+    key: string
+    modeCode: string
+    id: string
+    issues: Array<{
+      key: string
+      code: string
+      message: string
+      connectionText: string
+    }>
+  }>
+  deferredEmptyText: string
+  reconciliationCounts: {
+    createCandidates: string
+    updateCandidates: string
+    unchanged: string
+    orphanedManaged: string
+    ignoredForeign: string
+  }
+  createCandidates: Array<{
+    key: string
+    title: string
+    subtitle: string
+  }>
+  updateCandidates: Array<{
+    key: string
+    title: string
+    subtitle: string
+  }>
+  unchangedEntries: Array<{
+    key: string
+    title: string
+    subtitle: string
+  }>
+  orphanedManagedEntries: Array<{
+    key: string
+    title: string
+    subtitle: string
+  }>
+  ignoredForeignEntries: Array<{
+    key: string
+    title: string
+    subtitle: string
+  }>
+  connectionPlans: Array<{
+    key: string
+    connectionId: string
+    providerCode: string
+    status: string
+    projectedModesText: string
+    issues: Array<{
+      key: string
+      code: string
+      message: string
+    }>
+  }>
+  connectionPlansEmptyText: string
+}
+
+export type ManualSyncExecutionReportRenderState = {
+  outcome: string
+  outcomeToneIsSuccess: boolean
+  aborted: string
+  errorMode: string
+  executedOperationCount: string
+  summaryCards: RenderCard[]
+}
+
+export type ManualSyncRenderState = {
+  headerText: string
+  guardConfirmed: boolean
+  canExecute: boolean
+  modeFields: Array<{
+    label: string
+    value: string
+  }>
+  desiredPlanSummaryCards: RenderCard[]
+  reconciliationSummaryCards: RenderCard[]
+  operationPlanSummaryCards: RenderCard[]
+  executionReport: ManualSyncExecutionReportRenderState | null
+  noExecutionReportText: string
+  noResultText: string
+}
+
+export type DeliveryHubFulfillmentBridgePreviewStep = {
+  key: string
+  ready: boolean
+  message: string
+}
+
+export type DeliveryHubFulfillmentBridgeModePreview = {
+  mode_code: string
+  status: "ready" | "error"
+  rollout_status: "projected" | "deferred" | "unconfigured"
+  supporting_connection_ids: string[]
+  blocking_issues: Array<{
+    connection_id: string
+    provider_code: string
+    code: string
+    message: string
+    mode_code: string | null
+  }>
+  steps: DeliveryHubFulfillmentBridgePreviewStep[]
+  selection: Record<string, unknown> | null
+  shipping_option_data: Record<string, unknown> | null
+  fulfillment_payload: Record<string, unknown> | null
+  create_fulfillment_payload: Record<string, unknown> | null
+  shipment_execution: {
+    materialized: false
+    reason: string
+  }
+  error: {
+    message: string
+  } | null
+}
+
+export type DeliveryHubFulfillmentBridgeReadinessPreview = {
+  provider_code: string
+  provider_id: string
+  shipping_option_preview: DeliveryHubShippingOptionPreview
+  bridge_preview: {
+    version: number
+    provider_code: string
+    provider_id: string
+    mode_previews: DeliveryHubFulfillmentBridgeModePreview[]
+    summary: {
+      mode_count: number
+      ready_mode_count: number
+      error_mode_count: number
+      projected_mode_count: number
+      deferred_mode_count: number
+    }
+  }
+  summary: {
+    mode_count: number
+    ready_mode_count: number
+    error_mode_count: number
+    projected_mode_count: number
+    deferred_mode_count: number
+  }
+}
+
+export type FulfillmentBridgePreviewRenderState = {
+  headerText: string
+  summaryCards: RenderCard[]
+  modePreviews: Array<{
+    key: string
+    modeCode: string
+    status: string
+    rolloutStatus: string
+    supportingConnectionsText: string
+    stepReadinessText: string
+    issueBadges: Array<{
+      key: string
+      label: string
+    }>
+    errorText: string | null
+    shipmentExecutionText: string
+  }>
+  emptyText: string
+}
+
+export type DeliveryHubExecutionPlanObservabilityStep = {
+  key: string
+  ready: boolean
+  message: string
+}
+
+export type DeliveryHubExecutionPersistenceAuditPreview = {
+  version: number
+  redacted: true
+  status: "ready" | "blocked"
+  metadata_patch: {
+    target: "fulfillment_execution_shadow"
+    action: "merge"
+    fields: Array<{
+      field: string
+      value_preview: string
+    }>
+  }
+  execution_record: {
+    ready: boolean
+    record_type: "deliveryhub_shipment_execution"
+    operation: "create_shipment"
+    provider_code: string
+    provider_id: string
+    connection_id: string | null
+    mode_code: string | null
+    execution_reference: string | null
+    idempotency_key_preview: string | null
+    initial_status: string | null
+  }
+  idempotency_reservation: {
+    ready: boolean
+    dedupe_scope: "deliveryhub:create_shipment"
+    reservation_key_preview: string | null
+    matched_fields: Array<{
+      field: string
+      value_preview: string
+    }>
+  }
+  status_transitions: Array<{
+    from: string
+    to: string
+    reason: string
+  }>
+  audit_log_entries: Array<{
+    kind: string
+    message: string
+    payload: Record<string, string | number | boolean | null>
+  }>
+  blocked: Array<{
+    key: string
+    reason: string
+  }>
+  deferred: Array<{
+    key: string
+    reason: string
+  }>
+}
+
+export type DeliveryHubExecutionPlanObservabilityIssue = {
+  code: string
+  message: string
+  field_path: string | null
+}
+
+export type DeliveryHubExecutionPreflightEligibilityPreview = {
+  version: number
+  redacted: true
+  current_mode: "preview_only"
+  decision: "eligible_when_enabled" | "not_ready"
+  real_execution_enabled: false
+  future_execution_flag: {
+    name: "DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED"
+    status: "future_inert_not_read"
+    description: string
+  }
+  reasons: Array<{
+    code: string
+    message: string
+  }>
+  required_prerequisites: Array<{
+    code: string
+    label: string
+    status: "required_future_work"
+  }>
+  confirmations: {
+    shipment_execution_disabled: true
+    provider_calls_disabled: true
+    persistence_writes_disabled: true
+    checkout_cutover_disabled: true
+  }
+  blocked_live_actions: Array<{
+    code: string
+    label: string
+    blocked: true
+  }>
+}
+
+export type DeliveryHubProviderDispatchPreview = {
+  version: number
+  redacted: true
+  current_mode: "preview_only"
+  dispatch_decision: "ready_for_future_dispatch" | "not_dispatched"
+  provider: {
+    provider_code: string
+    provider_id: string
+    provider_key: string
+    adapter_operation: "create_shipment"
+    adapter_operation_label: string
+  }
+  command_identity: {
+    provider_operation_reference: string | null
+    idempotency_key_preview: string | null
+    plan_fingerprint: string | null
+    execution_fingerprint: string | null
+  }
+  command_envelope_summary: {
+    connection_id_present: boolean
+    mode_code: string | null
+    origin_kind: "fulfillment_location" | "dropoff_point" | "unknown"
+    destination_kind: "pickup_point" | "unknown"
+    quote_reference_present: boolean
+    offer_reference_present: boolean
+    package_reference_present: boolean
+    order_reference_present: boolean
+    fulfillment_reference_present: boolean
+    pickup_scheduling_reference_present: boolean
+    dropoff_scheduling_reference_present: boolean
+    item_count: number
+  }
+  blocked_dispatch_actions: Array<{
+    code: string
+    label: string
+    reason: string
+    blocked: true
+  }>
+  confirmations: {
+    adapter_invocation_disabled: true
+    provider_network_calls_disabled: true
+    shipment_creation_disabled: true
+    label_creation_disabled: true
+    order_mutation_disabled: true
+    persistence_writes_disabled: true
+    checkout_cutover_disabled: true
+  }
+}
+
+export type DeliveryHubFailureHandlingPreview = {
+  version: number
+  redacted: true
+  current_mode: "preview_only"
+  failure_path_decision: "projected_retry_policy" | "no_live_failure_path"
+  projected_failure_status:
+    | "manual_intervention_required_when_enabled"
+    | "not_applicable_in_preview"
+  failure_classes: Array<{
+    code:
+      | "provider_dispatch_failure"
+      | "provider_timeout"
+      | "provider_response_invalid"
+      | "shipment_result_rejected"
+      | "application_projection_blocked"
+    retry_eligibility: "eligible_when_enabled" | "blocked"
+    compensation_requirement: "required_when_enabled" | "not_required"
+    manual_intervention: "required_when_enabled" | "not_required"
+    reason_bucket:
+      | "dispatch_transport"
+      | "provider_timeout"
+      | "response_normalization"
+      | "result_semantics"
+      | "application_projection"
+  }>
+  identity_linkage: {
+    provider_operation_reference: string | null
+    idempotency_key_preview: string | null
+    plan_fingerprint: string | null
+    execution_fingerprint: string | null
+  }
+  retry_projection: {
+    eligibility: "eligible_when_enabled" | "blocked"
+    policy: "deterministic_preview_only"
+    retry_block_reasons: string[]
+    scheduling_status: "disabled"
+  }
+  compensation_projection: {
+    requirement: "required_when_enabled" | "not_required"
+    write_plan_status: "disabled"
+    rollback_status: "disabled"
+    blocked_actions: string[]
+  }
+  manual_intervention_projection: {
+    status: "required_when_enabled" | "not_required"
+    reason_markers: string[]
+  }
+  blocked_failure_actions: Array<{
+    code: string
+    label: string
+    reason: string
+    blocked: true
+  }>
+  confirmations: {
+    retry_scheduling_disabled: true
+    rollback_disabled: true
+    compensation_writes_disabled: true
+    order_mutation_disabled: true
+    fulfillment_mutation_disabled: true
+    event_persistence_disabled: true
+    provider_redispatch_disabled: true
+    checkout_cutover_disabled: true
+  }
+}
+
+export type DeliveryHubExecutionLifecyclePreview = {
+  version: 1
+  redacted: true
+  current_mode: "preview_only"
+  lifecycle_status: "projected_for_future_execution" | "blocked_in_preview"
+  readiness_posture: "ready_when_enabled" | "blocked_in_preview"
+  phase_sequence: Array<
+    | "preflight_eligibility"
+    | "provider_dispatch"
+    | "shipment_result_normalization"
+    | "fulfillment_application"
+    | "failure_handling"
+  >
+  identity_correlation: {
+    provider_operation_reference: string | null
+    idempotency_key_preview: string | null
+    plan_fingerprint: string | null
+    execution_fingerprint: string | null
+  }
+  phases: Array<{
+    code:
+      | "preflight_eligibility"
+      | "provider_dispatch"
+      | "shipment_result_normalization"
+      | "fulfillment_application"
+      | "failure_handling"
+    order: number
+    status: "projected_for_future_execution" | "blocked_in_preview"
+    readiness_posture: "ready_when_enabled" | "blocked_in_preview"
+    block_reasons: string[]
+    disabled_live_actions: string[]
+    linked_preview_artifacts: string[]
+  }>
+  confirmations: {
+    preview_only: true
+    orchestration_scheduling_disabled: true
+    shipment_execution_disabled: true
+    provider_calls_disabled: true
+    persistence_writes_disabled: true
+    retry_scheduling_disabled: true
+    compensation_writes_disabled: true
+    order_mutation_disabled: true
+    fulfillment_mutation_disabled: true
+    checkout_cutover_disabled: true
+  }
+}
+
+export type DeliveryHubExecutionPlanObservabilityModePreview = {
+  mode_code: string
+  status: "ready" | "blocked"
+  rollout_status: "projected" | "deferred" | "unconfigured"
+  supporting_connection_ids: string[]
+  blocking_issues: Array<{
+    connection_id: string
+    provider_code: string
+    code: string
+    message: string
+    mode_code: string | null
+  }>
+  readiness_verdict: {
+    status: "ready" | "blocked"
+    blocked_reasons: string[]
+  }
+  blocked_reasons: string[]
+  issues: DeliveryHubExecutionPlanObservabilityIssue[]
+  steps: DeliveryHubExecutionPlanObservabilityStep[]
+  execution_plan: {
+    version: number
+    operation: "create_shipment"
+    connection_id: string
+    mode_code: string
+    quote_reference: {
+      id: string
+      version: number
+    }
+    order: {
+      id: string | null
+      display_id: string | number | null
+      currency_code: string | null
+    }
+    fulfillment: {
+      id: string | null
+      location_id: string | null
+    }
+    items: Array<{
+      line_item_id: string | null
+      quantity: number
+    }>
+    outbound_request: {
+      method: "POST"
+      path: "/shipments"
+      headers: {
+        authorization: string
+        "content-type": "application/json"
+      }
+    }
+  } | null
+  execution_identity: {
+    version: number
+    redacted: true
+    operation: "create_shipment"
+    provider_operation_label: string
+    provider_operation_reference: string
+    plan_fingerprint: string
+    execution_fingerprint: string
+    idempotency_key_preview: string
+  } | null
+  outbound_payload_preview: {
+    redacted: true
+    request: Record<string, unknown> | null
+  }
+  persistence_audit_preview: DeliveryHubExecutionPersistenceAuditPreview
+  preflight_eligibility: DeliveryHubExecutionPreflightEligibilityPreview
+  provider_dispatch_preview: DeliveryHubProviderDispatchPreview
+  shipment_result_preview: {
+    version: number
+    redacted: true
+    current_mode: "preview_only"
+    result_decision: "projected_for_future_execution" | "not_materialized"
+    projected_result_status: "projected_for_future_execution" | "not_materialized"
+    result_kind: "shipment_result"
+    normalization_target: "deliveryhub_shipment_result"
+    provider_normalization_target: "create_shipment_response"
+    identity_linkage: {
+      provider_operation_reference: string | null
+      idempotency_key_preview: string | null
+      plan_fingerprint: string | null
+      execution_fingerprint: string | null
+    }
+    artifact_summary: {
+      external_shipment_reference_present: boolean
+      tracking_reference_present: boolean
+      label_document_present: boolean
+      pickup_booking_present: boolean
+      pickup_interval_present: boolean
+      status_timeline_present: boolean
+      failure_placeholder_present: boolean
+      rollback_placeholder_present: boolean
+    }
+    blocked_materialization_actions: Array<{
+      code: string
+      label: string
+      reason: string
+      blocked: true
+    }>
+    confirmations: {
+      provider_response_fetch_disabled: true
+      adapter_invocation_disabled: true
+      shipment_creation_disabled: true
+      label_persistence_disabled: true
+      order_mutation_disabled: true
+      fulfillment_persistence_disabled: true
+      checkout_cutover_disabled: true
+    }
+  }
+  failure_handling_preview: DeliveryHubFailureHandlingPreview
+  fulfillment_application_preview: {
+    version: number
+    redacted: true
+    current_mode: "preview_only"
+    application_decision: "projected_for_future_application" | "not_applied"
+    projected_application_status: "projected_for_future_application" | "not_applied"
+    application_target: "medusa_fulfillment_mutation_plan"
+    application_scope: "backend_admin_only"
+    mutation_semantics: {
+      fulfillment_data_patch_present: boolean
+      shipment_reference_linkage_present: boolean
+      tracking_projection_present: boolean
+      label_document_reference_linkage_present: boolean
+      status_transition_application_present: boolean
+      audit_linkage_present: boolean
+    }
+    identity_linkage: {
+      provider_operation_reference: string | null
+      idempotency_key_preview: string | null
+      plan_fingerprint: string | null
+      execution_fingerprint: string | null
+    }
+    persistence_linkage: {
+      execution_reference_present: boolean
+      idempotency_reservation_present: boolean
+      audit_log_reference_present: boolean
+    }
+    blocked_application_actions: Array<{
+      code: string
+      label: string
+      reason: string
+      blocked: true
+    }>
+    confirmations: {
+      order_mutation_disabled: true
+      fulfillment_persistence_disabled: true
+      shipment_persistence_disabled: true
+      label_persistence_disabled: true
+      event_persistence_disabled: true
+      checkout_cutover_disabled: true
+    }
+  }
+  execution_lifecycle_preview: DeliveryHubExecutionLifecyclePreview
+  shipment_execution: {
+    materialized: false
+    reason: string
+  }
+}
+
+export type DeliveryHubExecutionPlanObservabilityReadModel = {
+  provider_code: string
+  provider_id: string
+  shipping_option_preview: DeliveryHubShippingOptionPreview
+  execution_plan_preview: {
+    version: number
+    provider_code: string
+    provider_id: string
+    mode_previews: DeliveryHubExecutionPlanObservabilityModePreview[]
+    summary: {
+      mode_count: number
+      ready_mode_count: number
+      blocked_mode_count: number
+      projected_mode_count: number
+      deferred_mode_count: number
+      unconfigured_mode_count: number
+    }
+  }
+  summary: {
+    mode_count: number
+    ready_mode_count: number
+    blocked_mode_count: number
+    projected_mode_count: number
+    deferred_mode_count: number
+    unconfigured_mode_count: number
+  }
+}
+
+export type ExecutionPlanObservabilityRenderState = {
+  headerText: string
+  summaryCards: RenderCard[]
+  modePreviews: Array<{
+    key: string
+    modeCode: string
+    status: string
+    rolloutStatus: string
+    supportingConnectionsText: string
+    readinessText: string
+    blockedReasonsText: string
+    issueBadges: Array<{
+      key: string
+      label: string
+    }>
+    stepReadinessText: string
+    executionPlanText: string
+    executionIdentityText: string
+    outboundRequestText: string
+    persistenceAuditText: string
+    preflightEligibilityText: string
+    preflightPrerequisitesText: string
+    blockedLiveActionsText: string
+    providerDispatchText: string
+    blockedDispatchActionsText: string
+    shipmentResultText: string
+    blockedMaterializationActionsText: string
+    applicationPreviewText: string
+    blockedApplicationActionsText: string
+    lifecycleStatusText: string
+    lifecyclePhaseSequenceText: string
+    lifecycleIdentityText: string
+    lifecycleDisabledActionsText: string
+    lifecyclePhaseRows: Array<{
+      key: string
+      code: string
+      order: string
+      status: string
+      readiness: string
+      linkedArtifactsText: string
+      blockReasonsText: string
+      disabledActionsText: string
+    }>
+    failureHandlingText: string
+    retryPostureText: string
+    compensationPostureText: string
+    blockedFailureActionsText: string
+    shipmentExecutionText: string
+  }>
+  emptyText: string
+}
+
+export function formatTimestamp(value: string | null) {
+  if (!value) {
+    return "—"
+  }
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date)
+}
+
+export function normalizeConfig(form: DeliveryConnectionForm): DeliveryConfig {
+  const nextConfig: DeliveryConfig = {}
+
+  if (form.auto_confirm) {
+    nextConfig.auto_confirm = true
+  }
+
+  if (form.label_format.trim()) {
+    nextConfig.label_format = form.label_format.trim()
+  }
+
+  if (form.default_warehouse_id.trim()) {
+    nextConfig.default_warehouse_id = form.default_warehouse_id.trim()
+  }
+
+  return nextConfig
+}
+
+export function connectionToForm(connection: DeliveryConnection): DeliveryConnectionForm {
+  const config = connection.config as DeliveryConfig
+
+  return {
+    provider_code: connection.provider_code,
+    name: connection.name,
+    mode: connection.mode,
+    enabled: connection.enabled,
+    country_code: connection.country_code,
+    token: "",
+    auto_confirm: !!config.auto_confirm,
+    label_format:
+      typeof config.label_format === "string" && config.label_format.trim()
+        ? config.label_format
+        : "",
+    default_warehouse_id:
+      typeof config.default_warehouse_id === "string" && config.default_warehouse_id.trim()
+        ? config.default_warehouse_id
+        : "",
+  }
+}
+
+export function warehouseToForm(warehouse: DeliveryWarehouse): DeliveryWarehouseForm {
+  return {
+    name: warehouse.name,
+    enabled: warehouse.enabled,
+    country_code: warehouse.country_code,
+    city: warehouse.city || "",
+    address_line_1: warehouse.address_line_1 || "",
+    contact_name: warehouse.contact_name || "",
+    contact_phone: warehouse.contact_phone || "",
+    provider_code: warehouse.provider_code || "yandex",
+    provider_warehouse_id: warehouse.provider_warehouse_id || "",
+  }
+}
+
+export function getWarehouseOptionLabel(warehouse: DeliveryWarehouse) {
+  const location = [warehouse.city, warehouse.address_line_1].filter(Boolean).join(", ")
+  const providerRef = warehouse.provider_warehouse_id ? ` · provider: ${warehouse.provider_warehouse_id}` : ""
+
+  return `${warehouse.name}${location ? ` · ${location}` : ""}${providerRef}`
+}
+
+export function statusToneClass(value: string) {
+  if (value === "active" || value === "sealed") {
+    return "border-green-200 bg-green-50 text-green-700"
+  }
+
+  if (value === "error" || value === "invalid") {
+    return "border-red-200 bg-red-50 text-red-700"
+  }
+
+  if (value === "disabled") {
+    return "border-amber-200 bg-amber-50 text-amber-700"
+  }
+
+  return "border-ui-border-base bg-ui-bg-subtle text-ui-fg-subtle"
+}
+
+export function logSuccessToneClass(success: boolean) {
+  return success
+    ? "border-green-200 bg-green-50 text-green-700"
+    : "border-red-200 bg-red-50 text-red-700"
+}
+
+export function plannerStatusToneClass(value: string) {
+  if (value === "projected") {
+    return "border-green-200 bg-green-50 text-green-700"
+  }
+
+  if (value === "deferred") {
+    return "border-amber-200 bg-amber-50 text-amber-700"
+  }
+
+  return "border-ui-border-base bg-ui-bg-subtle text-ui-fg-subtle"
+}
+
+export function getYandexConnections(connections: DeliveryConnection[]) {
+  return connections.filter((connection) => connection.provider_code === "yandex")
+}
+
+export function getYandexWarehouses(warehouses: DeliveryWarehouse[]) {
+  return warehouses.filter((warehouse) => !warehouse.provider_code || warehouse.provider_code === "yandex")
+}
+
+export function getFilteredEventLogs(eventLogs: DeliveryEventLog[], activeConnectionId: string | null) {
+  if (!activeConnectionId) {
+    return eventLogs
+  }
+
+  return eventLogs.filter((log) => log.connection_id === activeConnectionId)
+}
+
+export function getObservedEncryptionDisabled(input: {
+  connections: DeliveryConnection[]
+  activeConnection: DeliveryConnection | null
+  formError: Pick<ApiErrorPayload, "code"> | null
+  testConnectionError: Pick<ApiErrorPayload, "code"> | null
+}) {
+  return (
+    input.connections.some((connection) => connection.credentials_state === "disabled") ||
+    input.activeConnection?.credentials_state === "disabled" ||
+    input.formError?.code === "DELIVERY_HUB_ENCRYPTION_DISABLED" ||
+    input.testConnectionError?.code === "DELIVERY_HUB_ENCRYPTION_DISABLED"
+  )
+}
+
+export function getShippingOptionSyncCapability(input: {
+  executeGuard: string
+  serviceZoneId: string
+  shippingProfileId: string
+}) {
+  const guardConfirmed = isDeliveryHubShippingOptionManualSyncGuardConfirmed(input.executeGuard)
+
+  return {
+    guardConfirmed,
+    canExecute: Boolean(
+      guardConfirmed && input.serviceZoneId.trim() && input.shippingProfileId.trim()
+    ),
+  }
+}
+
+export function deriveShippingOptionPreviewRenderState(
+  preview: DeliveryHubShippingOptionPreview | null
+): PreviewRenderState {
+  return {
+    headerText: preview ? `${preview.provider_code} · ${preview.provider_id}` : "Preview unavailable",
+    summaryCards: preview
+      ? previewSummaryCards.map((card) => ({
+          key: String(card.key),
+          label: card.label,
+          value: String(preview.summary[card.key]),
+        }))
+      : [],
+    desiredOptions: preview
+      ? preview.plan.desired_options.map((option) => ({
+          key: option.data.id,
+          modeCode: option.mode_code,
+          id: option.data.id,
+          supportingConnectionsText: option.supporting_connection_ids.join(", ") || "—",
+        }))
+      : [],
+    desiredEmptyText: "Planner has no rollout-ready desired deliveryhub options yet.",
+    deferredOptions: preview
+      ? preview.plan.deferred_options.map((option) => ({
+          key: option.data.id,
+          modeCode: option.mode_code,
+          id: option.data.id,
+          issues: option.issues.map((issue, index) => ({
+            key: `${option.data.id}-${issue.connection_id}-${issue.code}-${index}`,
+            code: issue.code,
+            message: issue.message,
+            connectionText: `connection: ${issue.connection_id} · provider: ${issue.provider_code}`,
+          })),
+        }))
+      : [],
+    deferredEmptyText: "No deferred deliveryhub mode projections currently reported by planner.",
+    reconciliationCounts: {
+      createCandidates: String(preview?.reconciliation.create_candidates.length ?? 0),
+      updateCandidates: String(preview?.reconciliation.update_candidates.length ?? 0),
+      unchanged: String(preview?.reconciliation.unchanged.length ?? 0),
+      orphanedManaged: String(preview?.reconciliation.orphaned_managed_options.length ?? 0),
+      ignoredForeign: String(preview?.reconciliation.ignored_foreign_options.length ?? 0),
+    },
+    createCandidates: preview
+      ? preview.reconciliation.create_candidates.map((candidate) => ({
+          key: candidate.desired.data.id,
+          title: candidate.desired.mode_code,
+          subtitle: candidate.desired.data.id,
+        }))
+      : [],
+    updateCandidates: preview
+      ? preview.reconciliation.update_candidates.map((candidate) => ({
+          key: candidate.current.id,
+          title: candidate.current.id,
+          subtitle: `desired: ${candidate.desired.data.id} · reasons: ${candidate.reasons.join(", ")}`,
+        }))
+      : [],
+    unchangedEntries: preview
+      ? preview.reconciliation.unchanged.map((entry) => ({
+          key: entry.current.id,
+          title: entry.current.id,
+          subtitle: `desired: ${entry.desired.data.id}`,
+        }))
+      : [],
+    orphanedManagedEntries: preview
+      ? preview.reconciliation.orphaned_managed_options.map((entry) => ({
+          key: entry.current.id,
+          title: entry.current.id,
+          subtitle: `${entry.normalized_current_data.id} · reason: ${entry.reason}`,
+        }))
+      : [],
+    ignoredForeignEntries: preview
+      ? preview.reconciliation.ignored_foreign_options.map((entry) => ({
+          key: entry.current.id,
+          title: entry.current.id,
+          subtitle: `provider: ${entry.current.provider_id || "—"}`,
+        }))
+      : [],
+    connectionPlans: preview
+      ? preview.plan.connection_plans.map((plan) => ({
+          key: plan.connection_id,
+          connectionId: plan.connection_id,
+          providerCode: plan.provider_code,
+          status: plan.status,
+          projectedModesText: plan.projected_mode_codes.join(", ") || "—",
+          issues: plan.issues.map((issue, index) => ({
+            key: `${plan.connection_id}-${issue.code}-${index}`,
+            code: issue.code,
+            message: issue.message,
+          })),
+        }))
+      : [],
+    connectionPlansEmptyText: "No delivery connection planner state returned by backend.",
+  }
+}
+
+export function deriveShippingOptionManualSyncRenderState(input: {
+  result: DeliveryHubShippingOptionManualSyncResponse | null
+  executeGuard: string
+  serviceZoneId: string
+  shippingProfileId: string
+}): ManualSyncRenderState {
+  const capability = getShippingOptionSyncCapability({
+    executeGuard: input.executeGuard,
+    serviceZoneId: input.serviceZoneId,
+    shippingProfileId: input.shippingProfileId,
+  })
+  const result = input.result
+  const report = result?.execution.report ?? null
+
+  return {
+    headerText: result ? `${result.provider_code} · ${result.provider_id}` : "No manual sync run yet",
+    guardConfirmed: capability.guardConfirmed,
+    canExecute: capability.canExecute,
+    modeFields: result
+      ? [
+          { label: "Requested mode", value: result.execution.mode.requested_mode },
+          { label: "Effective mode", value: result.execution.mode.effective_mode },
+          { label: "Dry-run", value: result.execution.mode.is_dry_run ? "yes" : "no" },
+          {
+            label: "Execute requested",
+            value: result.execution.mode.execute_requested ? "yes" : "no",
+          },
+          {
+            label: "Execute confirmed",
+            value: result.execution.mode.execute_confirmed ? "yes" : "no",
+          },
+          { label: "Execute guard", value: result.execution.mode.execute_guard },
+        ]
+      : [],
+    desiredPlanSummaryCards: result
+      ? manualSyncDesiredPlanSummaryCards.map((card) => ({
+          key: String(card.key),
+          label: card.label,
+          value: String(result.desired_plan_summary[card.key]),
+        }))
+      : [],
+    reconciliationSummaryCards: result
+      ? manualSyncReconciliationSummaryCards.map((card) => ({
+          key: String(card.key),
+          label: card.label,
+          value: String(result.reconciliation_summary[card.key]),
+        }))
+      : [],
+    operationPlanSummaryCards: result
+      ? manualSyncOperationPlanSummaryCards.map((card) => ({
+          key: String(card.key),
+          label: card.label,
+          value: String(result.operation_plan.summary[card.key]),
+        }))
+      : [],
+    executionReport: report
+      ? {
+          outcome: report.outcome,
+          outcomeToneIsSuccess: report.outcome === "succeeded",
+          aborted: report.aborted ? "yes" : "no",
+          errorMode: report.error_mode,
+          executedOperationCount: String(report.executed_operations.length),
+          summaryCards: manualSyncExecutionSummaryCards.map((card) => ({
+            key: String(card.key),
+            label: card.label,
+            value: String(report.summary[card.key] ?? "0"),
+          })),
+        }
+      : null,
+    noExecutionReportText:
+      "This is expected for default dry-run mode or for execute requests that never passed confirmation into backend write mode.",
+    noResultText:
+      "Run the default dry-run to materialize a truthful manual sync result snapshot before considering execute mode.",
+  }
+}
+
+export function deriveFulfillmentBridgePreviewRenderState(
+  preview: DeliveryHubFulfillmentBridgeReadinessPreview | null
+): FulfillmentBridgePreviewRenderState {
+  return {
+    headerText: preview ? `${preview.provider_code} · ${preview.provider_id}` : "Preview unavailable",
+    summaryCards: preview
+      ? [
+          ["mode_count", "Modes"],
+          ["ready_mode_count", "Ready modes"],
+          ["error_mode_count", "Error modes"],
+          ["projected_mode_count", "Projected modes"],
+          ["deferred_mode_count", "Deferred modes"],
+        ].map(([key, label]) => ({
+          key,
+          label,
+          value: String(preview.summary[key as keyof DeliveryHubFulfillmentBridgeReadinessPreview["summary"]]),
+        }))
+      : [],
+    modePreviews: preview
+      ? preview.bridge_preview.mode_previews.map((mode) => ({
+          key: mode.mode_code,
+          modeCode: mode.mode_code,
+          status: mode.status,
+          rolloutStatus: mode.rollout_status,
+          supportingConnectionsText: mode.supporting_connection_ids.join(", ") || "—",
+          stepReadinessText: `${mode.steps.filter((step) => step.ready).length}/${mode.steps.length}`,
+          issueBadges: mode.blocking_issues.map((issue, index) => ({
+            key: `${mode.mode_code}-${issue.connection_id}-${issue.code}-${index}`,
+            label: `${issue.code} · ${issue.connection_id}`,
+          })),
+          errorText: mode.error?.message ?? null,
+          shipmentExecutionText: mode.shipment_execution.reason,
+        }))
+      : [],
+    emptyText:
+      "Fulfillment bridge readiness preview is unavailable until backend returns a diagnostic-only bridge preview payload.",
+  }
+}
+
+export function deriveExecutionPlanObservabilityRenderState(
+  preview: DeliveryHubExecutionPlanObservabilityReadModel | null
+): ExecutionPlanObservabilityRenderState {
+  return {
+    headerText: preview ? `${preview.provider_code} · ${preview.provider_id}` : "Preview unavailable",
+    summaryCards: preview
+      ? [
+          ["mode_count", "Modes"],
+          ["ready_mode_count", "Ready previews"],
+          ["blocked_mode_count", "Blocked previews"],
+          ["projected_mode_count", "Projected modes"],
+          ["deferred_mode_count", "Deferred modes"],
+          ["unconfigured_mode_count", "Unconfigured modes"],
+        ].map(([key, label]) => ({
+          key,
+          label,
+          value: String(
+            preview.summary[key as keyof DeliveryHubExecutionPlanObservabilityReadModel["summary"]]
+          ),
+        }))
+      : [],
+    modePreviews: preview
+      ? preview.execution_plan_preview.mode_previews.map((mode) => ({
+          key: mode.mode_code,
+          modeCode: mode.mode_code,
+          status: mode.status,
+          rolloutStatus: mode.rollout_status,
+          supportingConnectionsText: mode.supporting_connection_ids.join(", ") || "—",
+          readinessText: `${mode.readiness_verdict.status} · blocked reasons: ${mode.readiness_verdict.blocked_reasons.length}`,
+          blockedReasonsText: mode.blocked_reasons.join("; ") || "—",
+          issueBadges: [...mode.blocking_issues, ...mode.issues].map((issue, index) => ({
+            key: `${mode.mode_code}-${issue.code}-${index}`,
+            label:
+              "connection_id" in issue
+                ? `${issue.code} · ${issue.connection_id}`
+                : issue.field_path
+                  ? `${issue.code} · ${issue.field_path}`
+                  : issue.code,
+          })),
+          stepReadinessText: `${mode.steps.filter((step) => step.ready).length}/${mode.steps.length}`,
+          executionPlanText: mode.execution_plan
+            ? `${mode.execution_plan.operation} · ${mode.execution_plan.outbound_request.method} ${mode.execution_plan.outbound_request.path}`
+            : "Execution plan remains blocked",
+          executionIdentityText: mode.execution_identity
+            ? [
+                `label=${mode.execution_identity.provider_operation_label}`,
+                `reference=${mode.execution_identity.provider_operation_reference}`,
+                `plan=${mode.execution_identity.plan_fingerprint}`,
+                `execution=${mode.execution_identity.execution_fingerprint}`,
+                `idempotency=${mode.execution_identity.idempotency_key_preview}`,
+              ].join("\n")
+            : "Deterministic execution identity preview unavailable.",
+          outboundRequestText: mode.outbound_payload_preview.request
+            ? JSON.stringify(mode.outbound_payload_preview.request, null, 2)
+            : "Redacted outbound payload preview unavailable.",
+          persistenceAuditText: JSON.stringify(
+            {
+              status: mode.persistence_audit_preview.status,
+              metadata_patch: mode.persistence_audit_preview.metadata_patch,
+              execution_record: mode.persistence_audit_preview.execution_record,
+              idempotency_reservation: mode.persistence_audit_preview.idempotency_reservation,
+              status_transitions: mode.persistence_audit_preview.status_transitions,
+              audit_log_entries: mode.persistence_audit_preview.audit_log_entries,
+              blocked: mode.persistence_audit_preview.blocked,
+              deferred: mode.persistence_audit_preview.deferred,
+            },
+            null,
+            2
+          ),
+          preflightEligibilityText: [
+            `mode=${mode.preflight_eligibility.current_mode}`,
+            `decision=${mode.preflight_eligibility.decision}`,
+            `real_execution_enabled=${mode.preflight_eligibility.real_execution_enabled ? "yes" : "no"}`,
+            `reasons=${mode.preflight_eligibility.reasons.map((reason) => reason.code).join(", ") || "—"}`,
+          ].join(" · "),
+          preflightPrerequisitesText:
+            mode.preflight_eligibility.required_prerequisites
+              .map((entry) => `${entry.code}: ${entry.status}`)
+              .join("; ") || "—",
+          blockedLiveActionsText:
+            mode.preflight_eligibility.blocked_live_actions
+              .map((entry) => entry.code)
+              .join(", ") || "—",
+          providerDispatchText: [
+            `mode=${mode.provider_dispatch_preview.current_mode}`,
+            `decision=${mode.provider_dispatch_preview.dispatch_decision}`,
+            `provider=${mode.provider_dispatch_preview.provider.provider_key}`,
+            `adapter=${mode.provider_dispatch_preview.provider.adapter_operation_label}`,
+            `identity=${mode.provider_dispatch_preview.command_identity.provider_operation_reference || "—"}`,
+            `idempotency=${mode.provider_dispatch_preview.command_identity.idempotency_key_preview || "—"}`,
+            `origin=${mode.provider_dispatch_preview.command_envelope_summary.origin_kind}`,
+            `destination=${mode.provider_dispatch_preview.command_envelope_summary.destination_kind}`,
+          ].join(" · "),
+          blockedDispatchActionsText:
+            mode.provider_dispatch_preview.blocked_dispatch_actions
+              .map((entry) => entry.code)
+              .join(", ") || "—",
+          shipmentResultText: [
+            `mode=${mode.shipment_result_preview.current_mode}`,
+            `decision=${mode.shipment_result_preview.result_decision}`,
+            `status=${mode.shipment_result_preview.projected_result_status}`,
+            `target=${mode.shipment_result_preview.normalization_target}`,
+            `provider_target=${mode.shipment_result_preview.provider_normalization_target}`,
+            `identity=${mode.shipment_result_preview.identity_linkage.provider_operation_reference || "—"}`,
+            `tracking=${mode.shipment_result_preview.artifact_summary.tracking_reference_present ? "yes" : "no"}`,
+            `label=${mode.shipment_result_preview.artifact_summary.label_document_present ? "yes" : "no"}`,
+          ].join(" · "),
+          blockedMaterializationActionsText:
+            mode.shipment_result_preview.blocked_materialization_actions
+              .map((entry) => entry.code)
+              .join(", ") || "—",
+          applicationPreviewText: [
+            `mode=${mode.fulfillment_application_preview.current_mode}`,
+            `decision=${mode.fulfillment_application_preview.application_decision}`,
+            `status=${mode.fulfillment_application_preview.projected_application_status}`,
+            `target=${mode.fulfillment_application_preview.application_target}`,
+            `identity=${mode.fulfillment_application_preview.identity_linkage.provider_operation_reference || "—"}`,
+            `fulfillment_patch=${mode.fulfillment_application_preview.mutation_semantics.fulfillment_data_patch_present ? "yes" : "no"}`,
+            `tracking=${mode.fulfillment_application_preview.mutation_semantics.tracking_projection_present ? "yes" : "no"}`,
+            `audit=${mode.fulfillment_application_preview.mutation_semantics.audit_linkage_present ? "yes" : "no"}`,
+          ].join(" · "),
+          blockedApplicationActionsText:
+            mode.fulfillment_application_preview.blocked_application_actions
+              .map((entry) => entry.code)
+              .join(", ") || "—",
+          lifecycleStatusText: [
+            `mode=${mode.execution_lifecycle_preview.current_mode}`,
+            `status=${mode.execution_lifecycle_preview.lifecycle_status}`,
+            `readiness=${mode.execution_lifecycle_preview.readiness_posture}`,
+          ].join(" · "),
+          lifecyclePhaseSequenceText: mode.execution_lifecycle_preview.phase_sequence.join(" → ") || "—",
+          lifecycleIdentityText: [
+            `identity=${mode.execution_lifecycle_preview.identity_correlation.provider_operation_reference || "—"}`,
+            `idempotency=${mode.execution_lifecycle_preview.identity_correlation.idempotency_key_preview || "—"}`,
+            `plan=${mode.execution_lifecycle_preview.identity_correlation.plan_fingerprint || "—"}`,
+            `execution=${mode.execution_lifecycle_preview.identity_correlation.execution_fingerprint || "—"}`,
+          ].join(" · "),
+          lifecycleDisabledActionsText: Object.entries(mode.execution_lifecycle_preview.confirmations)
+            .filter(([, value]) => value)
+            .map(([key]) => key)
+            .join(", "),
+          lifecyclePhaseRows: mode.execution_lifecycle_preview.phases.map((phase) => ({
+            key: `${mode.mode_code}-${phase.code}`,
+            code: phase.code,
+            order: String(phase.order),
+            status: phase.status,
+            readiness: phase.readiness_posture,
+            linkedArtifactsText: phase.linked_preview_artifacts.join(", ") || "—",
+            blockReasonsText: phase.block_reasons.join("; ") || "—",
+            disabledActionsText: phase.disabled_live_actions.join(", ") || "—",
+          })),
+          failureHandlingText: [
+            `mode=${mode.failure_handling_preview.current_mode}`,
+            `decision=${mode.failure_handling_preview.failure_path_decision}`,
+            `status=${mode.failure_handling_preview.projected_failure_status}`,
+            `identity=${mode.failure_handling_preview.identity_linkage.provider_operation_reference || "—"}`,
+            `manual=${mode.failure_handling_preview.manual_intervention_projection.status}`,
+          ].join(" · "),
+          retryPostureText: [
+            `eligibility=${mode.failure_handling_preview.retry_projection.eligibility}`,
+            `policy=${mode.failure_handling_preview.retry_projection.policy}`,
+            `scheduling=${mode.failure_handling_preview.retry_projection.scheduling_status}`,
+            `reasons=${mode.failure_handling_preview.retry_projection.retry_block_reasons.join(", ") || "—"}`,
+          ].join(" · "),
+          compensationPostureText: [
+            `requirement=${mode.failure_handling_preview.compensation_projection.requirement}`,
+            `writes=${mode.failure_handling_preview.compensation_projection.write_plan_status}`,
+            `rollback=${mode.failure_handling_preview.compensation_projection.rollback_status}`,
+            `manual_markers=${mode.failure_handling_preview.manual_intervention_projection.reason_markers.join(", ") || "—"}`,
+          ].join(" · "),
+          blockedFailureActionsText:
+            mode.failure_handling_preview.blocked_failure_actions.map((entry) => entry.code).join(", ") ||
+            "—",
+          shipmentExecutionText: mode.shipment_execution.reason,
+        }))
+      : [],
+    emptyText:
+      "Execution-plan observability preview is unavailable until backend returns a diagnostic-only admin preview payload.",
+  }
+}

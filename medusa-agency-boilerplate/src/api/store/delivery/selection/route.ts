@@ -1,7 +1,11 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "@medusajs/framework/zod"
 import * as deliveryHub from "../../../../modules/delivery-hub"
-import { getStoreQuery, handleStoreDeliveryHubError } from "../shared"
+import {
+  getStoreQuery,
+  handleStoreDeliveryHubError,
+  sanitizeStoreDeliverySelectionResponse,
+} from "../shared"
 
 export const StoreDeliveryCartSelectionQuerySchema =
   deliveryHub.DeliveryHubStoreCartSelectionQuerySchema
@@ -39,11 +43,13 @@ export async function GET(
     )
     storeDeliverySelectionDeps.requireDeliveryHubCart(cart, validatedQuery.cart_id)
 
-    res.status(200).json({
-      ok: true,
-      cart_id: validatedQuery.cart_id,
-      selection: storeDeliverySelectionDeps.readDeliveryHubCartSelection(cart?.metadata),
-    })
+    res.status(200).json(
+      sanitizeStoreDeliverySelectionResponse({
+        ok: true,
+        cart_id: validatedQuery.cart_id,
+        selection: storeDeliverySelectionDeps.readDeliveryHubCartSelection(cart?.metadata),
+      })
+    )
   } catch (error) {
     handleStoreDeliveryHubError(res, error)
   }
@@ -68,42 +74,44 @@ export async function POST(
       req.scope,
       existingCart,
       {
-      connection_id: validatedBody.connection_id,
-      quote_type: validatedBody.quote_type,
-      quote_key: validatedBody.quote_key,
-      quote: validatedBody.quote,
-      pickup_point: {
-        provider_point_id: validatedBody.pickup_point.provider_point_id,
-        provider_point_code: validatedBody.pickup_point.provider_point_code ?? null,
-        name: validatedBody.pickup_point.name,
-        address: validatedBody.pickup_point.address,
-        city: validatedBody.pickup_point.city ?? null,
-        region: validatedBody.pickup_point.region ?? null,
-        postal_code: validatedBody.pickup_point.postal_code ?? null,
-        lat: validatedBody.pickup_point.lat ?? null,
-        lng: validatedBody.pickup_point.lng ?? null,
-        is_origin_dropoff_allowed: validatedBody.pickup_point.is_origin_dropoff_allowed,
-        is_destination_pickup_allowed:
-          validatedBody.pickup_point.is_destination_pickup_allowed,
-        payment_methods: validatedBody.pickup_point.payment_methods ?? [],
-      },
-      pickup_window: validatedBody.pickup_window
-        ? {
-            date: validatedBody.pickup_window.date,
-            time_from: validatedBody.pickup_window.time_from ?? null,
-            time_to: validatedBody.pickup_window.time_to ?? null,
-            interval_utc: validatedBody.pickup_window.interval_utc,
-            label: validatedBody.pickup_window.label,
-          }
-        : null,
+        connection_id: validatedBody.connection_id,
+        quote_type: validatedBody.quote_type,
+        quote_reference: validatedBody.quote_reference,
+        quote: validatedBody.quote,
+        pickup_point: {
+          provider_point_id: validatedBody.pickup_point.provider_point_id,
+          provider_point_code: validatedBody.pickup_point.provider_point_code ?? null,
+          name: validatedBody.pickup_point.name,
+          address: validatedBody.pickup_point.address,
+          city: validatedBody.pickup_point.city ?? null,
+          region: validatedBody.pickup_point.region ?? null,
+          postal_code: validatedBody.pickup_point.postal_code ?? null,
+          lat: validatedBody.pickup_point.lat ?? null,
+          lng: validatedBody.pickup_point.lng ?? null,
+          is_origin_dropoff_allowed: validatedBody.pickup_point.is_origin_dropoff_allowed,
+          is_destination_pickup_allowed:
+            validatedBody.pickup_point.is_destination_pickup_allowed,
+          payment_methods: validatedBody.pickup_point.payment_methods ?? [],
+        },
+        pickup_window: validatedBody.pickup_window
+          ? {
+              date: validatedBody.pickup_window.date,
+              time_from: validatedBody.pickup_window.time_from ?? null,
+              time_to: validatedBody.pickup_window.time_to ?? null,
+              interval_utc: validatedBody.pickup_window.interval_utc,
+              label: validatedBody.pickup_window.label,
+            }
+          : null,
       }
     )
 
-    res.status(200).json({
-      ok: true,
-      cart_id: existingCart.id,
-      selection,
-    })
+    res.status(200).json(
+      sanitizeStoreDeliverySelectionResponse({
+        ok: true,
+        cart_id: existingCart.id,
+        selection,
+      })
+    )
   } catch (error) {
     handleStoreDeliveryHubError(res, error)
   }
@@ -127,11 +135,13 @@ export async function DELETE(
 
     await storeDeliverySelectionDeps.clearDeliveryHubCartSelection(req.scope, existingCart)
 
-    res.status(200).json({
-      ok: true,
-      cart_id: existingCart.id,
-      selection: null,
-    })
+    res.status(200).json(
+      sanitizeStoreDeliverySelectionResponse({
+        ok: true,
+        cart_id: existingCart.id,
+        selection: null,
+      })
+    )
   } catch (error) {
     handleStoreDeliveryHubError(res, error)
   }

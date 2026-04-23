@@ -10,6 +10,16 @@ import type {
 import { getRawRows, type DeliveryHubPgConnection } from "./pg"
 import { parseJsonObject } from "./serializers"
 
+async function hasDeliveryWarehousesTable(pg: DeliveryHubPgConnection) {
+  const rows = getRawRows<{ table_name: string | null }>(
+    await pg.raw(`
+      select to_regclass(?) as table_name
+    `, [DELIVERY_HUB_WAREHOUSES_TABLE])
+  )
+
+  return !!rows[0]?.table_name
+}
+
 export async function ensureDeliveryWarehousesTable(pg: DeliveryHubPgConnection) {
   await pg.raw(`
     create table if not exists ${DELIVERY_HUB_WAREHOUSES_TABLE} (
@@ -48,6 +58,24 @@ type DeliveryWarehouseRow = {
 
 export async function listDeliveryWarehouses(pg: DeliveryHubPgConnection) {
   await ensureDeliveryWarehousesTable(pg)
+
+  const rows = getRawRows<DeliveryWarehouseRow>(
+    await pg.raw(`
+      select *
+      from ${DELIVERY_HUB_WAREHOUSES_TABLE}
+      order by created_at desc, id desc
+    `)
+  )
+
+  return rows.map(normalizeDeliveryWarehouseRow)
+}
+
+export async function listDeliveryWarehousesReadOnly(pg: DeliveryHubPgConnection) {
+  const hasTable = await hasDeliveryWarehousesTable(pg)
+
+  if (!hasTable) {
+    return []
+  }
 
   const rows = getRawRows<DeliveryWarehouseRow>(
     await pg.raw(`
