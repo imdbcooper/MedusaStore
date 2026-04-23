@@ -8,13 +8,18 @@ load_root_env
 DEFAULT_NOTIFICATION_SMOKE_TO="admin@example.com"
 DEFAULT_NOTIFICATION_SMOKE_SUBJECT="Notification v1 smoke"
 DEFAULT_NOTIFICATION_SMOKE_MESSAGE="Notification v1 smoke trigger completed."
+DEFAULT_NOTIFICATION_SMOKE_API_KEY_ENV_NAME="NOTIFICATION_SMOKE_ADMIN_SECRET_API_KEY"
 
 extract_secret_api_key() {
   local create_output="$1"
+  local output_env_name="$2"
 
-  CREATE_SECRET_OUTPUT="$create_output" node <<'NODE'
+  CREATE_SECRET_OUTPUT="$create_output" OUTPUT_ENV_NAME="$output_env_name" node <<'NODE'
 const text = process.env.CREATE_SECRET_OUTPUT || ""
-const match = text.match(/ROOT_LOCAL_ADMIN_SECRET_API_KEY=([^\s]+)/)
+const envName =
+  process.env.OUTPUT_ENV_NAME || "NOTIFICATION_SMOKE_ADMIN_SECRET_API_KEY"
+const escapedEnvName = envName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+const match = text.match(new RegExp(`${escapedEnvName}=([^\\s]+)`))
 if (!match) {
   process.exit(1)
 }
@@ -68,28 +73,52 @@ curl -fsS "${MEDUSA_BACKEND_URL}/health" >/dev/null
 smoke_to="${NOTIFICATION_SMOKE_TO:-$DEFAULT_NOTIFICATION_SMOKE_TO}"
 smoke_subject="${NOTIFICATION_SMOKE_SUBJECT:-$DEFAULT_NOTIFICATION_SMOKE_SUBJECT}"
 smoke_message="${NOTIFICATION_SMOKE_MESSAGE:-$DEFAULT_NOTIFICATION_SMOKE_MESSAGE}"
+create_key_timeout="${NOTIFICATION_SMOKE_CREATE_KEY_TIMEOUT:-60s}"
+api_key_env_name="$DEFAULT_NOTIFICATION_SMOKE_API_KEY_ENV_NAME"
+secret_api_key="${NOTIFICATION_SMOKE_ADMIN_SECRET_API_KEY:-}"
+create_key_database_url="${BACKEND_DATABASE_URL:-}"
+create_key_redis_url="${BACKEND_REDIS_URL:-}"
 
-log_info "Creating a fresh secret admin API key for authenticated smoke..."
-set +e
-create_output="$(
-  (
-    cd "$ROOT_DIR/medusa-agency-boilerplate"
-    npm run admin:api-key:local --silent
-  ) 2>&1
-)"
-create_status=$?
-set -e
+if [[ -n "$secret_api_key" ]]; then
+  log_info "Using secret admin API key from ${api_key_env_name} for authenticated smoke..."
+else
+  if [[ -n "$create_key_database_url" || -n "$create_key_redis_url" ]]; then
+    log_info "No ${api_key_env_name} provided; creating a fresh secret admin API key against explicit backend data-plane connection settings..."
+    create_key_env=(env)
 
-if [[ "$create_status" -ne 0 ]]; then
-  log_error "Failed to create a secret admin API key for notification smoke."
-  exit "$create_status"
-fi
+    if [[ -n "$create_key_database_url" ]]; then
+      create_key_env+=("DATABASE_URL=$create_key_database_url")
+    fi
 
-secret_api_key="$(extract_secret_api_key "$create_output" || true)"
+    if [[ -n "$create_key_redis_url" ]]; then
+      create_key_env+=("REDIS_URL=$create_key_redis_url")
+    fi
+  else
+    log_info "No ${api_key_env_name} provided; creating a fresh secret admin API key from the synced local backend env..."
+    create_key_env=(env -u DATABASE_URL -u REDIS_URL)
+  fi
 
-if [[ -z "$secret_api_key" ]]; then
-  log_error "Notification smoke could not extract ROOT_LOCAL_ADMIN_SECRET_API_KEY from helper output."
-  exit 1
+  set +e
+  create_output="$(
+    cd "$ROOT_DIR/medusa-agency-boilerplate" &&
+      "${create_key_env[@]}" \
+        ADMIN_SECRET_API_KEY_OUTPUT_ENV_NAME="$api_key_env_name" \
+        timeout "$create_key_timeout" npm run admin:api-key:local --silent
+  )"
+  create_status=$?
+  set -e
+
+  if [[ "$create_status" -ne 0 ]]; then
+    log_error "Failed to create a fresh secret admin API key for notification smoke."
+    exit "$create_status"
+  fi
+
+  secret_api_key="$(extract_secret_api_key "$create_output" "$api_key_env_name" || true)"
+
+  if [[ -z "$secret_api_key" ]]; then
+    log_error "Notification smoke could not extract ${api_key_env_name} from helper output."
+    exit 1
+  fi
 fi
 
 basic_auth="$(encode_basic_auth "$secret_api_key")"

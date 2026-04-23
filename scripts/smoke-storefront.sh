@@ -5,5 +5,5 @@ source "$(cd "$(dirname "$0")" && pwd)/lib/common.sh"
 
 load_root_env
 
-curl -fsS "http://localhost:${STOREFRONT_PORT}" >/dev/null
-log_info "Storefront smoke passed: http://localhost:${STOREFRONT_PORT}"
+curl -fsS "$STOREFRONT_URL" >/dev/null
+log_info "Storefront smoke passed: $STOREFRONT_URL"

@@ -14,19 +14,82 @@ log_error() {
   printf '[error] %s\n' "$*" >&2
 }
 
+trim_leading_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  printf '%s' "$value"
+}
+
+trim_trailing_whitespace() {
+  local value="$1"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+load_env_file() {
+  local file_path="$1"
+  local file_label="${file_path#$ROOT_DIR/}"
+  local line=""
+  local line_number=0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line_number=$((line_number + 1))
+    line="${line%$'\r'}"
+
+    local trimmed_line="$line"
+    trimmed_line="$(trim_leading_whitespace "$trimmed_line")"
+
+    if [[ -z "$trimmed_line" || "$trimmed_line" == \#* ]]; then
+      continue
+    fi
+
+    if [[ "$trimmed_line" == export[[:space:]]* ]]; then
+      trimmed_line="${trimmed_line#export}"
+      trimmed_line="$(trim_leading_whitespace "$trimmed_line")"
+    fi
+
+    if [[ "$trimmed_line" != *=* ]]; then
+      log_warn "Skipping malformed env line ${line_number} in ${file_label}: missing '='."
+      continue
+    fi
+
+    local key="${trimmed_line%%=*}"
+    local value="${trimmed_line#*=}"
+
+    key="$(trim_trailing_whitespace "$key")"
+    value="$(trim_leading_whitespace "$value")"
+
+    if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      log_warn "Skipping malformed env key '${key}' on line ${line_number} in ${file_label}."
+      continue
+    fi
+
+    if [[ ${#value} -ge 2 && "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ ${#value} -ge 2 && "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
+      value="${value:1:${#value}-2}"
+    else
+      value="$(trim_trailing_whitespace "$value")"
+    fi
+
+    printf -v "$key" '%s' "$value"
+    export "$key"
+  done < "$file_path"
+}
+
 load_root_env() {
-  local env_file="$ROOT_DIR/.env"
+  local env_file="${ROOT_ENV_FILE:-$ROOT_DIR/.env}"
   local fallback_file="$ROOT_DIR/.env.example"
   local source_file="$fallback_file"
 
   if [[ -f "$env_file" ]]; then
     source_file="$env_file"
+  elif [[ -n "${ROOT_ENV_FILE:-}" ]]; then
+    log_error "Configured ROOT_ENV_FILE does not exist: $env_file"
+    return 1
   fi
 
-  set -a
-  # shellcheck disable=SC1090
-  source "$source_file"
-  set +a
+  load_env_file "$source_file"
 
   ROOT_ENV_SOURCE="$source_file"
   POSTGRES_PORT="${POSTGRES_PORT:-5433}"
@@ -36,11 +99,20 @@ load_root_env() {
   HOST_UID="${HOST_UID:-$(id -u)}"
   HOST_GID="${HOST_GID:-$(id -g)}"
   MEDUSA_BACKEND_URL="${MEDUSA_BACKEND_URL:-http://localhost:${MEDUSA_BACKEND_PORT}}"
-  NEXT_PUBLIC_BASE_URL="${NEXT_PUBLIC_BASE_URL:-http://localhost:${STOREFRONT_PORT}}"
+  MEDUSA_BACKEND_URL="${MEDUSA_BACKEND_URL%/}"
+
+  local default_storefront_url="http://localhost:${STOREFRONT_PORT}"
+  STOREFRONT_URL="${STOREFRONT_URL:-${NEXT_PUBLIC_BASE_URL:-$default_storefront_url}}"
+  STOREFRONT_URL="${STOREFRONT_URL%/}"
+  NEXT_PUBLIC_BASE_URL="${NEXT_PUBLIC_BASE_URL:-$STOREFRONT_URL}"
+  NEXT_PUBLIC_BASE_URL="${NEXT_PUBLIC_BASE_URL%/}"
+  BACKEND_DATABASE_URL="${BACKEND_DATABASE_URL:-}"
+  BACKEND_REDIS_URL="${BACKEND_REDIS_URL:-}"
 
   export ROOT_ENV_SOURCE
   export POSTGRES_PORT REDIS_PORT MEDUSA_BACKEND_PORT STOREFRONT_PORT
-  export HOST_UID HOST_GID MEDUSA_BACKEND_URL NEXT_PUBLIC_BASE_URL
+  export HOST_UID HOST_GID MEDUSA_BACKEND_URL STOREFRONT_URL NEXT_PUBLIC_BASE_URL
+  export BACKEND_DATABASE_URL BACKEND_REDIS_URL
 }
 
 command_exists() {
