@@ -1676,6 +1676,40 @@ export type DeliveryHubNeutralSelectionRehearsalActionabilityModel = {
   hint_messages: string[]
 }
 
+export type DeliveryHubHandoffPreviewVerdict =
+  | "ready_for_handoff_preview"
+  | "missing_required_fragment"
+  | "blocked"
+
+export type DeliveryHubHandoffPreviewBlockerCode =
+  | "connection_not_ready"
+  | "missing_connection_id"
+  | "missing_mode_code"
+  | "missing_quote_reference"
+  | "missing_pickup_point"
+  | "missing_pickup_window"
+  | "missing_quote"
+  | "legacy_parity_mismatch"
+
+export type DeliveryHubHandoffPreviewModel = {
+  tone: "neutral" | "positive" | "warning"
+  verdict: DeliveryHubHandoffPreviewVerdict
+  verdict_label: string
+  readiness_summary_label: string
+  connection_id: string | null
+  mode_code: DeliveryHubQuoteType | null
+  mode_label: string | null
+  quote_reference_present: boolean
+  pickup_point_required: boolean
+  pickup_point_present: boolean
+  pickup_window_required: boolean
+  pickup_window_present: boolean
+  blocker_codes: DeliveryHubHandoffPreviewBlockerCode[]
+  hint_messages: string[]
+  dry_run_only: true
+  mutation_intent: false
+}
+
 export function getDeliveryHubReadinessStatusLabel(
   status: DeliveryHubSelectionReadinessStatus
 ) {
@@ -3163,6 +3197,31 @@ function getDeliveryHubNeutralQuoteReference(
   )
 }
 
+function getDeliveryHubNeutralCandidateConnectionSummary(
+  input: DeliveryHubNeutralSelectionRehearsalInput,
+  selection: DeliveryHubSelection | null
+) {
+  const readinessConnection = input.readiness?.quote_context?.connection ?? null
+
+  if (readinessConnection) {
+    return readinessConnection
+  }
+
+  if (selection?.connection_id) {
+    return {
+      connection_id: selection.connection_id,
+      state: "ready" as DeliveryHubConnectionState,
+      ready: true,
+    }
+  }
+
+  return {
+    connection_id: null,
+    state: "missing" as DeliveryHubConnectionState,
+    ready: false,
+  }
+}
+
 function getDeliveryHubNeutralRehearsalCandidate(
   input: DeliveryHubNeutralSelectionRehearsalInput
 ) {
@@ -3200,6 +3259,7 @@ function getDeliveryHubNeutralRehearsalCandidate(
     quoteSummary,
     pickupPointRequired,
     pickupWindowRequired,
+    connection: getDeliveryHubNeutralCandidateConnectionSummary(input, selection),
   }
 }
 
@@ -3427,6 +3487,128 @@ export function evaluateDeliveryHubNeutralSelectionRehearsalActionability(
       "No mutation helper is called or implied by this guard.",
       ...requiredBlockers.map(getDeliveryHubNeutralRehearsalBlockerLabel),
     ]),
+  }
+}
+
+function getDeliveryHubHandoffPreviewBlockerLabel(
+  code: DeliveryHubHandoffPreviewBlockerCode
+) {
+  switch (code) {
+    case "connection_not_ready":
+      return "Neutral connection readiness is not yet ready for backend handoff preview."
+    case "missing_connection_id":
+      return "Connection id is missing from the shopper-safe handoff preview shape."
+    case "missing_mode_code":
+      return "Mode code is missing from the shopper-safe handoff preview shape."
+    case "missing_quote_reference":
+      return "Quote reference is missing from the shopper-safe handoff preview shape."
+    case "missing_pickup_point":
+      return "Pickup point is required but missing from the shopper-safe handoff preview shape."
+    case "missing_pickup_window":
+      return "Pickup window is required but missing from the shopper-safe handoff preview shape."
+    case "missing_quote":
+      return "Quote summary is missing from the shopper-safe handoff preview shape."
+    case "legacy_parity_mismatch":
+      return "Legacy checkout parity does not currently align with the handoff preview seam."
+  }
+}
+
+export function buildDeliveryHubHandoffPreviewModel(
+  input: DeliveryHubNeutralSelectionRehearsalInput = {}
+): DeliveryHubHandoffPreviewModel {
+  const candidate = getDeliveryHubNeutralRehearsalCandidate(input)
+  const blockerCodes: DeliveryHubHandoffPreviewBlockerCode[] = []
+
+  const pushBlocker = (code: DeliveryHubHandoffPreviewBlockerCode) => {
+    if (!blockerCodes.includes(code)) {
+      blockerCodes.push(code)
+    }
+  }
+
+  if (!candidate.connection.connection_id) {
+    pushBlocker("missing_connection_id")
+  }
+
+  if (!candidate.connection.ready || candidate.connection.state !== "ready") {
+    pushBlocker("connection_not_ready")
+  }
+
+  if (!candidate.quoteType) {
+    pushBlocker("missing_mode_code")
+  }
+
+  if (!candidate.quoteSummary) {
+    pushBlocker("missing_quote")
+  }
+
+  if (!candidate.quoteReference) {
+    pushBlocker("missing_quote_reference")
+  }
+
+  if (candidate.pickupPointRequired && !candidate.pickupPoint) {
+    pushBlocker("missing_pickup_point")
+  }
+
+  if (candidate.pickupWindowRequired && !candidate.pickupWindow) {
+    pushBlocker("missing_pickup_window")
+  }
+
+  if (
+    input.shipping_option_parity?.parity_state === "divergent" ||
+    input.selection_parity?.parity_status === "modality_mismatch" ||
+    input.selection_parity?.parity_status === "reference_mismatch" ||
+    (input.legacy_context?.legacy_is_committed &&
+      input.legacy_context.legacy_selection_fresh === false)
+  ) {
+    pushBlocker("legacy_parity_mismatch")
+  }
+
+  const hasBlockedReason = blockerCodes.some((code) =>
+    ["connection_not_ready", "legacy_parity_mismatch"].includes(code)
+  )
+  const verdict: DeliveryHubHandoffPreviewVerdict = hasBlockedReason
+    ? "blocked"
+    : blockerCodes.length > 0
+      ? "missing_required_fragment"
+      : "ready_for_handoff_preview"
+
+  return {
+    tone:
+      verdict === "ready_for_handoff_preview"
+        ? "positive"
+        : verdict === "blocked"
+          ? "warning"
+          : "neutral",
+    verdict,
+    verdict_label:
+      verdict === "ready_for_handoff_preview"
+        ? "Ready for backend handoff preview"
+        : verdict === "blocked"
+          ? "Backend handoff preview blocked"
+          : "Backend handoff preview missing required fragments",
+    readiness_summary_label:
+      verdict === "ready_for_handoff_preview"
+        ? "Shopper-safe handoff preview shape is structurally complete for candidate backend validation."
+        : verdict === "blocked"
+          ? "Shopper-safe handoff preview seam remains blocked before candidate backend validation."
+          : "Shopper-safe handoff preview seam still lacks required structural fragments.",
+    connection_id: candidate.connection.connection_id,
+    mode_code: candidate.quoteType,
+    mode_label: getDeliveryHubQuoteTypeLabel(candidate.quoteType),
+    quote_reference_present: Boolean(candidate.quoteReference),
+    pickup_point_required: candidate.pickupPointRequired,
+    pickup_point_present: Boolean(candidate.pickupPoint),
+    pickup_window_required: candidate.pickupWindowRequired,
+    pickup_window_present: Boolean(candidate.pickupWindow),
+    blocker_codes: blockerCodes,
+    hint_messages: uniqueDeliveryHubMessages([
+      "Pre-cutin read-only handoff preview seam only: no save, clear, submit, or shipping-method mutation is performed here.",
+      "The active checkout commit path remains legacy ApiShip.",
+      ...blockerCodes.map(getDeliveryHubHandoffPreviewBlockerLabel),
+      ...(input.readiness?.issues.map((issue) => issue.message) ?? []),
+    ]).slice(0, 6),
+    dry_run_only: true,
+    mutation_intent: false,
   }
 }
 

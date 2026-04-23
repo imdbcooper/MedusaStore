@@ -37,8 +37,10 @@ import {
   type ApiShipStorefrontSettings,
 } from "@lib/util/apiship"
 import {
+  buildDeliveryHubHandoffPreviewModel,
   buildDeliveryHubNeutralSelectionRehearsalModel,
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
+  type DeliveryHubNeutralSelectionRehearsalInput,
   type DeliveryHubNeutralSelectionRehearsalModel,
 } from "@lib/util/delivery-hub"
 import { convertToLocale } from "@lib/util/money"
@@ -90,6 +92,7 @@ type ApiShipPointsState = {
 type DeliveryHubRehearsalState = {
   status: "idle" | "loading" | "ready" | "error"
   model: DeliveryHubNeutralSelectionRehearsalModel
+  preview_input: DeliveryHubNeutralSelectionRehearsalInput
   issue_message: string | null
 }
 
@@ -335,6 +338,15 @@ const Shipping: React.FC<ShippingProps> = ({
           legacy_method_label: null,
         },
       }),
+      preview_input: {
+        legacy_context: {
+          active_commit_path: "legacy_apiship",
+          legacy_is_committed: false,
+          legacy_flow_kind: null,
+          legacy_selection_fresh: false,
+          legacy_method_label: null,
+        },
+      },
       issue_message: null,
     })
   const [error, setError] = useState<string | null>(null)
@@ -758,23 +770,31 @@ const Shipping: React.FC<ShippingProps> = ({
           return
         }
 
+        const previewInput: DeliveryHubNeutralSelectionRehearsalInput = {
+          settings,
+          quotes,
+          pickup_points: pickupPoints,
+          pickup_windows: pickupWindows,
+          persisted_selection: selection,
+          readiness,
+          legacy_context: {
+            active_commit_path: "legacy_apiship",
+            legacy_is_committed: Boolean(preferredCartShippingMethodId),
+            legacy_flow_kind:
+              cartApiShipSelection?.mode_key === "apiship_to_point"
+                ? "pickup_point"
+                : cartApiShipSelection?.mode_key === "apiship_to_door"
+                  ? "door_delivery"
+                  : null,
+            legacy_selection_fresh: hasFreshCartApiShipSelection,
+            legacy_method_label: cartShippingMethod?.name ?? null,
+          },
+        }
+
         setDeliveryHubRehearsalState({
           status: "ready",
-          model: buildDeliveryHubNeutralSelectionRehearsalModel({
-            settings,
-            quotes,
-            pickup_points: pickupPoints,
-            pickup_windows: pickupWindows,
-            persisted_selection: selection,
-            readiness,
-            legacy_context: {
-              active_commit_path: "legacy_apiship",
-              legacy_is_committed: Boolean(preferredCartShippingMethodId),
-              legacy_flow_kind: cartApiShipSelection?.mode_key === "apiship_to_point" ? "pickup_point" : cartApiShipSelection?.mode_key === "apiship_to_door" ? "door_delivery" : null,
-              legacy_selection_fresh: hasFreshCartApiShipSelection,
-              legacy_method_label: cartShippingMethod?.name ?? null,
-            },
-          }),
+          model: buildDeliveryHubNeutralSelectionRehearsalModel(previewInput),
+          preview_input: previewInput,
           issue_message: null,
         })
       })
@@ -783,17 +803,25 @@ const Shipping: React.FC<ShippingProps> = ({
           return
         }
 
+        const previewInput: DeliveryHubNeutralSelectionRehearsalInput = {
+          legacy_context: {
+            active_commit_path: "legacy_apiship",
+            legacy_is_committed: Boolean(preferredCartShippingMethodId),
+            legacy_flow_kind:
+              cartApiShipSelection?.mode_key === "apiship_to_point"
+                ? "pickup_point"
+                : cartApiShipSelection?.mode_key === "apiship_to_door"
+                  ? "door_delivery"
+                  : null,
+            legacy_selection_fresh: hasFreshCartApiShipSelection,
+            legacy_method_label: cartShippingMethod?.name ?? null,
+          },
+        }
+
         setDeliveryHubRehearsalState({
           status: "error",
-          model: buildDeliveryHubNeutralSelectionRehearsalModel({
-            legacy_context: {
-              active_commit_path: "legacy_apiship",
-              legacy_is_committed: Boolean(preferredCartShippingMethodId),
-              legacy_flow_kind: cartApiShipSelection?.mode_key === "apiship_to_point" ? "pickup_point" : cartApiShipSelection?.mode_key === "apiship_to_door" ? "door_delivery" : null,
-              legacy_selection_fresh: hasFreshCartApiShipSelection,
-              legacy_method_label: cartShippingMethod?.name ?? null,
-            },
-          }),
+          model: buildDeliveryHubNeutralSelectionRehearsalModel(previewInput),
+          preview_input: previewInput,
           issue_message: "Delivery Hub rehearsal preview is currently unavailable.",
         })
       })
@@ -1073,6 +1101,9 @@ const Shipping: React.FC<ShippingProps> = ({
     evaluateDeliveryHubNeutralSelectionRehearsalActionability(
       deliveryHubRehearsalState.model
     )
+  const deliveryHubHandoffPreview = buildDeliveryHubHandoffPreviewModel(
+    deliveryHubRehearsalState.preview_input
+  )
 
   return (
     <div className="bg-white">
@@ -1443,56 +1474,97 @@ const Shipping: React.FC<ShippingProps> = ({
           </div>
 
           <div className="mb-6 rounded-rounded border border-ui-border-base bg-ui-bg-subtle px-5 py-4">
-            <div className="flex flex-col gap-y-2">
-              <Text className="text-ui-fg-base txt-medium-plus">
-                Delivery Hub neutral selection rehearsal
-              </Text>
-              <Text className="text-ui-fg-muted txt-small">
-                Pre-cutin rehearsal/read-only only. The active commit path remains legacy ApiShip; no shopper action is performed here.
-              </Text>
-              {deliveryHubRehearsalState.status === "loading" && (
-                <div className="flex items-center gap-x-2 text-ui-fg-muted txt-small">
-                  <Loader />
-                  <span>Loading read-only neutral preview…</span>
-                </div>
-              )}
-              {deliveryHubRehearsalState.issue_message && (
-                <Text className="text-ui-fg-subtle txt-small">
-                  {deliveryHubRehearsalState.issue_message}
+            <div className="flex flex-col gap-y-4">
+              <div className="flex flex-col gap-y-2">
+                <Text className="text-ui-fg-base txt-medium-plus">
+                  Delivery Hub neutral selection rehearsal
                 </Text>
-              )}
-              <div className="grid gap-y-1 text-ui-fg-muted txt-small">
-                <span>{deliveryHubRehearsalState.model.status_label}</span>
-                <span>{deliveryHubRehearsalState.model.active_commit_path_label}</span>
-                <span>Dry-run guard: {deliveryHubRehearsalActionability.verdict}</span>
-                {deliveryHubRehearsalState.model.modality_label && (
-                  <span>Neutral modality: {deliveryHubRehearsalState.model.modality_label}</span>
+                <Text className="text-ui-fg-muted txt-small">
+                  Pre-cutin rehearsal/read-only only. The active commit path remains legacy ApiShip; no shopper action is performed here.
+                </Text>
+                {deliveryHubRehearsalState.status === "loading" && (
+                  <div className="flex items-center gap-x-2 text-ui-fg-muted txt-small">
+                    <Loader />
+                    <span>Loading read-only neutral preview…</span>
+                  </div>
                 )}
-                {deliveryHubRehearsalState.model.quote_amount !== null && (
-                  <span>
-                    Quote preview: {formatPrice(
-                      deliveryHubRehearsalState.model.quote_amount,
-                      deliveryHubRehearsalState.model.currency_code
-                    )}
-                    {deliveryHubRehearsalState.model.quote_eta_label
-                      ? ` · ${deliveryHubRehearsalState.model.quote_eta_label}`
-                      : ""}
-                  </span>
+                {deliveryHubRehearsalState.issue_message && (
+                  <Text className="text-ui-fg-subtle txt-small">
+                    {deliveryHubRehearsalState.issue_message}
+                  </Text>
                 )}
-                {deliveryHubRehearsalState.model.pickup_point_label && (
-                  <span>Pickup point preview: {deliveryHubRehearsalState.model.pickup_point_label}</span>
-                )}
-                {deliveryHubRehearsalState.model.pickup_window_label && (
-                  <span>Pickup window preview: {deliveryHubRehearsalState.model.pickup_window_label}</span>
+                <div className="grid gap-y-1 text-ui-fg-muted txt-small">
+                  <span>{deliveryHubRehearsalState.model.status_label}</span>
+                  <span>{deliveryHubRehearsalState.model.active_commit_path_label}</span>
+                  <span>Dry-run guard: {deliveryHubRehearsalActionability.verdict}</span>
+                  {deliveryHubRehearsalState.model.modality_label && (
+                    <span>Neutral modality: {deliveryHubRehearsalState.model.modality_label}</span>
+                  )}
+                  {deliveryHubRehearsalState.model.quote_amount !== null && (
+                    <span>
+                      Quote preview: {formatPrice(
+                        deliveryHubRehearsalState.model.quote_amount,
+                        deliveryHubRehearsalState.model.currency_code
+                      )}
+                      {deliveryHubRehearsalState.model.quote_eta_label
+                        ? ` · ${deliveryHubRehearsalState.model.quote_eta_label}`
+                        : ""}
+                    </span>
+                  )}
+                  {deliveryHubRehearsalState.model.pickup_point_label && (
+                    <span>Pickup point preview: {deliveryHubRehearsalState.model.pickup_point_label}</span>
+                  )}
+                  {deliveryHubRehearsalState.model.pickup_window_label && (
+                    <span>Pickup window preview: {deliveryHubRehearsalState.model.pickup_window_label}</span>
+                  )}
+                </div>
+                {deliveryHubRehearsalState.model.hint_messages.length > 0 && (
+                  <ul className="list-disc pl-4 text-ui-fg-muted txt-small">
+                    {deliveryHubRehearsalState.model.hint_messages.slice(0, 3).map((message) => (
+                      <li key={message}>{message}</li>
+                    ))}
+                  </ul>
                 )}
               </div>
-              {deliveryHubRehearsalState.model.hint_messages.length > 0 && (
-                <ul className="list-disc pl-4 text-ui-fg-muted txt-small">
-                  {deliveryHubRehearsalState.model.hint_messages.slice(0, 3).map((message) => (
-                    <li key={message}>{message}</li>
-                  ))}
-                </ul>
-              )}
+
+              <div className="border-t border-ui-border-base pt-4">
+                <div className="flex flex-col gap-y-2">
+                  <Text className="text-ui-fg-base txt-medium-plus">
+                    Delivery Hub storefront-to-backend handoff preview
+                  </Text>
+                  <Text className="text-ui-fg-muted txt-small">
+                    Pre-cutin read-only handoff preview seam only. This block shows shopper-safe structural readiness for a candidate backend handoff preview and does not commit checkout.
+                  </Text>
+                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
+                    <span>{deliveryHubHandoffPreview.verdict_label}</span>
+                    <span>{deliveryHubHandoffPreview.readiness_summary_label}</span>
+                    <span>Preview verdict: {deliveryHubHandoffPreview.verdict}</span>
+                    <span>connection_id: {deliveryHubHandoffPreview.connection_id ?? "missing"}</span>
+                    <span>mode_code: {deliveryHubHandoffPreview.mode_code ?? "missing"}</span>
+                    {deliveryHubHandoffPreview.mode_label && (
+                      <span>Mode label: {deliveryHubHandoffPreview.mode_label}</span>
+                    )}
+                    <span>
+                      quote_reference: {deliveryHubHandoffPreview.quote_reference_present ? "present" : "missing"}
+                    </span>
+                    <span>
+                      pickup point: {deliveryHubHandoffPreview.pickup_point_present ? "present" : "missing"}
+                      {deliveryHubHandoffPreview.pickup_point_required ? " · required" : " · optional"}
+                    </span>
+                    <span>
+                      pickup window: {deliveryHubHandoffPreview.pickup_window_present ? "present" : "missing"}
+                      {deliveryHubHandoffPreview.pickup_window_required ? " · required" : " · optional"}
+                    </span>
+                  </div>
+                  {deliveryHubHandoffPreview.hint_messages.length > 0 && (
+                    <ul className="list-disc pl-4 text-ui-fg-muted txt-small">
+                      {deliveryHubHandoffPreview.hint_messages.slice(0, 3).map((message) => (
+                        <li key={message}>{message}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 

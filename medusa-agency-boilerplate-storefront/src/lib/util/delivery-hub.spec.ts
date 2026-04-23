@@ -5,6 +5,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
 import {
+  buildDeliveryHubHandoffPreviewModel,
   buildDeliveryHubNeutralSelectionRehearsalModel,
   buildDeliveryHubPersistedSelectionPreviewModel,
   buildDeliveryHubReadinessPreviewModel,
@@ -936,6 +937,354 @@ test("buildDeliveryHubPersistedSelectionPreviewModel keeps persisted selection p
     ],
     updated_at: null,
   })
+})
+
+test("buildDeliveryHubHandoffPreviewModel returns ready shopper-safe handoff preview", () => {
+  const preview = buildDeliveryHubHandoffPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_handoff_ready",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 1,
+        connection_id: "conn_handoff_ready",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_handoff_ready",
+          version: 2,
+        },
+        quote: {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: true,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_handoff_ready",
+          provider_point_code: null,
+          name: "Ready PVZ",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: {
+          date: "2026-04-22",
+          time_from: "10:00",
+          time_to: "14:00",
+          interval_utc: {
+            from: "2026-04-22T07:00:00.000Z",
+            to: "2026-04-22T11:00:00.000Z",
+          },
+          label: "22 Apr · 10:00–14:00",
+        },
+        updated_at: "2026-04-22T09:00:00.000Z",
+      },
+      quote_context: {
+        connection: {
+          connection_id: "conn_handoff_ready",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_handoff_ready",
+          version: 2,
+        },
+        pickup_point_required: true,
+        pickup_window_required: true,
+        updated_at: "2026-04-22T09:00:00.000Z",
+      },
+    },
+  })
+
+  assert.deepEqual(preview, {
+    tone: "positive",
+    verdict: "ready_for_handoff_preview",
+    verdict_label: "Ready for backend handoff preview",
+    readiness_summary_label:
+      "Shopper-safe handoff preview shape is structurally complete for candidate backend validation.",
+    connection_id: "conn_handoff_ready",
+    mode_code: "warehouse_to_pickup_point",
+    mode_label: "Warehouse → pickup point",
+    quote_reference_present: true,
+    pickup_point_required: true,
+    pickup_point_present: true,
+    pickup_window_required: true,
+    pickup_window_present: true,
+    blocker_codes: [],
+    hint_messages: [
+      "Pre-cutin read-only handoff preview seam only: no save, clear, submit, or shipping-method mutation is performed here.",
+      "The active checkout commit path remains legacy ApiShip.",
+    ],
+    dry_run_only: true,
+    mutation_intent: false,
+  })
+})
+
+test("buildDeliveryHubHandoffPreviewModel marks missing quote_reference", () => {
+  const preview = buildDeliveryHubHandoffPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_handoff_missing_quote_reference",
+      status: "ready",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_handoff_missing_quote_reference",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: null as never,
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T09:15:00.000Z",
+      },
+    } as any,
+  })
+
+  assert.equal(preview.verdict, "missing_required_fragment")
+  assert.deepEqual(preview.blocker_codes, ["missing_quote", "missing_quote_reference"])
+  assert.equal(preview.quote_reference_present, false)
+})
+
+test("buildDeliveryHubHandoffPreviewModel marks missing pickup point when required", () => {
+  const preview = buildDeliveryHubHandoffPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_handoff_missing_point",
+      status: "not_ready",
+      issues: [
+        {
+          code: "pickup_point_missing",
+          message: "Pickup point is required",
+          field: "pickup_point",
+        },
+      ],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_handoff_missing_point",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_handoff_missing_point",
+          version: 1,
+        },
+        pickup_point_required: true,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T09:20:00.000Z",
+      },
+    },
+  })
+
+  assert.equal(preview.verdict, "missing_required_fragment")
+  assert.equal(preview.pickup_point_required, true)
+  assert.equal(preview.pickup_point_present, false)
+  assert.ok(preview.blocker_codes.includes("missing_pickup_point"))
+})
+
+test("buildDeliveryHubHandoffPreviewModel marks missing pickup window when required", () => {
+  const preview = buildDeliveryHubHandoffPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_handoff_missing_window",
+      status: "not_ready",
+      issues: [
+        {
+          code: "pickup_window_missing",
+          message: "Pickup window is required",
+          field: "pickup_window",
+        },
+      ],
+      selection: {
+        version: 1,
+        connection_id: "conn_handoff_missing_window",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_handoff_missing_window",
+          version: 1,
+        },
+        quote: {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: true,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_handoff_missing_window",
+          provider_point_code: null,
+          name: "PVZ",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-22T09:25:00.000Z",
+      },
+      quote_context: {
+        connection: {
+          connection_id: "conn_handoff_missing_window",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_handoff_missing_window",
+          version: 1,
+        },
+        pickup_point_required: true,
+        pickup_window_required: true,
+        updated_at: "2026-04-22T09:25:00.000Z",
+      },
+    },
+  })
+
+  assert.equal(preview.verdict, "missing_required_fragment")
+  assert.equal(preview.pickup_window_required, true)
+  assert.equal(preview.pickup_window_present, false)
+  assert.ok(preview.blocker_codes.includes("missing_pickup_window"))
+})
+
+test("buildDeliveryHubHandoffPreviewModel blocks degraded readiness when connection is not ready", () => {
+  const preview = buildDeliveryHubHandoffPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_handoff_blocked",
+      status: "not_ready",
+      issues: [
+        {
+          code: "connection_credentials_not_ready",
+          message: "Connection credentials are not ready",
+          field: "connection",
+        },
+      ],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_handoff_blocked",
+          state: "credentials_not_ready",
+          ready: false,
+        },
+        quote_type: "dropoff_point_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_handoff_blocked",
+          version: 1,
+        },
+        pickup_point_required: true,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T09:30:00.000Z",
+      },
+    },
+  })
+
+  assert.equal(preview.verdict, "blocked")
+  assert.ok(preview.blocker_codes.includes("connection_not_ready"))
+  assert.equal(preview.connection_id, "conn_handoff_blocked")
+  assert.equal(preview.mode_code, "dropoff_point_to_pickup_point")
+})
+
+test("buildDeliveryHubHandoffPreviewModel remains preview-only and does not leak internal fields", () => {
+  const preview = buildDeliveryHubHandoffPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_handoff_safe",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 1,
+        connection_id: "conn_handoff_safe",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_handoff_safe",
+          version: 1,
+        },
+        quote: {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          amount: 399,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: false,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_handoff_safe",
+          provider_point_code: null,
+          name: "Safe PVZ",
+          address: "Safe street 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-22T09:35:00.000Z",
+      },
+      quote_context: {
+        connection: {
+          connection_id: "conn_handoff_safe",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: {
+          id: "dhsel_quote_handoff_safe",
+          version: 1,
+        },
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T09:35:00.000Z",
+      },
+    },
+  }) as Record<string, unknown>
+
+  assert.equal(preview.mutation_intent, false)
+  assert.equal(preview.dry_run_only, true)
+  assert.equal("provider_code" in preview, false)
+  assert.equal("quote_key" in preview, false)
+  assert.equal("raw_reference" in preview, false)
+  assert.equal("saveDeliveryHubSelection" in preview, false)
+  assert.equal("clearDeliveryHubSelection" in preview, false)
+})
+
+test("checkout shipping source still has no delivery-hub mutation wiring", () => {
+  const source = readFileSync(
+    new URL("../../modules/checkout/components/shipping/index.tsx", import.meta.url),
+    "utf8"
+  )
+
+  assert.equal(source.includes("saveDeliveryHubSelection"), false)
+  assert.equal(source.includes("clearDeliveryHubSelection"), false)
 })
 
 test("buildDeliveryHubShadowSelectionActionabilityPreviewModel derives neutral read-only actionability states", () => {
@@ -6566,10 +6915,10 @@ test("neutral selection rehearsal reports legacy-only and preserves no-leak guar
 
 test("delivery hub rehearsal path does not import or call selection mutation helpers", () => {
   const shippingSource = readFileSync(
-    "src/modules/checkout/components/shipping/index.tsx",
+    new URL("../../modules/checkout/components/shipping/index.tsx", import.meta.url),
     "utf8"
   )
-  const utilSource = readFileSync("src/lib/util/delivery-hub.ts", "utf8")
+  const utilSource = readFileSync(new URL("./delivery-hub.ts", import.meta.url), "utf8")
 
   assert.equal(/saveDeliveryHubSelection\s*[,(]/.test(shippingSource), false)
   assert.equal(/clearDeliveryHubSelection\s*[,(]/.test(shippingSource), false)
