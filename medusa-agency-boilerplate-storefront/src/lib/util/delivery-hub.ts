@@ -194,12 +194,14 @@ export type DeliveryHubSelectionPickupWindow = DeliveryHubPickupWindow
 
 export type DeliveryHubSelection = {
   version: number
+  provider_code?: string | null
   connection_id: string
   quote_type: DeliveryHubQuoteType
   quote_reference: DeliveryHubQuoteReference
   quote: DeliveryHubSelectionQuoteSummary
   pickup_point: DeliveryHubSelectionPickupPoint
   pickup_window: DeliveryHubSelectionPickupWindow | null
+  correlation_id?: string | null
   updated_at: string
 }
 
@@ -263,12 +265,14 @@ export type DeliveryHubListPickupWindowsInput = {
 
 export type DeliveryHubSaveSelectionInput = {
   cart_id: string
+  provider_code?: string | null
   connection_id: string
   quote_type: DeliveryHubQuoteType
   quote_reference: DeliveryHubQuoteReference
   quote: DeliveryHubSelectionQuoteSummary
   pickup_point: DeliveryHubSelectionPickupPoint
   pickup_window?: DeliveryHubSelectionPickupWindow | null
+  correlation_id?: string | null
 }
 
 export type DeliveryHubClearSelectionInput = {
@@ -516,6 +520,7 @@ function normalizeDeliveryHubSelection(
 
   return {
     version: readPositiveInteger(record.version, `${field}.version`),
+    provider_code: readRequiredString(record.provider_code, `${field}.provider_code`),
     connection_id: readRequiredString(record.connection_id, `${field}.connection_id`),
     quote_type: readQuoteType(record.quote_type, `${field}.quote_type`),
     quote_reference: normalizeDeliveryHubQuoteReference(
@@ -534,6 +539,7 @@ function normalizeDeliveryHubSelection(
             record.pickup_window,
             `${field}.pickup_window`
           ),
+    correlation_id: readOptionalString(record.correlation_id),
     updated_at: readRequiredString(record.updated_at, `${field}.updated_at`),
   }
 }
@@ -936,6 +942,7 @@ export function shapeDeliveryHubSaveSelectionPayload(
 
   return {
     cart_id: readRequiredString(record.cart_id, "cart_id"),
+    provider_code: readOptionalString(record.provider_code),
     connection_id: readRequiredString(record.connection_id, "connection_id"),
     quote_type: readQuoteType(record.quote_type, "quote_type"),
     quote_reference: normalizeDeliveryHubQuoteReference(
@@ -948,6 +955,7 @@ export function shapeDeliveryHubSaveSelectionPayload(
       record.pickup_window === null || record.pickup_window === undefined
         ? null
         : normalizeDeliveryHubPickupWindow(record.pickup_window, "pickup_window"),
+    correlation_id: readOptionalString(record.correlation_id),
   }
 }
 

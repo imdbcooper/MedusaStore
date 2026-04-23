@@ -724,12 +724,13 @@ describe("Delivery Hub service", () => {
       cart_id: "cart_1",
       metadata: {
         delivery_hub: {
-          selection: {
-            version: 1,
-            connection_id: "conn_1",
-            quote_type: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+            selection: {
+              version: 1,
+              provider_code: "yandex",
+              connection_id: "conn_1",
+              quote_type: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
             quote_reference: {
-              id: "dhsel_123",
+              id: "dhsel_0123456789abcdef0123456789abcdef",
               version: 1,
             },
             quote: {
@@ -773,10 +774,11 @@ describe("Delivery Hub service", () => {
       issues: [],
       selection: {
         version: 1,
+        provider_code: "yandex",
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
         quote_reference: {
-          id: "dhsel_123",
+          id: "dhsel_0123456789abcdef0123456789abcdef",
           version: 1,
         },
         quote: {
@@ -789,6 +791,7 @@ describe("Delivery Hub service", () => {
           pickup_point_required: true,
           pickup_window_required: false,
         },
+        correlation_id: null,
         pickup_point: {
           provider_point_id: "pvz_1",
           provider_point_code: "code_1",
@@ -814,7 +817,7 @@ describe("Delivery Hub service", () => {
         },
         quote_type: "warehouse_to_pickup_point",
         quote_reference: {
-          id: "dhsel_123",
+          id: "dhsel_0123456789abcdef0123456789abcdef",
           version: 1,
         },
         pickup_point_required: true,
@@ -838,12 +841,13 @@ describe("Delivery Hub service", () => {
       cart_id: "cart_1",
       metadata: {
         delivery_hub: {
-          selection: {
-            version: 1,
-            connection_id: "conn_1",
-            quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+            selection: {
+              version: 1,
+              provider_code: "yandex",
+              connection_id: "conn_1",
+              quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
             quote_reference: {
-              id: "dhsel_123",
+              id: "dhsel_0123456789abcdef0123456789abcdef",
               version: 1,
             },
             quote: {
@@ -918,12 +922,13 @@ describe("Delivery Hub service", () => {
       cart_id: "cart_1",
       metadata: {
         delivery_hub: {
-          selection: {
-            version: 1,
-            connection_id: "conn_1",
-            quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+            selection: {
+              version: 1,
+              provider_code: "yandex",
+              connection_id: "conn_1",
+              quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
             quote_reference: {
-              id: "dhsel_123",
+              id: "dhsel_0123456789abcdef0123456789abcdef",
               version: 1,
             },
             quote: {

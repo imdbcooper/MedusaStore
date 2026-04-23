@@ -124,6 +124,7 @@ describe("Delivery Hub cart selection contract", () => {
     })
     expect(publicSelection).toEqual({
       version: 1,
+      provider_code: "yandex",
       connection_id: "conn_1",
       quote_type: "warehouse_to_pickup_point",
       quote_reference: {
@@ -164,6 +165,7 @@ describe("Delivery Hub cart selection contract", () => {
         },
         label: "22 Apr, 10:00-14:00",
       },
+      correlation_id: null,
       updated_at: expect.any(String),
     })
     expect(namespace.selection.pickup_point.metadata).toBeUndefined()
@@ -288,6 +290,7 @@ describe("Delivery Hub cart selection contract", () => {
       cart_id: "cart_1",
       selection: {
         version: 1,
+        provider_code: "yandex",
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
         quote_reference: {
@@ -328,6 +331,7 @@ describe("Delivery Hub cart selection contract", () => {
           },
           label: "22 Apr, 10:00-14:00",
         },
+        correlation_id: null,
         updated_at: expect.any(String),
       },
     })
@@ -381,14 +385,14 @@ describe("Delivery Hub cart selection contract", () => {
     expect(res.json).toHaveBeenCalledWith(readinessResult)
   })
 
-  it("rejects nested pickup metadata in public POST schema", () => {
+  it("rejects nested pickup metadata and Yandex-raw fields in public POST schema", () => {
     expect(() =>
       deliverySelectionRoute.StoreDeliveryUpsertCartSelectionBodySchema.parse({
         cart_id: "cart_1",
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
         quote_reference: {
-          id: "dhsel_123",
+          id: "dhsel_0123456789abcdef0123456789abcdef",
           version: 1,
         },
         quote: {
@@ -426,15 +430,116 @@ describe("Delivery Hub cart selection contract", () => {
         },
       })
     ).toThrow()
+
+    expect(() =>
+      deliverySelectionRoute.StoreDeliveryUpsertCartSelectionBodySchema.parse({
+        cart_id: "cart_1",
+        connection_id: "conn_1",
+        provider_code: "yandex",
+        quote_type: "self_pickup",
+        quote_reference: {
+          id: "dhsel_0123456789abcdef0123456789abcdef",
+          version: 1,
+        },
+        quote: {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          amount: 499,
+          currency_code: "rub",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: false,
+          raw_reference: {
+            provider_offer_id: "offer_1",
+          },
+        },
+        pickup_point: {
+          provider_point_id: "pvz_1",
+          name: "PVZ 1",
+          address: "Tverskaya 1",
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          yandex_payload: {
+            type: "pickup_point",
+          },
+        },
+      })
+    ).toThrow()
+  })
+
+  it("rejects raw provider quote ids at public POST schema boundary", () => {
+    const baseBody = createSelectionBody()
+
+    for (const rawId of [
+      "offer_123",
+      "bXlwcm92aWRlci1vZmZlci1pZA",
+      "yandex_offer_20260422_1",
+      "token_secret_quote_ref",
+    ]) {
+      expect(() =>
+        deliverySelectionRoute.StoreDeliveryUpsertCartSelectionBodySchema.parse({
+          ...baseBody,
+          quote_reference: {
+            id: rawId,
+            version: 1,
+          },
+        })
+      ).toThrow()
+    }
+  })
+
+  it("rejects raw provider quote ids at persistence helper boundary", () => {
+    const baseInput = createSelectionBody()
+
+    for (const rawId of [
+      "offer_123",
+      "live_offer_123456789",
+      "yandex_offer_20260422_1",
+      "sk_live_quote_reference_secret",
+    ]) {
+      expect(() =>
+        buildDeliveryHubCartSelectionMetadata(
+          {},
+          {
+            ...baseInput,
+            quote_reference: {
+              id: rawId,
+              version: 1,
+            },
+          } as any
+        )
+      ).toThrow('Field "quote_reference.id" must be an opaque Delivery Hub quote reference')
+    }
+  })
+
+  it("omits persisted selection with unsafe provider code on read boundary", () => {
+    const metadata = buildDeliveryHubCartSelectionMetadata({}, createSelectionBody()) as Record<string, any>
+
+    metadata[DELIVERY_HUB_CART_METADATA_NAMESPACE].selection.provider_code = "raw_provider"
+
+    expect(readDeliveryHubCartSelection(metadata)).toBeNull()
+  })
+
+  it("accepts canonical quote reference and supported provider code", () => {
+    const metadata = buildDeliveryHubCartSelectionMetadata({}, createSelectionBody())
+    const selection = readDeliveryHubCartSelection(metadata)
+
+    expect(selection?.provider_code).toBe("yandex")
+    expect(selection?.quote_reference).toEqual({
+      id: expect.stringMatching(/^dhsel_[a-f0-9]{32}$/),
+      version: 1,
+    })
   })
 
   it("sanitizes POST write-path before delegating to persistence helper", async () => {
     const selection = {
       version: 1,
+      provider_code: "yandex",
       connection_id: "conn_1",
       quote_type: "warehouse_to_pickup_point",
       quote_reference: {
-        id: "dhsel_test",
+        id: "dhsel_abcdef0123456789abcdef0123456789",
         version: 1,
       },
       quote: {
@@ -471,6 +576,7 @@ describe("Delivery Hub cart selection contract", () => {
         },
         label: "22 Apr, 10:00-14:00",
       },
+      correlation_id: "corr_store_1",
       updated_at: "2026-04-21T03:00:00.000Z",
     }
     const mockUpsertDeliveryHubCartSelection = jest.fn(async () => selection)
@@ -480,10 +586,11 @@ describe("Delivery Hub cart selection contract", () => {
     const req = createMockRequest({
       validatedBody: {
         cart_id: "cart_1",
+        provider_code: "yandex",
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
         quote_reference: {
-          id: "dhsel_test",
+          id: "dhsel_abcdef0123456789abcdef0123456789",
           version: 1,
         },
         quote: {
@@ -530,6 +637,7 @@ describe("Delivery Hub cart selection contract", () => {
             },
           },
         },
+        correlation_id: "corr_store_1",
       },
       carts: [
         {
@@ -552,10 +660,11 @@ describe("Delivery Hub cart selection contract", () => {
         },
       },
       {
+        provider_code: "yandex",
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
         quote_reference: {
-          id: "dhsel_test",
+          id: "dhsel_abcdef0123456789abcdef0123456789",
           version: 1,
         },
         quote: {
@@ -592,6 +701,7 @@ describe("Delivery Hub cart selection contract", () => {
           },
           label: "22 Apr, 10:00-14:00",
         },
+        correlation_id: "corr_store_1",
       }
     )
     expect(res.status).toHaveBeenCalledWith(200)
@@ -602,6 +712,45 @@ describe("Delivery Hub cart selection contract", () => {
     })
   })
 })
+
+function createSelectionBody(): Parameters<typeof buildDeliveryHubCartSelectionMetadata>[1] {
+  return {
+    provider_code: "yandex",
+    connection_id: "conn_1",
+    quote_type: "warehouse_to_pickup_point",
+    quote_reference: createDeliveryHubQuoteReference({
+      connection_id: "conn_1",
+      quote_type: "warehouse_to_pickup_point",
+      quote_key: "offer_123",
+    }),
+    quote: {
+      carrier_code: "yandex",
+      carrier_label: "Yandex Delivery",
+      amount: 499,
+      currency_code: "rub",
+      delivery_eta_min: 1,
+      delivery_eta_max: 2,
+      pickup_point_required: true,
+      pickup_window_required: false,
+    },
+    pickup_point: {
+      provider_point_id: "pvz_1",
+      provider_point_code: "code_1",
+      name: "PVZ 1",
+      address: "Tverskaya 1",
+      city: "Moscow",
+      region: "Moscow",
+      postal_code: "101000",
+      lat: 55.75,
+      lng: 37.61,
+      is_origin_dropoff_allowed: false,
+      is_destination_pickup_allowed: true,
+      payment_methods: ["card"],
+    },
+    pickup_window: null,
+    correlation_id: "corr_store_1",
+  }
+}
 
 function createMockRequest(input?: Partial<any>) {
   const scope = input?.scope ?? createMockScope(input)

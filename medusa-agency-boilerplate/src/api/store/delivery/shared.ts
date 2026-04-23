@@ -3,6 +3,8 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { z } from "@medusajs/framework/zod"
 import {
   createDeliveryHubService,
+  DELIVERY_HUB_QUOTE_REFERENCE_ID_PATTERN,
+  DELIVERY_HUB_SUPPORTED_PUBLIC_PROVIDER_CODES,
   DeliveryHubError,
   getDeliveryHubPgConnection,
   isDeliveryHubError,
@@ -67,7 +69,10 @@ const StoreDeliverySettingsResponseSchema = z
 
 const StoreDeliveryQuoteReferenceSchema = z
   .object({
-    id: z.string(),
+    id: z.string().regex(
+      DELIVERY_HUB_QUOTE_REFERENCE_ID_PATTERN,
+      "quote_reference.id must be an opaque Delivery Hub quote reference"
+    ),
     version: z.number().int().positive(),
   })
   .strict()
@@ -196,15 +201,19 @@ const StoreDeliverySelectionPickupWindowSchema = z
   })
   .strict()
 
+const StoreDeliveryProviderCodeSchema = z.enum(DELIVERY_HUB_SUPPORTED_PUBLIC_PROVIDER_CODES)
+
 const StoreDeliverySelectionSchema = z
   .object({
     version: z.number().int().positive(),
+    provider_code: StoreDeliveryProviderCodeSchema,
     connection_id: z.string(),
     quote_type: z.string(),
     quote_reference: StoreDeliveryQuoteReferenceSchema,
     quote: StoreDeliverySelectionQuoteSchema,
     pickup_point: StoreDeliverySelectionPickupPointSchema,
     pickup_window: StoreDeliverySelectionPickupWindowSchema.nullable(),
+    correlation_id: z.string().nullable(),
     updated_at: z.string(),
   })
   .strict()

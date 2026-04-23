@@ -1,4 +1,8 @@
 import { z } from "@medusajs/framework/zod"
+import {
+  DELIVERY_HUB_QUOTE_REFERENCE_ID_PATTERN,
+  DELIVERY_HUB_SUPPORTED_PUBLIC_PROVIDER_CODES,
+} from "../constants"
 
 export const DeliveryHubConnectionConfigSchema = z.object({
   auto_confirm: z.boolean().optional(),
@@ -116,16 +120,18 @@ export const DeliveryHubStoreCatalogQuerySchema = z.object({})
 
 export const DeliveryHubStoreSettingsQuerySchema = z.object({})
 
-export const DeliveryHubStoreCartSelectionQuoteSchema = z.object({
-  carrier_code: z.string().trim().min(1),
-  carrier_label: z.string().trim().min(1),
-  amount: z.number().finite(),
-  currency_code: z.string().trim().min(1),
-  delivery_eta_min: z.number().int().nonnegative().nullable(),
-  delivery_eta_max: z.number().int().nonnegative().nullable(),
-  pickup_point_required: z.boolean(),
-  pickup_window_required: z.boolean(),
-})
+export const DeliveryHubStoreCartSelectionQuoteSchema = z
+  .object({
+    carrier_code: z.string().trim().min(1),
+    carrier_label: z.string().trim().min(1),
+    amount: z.number().finite(),
+    currency_code: z.string().trim().min(1),
+    delivery_eta_min: z.number().int().nonnegative().nullable(),
+    delivery_eta_max: z.number().int().nonnegative().nullable(),
+    pickup_point_required: z.boolean(),
+    pickup_window_required: z.boolean(),
+  })
+  .strict()
 
 export const DeliveryHubStoreCartSelectionPickupPointSchema = z
   .object({
@@ -149,31 +155,44 @@ export const DeliveryHubStoreCartSelectionPickupWindowSchema = z
     date: z.string().trim().min(1),
     time_from: z.string().trim().min(1).nullable().optional(),
     time_to: z.string().trim().min(1).nullable().optional(),
-    interval_utc: z.object({
-      from: z.string().trim().min(1),
-      to: z.string().trim().min(1),
-    }),
+    interval_utc: z
+      .object({
+        from: z.string().trim().min(1),
+        to: z.string().trim().min(1),
+      })
+      .strict(),
     label: z.string().trim().min(1),
   })
   .strict()
 
 export const DeliveryHubStoreQuoteReferenceSchema = z
   .object({
-    id: z.string().trim().min(1),
+    id: z.string().trim().regex(
+      DELIVERY_HUB_QUOTE_REFERENCE_ID_PATTERN,
+      "quote_reference.id must be an opaque Delivery Hub quote reference"
+    ),
     version: z.number().int().positive(),
   })
   .strict()
 
-export const DeliveryHubStoreUpsertCartSelectionBodySchema = z.object({
-  cart_id: z.string().trim().min(1),
-  connection_id: z.string().trim().min(1),
-  quote_type: z.enum(["warehouse_to_pickup_point", "dropoff_point_to_pickup_point"]),
-  quote_reference: DeliveryHubStoreQuoteReferenceSchema,
-  quote: DeliveryHubStoreCartSelectionQuoteSchema,
-  pickup_point: DeliveryHubStoreCartSelectionPickupPointSchema,
-  pickup_window: DeliveryHubStoreCartSelectionPickupWindowSchema.nullable().optional(),
-})
+export const DeliveryHubStoreProviderCodeSchema = z.enum(DELIVERY_HUB_SUPPORTED_PUBLIC_PROVIDER_CODES)
 
-export const DeliveryHubStoreDeleteCartSelectionBodySchema = z.object({
-  cart_id: z.string().trim().min(1),
-})
+export const DeliveryHubStoreUpsertCartSelectionBodySchema = z
+  .object({
+    cart_id: z.string().trim().min(1),
+    connection_id: z.string().trim().min(1),
+    provider_code: DeliveryHubStoreProviderCodeSchema.optional(),
+    quote_type: z.enum(["warehouse_to_pickup_point", "dropoff_point_to_pickup_point"]),
+    quote_reference: DeliveryHubStoreQuoteReferenceSchema,
+    quote: DeliveryHubStoreCartSelectionQuoteSchema,
+    pickup_point: DeliveryHubStoreCartSelectionPickupPointSchema,
+    pickup_window: DeliveryHubStoreCartSelectionPickupWindowSchema.nullable().optional(),
+    correlation_id: z.string().trim().min(1).nullable().optional(),
+  })
+  .strict()
+
+export const DeliveryHubStoreDeleteCartSelectionBodySchema = z
+  .object({
+    cart_id: z.string().trim().min(1),
+  })
+  .strict()

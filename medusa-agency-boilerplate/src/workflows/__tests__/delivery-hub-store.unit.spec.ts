@@ -342,7 +342,7 @@ describe("Delivery Hub store routes", () => {
           carrier_label: "Yandex Delivery",
           mode_code: "warehouse_to_pickup_point",
           quote_reference: {
-            id: "dhsel_quote_1",
+            id: "dhsel_11111111111111111111111111111111",
             version: 1,
           },
           amount: 499,
@@ -417,7 +417,7 @@ describe("Delivery Hub store routes", () => {
           carrier_label: "Yandex Delivery",
           mode_code: "warehouse_to_pickup_point",
           quote_reference: {
-            id: "dhsel_quote_1",
+            id: "dhsel_11111111111111111111111111111111",
             version: 1,
           },
           amount: 499,
@@ -457,10 +457,11 @@ describe("Delivery Hub store routes", () => {
   it("returns neutral persisted selection payload", async () => {
     const selection = {
       version: 1,
+      provider_code: "yandex",
       connection_id: "conn_1",
       quote_type: "warehouse_to_pickup_point",
       quote_reference: {
-        id: "dhsel_123",
+        id: "dhsel_0123456789abcdef0123456789abcdef",
         version: 1,
       },
       quote: {
@@ -497,6 +498,7 @@ describe("Delivery Hub store routes", () => {
         },
         label: "22 Apr, 10:00-14:00",
       },
+      correlation_id: "corr_store_1",
       updated_at: "2026-04-21T03:00:00.000Z",
     }
     deliverySelectionRoute.storeDeliverySelectionDeps.getDeliveryHubCartById =
@@ -546,7 +548,7 @@ describe("Delivery Hub store routes", () => {
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
         quote_reference: {
-          id: "dhsel_123",
+          id: "dhsel_0123456789abcdef0123456789abcdef",
           version: 1,
         },
         quote: {
@@ -596,13 +598,48 @@ describe("Delivery Hub store routes", () => {
     expect(JSON.stringify(payload.error.details)).toContain("quote_key")
   })
 
+  it("rejects selection GET payloads with unsupported provider code at response boundary", async () => {
+    const selection = createStoreSelection({
+      provider_code: "raw_provider",
+    })
+    deliverySelectionRoute.storeDeliverySelectionDeps.getDeliveryHubCartById =
+      jest.fn(async () => ({
+        id: "cart_1",
+        metadata: {
+          keep: true,
+        },
+      })) as any
+    deliverySelectionRoute.storeDeliverySelectionDeps.requireDeliveryHubCart =
+      jest.fn((cart) => cart) as any
+    deliverySelectionRoute.storeDeliverySelectionDeps.readDeliveryHubCartSelection =
+      jest.fn(() => selection) as any
+
+    const res = createMockResponse()
+
+    await deliverySelectionRoute.GET(
+      createMockRequest({
+        validatedQuery: {
+          cart_id: "cart_1",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(res.status).toHaveBeenCalledWith(400)
+    const payload = (res.json as jest.Mock).mock.calls[0][0] as any
+    expect(payload.error.code).toBe("DELIVERY_HUB_VALIDATION_ERROR")
+    expect(payload.error.message).toBe("Store delivery request validation failed")
+    expect(JSON.stringify(payload.error.details)).toContain("provider_code")
+  })
+
   it("returns neutral persisted selection payload after POST", async () => {
     const selection = {
       version: 1,
+      provider_code: "yandex",
       connection_id: "conn_1",
       quote_type: "warehouse_to_pickup_point",
       quote_reference: {
-        id: "dhsel_123",
+        id: "dhsel_0123456789abcdef0123456789abcdef",
         version: 1,
       },
       quote: {
@@ -639,6 +676,7 @@ describe("Delivery Hub store routes", () => {
         },
         label: "22 Apr, 10:00-14:00",
       },
+      correlation_id: "corr_store_1",
       updated_at: "2026-04-21T03:00:00.000Z",
     }
     deliverySelectionRoute.storeDeliverySelectionDeps.getDeliveryHubCartById =
@@ -659,10 +697,11 @@ describe("Delivery Hub store routes", () => {
       createMockRequest({
         validatedBody: {
           cart_id: "cart_1",
+          provider_code: "yandex",
           connection_id: "conn_1",
           quote_type: "warehouse_to_pickup_point",
           quote_reference: {
-            id: "dhsel_123",
+            id: "dhsel_0123456789abcdef0123456789abcdef",
             version: 1,
           },
           quote: {
@@ -699,6 +738,7 @@ describe("Delivery Hub store routes", () => {
             },
             label: "22 Apr, 10:00-14:00",
           },
+          correlation_id: "corr_store_1",
         },
       }) as any,
       res as any
@@ -728,7 +768,7 @@ describe("Delivery Hub store routes", () => {
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
         quote_reference: {
-          id: "dhsel_123",
+          id: "dhsel_0123456789abcdef0123456789abcdef",
           version: 1,
         },
         quote: {
@@ -771,7 +811,7 @@ describe("Delivery Hub store routes", () => {
           connection_id: "conn_1",
           quote_type: "warehouse_to_pickup_point",
           quote_reference: {
-            id: "dhsel_123",
+            id: "dhsel_0123456789abcdef0123456789abcdef",
             version: 1,
           },
           quote: {
@@ -892,10 +932,11 @@ describe("Delivery Hub store routes", () => {
       issues: [],
       selection: {
         version: 1,
+        provider_code: "yandex",
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
         quote_reference: {
-          id: "dhsel_123",
+          id: "dhsel_0123456789abcdef0123456789abcdef",
           version: 1,
         },
         quote: {
@@ -932,6 +973,7 @@ describe("Delivery Hub store routes", () => {
           },
           label: "22 Apr, 10:00-14:00",
         },
+        correlation_id: "corr_store_1",
         updated_at: "2026-04-21T03:00:00.000Z",
       },
       quote_context: {
@@ -942,7 +984,7 @@ describe("Delivery Hub store routes", () => {
         },
         quote_type: "warehouse_to_pickup_point",
         quote_reference: {
-          id: "dhsel_123",
+          id: "dhsel_0123456789abcdef0123456789abcdef",
           version: 1,
         },
         pickup_point_required: true,
@@ -996,7 +1038,7 @@ describe("Delivery Hub store routes", () => {
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
         quote_reference: {
-          id: "dhsel_123",
+          id: "dhsel_0123456789abcdef0123456789abcdef",
           version: 1,
         },
         quote: {
@@ -1035,7 +1077,7 @@ describe("Delivery Hub store routes", () => {
         },
         quote_type: "warehouse_to_pickup_point",
         quote_reference: {
-          id: "dhsel_123",
+          id: "dhsel_0123456789abcdef0123456789abcdef",
           version: 1,
         },
         pickup_point_required: true,
@@ -1203,6 +1245,47 @@ describe("Delivery Hub store routes", () => {
     })
   })
 })
+
+function createStoreSelection(overrides?: Record<string, unknown>) {
+  return {
+    version: 1,
+    provider_code: "yandex",
+    connection_id: "conn_1",
+    quote_type: "warehouse_to_pickup_point",
+    quote_reference: {
+      id: "dhsel_0123456789abcdef0123456789abcdef",
+      version: 1,
+    },
+    quote: {
+      carrier_code: "yandex",
+      carrier_label: "Yandex Delivery",
+      amount: 499,
+      currency_code: "RUB",
+      delivery_eta_min: 1,
+      delivery_eta_max: 2,
+      pickup_point_required: true,
+      pickup_window_required: false,
+    },
+    pickup_point: {
+      provider_point_id: "pvz_1",
+      provider_point_code: "code_1",
+      name: "PVZ 1",
+      address: "Tverskaya 1",
+      city: "Moscow",
+      region: "Moscow",
+      postal_code: "101000",
+      lat: 55.75,
+      lng: 37.61,
+      is_origin_dropoff_allowed: false,
+      is_destination_pickup_allowed: true,
+      payment_methods: ["card"],
+    },
+    pickup_window: null,
+    correlation_id: "corr_store_1",
+    updated_at: "2026-04-21T03:00:00.000Z",
+    ...overrides,
+  }
+}
 
 function createMockRequest(input?: Partial<any>) {
   return {

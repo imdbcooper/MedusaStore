@@ -30,6 +30,7 @@ describe("Delivery Hub fulfillment provider bridge", () => {
   it("materializes Medusa-facing bridge payload from persisted cart selection", () => {
     const selection = {
       version: 1,
+      provider_code: "yandex",
       connection_id: "conn_ready",
       quote_type: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
       quote_reference: createDeliveryHubQuoteReference({
@@ -71,6 +72,7 @@ describe("Delivery Hub fulfillment provider bridge", () => {
         },
         label: "22 Apr, 10:00-14:00",
       },
+      correlation_id: "corr_store_1",
       updated_at: "2026-04-22T04:00:00.000Z",
     }
 

@@ -2969,6 +2969,7 @@ function buildNeutralDeliveryHubCartSelection(
 
   return {
     version: DELIVERY_HUB_FULFILLMENT_BRIDGE_VERSION,
+    provider_code: "yandex",
     connection_id: connectionId,
     quote_type: modeCode,
     quote_reference: createDeliveryHubQuoteReference({
@@ -3012,6 +3013,7 @@ function buildNeutralDeliveryHubCartSelection(
           label: "2 Jan, 10:00-14:00",
         }
       : null,
+    correlation_id: null,
     updated_at: "2026-01-01T00:00:00.000Z",
   }
 }

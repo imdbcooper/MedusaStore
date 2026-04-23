@@ -74,6 +74,7 @@ export async function POST(
       req.scope,
       existingCart,
       {
+        provider_code: validatedBody.provider_code ?? null,
         connection_id: validatedBody.connection_id,
         quote_type: validatedBody.quote_type,
         quote_reference: validatedBody.quote_reference,
@@ -102,6 +103,7 @@ export async function POST(
               label: validatedBody.pickup_window.label,
             }
           : null,
+        correlation_id: validatedBody.correlation_id ?? null,
       }
     )
 

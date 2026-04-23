@@ -1,7 +1,12 @@
 import crypto from "node:crypto"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { updateCartWorkflow } from "@medusajs/medusa/core-flows"
-import { DELIVERY_HUB_MODE_CODE } from "./constants"
+import {
+  DELIVERY_HUB_MODE_CODE,
+  DELIVERY_HUB_PROVIDER_YANDEX,
+  DELIVERY_HUB_QUOTE_REFERENCE_ID_PATTERN,
+  DELIVERY_HUB_SUPPORTED_PUBLIC_PROVIDER_CODES,
+} from "./constants"
 import type { DeliveryPickupPoint } from "./domain/pickup-point"
 import type { DeliveryPickupWindow } from "./domain/pickup-window"
 import { DeliveryHubError } from "./errors"
@@ -34,21 +39,25 @@ export type DeliveryHubQuoteReference = {
 
 export type DeliveryHubCartSelectionPublic = {
   version: number
+  provider_code: string
   connection_id: string
   quote_type: DeliveryHubCartSelectionQuoteType
   quote_reference: DeliveryHubQuoteReference
   quote: DeliveryHubCartSelectionQuoteSummary
   pickup_point: DeliveryHubCartSelectionPickupPoint
   pickup_window: DeliveryHubCartSelectionPickupWindow | null
+  correlation_id: string | null
   updated_at: string
 }
 
 export type DeliveryHubCartSelectionWriteInput = {
+  provider_code?: string | null
   connection_id: string
   quote_type: DeliveryHubCartSelectionQuoteType
   quote: DeliveryHubCartSelectionQuoteSummary
   pickup_point: DeliveryHubCartSelectionPickupPoint
   pickup_window?: DeliveryHubCartSelectionPickupWindow | null
+  correlation_id?: string | null
 } & ({
   quote_reference: DeliveryHubQuoteReference
 } | {
@@ -178,14 +187,17 @@ function readPersistedDeliveryHubCartSelection(metadata?: unknown) {
   const pickupPoint = readPickupPoint(selection.pickup_point)
   const pickupWindow = readPickupWindow(selection.pickup_window)
   const version = readNumber(selection.version)
+  const providerCode = readProviderCode(selection.provider_code)
   const connectionId = readString(selection.connection_id)
   const quoteType = readQuoteType(selection.quote_type)
-  const quoteReferenceId = readString(quoteReference.id)
+  const quoteReferenceId = readQuoteReferenceId(quoteReference.id)
   const quoteReferenceVersion = readNumber(quoteReference.version)
+  const correlationId = readNullableString(selection.correlation_id)
   const updatedAt = readString(selection.updated_at)
 
   if (
     version !== DELIVERY_HUB_CART_SELECTION_VERSION ||
+    !providerCode ||
     !connectionId ||
     !quoteType ||
     !quoteReferenceId ||
@@ -216,6 +228,7 @@ function readPersistedDeliveryHubCartSelection(metadata?: unknown) {
 
   return {
     version,
+    provider_code: providerCode,
     connection_id: connectionId,
     quote_type: quoteType,
     quote_reference: {
@@ -234,11 +247,13 @@ function readPersistedDeliveryHubCartSelection(metadata?: unknown) {
     },
     pickup_point: pickupPoint,
     pickup_window: pickupWindow,
+    correlation_id: correlationId,
     updated_at: updatedAt,
   } satisfies DeliveryHubCartSelectionPersisted
 }
 
 function buildPersistedDeliveryHubCartSelection(input: DeliveryHubCartSelectionWriteInput) {
+  const providerCode = normalizeProviderCode(input.provider_code)
   const connectionId = requireNonEmptyString(input.connection_id, "connection_id")
   const quoteType = requireQuoteType(input.quote_type)
   const quoteReference = resolveQuoteReference(connectionId, quoteType, input)
@@ -246,6 +261,7 @@ function buildPersistedDeliveryHubCartSelection(input: DeliveryHubCartSelectionW
 
   return {
     version: DELIVERY_HUB_CART_SELECTION_VERSION,
+    provider_code: providerCode,
     connection_id: connectionId,
     quote_type: quoteType,
     quote_reference: quoteReference,
@@ -261,6 +277,7 @@ function buildPersistedDeliveryHubCartSelection(input: DeliveryHubCartSelectionW
     },
     pickup_point: normalizePickupPoint(input.pickup_point),
     pickup_window: input.pickup_window ? normalizePickupWindow(input.pickup_window) : null,
+    correlation_id: normalizeNullableString(input.correlation_id),
     updated_at: updatedAt,
   } satisfies DeliveryHubCartSelectionPersisted
 }
@@ -421,6 +438,33 @@ function readPickupWindow(value: unknown): DeliveryHubCartSelectionPickupWindow 
   }
 }
 
+function normalizeProviderCode(value: unknown) {
+  const normalized = normalizeNullableString(value) ?? DELIVERY_HUB_PROVIDER_YANDEX
+
+  if (isSupportedProviderCode(normalized)) {
+    return normalized
+  }
+
+  throw new DeliveryHubError({
+    code: "DELIVERY_HUB_VALIDATION_ERROR",
+    message: 'Field "provider_code" must be a supported neutral delivery provider code',
+    status: 400,
+    details: {
+      field: "provider_code",
+    },
+  })
+}
+
+function readProviderCode(value: unknown) {
+  const normalized = readString(value)
+
+  return normalized && isSupportedProviderCode(normalized) ? normalized : null
+}
+
+function isSupportedProviderCode(value: string): value is (typeof DELIVERY_HUB_SUPPORTED_PUBLIC_PROVIDER_CODES)[number] {
+  return (DELIVERY_HUB_SUPPORTED_PUBLIC_PROVIDER_CODES as readonly string[]).includes(value)
+}
+
 function requireQuoteType(value: unknown): DeliveryHubCartSelectionQuoteType {
   const normalized = readQuoteType(value)
 
@@ -456,7 +500,7 @@ function resolveQuoteReference(
 
 function requireQuoteReference(value: unknown): DeliveryHubQuoteReference {
   const record = asRecord(value)
-  const id = requireNonEmptyString(record.id, "quote_reference.id")
+  const id = requireQuoteReferenceId(record.id)
   const version = requireFiniteNumber(record.version, "quote_reference.version")
 
   if (version !== DELIVERY_HUB_CART_SELECTION_VERSION) {
@@ -474,6 +518,29 @@ function requireQuoteReference(value: unknown): DeliveryHubQuoteReference {
     id,
     version,
   }
+}
+
+function requireQuoteReferenceId(value: unknown) {
+  const normalized = requireNonEmptyString(value, "quote_reference.id")
+
+  if (DELIVERY_HUB_QUOTE_REFERENCE_ID_PATTERN.test(normalized)) {
+    return normalized
+  }
+
+  throw new DeliveryHubError({
+    code: "DELIVERY_HUB_VALIDATION_ERROR",
+    message: 'Field "quote_reference.id" must be an opaque Delivery Hub quote reference',
+    status: 400,
+    details: {
+      field: "quote_reference.id",
+    },
+  })
+}
+
+function readQuoteReferenceId(value: unknown) {
+  const normalized = readString(value)
+
+  return normalized && DELIVERY_HUB_QUOTE_REFERENCE_ID_PATTERN.test(normalized) ? normalized : null
 }
 
 function readQuoteType(value: unknown): DeliveryHubCartSelectionQuoteType | null {
