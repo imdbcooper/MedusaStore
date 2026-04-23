@@ -5,6 +5,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
 import {
+  buildDeliveryHubHandoffContractMatrixPreviewModel,
   buildDeliveryHubHandoffPreviewModel,
   buildDeliveryHubNeutralSelectionRehearsalModel,
   buildDeliveryHubPersistedSelectionPreviewModel,
@@ -1576,6 +1577,346 @@ test("buildDeliveryHubHandoffPreviewModel remains preview-only and does not leak
   assert.equal("clearDeliveryHubSelection" in preview, false)
 })
 
+test("buildDeliveryHubHandoffContractMatrixPreviewModel reports complete contract matrix", () => {
+  const preview = buildDeliveryHubHandoffContractMatrixPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_matrix_complete",
+      status: "ready",
+      issues: [],
+      selection: {
+        version: 1,
+        connection_id: "conn_matrix_complete",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_matrix_complete", version: 2 },
+        quote: {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_window_required: true,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_complete",
+          provider_point_code: null,
+          name: "Complete PVZ",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+        },
+        pickup_window: {
+          date: "2026-04-22",
+          time_from: "10:00",
+          time_to: "14:00",
+          interval_utc: {
+            from: "2026-04-22T07:00:00.000Z",
+            to: "2026-04-22T11:00:00.000Z",
+          },
+          label: "22 Apr · 10:00–14:00",
+        },
+        updated_at: "2026-04-22T09:00:00.000Z",
+      },
+      quote_context: {
+        connection: {
+          connection_id: "conn_matrix_complete",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_matrix_complete", version: 2 },
+        pickup_point_required: true,
+        pickup_window_required: true,
+        updated_at: "2026-04-22T09:00:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  assert.equal(preview.verdict, "contract_complete")
+  assert.deepEqual(preview.missing_fragment_keys, [])
+  assert.deepEqual(preview.blocked_readiness_codes, [])
+  assert.deepEqual(preview.blocked_parity_codes, [])
+  assert.equal(preview.fragments.every((fragment) => fragment.status === "present"), true)
+})
+
+test("buildDeliveryHubHandoffContractMatrixPreviewModel marks missing quote reference", () => {
+  const preview = buildDeliveryHubHandoffContractMatrixPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_matrix_missing_quote_reference",
+      status: "ready",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_matrix_missing_quote_reference",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: null as never,
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T10:00:00.000Z",
+      },
+    } as any,
+  })
+
+  assert.equal(preview.verdict, "contract_incomplete")
+  assert.ok(preview.missing_fragment_keys.includes("quote_reference"))
+  assert.equal(
+    preview.fragments.find((fragment) => fragment.key === "quote_reference")?.status,
+    "required_missing"
+  )
+})
+
+test("buildDeliveryHubHandoffContractMatrixPreviewModel marks missing pickup point when required", () => {
+  const preview = buildDeliveryHubHandoffContractMatrixPreviewModel({
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "quote_matrix_missing_point", version: 1 },
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: null,
+          delivery_eta_max: null,
+          pickup_point_required: true,
+          pickup_point_ids: [],
+          pickup_window_required: false,
+        },
+      ],
+    },
+    pickup_points: { ok: true, points: [] },
+    readiness: {
+      ok: true,
+      cart_id: "cart_matrix_missing_point",
+      status: "missing_selection",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_matrix_missing_point",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_matrix_missing_point", version: 1 },
+        pickup_point_required: true,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T10:15:00.000Z",
+      },
+    },
+  })
+
+  assert.equal(preview.verdict, "contract_incomplete")
+  assert.ok(preview.missing_fragment_keys.includes("pickup_point"))
+  assert.equal(
+    preview.fragments.find((fragment) => fragment.key === "pickup_point")?.status,
+    "required_missing"
+  )
+})
+
+test("buildDeliveryHubHandoffContractMatrixPreviewModel marks missing pickup window when required", () => {
+  const preview = buildDeliveryHubHandoffContractMatrixPreviewModel({
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "quote_matrix_missing_window", version: 1 },
+          amount: 499,
+          currency_code: "RUB",
+          delivery_eta_min: null,
+          delivery_eta_max: null,
+          pickup_point_required: false,
+          pickup_point_ids: [],
+          pickup_window_required: true,
+        },
+      ],
+    },
+    pickup_windows: { ok: true, pickup_windows: [] },
+    readiness: {
+      ok: true,
+      cart_id: "cart_matrix_missing_window",
+      status: "missing_selection",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_matrix_missing_window",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_matrix_missing_window", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: true,
+        updated_at: "2026-04-22T10:20:00.000Z",
+      },
+    },
+  })
+
+  assert.equal(preview.verdict, "contract_incomplete")
+  assert.ok(preview.missing_fragment_keys.includes("pickup_window"))
+  assert.equal(
+    preview.fragments.find((fragment) => fragment.key === "pickup_window")?.status,
+    "required_missing"
+  )
+})
+
+test("buildDeliveryHubHandoffContractMatrixPreviewModel reports readiness-blocked case", () => {
+  const preview = buildDeliveryHubHandoffContractMatrixPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_matrix_readiness_blocked",
+      status: "not_ready",
+      issues: [
+        {
+          code: "connection_credentials_not_ready",
+          message: "Connection credentials are not ready",
+          field: "connection_id",
+        },
+      ],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_matrix_readiness_blocked",
+          state: "credentials_not_ready",
+          ready: false,
+        },
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "quote_matrix_readiness_blocked", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T10:30:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "pickup_point",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip pickup",
+    },
+  })
+
+  assert.equal(preview.verdict, "contract_blocked")
+  assert.ok(preview.blocked_readiness_codes.includes("connection_credentials_not_ready"))
+  assert.equal(
+    preview.fragments.find((fragment) => fragment.key === "readiness_gate")?.status,
+    "blocked_by_readiness"
+  )
+})
+
+test("buildDeliveryHubHandoffContractMatrixPreviewModel reports parity-blocked case", () => {
+  const preview = buildDeliveryHubHandoffContractMatrixPreviewModel({
+    readiness: {
+      ok: true,
+      cart_id: "cart_matrix_parity_blocked",
+      status: "ready",
+      issues: [],
+      selection: null,
+      quote_context: {
+        connection: {
+          connection_id: "conn_matrix_parity_blocked",
+          state: "ready",
+          ready: true,
+        },
+        quote_type: "dropoff_point_to_pickup_point",
+        quote_reference: { id: "quote_matrix_parity_blocked", version: 1 },
+        pickup_point_required: false,
+        pickup_window_required: false,
+        updated_at: "2026-04-22T10:35:00.000Z",
+      },
+    },
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: true,
+      legacy_flow_kind: "door_delivery",
+      legacy_selection_fresh: true,
+      legacy_method_label: "ApiShip door",
+    },
+  })
+
+  assert.equal(preview.verdict, "contract_blocked")
+  assert.ok(preview.blocked_parity_codes.includes("mode_mismatch"))
+  assert.equal(
+    preview.fragments.find((fragment) => fragment.key === "parity_gate")?.status,
+    "blocked_by_parity"
+  )
+})
+
+test("buildDeliveryHubHandoffContractMatrixPreviewModel stays informational for legacy-only context", () => {
+  const preview = buildDeliveryHubHandoffContractMatrixPreviewModel({
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: false,
+      legacy_flow_kind: null,
+      legacy_selection_fresh: false,
+      legacy_method_label: null,
+    },
+  })
+
+  assert.equal(preview.verdict, "informational_only")
+  assert.equal(preview.missing_fragment_keys.length, 0)
+  assert.equal(
+    preview.fragments.every((fragment) => fragment.status === "informational_only"),
+    true
+  )
+})
+
+test("buildDeliveryHubHandoffContractMatrixPreviewModel stays shopper-safe and preview-only", () => {
+  const preview = buildDeliveryHubHandoffContractMatrixPreviewModel({
+    legacy_context: {
+      active_commit_path: "legacy_apiship",
+      legacy_is_committed: false,
+      legacy_flow_kind: null,
+      legacy_selection_fresh: false,
+      legacy_method_label: null,
+    },
+  }) as Record<string, unknown>
+  const serialized = JSON.stringify(preview).toLowerCase()
+
+  assert.equal(preview.mutation_intent, false)
+  assert.equal(preview.dry_run_only, true)
+  for (const forbidden of [
+    "provider_code",
+    "quote_key",
+    "raw_reference",
+    "token",
+    "secret",
+    "credentials",
+    "activation",
+    "save",
+    "submit",
+    "network",
+    "yandex",
+  ]) {
+    assert.equal(serialized.includes(forbidden), false, forbidden)
+  }
+})
+
 test("checkout shipping source still has no delivery-hub mutation wiring", () => {
   const source = readFileSync(
     new URL("../../modules/checkout/components/shipping/index.tsx", import.meta.url),
@@ -1584,6 +1925,7 @@ test("checkout shipping source still has no delivery-hub mutation wiring", () =>
 
   assert.equal(source.includes("saveDeliveryHubSelection"), false)
   assert.equal(source.includes("clearDeliveryHubSelection"), false)
+  assert.equal(source.includes("setShippingMethod({\n      cartId: cart.id"), true)
 })
 
 test("buildDeliveryHubShadowSelectionActionabilityPreviewModel derives neutral read-only actionability states", () => {

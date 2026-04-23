@@ -37,6 +37,7 @@ import {
   type ApiShipStorefrontSettings,
 } from "@lib/util/apiship"
 import {
+  buildDeliveryHubHandoffContractMatrixPreviewModel,
   buildDeliveryHubHandoffPreviewModel,
   buildDeliveryHubNeutralSelectionRehearsalModel,
   buildDeliveryHubShippingOptionParityPreviewModel,
@@ -1109,6 +1110,10 @@ const Shipping: React.FC<ShippingProps> = ({
     buildDeliveryHubShippingOptionParityPreviewModel(
       deliveryHubRehearsalState.preview_input
     )
+  const deliveryHubHandoffContractMatrixPreview =
+    buildDeliveryHubHandoffContractMatrixPreviewModel(
+      deliveryHubRehearsalState.preview_input
+    )
 
   return (
     <div className="bg-white">
@@ -1624,6 +1629,51 @@ const Shipping: React.FC<ShippingProps> = ({
                       {deliveryHubHandoffPreview.hint_messages.slice(0, 3).map((message) => (
                         <li key={message}>{message}</li>
                       ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+
+              <div className="border-t border-ui-border-base pt-4">
+                <div className="flex flex-col gap-y-2">
+                  <Text className="text-ui-fg-base txt-medium-plus">
+                    Delivery Hub handoff contract matrix preview
+                  </Text>
+                  <Text className="text-ui-fg-muted txt-small">
+                    Preview-only contract matrix seam. This block shows shopper-safe contract fragments, blocked readiness/parity conditions, and a read-only completeness verdict for the future neutral handoff contract.
+                  </Text>
+                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
+                    <span>{deliveryHubHandoffContractMatrixPreview.verdict_label}</span>
+                    <span>{deliveryHubHandoffContractMatrixPreview.completeness_label}</span>
+                    <span>Preview verdict: {deliveryHubHandoffContractMatrixPreview.verdict}</span>
+                    {deliveryHubHandoffContractMatrixPreview.fragments.map((fragment) => (
+                      <span key={fragment.key}>
+                        {fragment.key}: {fragment.status} · {fragment.detail_label}
+                      </span>
+                    ))}
+                  </div>
+                  {deliveryHubHandoffContractMatrixPreview.blocked_readiness_codes.length > 0 && (
+                    <div className="text-ui-fg-muted txt-small">
+                      Readiness blockers: {deliveryHubHandoffContractMatrixPreview.blocked_readiness_codes.join(", ")}
+                    </div>
+                  )}
+                  {deliveryHubHandoffContractMatrixPreview.blocked_parity_codes.length > 0 && (
+                    <div className="text-ui-fg-muted txt-small">
+                      Parity blockers: {deliveryHubHandoffContractMatrixPreview.blocked_parity_codes.join(", ")}
+                    </div>
+                  )}
+                  {deliveryHubHandoffContractMatrixPreview.missing_fragment_keys.length > 0 && (
+                    <div className="text-ui-fg-muted txt-small">
+                      Missing fragments: {deliveryHubHandoffContractMatrixPreview.missing_fragment_keys.join(", ")}
+                    </div>
+                  )}
+                  {deliveryHubHandoffContractMatrixPreview.hint_messages.length > 0 && (
+                    <ul className="list-disc pl-4 text-ui-fg-muted txt-small">
+                      {deliveryHubHandoffContractMatrixPreview.hint_messages
+                        .slice(0, 3)
+                        .map((message) => (
+                          <li key={message}>{message}</li>
+                        ))}
                     </ul>
                   )}
                 </div>

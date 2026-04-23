@@ -1767,6 +1767,51 @@ export type DeliveryHubShippingOptionParityPreviewModel = {
   mutation_intent: false
 }
 
+export type DeliveryHubHandoffContractMatrixPreviewFragmentKey =
+  | "connection"
+  | "mode"
+  | "quote"
+  | "quote_reference"
+  | "pickup_point"
+  | "pickup_window"
+  | "readiness_gate"
+  | "parity_gate"
+
+export type DeliveryHubHandoffContractMatrixPreviewFragmentStatus =
+  | "present"
+  | "missing"
+  | "required_missing"
+  | "blocked_by_readiness"
+  | "blocked_by_parity"
+  | "informational_only"
+
+export type DeliveryHubHandoffContractMatrixPreviewVerdict =
+  | "contract_complete"
+  | "contract_incomplete"
+  | "contract_blocked"
+  | "informational_only"
+
+export type DeliveryHubHandoffContractMatrixPreviewFragment = {
+  key: DeliveryHubHandoffContractMatrixPreviewFragmentKey
+  label: string
+  status: DeliveryHubHandoffContractMatrixPreviewFragmentStatus
+  detail_label: string
+}
+
+export type DeliveryHubHandoffContractMatrixPreviewModel = {
+  tone: "neutral" | "positive" | "warning"
+  verdict: DeliveryHubHandoffContractMatrixPreviewVerdict
+  verdict_label: string
+  completeness_label: string
+  fragments: DeliveryHubHandoffContractMatrixPreviewFragment[]
+  blocked_readiness_codes: DeliveryHubSelectionReadinessIssueCode[]
+  blocked_parity_codes: DeliveryHubShippingOptionParityPreviewGapCode[]
+  missing_fragment_keys: DeliveryHubHandoffContractMatrixPreviewFragmentKey[]
+  hint_messages: string[]
+  dry_run_only: true
+  mutation_intent: false
+}
+
 export function getDeliveryHubReadinessStatusLabel(
   status: DeliveryHubSelectionReadinessStatus
 ) {
@@ -3928,6 +3973,270 @@ export function buildDeliveryHubShippingOptionParityPreviewModel(
       "Preview-only parity seam: no save, clear, submit, or shipping-method mutation is performed here.",
       "The active checkout commit path remains legacy ApiShip.",
       ...gapCodes.map(getDeliveryHubShippingOptionParityGapLabel),
+    ]).slice(0, 6),
+    dry_run_only: true,
+    mutation_intent: false,
+  }
+}
+
+function buildDeliveryHubContractMatrixFragment(input: {
+  key: DeliveryHubHandoffContractMatrixPreviewFragmentKey
+  label: string
+  status: DeliveryHubHandoffContractMatrixPreviewFragmentStatus
+  detail_label: string
+}): DeliveryHubHandoffContractMatrixPreviewFragment {
+  return input
+}
+
+function getDeliveryHubContractMatrixFragmentStatusLabel(
+  status: DeliveryHubHandoffContractMatrixPreviewFragmentStatus
+) {
+  switch (status) {
+    case "present":
+      return "present"
+    case "missing":
+      return "missing"
+    case "required_missing":
+      return "required missing"
+    case "blocked_by_readiness":
+      return "blocked by readiness"
+    case "blocked_by_parity":
+      return "blocked by parity"
+    case "informational_only":
+      return "informational only"
+  }
+}
+
+export function buildDeliveryHubHandoffContractMatrixPreviewModel(
+  input: DeliveryHubNeutralSelectionRehearsalInput = {}
+): DeliveryHubHandoffContractMatrixPreviewModel {
+  const candidate = getDeliveryHubNeutralRehearsalCandidate(input)
+  const legacyContext = input.legacy_context ?? null
+  const readiness = input.readiness ?? null
+  const parityPreview = buildDeliveryHubShippingOptionParityPreviewModel(input)
+  const readinessBlockedCodes = (readiness?.issues ?? [])
+    .map((issue) => issue.code)
+    .filter((code) =>
+      [
+        "selection_invalid",
+        "connection_missing",
+        "connection_not_found",
+        "connection_disabled",
+        "connection_inactive",
+        "connection_credentials_not_ready",
+      ].includes(code)
+    )
+  const parityBlockedCodes = parityPreview.gap_codes.filter((code) =>
+    ["connection_not_ready", "mode_mismatch", "legacy_context_stale"].includes(code)
+  )
+  const readinessBlocked = readinessBlockedCodes.length > 0
+  const parityBlocked = parityBlockedCodes.length > 0
+  const candidatePresent = Boolean(
+    candidate.quoteSummary || candidate.quoteReference || candidate.quoteType || candidate.connection.connection_id
+  )
+
+  const fragments: DeliveryHubHandoffContractMatrixPreviewFragment[] = [
+    buildDeliveryHubContractMatrixFragment({
+      key: "connection",
+      label: "Connection fragment",
+      status: readinessBlocked
+        ? "blocked_by_readiness"
+        : parityBlocked
+          ? "blocked_by_parity"
+          : candidate.connection.connection_id
+            ? "present"
+            : candidatePresent
+              ? "missing"
+              : "informational_only",
+      detail_label: readinessBlocked
+        ? `Connection fragment is blocked while readiness reports ${readiness?.quote_context?.connection.state ?? "an unavailable state"}.`
+        : parityBlocked
+          ? "Connection fragment remains preview-only while parity conditions are blocked."
+          : candidate.connection.connection_id
+            ? `Neutral candidate exposes connection_id ${candidate.connection.connection_id}.`
+            : candidatePresent
+              ? "Neutral candidate does not expose connection_id yet."
+              : "No neutral candidate connection fragment is currently available.",
+    }),
+    buildDeliveryHubContractMatrixFragment({
+      key: "mode",
+      label: "Mode fragment",
+      status: parityBlocked
+        ? "blocked_by_parity"
+        : candidate.quoteType
+          ? "present"
+          : candidatePresent
+            ? "missing"
+            : "informational_only",
+      detail_label: parityBlocked
+        ? "Mode fragment remains preview-only while parity conditions are blocked."
+        : candidate.quoteType
+          ? `Neutral candidate exposes mode ${candidate.quoteType}.`
+          : candidatePresent
+            ? "Neutral candidate does not expose mode_code yet."
+            : "No neutral candidate mode fragment is currently available.",
+    }),
+    buildDeliveryHubContractMatrixFragment({
+      key: "quote",
+      label: "Quote fragment",
+      status: candidate.quoteSummary
+        ? "present"
+        : candidatePresent
+          ? "required_missing"
+          : "informational_only",
+      detail_label: candidate.quoteSummary
+        ? "Neutral candidate exposes shopper-safe quote summary fields."
+        : candidatePresent
+          ? "Neutral candidate still lacks shopper-safe quote summary fields."
+          : "No neutral quote fragment is currently available.",
+    }),
+    buildDeliveryHubContractMatrixFragment({
+      key: "quote_reference",
+      label: "Quote reference fragment",
+      status: candidate.quoteReference
+        ? "present"
+        : candidatePresent
+          ? "required_missing"
+          : "informational_only",
+      detail_label: candidate.quoteReference
+        ? "Neutral candidate exposes backend-issued quote_reference."
+        : candidatePresent
+          ? "Neutral candidate still lacks backend-issued quote_reference."
+          : "No neutral quote-reference fragment is currently available.",
+    }),
+    buildDeliveryHubContractMatrixFragment({
+      key: "pickup_point",
+      label: "Pickup-point fragment",
+      status: candidate.pickupPointRequired
+        ? candidate.pickupPoint
+          ? "present"
+          : candidatePresent
+            ? "required_missing"
+            : "informational_only"
+        : candidate.pickupPoint
+          ? "present"
+          : "informational_only",
+      detail_label: candidate.pickupPointRequired
+        ? candidate.pickupPoint
+          ? "Required pickup point is present in the neutral candidate."
+          : candidatePresent
+            ? "Required pickup point is still missing from the neutral candidate."
+            : "Pickup-point requirement cannot be satisfied until a neutral candidate is available."
+        : candidate.pickupPoint
+          ? "Optional pickup point is already present in the neutral candidate."
+          : "Current neutral candidate does not require a pickup point.",
+    }),
+    buildDeliveryHubContractMatrixFragment({
+      key: "pickup_window",
+      label: "Pickup-window fragment",
+      status: candidate.pickupWindowRequired
+        ? candidate.pickupWindow
+          ? "present"
+          : candidatePresent
+            ? "required_missing"
+            : "informational_only"
+        : candidate.pickupWindow
+          ? "present"
+          : "informational_only",
+      detail_label: candidate.pickupWindowRequired
+        ? candidate.pickupWindow
+          ? "Required pickup window is present in the neutral candidate."
+          : candidatePresent
+            ? "Required pickup window is still missing from the neutral candidate."
+            : "Pickup-window requirement cannot be satisfied until a neutral candidate is available."
+        : candidate.pickupWindow
+          ? "Optional pickup window is already present in the neutral candidate."
+          : "Current neutral candidate does not require a pickup window.",
+    }),
+    buildDeliveryHubContractMatrixFragment({
+      key: "readiness_gate",
+      label: "Readiness gate",
+      status: !readiness
+        ? "informational_only"
+        : readinessBlocked
+          ? "blocked_by_readiness"
+          : readiness.status === "ready" || readiness.status === "missing_selection"
+            ? "present"
+            : "informational_only",
+      detail_label: !readiness
+        ? "Readiness gate is unavailable, so the matrix stays informational only."
+        : readinessBlocked
+          ? `Readiness gate is blocked by ${formatDeliveryHubCountLabel(readinessBlockedCodes.length, "issue", "issues")}.`
+          : `Readiness currently reports ${getDeliveryHubReadinessStatusLabel(readiness.status)}.`,
+    }),
+    buildDeliveryHubContractMatrixFragment({
+      key: "parity_gate",
+      label: "Parity gate",
+      status: !legacyContext?.legacy_is_committed
+        ? "informational_only"
+        : parityBlocked
+          ? "blocked_by_parity"
+          : parityPreview.verdict === "parity_aligned" || parityPreview.verdict === "parity_partial"
+            ? "present"
+            : "informational_only",
+      detail_label: !legacyContext?.legacy_is_committed
+        ? "Legacy checkout context is not committed, so parity stays informational only."
+        : parityBlocked
+          ? `Parity gate is blocked by ${formatDeliveryHubCountLabel(parityBlockedCodes.length, "condition", "conditions")}.`
+          : `Parity preview currently reports ${parityPreview.verdict_label.toLowerCase()}.`,
+    }),
+  ]
+
+  const missingFragmentKeys = fragments
+    .filter((fragment) => ["missing", "required_missing"].includes(fragment.status))
+    .map((fragment) => fragment.key)
+
+  const verdict: DeliveryHubHandoffContractMatrixPreviewVerdict = !candidatePresent
+    ? "informational_only"
+    : readinessBlocked || parityBlocked
+      ? "contract_blocked"
+      : missingFragmentKeys.length > 0
+        ? "contract_incomplete"
+        : "contract_complete"
+
+  return {
+    tone:
+      verdict === "contract_complete"
+        ? "positive"
+        : verdict === "contract_blocked"
+          ? "warning"
+          : "neutral",
+    verdict,
+    verdict_label:
+      verdict === "contract_complete"
+        ? "Neutral handoff contract matrix is structurally complete"
+        : verdict === "contract_blocked"
+          ? "Neutral handoff contract matrix is blocked"
+          : verdict === "contract_incomplete"
+            ? "Neutral handoff contract matrix is incomplete"
+            : "Neutral handoff contract matrix is informational only",
+    completeness_label:
+      verdict === "contract_complete"
+        ? "All shopper-safe handoff fragments are present in preview-only form."
+        : verdict === "contract_blocked"
+          ? "Contract completeness remains blocked by readiness or parity conditions."
+          : verdict === "contract_incomplete"
+            ? "Contract completeness still has required shopper-safe fragments missing."
+            : "Contract completeness remains informational until enough shopper-safe preview context exists.",
+    fragments: fragments.map((fragment) => ({
+      ...fragment,
+      detail_label: `${getDeliveryHubContractMatrixFragmentStatusLabel(fragment.status)} · ${fragment.detail_label}`,
+    })),
+    blocked_readiness_codes: readinessBlockedCodes,
+    blocked_parity_codes: parityBlockedCodes,
+    missing_fragment_keys: missingFragmentKeys,
+    hint_messages: uniqueDeliveryHubMessages([
+      "Preview-only contract matrix seam: no checkout state change or shipping-method mutation is performed here.",
+      "The active checkout commit path remains legacy ApiShip.",
+      readinessBlocked
+        ? `Readiness blocked: ${readinessBlockedCodes.map(formatDeliveryHubPreviewCodeLabel).join(", ")}.`
+        : null,
+      parityBlocked
+        ? `Parity blocked: ${parityBlockedCodes.map(formatDeliveryHubPreviewCodeLabel).join(", ")}.`
+        : null,
+      missingFragmentKeys.length > 0
+        ? `Missing fragments: ${missingFragmentKeys.map(formatDeliveryHubPreviewCodeLabel).join(", ")}.`
+        : null,
     ]).slice(0, 6),
     dry_run_only: true,
     mutation_intent: false,
