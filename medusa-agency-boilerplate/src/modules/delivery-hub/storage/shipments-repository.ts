@@ -133,6 +133,33 @@ type DeliveryHubShipmentRow = {
   updated_at: string | Date
 }
 
+export async function getDeliveryShipmentByExecutionReference(
+  pg: DeliveryHubPgConnection,
+  executionReference: string
+) {
+  const normalizedReference = normalizeNullableText(executionReference)
+
+  if (!normalizedReference) {
+    return null
+  }
+
+  await ensureDeliveryShipmentsTable(pg)
+
+  const rows = getRawRows<DeliveryHubShipmentRow>(
+    await pg.raw(
+      `
+        select *
+        from ${DELIVERY_HUB_SHIPMENTS_TABLE}
+        where execution_reference = ?
+        limit 1
+      `,
+      [normalizedReference]
+    )
+  )
+
+  return rows[0] ? normalizeDeliveryShipmentRow(rows[0]) : null
+}
+
 export async function upsertDeliveryShipment(
   pg: DeliveryHubPgConnection,
   input: DeliveryHubShipmentUpsertInput

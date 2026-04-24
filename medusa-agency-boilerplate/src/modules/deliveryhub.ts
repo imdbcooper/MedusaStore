@@ -42,9 +42,11 @@ import { getDeliveryHubPgConnection } from "./delivery-hub/storage/pg"
 import {
   buildDeliveryHubShipmentPersistenceRequestSummary,
   buildDeliveryHubShipmentPersistenceResponseSummary,
+  getDeliveryShipmentByExecutionReference,
   upsertDeliveryShipment,
 } from "./delivery-hub/storage/shipments-repository"
 import { DeliveryHubExecutionLedgerPgRepository } from "./delivery-hub/storage/execution-ledger-pg-repository"
+import type { DeliveryHubExecutionLedgerRecord } from "./delivery-hub/storage/execution-ledger-repository"
 import {
   DELIVERY_HUB_EXECUTION_STATE,
   buildDeliveryHubControlledExecutionAuditDraft,
@@ -53,6 +55,7 @@ import {
   canDispatchDeliveryHubControlledExecution,
   canFailBlockedDeliveryHubControlledExecution,
 } from "./delivery-hub/shipment-execution-contract"
+import { buildDeliveryHubAcceptedShipmentLifecycleSnapshot } from "./delivery-hub/shipment-lifecycle-read-model"
 
 type InjectedDependencies = {
   logger: Logger
@@ -275,6 +278,11 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       order: orderRecord,
       pg_connection: pgConnection,
     })
+    const lifecycleSnapshot = await this.buildAcceptedShipmentLifecycleSnapshot({
+      controlled_execution: controlledExecution,
+      persisted_shipment: persistedShipment,
+      pg_connection: pgConnection,
+    })
 
     this.logger_.info(
       `Delivery Hub createFulfillment controlled execution seam evaluated: ${JSON.stringify({
@@ -324,6 +332,14 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
               attachment_document_present: persistedShipment.attachment_document_present,
             }
           : null,
+        accepted_shipment_lifecycle: {
+          classification: lifecycleSnapshot.classification,
+          accepted: lifecycleSnapshot.accepted,
+          shipment_id: lifecycleSnapshot.shipment?.id ?? null,
+          ledger_linked: lifecycleSnapshot.ledger.linked,
+          ledger_state: lifecycleSnapshot.ledger.state,
+          anti_leak_confirmations: lifecycleSnapshot.anti_leak_confirmations,
+        },
         evidence: controlledExecution.evidence,
         contour: controlledExecution.contour,
         anti_leak_confirmations: controlledExecution.anti_leak_confirmations,
@@ -352,9 +368,10 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
               updated_at: persistedShipment.updated_at,
             }
           : null,
-      },
-      labels: [],
-    }
+        accepted_shipment_lifecycle: lifecycleSnapshot,
+    },
+    labels: [],
+  }
   }
 
   async cancelFulfillment(): Promise<Record<string, never>> {
@@ -510,6 +527,46 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
     }
 
     return persistedShipment
+  }
+
+  protected async buildAcceptedShipmentLifecycleSnapshot(input: {
+    controlled_execution: Awaited<ReturnType<typeof buildDeliveryHubControlledFulfillmentExecutionResult>>
+    persisted_shipment: Awaited<ReturnType<typeof upsertDeliveryShipment>> | null
+    pg_connection: ReturnType<typeof getDeliveryHubPgConnection> | null
+  }) {
+    const executionReference =
+      input.controlled_execution.execution_identity.provider_operation_reference
+    let ledgerRecord: DeliveryHubExecutionLedgerRecord | null = null
+    let shipmentRecord = input.persisted_shipment
+
+    if (input.pg_connection && executionReference) {
+      try {
+        const repository = new DeliveryHubExecutionLedgerPgRepository({
+          connection: input.pg_connection,
+          now: () => new Date().toISOString(),
+        })
+        ledgerRecord = await repository.getExecutionByReference(executionReference)
+      } catch {
+        ledgerRecord = null
+      }
+
+      if (!shipmentRecord) {
+        try {
+          shipmentRecord = await getDeliveryShipmentByExecutionReference(
+            input.pg_connection,
+            executionReference
+          )
+        } catch {
+          shipmentRecord = null
+        }
+      }
+    }
+
+    return buildDeliveryHubAcceptedShipmentLifecycleSnapshot({
+      shipment: shipmentRecord,
+      ledger: ledgerRecord,
+      controlled_execution: input.controlled_execution,
+    })
   }
 
   protected resolvePgConnection() {

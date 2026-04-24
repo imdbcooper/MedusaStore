@@ -73,6 +73,11 @@ describe("Delivery Hub provider validation seam", () => {
     ).resolves.toEqual({
       data: {
         provider_code: "deliveryhub",
+        accepted_shipment_lifecycle: expect.objectContaining({
+          classification: "blocked_before_acceptance",
+          accepted: false,
+          shipment: null,
+        }),
         controlled_execution: expect.objectContaining({
           status: "blocked",
           result_decision: "blocked_before_preparation",
@@ -265,6 +270,11 @@ describe("Delivery Hub provider validation seam", () => {
     ).resolves.toEqual({
       data: {
         provider_code: "deliveryhub",
+        accepted_shipment_lifecycle: expect.objectContaining({
+          classification: "blocked_before_acceptance",
+          accepted: false,
+          shipment: null,
+        }),
         controlled_execution: expect.objectContaining({
           status: "dispatch_prepared",
           result_decision: "dispatch_prepared_but_blocked",
@@ -771,6 +781,23 @@ describe("Delivery Hub provider validation seam", () => {
       { id: "order_1", display_id: 42, currency_code: "RUB" },
       { id: "ful_1", location_id: "sloc_1" }
     )
+    const controlledExecution = result.data.controlled_execution as {
+      execution_identity: {
+        provider_operation_reference: string | null
+        idempotency_key_preview: string | null
+        execution_fingerprint: string | null
+      }
+    }
+    const rawExecutionReference = controlledExecution.execution_identity.provider_operation_reference
+    const rawIdempotencyKey = controlledExecution.execution_identity.idempotency_key_preview
+    const rawExecutionFingerprint = controlledExecution.execution_identity.execution_fingerprint
+
+    expect(rawExecutionReference).toEqual(expect.stringMatching(/^dhprev_[a-f0-9]{16}$/))
+    expect(rawIdempotencyKey).toEqual(
+      expect.stringMatching(/^deliveryhub:preview:create_shipment:[a-f0-9]{64}$/)
+    )
+    expect(rawExecutionFingerprint).toEqual(expect.stringMatching(/^[a-f0-9]{64}$/))
+    expect(rawIdempotencyKey).toContain(String(rawExecutionFingerprint))
 
     expect(postSpy).toHaveBeenCalledTimes(1)
     expect(postSpy).toHaveBeenCalledWith(
@@ -820,8 +847,101 @@ describe("Delivery Hub provider validation seam", () => {
         }),
       })
     )
+    expect(result.data.accepted_shipment_lifecycle).toEqual(
+      expect.objectContaining({
+        classification: "accepted_shipment",
+        accepted: true,
+        safe: true,
+        shipment: expect.objectContaining({
+          id: expect.any(String),
+          execution_reference_preview: expect.any(String),
+          provider_code: "deliveryhub",
+          connection_id: "conn_ready",
+          mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+          outcome: "accepted",
+          status: "dispatch_accepted",
+          accepted: true,
+          succeeded: true,
+          provider_shipment_reference_present: true,
+          provider_correlation_reference_present: true,
+          label_document_present: true,
+          attachment_document_present: true,
+        }),
+        provider: expect.objectContaining({
+          provider_code: "deliveryhub",
+          mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+          dispatch_status: "dispatch_accepted",
+          dispatch_outcome: "accepted",
+          provider_shipment_reference_present: true,
+        }),
+        dispatch: expect.objectContaining({
+          attempted: true,
+          accepted: true,
+          succeeded: true,
+          outcome: "accepted",
+          blocked_reason_code: null,
+        }),
+        ledger: expect.objectContaining({
+          linked: true,
+          state: DELIVERY_HUB_EXECUTION_STATE.completed,
+          terminal_completed: true,
+          terminal_blocked: false,
+          execution_reference_preview: expect.any(String),
+          idempotency_key_preview: expect.any(String),
+        }),
+        context: expect.objectContaining({
+          connection_id: "conn_ready",
+          order_id: "order_1",
+          fulfillment_id: "ful_1",
+          cart_id: "cart_1",
+          shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+          location_id: "sloc_1",
+          correlation_id_present: true,
+        }),
+        anti_leak_confirmations: {
+          raw_provider_payloads_included: false,
+          auth_headers_included: false,
+          credentials_included: false,
+          raw_yandex_response_body_included: false,
+          quote_key_included: false,
+        },
+      })
+    )
+
+    const lifecycle = result.data.accepted_shipment_lifecycle as {
+      shipment: { execution_reference_preview: string } | null
+      ledger: {
+        execution_reference_preview: string | null
+        idempotency_key_preview: string | null
+      }
+    }
+    const lifecycleJson = JSON.stringify(lifecycle)
+    const strictMaskPattern = /^(.{2}\*\*\*.{2}|\*\*\*)$/
+    const shipmentExecutionPreview = lifecycle.shipment?.execution_reference_preview
+    const ledgerExecutionPreview = lifecycle.ledger.execution_reference_preview
+    const ledgerIdempotencyPreview = lifecycle.ledger.idempotency_key_preview
+
+    expect(shipmentExecutionPreview).toEqual(expect.stringMatching(strictMaskPattern))
+    expect(ledgerExecutionPreview).toEqual(expect.stringMatching(strictMaskPattern))
+    expect(ledgerIdempotencyPreview).toEqual(expect.stringMatching(strictMaskPattern))
+    expect(shipmentExecutionPreview).not.toBe(rawExecutionReference)
+    expect(ledgerExecutionPreview).not.toBe(rawExecutionReference)
+    expect(ledgerIdempotencyPreview).not.toBe(rawIdempotencyKey)
+    expect(lifecycleJson).not.toContain("dhprev_")
+    expect(lifecycleJson).not.toContain("deliveryhub:preview:")
+    expect(lifecycleJson).not.toContain("dropoff_quote_key_should_not_leak")
+    expect(lifecycleJson).not.toContain("dropoff_execution_token_should_not_leak")
+    expect(lifecycleJson).not.toContain("shipment_dropoff_123456")
+    expect(lifecycleJson).not.toContain("provider_dropoff_corr_987654")
+    expect(lifecycleJson).not.toContain("corr_enabled_boundary")
+    expect(lifecycleJson).not.toContain(String(rawExecutionReference))
+    expect(lifecycleJson).not.toContain(String(rawIdempotencyKey))
+    expect(lifecycleJson).not.toContain(String(rawExecutionFingerprint))
 
     const controlledExecutionJson = JSON.stringify(result.data.controlled_execution)
+    expect(controlledExecutionJson).toContain(String(rawExecutionReference))
+    expect(controlledExecutionJson).toContain(String(rawIdempotencyKey))
+    expect(controlledExecutionJson).toContain(String(rawExecutionFingerprint))
     expect(controlledExecutionJson).not.toContain("dropoff_quote_key_should_not_leak")
     expect(controlledExecutionJson).not.toContain("dropoff_execution_token_should_not_leak")
     expect(controlledExecutionJson).not.toContain("shipment_dropoff_123456")
@@ -1446,9 +1566,32 @@ describe("Delivery Hub provider validation seam", () => {
             }),
           }),
           shipment_persistence: null,
+          accepted_shipment_lifecycle: expect.objectContaining({
+            classification: "provider_failed",
+            accepted: false,
+            shipment: null,
+            dispatch: expect.objectContaining({
+              attempted: true,
+              outcome: "failed",
+              accepted: false,
+              succeeded: false,
+            }),
+            ledger: expect.objectContaining({
+              linked: true,
+              state: DELIVERY_HUB_EXECUTION_STATE.failedBlocked,
+              terminal_completed: false,
+              terminal_blocked: true,
+            }),
+          }),
         }),
       })
     )
+
+    const failureLifecycleJson = JSON.stringify(result.data.accepted_shipment_lifecycle)
+    expect(failureLifecycleJson).not.toContain("provider transport should stay redacted")
+    expect(failureLifecycleJson).not.toContain("Authorization")
+    expect(failureLifecycleJson).not.toContain("quote_provider_validation")
+    expect(failureLifecycleJson).not.toContain("origin_dropoff_1")
 
     const controlledExecutionJson = JSON.stringify(result.data.controlled_execution)
     expect(controlledExecutionJson).not.toContain("provider transport should stay redacted")
@@ -1573,6 +1716,153 @@ describe("Delivery Hub provider validation seam", () => {
             }),
           }),
           shipment_persistence: null,
+          accepted_shipment_lifecycle: expect.objectContaining({
+            classification: "replay_blocked",
+            accepted: false,
+            shipment: null,
+            dispatch: expect.objectContaining({
+              attempted: false,
+              outcome: "not_attempted",
+              accepted: false,
+            }),
+            ledger: expect.objectContaining({
+              linked: true,
+              state: DELIVERY_HUB_EXECUTION_STATE.completed,
+              terminal_completed: true,
+            }),
+          }),
+        }),
+      })
+    )
+  })
+
+  it("keeps accepted shipment details hidden for a completed ledger replay with an existing accepted shipment row", async () => {
+    process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
+
+    const postSpy = jest.spyOn(YandexDeliveryClient.prototype, "post")
+    const pgConnection = buildReadOnlyLookupPgConnection([buildConnectionRow()], {
+      existingLedgerState: DELIVERY_HUB_EXECUTION_STATE.completed,
+      seedAcceptedShipmentForExistingLedger: true,
+    })
+
+    const provider = buildProvider({
+      resolvedPgConnection: pgConnection,
+      carts: [
+        {
+          id: "cart_1",
+          metadata: {
+            delivery_hub: {
+              selection: {
+                version: 1,
+                provider_code: "yandex",
+                connection_id: "conn_ready",
+                quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                quote_reference: createDeliveryHubQuoteReference({
+                  connection_id: "conn_ready",
+                  quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                  quote_key: "quote_provider_validation",
+                  provider_origin_dispatch_context: {
+                    mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                    origin_point_id: "origin_dropoff_1",
+                  },
+                }),
+                backend_execution_reference: createDeliveryHubProviderExecutionReference({
+                  connection_id: "conn_ready",
+                  quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                  quote_key: "quote_provider_validation",
+                  provider_origin_dispatch_context: {
+                    mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                    origin_point_id: "origin_dropoff_1",
+                  },
+                }),
+                quote: {
+                  carrier_code: "yandex",
+                  carrier_label: "Yandex Delivery",
+                  amount: 299,
+                  currency_code: "RUB",
+                  delivery_eta_min: 1,
+                  delivery_eta_max: 1,
+                  pickup_point_required: true,
+                  pickup_window_required: false,
+                },
+                pickup_point: {
+                  provider_point_id: "pvz_1",
+                  provider_point_code: null,
+                  name: "PVZ 1",
+                  address: "Tverskaya 1",
+                  city: "Moscow",
+                  region: null,
+                  postal_code: null,
+                  lat: null,
+                  lng: null,
+                  is_origin_dropoff_allowed: false,
+                  is_destination_pickup_allowed: true,
+                  payment_methods: [],
+                },
+                pickup_window: null,
+                correlation_id: "corr_replay_existing_accepted_shipment",
+                updated_at: "2026-04-23T07:00:00.000Z",
+              },
+            },
+          },
+        },
+      ],
+    })
+
+    const result = await provider.createFulfillment(
+      {
+        ...buildValidFulfillmentData(),
+        cart_id: "cart_1",
+        shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+        shipping_option_type_id: "deliveryhub_deliveryhub",
+        correlation_id: "corr_replay_existing_accepted_shipment",
+        updated_at: "2026-04-23T07:00:00.000Z",
+      },
+      [{ line_item_id: "item_1", quantity: 1 }],
+      { id: "order_1", display_id: 42, currency_code: "RUB" },
+      { id: "ful_1", location_id: "sloc_1" }
+    )
+
+    expect(postSpy).toHaveBeenCalledTimes(0)
+    expect(pgConnection.getShipmentInsertCount()).toBe(0)
+    expect(result).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          controlled_execution: expect.objectContaining({
+            status: "dispatch_prepared",
+            blocked_reason_code: "execution_ledger_replay_blocked",
+            dispatch_preparation: expect.objectContaining({
+              live_adapter_call_performed: false,
+              persisted_execution_ledger_write_performed: false,
+            }),
+            dispatch_result: expect.objectContaining({
+              attempted: false,
+              performed: false,
+              outcome: "not_attempted",
+              persistence_performed: false,
+              execution_ledger_persistence_performed: false,
+            }),
+            provider_dispatch_result: null,
+          }),
+          shipment_persistence: null,
+          accepted_shipment_lifecycle: expect.objectContaining({
+            classification: "replay_blocked",
+            accepted: false,
+            shipment: null,
+            dispatch: expect.objectContaining({
+              attempted: false,
+              accepted: false,
+              succeeded: false,
+              outcome: "not_attempted",
+              blocked_reason_code: "execution_ledger_replay_blocked",
+            }),
+            ledger: expect.objectContaining({
+              linked: true,
+              state: DELIVERY_HUB_EXECUTION_STATE.completed,
+              terminal_completed: true,
+              terminal_blocked: false,
+            }),
+          }),
         }),
       })
     )
@@ -1693,6 +1983,21 @@ describe("Delivery Hub provider validation seam", () => {
             }),
           }),
           shipment_persistence: null,
+          accepted_shipment_lifecycle: expect.objectContaining({
+            classification: "failed_blocked",
+            accepted: false,
+            shipment: null,
+            dispatch: expect.objectContaining({
+              attempted: false,
+              outcome: "not_attempted",
+              accepted: false,
+            }),
+            ledger: expect.objectContaining({
+              linked: true,
+              state: DELIVERY_HUB_EXECUTION_STATE.failedBlocked,
+              terminal_blocked: true,
+            }),
+          }),
         }),
       })
     )
@@ -1813,6 +2118,22 @@ describe("Delivery Hub provider validation seam", () => {
             }),
           }),
           shipment_persistence: null,
+          accepted_shipment_lifecycle: expect.objectContaining({
+            classification: "duplicate_blocked",
+            accepted: false,
+            shipment: null,
+            dispatch: expect.objectContaining({
+              attempted: false,
+              outcome: "not_attempted",
+              accepted: false,
+            }),
+            ledger: expect.objectContaining({
+              linked: true,
+              state: DELIVERY_HUB_EXECUTION_STATE.reserved,
+              terminal_completed: false,
+              terminal_blocked: false,
+            }),
+          }),
         }),
       })
     )
@@ -1932,6 +2253,22 @@ describe("Delivery Hub provider validation seam", () => {
             }),
           }),
           shipment_persistence: null,
+          accepted_shipment_lifecycle: expect.objectContaining({
+            classification: "drift_blocked",
+            accepted: false,
+            shipment: null,
+            dispatch: expect.objectContaining({
+              attempted: false,
+              outcome: "not_attempted",
+              accepted: false,
+            }),
+            ledger: expect.objectContaining({
+              linked: true,
+              state: DELIVERY_HUB_EXECUTION_STATE.planned,
+              terminal_completed: false,
+              terminal_blocked: false,
+            }),
+          }),
         }),
       })
     )
@@ -2389,15 +2726,18 @@ function buildReadOnlyLookupPgConnection(
     forceReserveConflict?: boolean
     forceReserveDrift?: boolean
     existingLedgerState?: (typeof DELIVERY_HUB_EXECUTION_STATE)[keyof typeof DELIVERY_HUB_EXECUTION_STATE]
+    seedAcceptedShipmentForExistingLedger?: boolean
   }
 ) {
   const state = {
     shipments: [] as Array<Record<string, unknown>>,
+    shipmentInsertCount: 0,
     executionLedgerByReference: new Map<string, Record<string, unknown>>(),
     executionLedgerReferenceByIdempotencyKey: new Map<string, string>(),
   }
- 
+
   return {
+    getShipmentInsertCount: () => state.shipmentInsertCount,
     raw: async (...args: unknown[]) => {
       const query = args[0]
       const bindings = Array.isArray(args[1]) ? args[1] : undefined
@@ -2429,6 +2769,16 @@ function buildReadOnlyLookupPgConnection(
 
       if (sql.includes("create table if not exists delivery_shipments")) {
         return { rows: [] }
+      }
+
+      if (sql.includes("select") && sql.includes("from delivery_shipments")) {
+        if (sql.includes("where execution_reference =")) {
+          const executionReference = typeof bindings?.[0] === "string" ? bindings[0] : ""
+          const row = state.shipments.find(
+            (entry) => entry.execution_reference === executionReference
+          )
+          return { rows: row ? [row] : [] }
+        }
       }
 
       if (sql.includes("select") && sql.includes("from deliveryhub_execution_ledger")) {
@@ -2486,6 +2836,41 @@ function buildReadOnlyLookupPgConnection(
           }
           state.executionLedgerByReference.set(executionReference, row)
           state.executionLedgerReferenceByIdempotencyKey.set(idempotencyKey, executionReference)
+
+          if (options.seedAcceptedShipmentForExistingLedger) {
+            state.shipments = [
+              {
+                id: "shipment_existing_accepted_replay",
+                execution_reference: executionReference,
+                idempotency_key: idempotencyKey,
+                provider_code: "deliveryhub",
+                connection_id: "conn_ready",
+                mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+                order_id: "order_1",
+                fulfillment_id: "ful_1",
+                cart_id: "cart_1",
+                shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+                location_id: "sloc_1",
+                quote_reference_id: "qr_existing_accepted_replay",
+                quote_reference_version: 1,
+                correlation_id: "corr_existing_accepted_replay_row",
+                outcome: "accepted",
+                status: "dispatch_accepted",
+                accepted: true,
+                succeeded: true,
+                provider_shipment_reference_present: true,
+                provider_correlation_reference_present: true,
+                label_document_present: true,
+                attachment_document_present: true,
+                request_summary: {},
+                response_summary: {},
+                metadata: { ledger_persistence_performed: true, redacted: true },
+                created_at: "2026-04-23T08:00:00.000Z",
+                updated_at: "2026-04-23T08:00:00.000Z",
+              },
+            ]
+          }
+
           return { rowCount: 0, rows: [] }
         }
 
@@ -2536,6 +2921,7 @@ function buildReadOnlyLookupPgConnection(
       }
  
       if (sql.includes("insert into delivery_shipments")) {
+        state.shipmentInsertCount += 1
         const row = {
           id: typeof bindings?.[0] === "string" ? bindings[0] : "shipment_record_1",
           execution_reference: typeof bindings?.[1] === "string" ? bindings[1] : "exec_ref_1",
