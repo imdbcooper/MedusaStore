@@ -59,9 +59,16 @@ import {
   type DeliveryHubFulfillmentBridgePlannerIssue,
   type DeliveryHubFulfillmentBridgePreview,
 } from "./fulfillment-provider-bridge"
+import {
+  buildDeliveryHubAdminShipmentOperationsViewModel,
+  type DeliveryHubAdminShipmentOperationsViewModel,
+} from "./admin-shipment-operations"
+import { buildDeliveryHubAcceptedShipmentLifecycleSnapshot } from "./shipment-lifecycle-read-model"
+import { refreshDeliveryHubAcceptedShipmentStatus } from "./shipment-status-polling"
 import { redactRecord } from "./security/redaction"
 import {
   getDeliveryConnectionById,
+  getDeliveryConnectionByIdReadOnly,
   listDeliveryConnections,
   listDeliveryConnectionsReadOnly,
   upsertDeliveryConnection,
@@ -82,6 +89,8 @@ import {
   listDeliveryWarehousesReadOnly,
   upsertDeliveryWarehouse,
 } from "./storage/warehouses-repository"
+import { DeliveryHubExecutionLedgerPgRepository } from "./storage/execution-ledger-pg-repository"
+import { getDeliveryShipmentByExecutionReference } from "./storage/shipments-repository"
 
 export type DeliveryHubEventLogListInput = {
   connection_id?: string | null
@@ -144,6 +153,11 @@ export type DeliveryHubExecutionPlanObservabilityReadModel = {
   shipping_option_preview: DeliveryHubShippingOptionPreview
   execution_plan_preview: DeliveryHubExecutionPlanObservabilityPreview
   summary: DeliveryHubExecutionPlanObservabilityPreviewSummary
+}
+
+export type DeliveryHubAdminShipmentOperationsSnapshot = {
+  ok: true
+  operations: DeliveryHubAdminShipmentOperationsViewModel
 }
 
 type DeliveryStoreQuotePublic = Omit<
@@ -333,6 +347,75 @@ export class DeliveryHubService {
         deferred_mode_count: executionPlanPreview.summary.deferred_mode_count,
         unconfigured_mode_count: executionPlanPreview.summary.unconfigured_mode_count,
       },
+    }
+  }
+
+  async getAdminShipmentOperationsSnapshot(input: {
+    execution_reference: string
+  }): Promise<DeliveryHubAdminShipmentOperationsSnapshot> {
+    const executionReference = requireString(input.execution_reference, "execution_reference")
+    const shipment = await getDeliveryShipmentByExecutionReference(this.pg, executionReference)
+    const ledger = await new DeliveryHubExecutionLedgerPgRepository({
+      connection: this.pg,
+    }).getExecutionByReference(executionReference)
+    const connection = shipment?.connection_id
+      ? await getDeliveryConnectionByIdReadOnly(this.pg, shipment.connection_id)
+      : null
+    const lifecycle = buildDeliveryHubAcceptedShipmentLifecycleSnapshot({
+      shipment,
+      ledger,
+    })
+
+    return {
+      ok: true,
+      operations: buildDeliveryHubAdminShipmentOperationsViewModel({
+        lifecycle,
+        shipment,
+        connection,
+      }),
+    }
+  }
+
+  async refreshAdminShipmentOperationsStatus(input: {
+    execution_reference: string
+    correlation_id?: string | null
+  }): Promise<DeliveryHubAdminShipmentOperationsSnapshot & { refresh: Awaited<ReturnType<typeof refreshDeliveryHubAcceptedShipmentStatus>> }> {
+    const executionReference = requireString(input.execution_reference, "execution_reference")
+    const shipment = await getDeliveryShipmentByExecutionReference(this.pg, executionReference)
+    const ledger = await new DeliveryHubExecutionLedgerPgRepository({
+      connection: this.pg,
+    }).getExecutionByReference(executionReference)
+    const connection = shipment?.connection_id
+      ? await getDeliveryConnectionByIdReadOnly(this.pg, shipment.connection_id)
+      : null
+    const lifecycle = buildDeliveryHubAcceptedShipmentLifecycleSnapshot({
+      shipment,
+      ledger,
+    })
+    const refresh = await refreshDeliveryHubAcceptedShipmentStatus({
+      lifecycle,
+      shipment,
+      connection,
+      pg_connection: this.pg,
+      correlation_id:
+        normalizeNullableText(input.correlation_id) ??
+        lifecycle.ledger.execution_reference_preview ??
+        "admin-shipment-status-refresh",
+    })
+    const refreshedShipment = await getDeliveryShipmentByExecutionReference(this.pg, executionReference)
+    const refreshedLifecycle = buildDeliveryHubAcceptedShipmentLifecycleSnapshot({
+      shipment: refreshedShipment,
+      ledger,
+    })
+
+    return {
+      ok: true,
+      operations: buildDeliveryHubAdminShipmentOperationsViewModel({
+        lifecycle: refreshedLifecycle,
+        shipment: refreshedShipment,
+        connection,
+      }),
+      refresh,
     }
   }
 

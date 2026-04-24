@@ -1265,6 +1265,161 @@ const AdminDeliveryShippingOptionManualSyncResponseSchema = z
   })
   .strict()
 
+const AdminDeliveryAdminShipmentOperationsStatusSummarySchema = z
+  .object({
+    provider_code: z.literal("yandex").nullable(),
+    operation: z.literal("get_shipment_status").nullable(),
+    attempted: z.boolean(),
+    succeeded: z.boolean(),
+    status_category: z.string().nullable(),
+    neutral_status: z
+      .enum([
+        "accepted",
+        "in_transit",
+        "ready_for_pickup",
+        "delivered",
+        "cancelled",
+        "failed",
+        "returned",
+        "unknown",
+      ])
+      .nullable(),
+    provider_status_known: z.boolean(),
+    provider_status_present: z.boolean(),
+    provider_status_normalized: z.string().nullable(),
+    provider_status_code: z.number().int().nullable(),
+    correlation_id_present: z.boolean(),
+    provider_shipment_reference_present: z.boolean(),
+    safe_message: z.string().nullable(),
+    redacted: z.literal(true),
+  })
+  .strict()
+
+const AdminDeliveryAdminShipmentOperationsSchema = z
+  .object({
+    version: z.literal(1),
+    safe: z.literal(true),
+    reference: z
+      .object({
+        lookup_kind: z.literal("execution_reference"),
+        execution_reference_preview: z.string().nullable(),
+      })
+      .strict(),
+    lifecycle: z
+      .object({
+        classification: z.string(),
+        accepted: z.boolean(),
+        blocked_reason_code: z.string().nullable(),
+      })
+      .strict(),
+    provider: z
+      .object({
+        provider_code: z.string().nullable(),
+        mode_code: z.string().nullable(),
+        dispatch_status: z.string().nullable(),
+        dispatch_outcome: z.string().nullable(),
+        provider_shipment_reference_present: z.boolean(),
+        provider_correlation_reference_present: z.boolean(),
+      })
+      .strict(),
+    status: z
+      .object({
+        current: AdminDeliveryAdminShipmentOperationsStatusSummarySchema.nullable(),
+        refresh: z
+          .object({
+            available: z.boolean(),
+            blocked_reason_code: z.string().nullable(),
+            blocked_reason: z.string().nullable(),
+            last_outcome: z.enum(["not_refreshed", "refreshed", "failed"]).nullable(),
+            status_refreshed_at: z.string().nullable(),
+          })
+          .strict(),
+      })
+      .strict(),
+    ledger: z
+      .object({
+        linked: z.boolean(),
+        state: z.string().nullable(),
+        terminal_completed: z.boolean(),
+        terminal_blocked: z.boolean(),
+        execution_reference_preview: z.string().nullable(),
+        idempotency_key_preview: z.string().nullable(),
+        transition_count: z.number().int().min(0),
+        audit_event_count: z.number().int().min(0),
+      })
+      .strict(),
+    shipment: z
+      .object({
+        id: z.string().nullable(),
+        accepted: z.boolean(),
+        status: z.literal("dispatch_accepted").nullable(),
+        label_document_present: z.boolean(),
+        attachment_document_present: z.boolean(),
+      })
+      .strict(),
+    context: z
+      .object({
+        connection_id: z.string().nullable(),
+        order_id: z.string().nullable(),
+        fulfillment_id: z.string().nullable(),
+        cart_id: z.string().nullable(),
+        shipping_option_id: z.string().nullable(),
+        location_id: z.string().nullable(),
+        quote_reference: z
+          .object({
+            id: z.string().nullable(),
+            version: z.number().int().nullable(),
+          })
+          .strict(),
+        correlation_id_present: z.boolean(),
+      })
+      .strict(),
+    timestamps: z
+      .object({
+        created_at: z.string().nullable(),
+        updated_at: z.string().nullable(),
+        status_refreshed_at: z.string().nullable(),
+      })
+      .strict(),
+    action_posture: z
+      .object({
+        refresh_status: z.enum(["available", "blocked"]),
+        cancel: z.literal("not_materialized"),
+        retry: z.literal("not_materialized"),
+        webhooks: z.literal("not_materialized"),
+        scheduler: z.literal("not_materialized"),
+      })
+      .strict(),
+    anti_leak_confirmations: z
+      .object({
+        raw_provider_payloads_included: z.literal(false),
+        raw_provider_request_included: z.literal(false),
+        raw_provider_response_included: z.literal(false),
+        auth_headers_included: z.literal(false),
+        credentials_included: z.literal(false),
+        raw_quote_key_included: z.literal(false),
+        raw_provider_identifier_included: z.literal(false),
+        raw_execution_secret_included: z.literal(false),
+      })
+      .strict(),
+  })
+  .strict()
+
+const AdminDeliveryAdminShipmentOperationsResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    operations: AdminDeliveryAdminShipmentOperationsSchema,
+  })
+  .strict()
+
+const AdminDeliveryAdminShipmentOperationsRefreshResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    operations: AdminDeliveryAdminShipmentOperationsSchema,
+    refresh: z.record(z.unknown()),
+  })
+  .strict()
+
 export function getDeliveryHubService(req: AuthenticatedMedusaRequest) {
   const pg = getDeliveryHubPgConnection(req.scope)
   return createDeliveryHubService(pg)
@@ -1291,6 +1446,14 @@ export function getRouteParam(req: AuthenticatedMedusaRequest, key: string) {
 
     if (warehousesIndex >= 0) {
       return segments[warehousesIndex + 1] || ""
+    }
+  }
+
+  if (key === "execution_reference") {
+    const shipmentsIndex = segments.findIndex((segment) => segment === "shipments")
+
+    if (shipmentsIndex >= 0) {
+      return segments[shipmentsIndex + 1] || ""
     }
   }
 
@@ -1411,6 +1574,25 @@ export function sanitizeAdminDeliveryFulfillmentBridgeReadinessPreview(preview: 
     })
 }
 
+export function sanitizeAdminDeliveryAdminShipmentOperationsResponse(result: unknown) {
+  const root = asRecord(result)
+
+  return AdminDeliveryAdminShipmentOperationsResponseSchema.parse({
+    ...root,
+    operations: sanitizeAdminDeliveryAdminShipmentOperations(root.operations),
+  })
+}
+
+export function sanitizeAdminDeliveryAdminShipmentOperationsRefreshResponse(result: unknown) {
+  const root = asRecord(result)
+
+  return AdminDeliveryAdminShipmentOperationsRefreshResponseSchema.parse({
+    ...root,
+    operations: sanitizeAdminDeliveryAdminShipmentOperations(root.operations),
+    refresh: sanitizeAdminStructuredPayload(root.refresh),
+  })
+}
+
 export function sanitizeAdminDeliveryExecutionPlanObservabilityPreview(preview: unknown) {
   const root = asRecord(preview)
 
@@ -1437,6 +1619,96 @@ export function sanitizeAdminDeliveryExecutionPlanObservabilityPreview(preview: 
       }),
       summary: AdminDeliveryExecutionPlanObservabilityPreviewSummarySchema.parse(root.summary),
     })
+}
+
+function sanitizeAdminDeliveryAdminShipmentOperations(value: unknown) {
+  const root = asRecord(value)
+  const status = asRecord(root.status)
+  const refresh = asRecord(status.refresh)
+  const ledger = asRecord(root.ledger)
+  const lifecycle = asRecord(root.lifecycle)
+  const provider = asRecord(root.provider)
+  const reference = asRecord(root.reference)
+  const shipment = asRecord(root.shipment)
+  const context = asRecord(root.context)
+  const quoteReference = asRecord(context.quote_reference)
+  const timestamps = asRecord(root.timestamps)
+
+  return AdminDeliveryAdminShipmentOperationsSchema.parse({
+    ...root,
+    reference: {
+      lookup_kind: reference.lookup_kind,
+      execution_reference_preview: sanitizeNullableAdminString(reference.execution_reference_preview),
+    },
+    lifecycle: {
+      classification: sanitizeAdminString(lifecycle.classification),
+      accepted: lifecycle.accepted,
+      blocked_reason_code: sanitizeNullableAdminString(lifecycle.blocked_reason_code),
+    },
+    provider: {
+      provider_code: sanitizeNullableAdminString(provider.provider_code),
+      mode_code: sanitizeNullableAdminString(provider.mode_code),
+      dispatch_status: sanitizeNullableAdminString(provider.dispatch_status),
+      dispatch_outcome: sanitizeNullableAdminString(provider.dispatch_outcome),
+      provider_shipment_reference_present: provider.provider_shipment_reference_present,
+      provider_correlation_reference_present: provider.provider_correlation_reference_present,
+    },
+    status: {
+      current:
+        status.current === null || typeof status.current === "undefined"
+          ? null
+          : AdminDeliveryAdminShipmentOperationsStatusSummarySchema.parse({
+              ...asRecord(status.current),
+              status_category: sanitizeNullableAdminString(asRecord(status.current).status_category),
+              provider_status_normalized: sanitizeNullableAdminString(
+                asRecord(status.current).provider_status_normalized
+              ),
+              safe_message: sanitizeNullableAdminString(asRecord(status.current).safe_message),
+            }),
+      refresh: {
+        available: refresh.available,
+        blocked_reason_code: sanitizeNullableAdminString(refresh.blocked_reason_code),
+        blocked_reason: sanitizeNullableAdminString(refresh.blocked_reason),
+        last_outcome: refresh.last_outcome,
+        status_refreshed_at: sanitizeNullableAdminString(refresh.status_refreshed_at),
+      },
+    },
+    ledger: {
+      linked: ledger.linked,
+      state: sanitizeNullableAdminString(ledger.state),
+      terminal_completed: ledger.terminal_completed,
+      terminal_blocked: ledger.terminal_blocked,
+      execution_reference_preview: sanitizeNullableAdminString(ledger.execution_reference_preview),
+      idempotency_key_preview: sanitizeNullableAdminString(ledger.idempotency_key_preview),
+      transition_count: ledger.transition_count,
+      audit_event_count: ledger.audit_event_count,
+    },
+    shipment: {
+      id: sanitizeNullableAdminString(shipment.id),
+      accepted: shipment.accepted,
+      status: shipment.status,
+      label_document_present: shipment.label_document_present,
+      attachment_document_present: shipment.attachment_document_present,
+    },
+    context: {
+      connection_id: sanitizeNullableAdminString(context.connection_id),
+      order_id: sanitizeNullableAdminString(context.order_id),
+      fulfillment_id: sanitizeNullableAdminString(context.fulfillment_id),
+      cart_id: sanitizeNullableAdminString(context.cart_id),
+      shipping_option_id: sanitizeNullableAdminString(context.shipping_option_id),
+      location_id: sanitizeNullableAdminString(context.location_id),
+      quote_reference: {
+        id: sanitizeNullableAdminString(quoteReference.id),
+        version: quoteReference.version,
+      },
+      correlation_id_present: context.correlation_id_present,
+    },
+    timestamps: {
+      created_at: sanitizeNullableAdminString(timestamps.created_at),
+      updated_at: sanitizeNullableAdminString(timestamps.updated_at),
+      status_refreshed_at: sanitizeNullableAdminString(timestamps.status_refreshed_at),
+    },
+  })
 }
 
 export function handleDeliveryHubError(res: MedusaResponse, error: unknown) {
