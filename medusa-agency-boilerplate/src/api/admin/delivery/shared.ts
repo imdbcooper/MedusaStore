@@ -1336,6 +1336,44 @@ const AdminDeliveryAdminShipmentOperationsSchema = z
           .strict(),
       })
       .strict(),
+    cancel: z
+      .object({
+        readiness: z
+          .object({
+            version: z.literal(1),
+            available: z.boolean(),
+            blocked_reason_code: z.string().nullable(),
+            blocked_reason: z.string().nullable(),
+            lifecycle_classification: z.string().nullable(),
+            accepted: z.boolean(),
+            provider_code: z.string().nullable(),
+            provider_shipment_reference_present: z.boolean(),
+            status_neutral: z.string().nullable(),
+            redacted: z.literal(true),
+            anti_leak_confirmations: z
+              .object({
+                raw_provider_payloads_included: z.literal(false),
+                raw_provider_request_included: z.literal(false),
+                raw_provider_response_included: z.literal(false),
+                raw_yandex_response_body_included: z.literal(false),
+                auth_headers_included: z.literal(false),
+                credentials_included: z.literal(false),
+                raw_quote_key_included: z.literal(false),
+                raw_provider_identifier_included: z.literal(false),
+                raw_execution_secret_included: z.literal(false),
+              })
+              .strict(),
+          })
+          .strict(),
+        last_result: z
+          .object({
+            status: z.literal("not_requested"),
+            safe_message: z.string(),
+            redacted: z.literal(true),
+          })
+          .strict(),
+      })
+      .strict(),
     ledger: z
       .object({
         linked: z.boolean(),
@@ -1384,7 +1422,7 @@ const AdminDeliveryAdminShipmentOperationsSchema = z
     action_posture: z
       .object({
         refresh_status: z.enum(["available", "blocked"]),
-        cancel: z.literal("not_materialized"),
+        cancel: z.enum(["available", "blocked"]),
         retry: z.literal("not_materialized"),
         webhooks: z.literal("not_materialized"),
         scheduler: z.literal("not_materialized"),
@@ -1417,6 +1455,14 @@ const AdminDeliveryAdminShipmentOperationsRefreshResponseSchema = z
     ok: z.literal(true),
     operations: AdminDeliveryAdminShipmentOperationsSchema,
     refresh: z.record(z.unknown()),
+  })
+  .strict()
+
+const AdminDeliveryAdminShipmentOperationsCancelResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    operations: AdminDeliveryAdminShipmentOperationsSchema,
+    cancel: z.record(z.unknown()),
   })
   .strict()
 
@@ -1593,6 +1639,16 @@ export function sanitizeAdminDeliveryAdminShipmentOperationsRefreshResponse(resu
   })
 }
 
+export function sanitizeAdminDeliveryAdminShipmentOperationsCancelResponse(result: unknown) {
+  const root = asRecord(result)
+
+  return AdminDeliveryAdminShipmentOperationsCancelResponseSchema.parse({
+    ...root,
+    operations: sanitizeAdminDeliveryAdminShipmentOperations(root.operations),
+    cancel: sanitizeAdminStructuredPayload(root.cancel),
+  })
+}
+
 export function sanitizeAdminDeliveryExecutionPlanObservabilityPreview(preview: unknown) {
   const root = asRecord(preview)
 
@@ -1625,6 +1681,10 @@ function sanitizeAdminDeliveryAdminShipmentOperations(value: unknown) {
   const root = asRecord(value)
   const status = asRecord(root.status)
   const refresh = asRecord(status.refresh)
+  const cancel = asRecord(root.cancel)
+  const cancelReadiness = asRecord(cancel.readiness)
+  const cancelReadinessAntiLeak = asRecord(cancelReadiness.anti_leak_confirmations)
+  const cancelLastResult = asRecord(cancel.last_result)
   const ledger = asRecord(root.ledger)
   const lifecycle = asRecord(root.lifecycle)
   const provider = asRecord(root.provider)
@@ -1671,6 +1731,26 @@ function sanitizeAdminDeliveryAdminShipmentOperations(value: unknown) {
         blocked_reason: sanitizeNullableAdminString(refresh.blocked_reason),
         last_outcome: refresh.last_outcome,
         status_refreshed_at: sanitizeNullableAdminString(refresh.status_refreshed_at),
+      },
+    },
+    cancel: {
+      readiness: {
+        version: cancelReadiness.version,
+        available: cancelReadiness.available,
+        blocked_reason_code: sanitizeNullableAdminString(cancelReadiness.blocked_reason_code),
+        blocked_reason: sanitizeNullableAdminString(cancelReadiness.blocked_reason),
+        lifecycle_classification: sanitizeNullableAdminString(cancelReadiness.lifecycle_classification),
+        accepted: cancelReadiness.accepted,
+        provider_code: sanitizeNullableAdminString(cancelReadiness.provider_code),
+        provider_shipment_reference_present: cancelReadiness.provider_shipment_reference_present,
+        status_neutral: sanitizeNullableAdminString(cancelReadiness.status_neutral),
+        redacted: cancelReadiness.redacted,
+        anti_leak_confirmations: cancelReadinessAntiLeak,
+      },
+      last_result: {
+        status: cancelLastResult.status,
+        safe_message: sanitizeAdminString(cancelLastResult.safe_message),
+        redacted: cancelLastResult.redacted,
       },
     },
     ledger: {

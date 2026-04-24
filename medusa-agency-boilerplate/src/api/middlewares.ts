@@ -67,6 +67,21 @@ export default defineMiddlewares({
       middlewares: [adminAuth, validateAndTransformBody(AdminDeliveryShippingOptionManualSyncSchema)],
     },
     {
+      matcher: "/admin/delivery/shipments/:execution_reference/operations",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/delivery/shipments/:execution_reference/operations/refresh-status",
+      methods: ["POST"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/delivery/shipments/:execution_reference/operations/cancel",
+      methods: ["POST"],
+      middlewares: [adminAuth],
+    },
+    {
       matcher: "/admin/delivery/connections",
       methods: ["GET"],
       middlewares: [adminAuth],

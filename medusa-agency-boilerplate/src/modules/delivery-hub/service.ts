@@ -65,6 +65,7 @@ import {
 } from "./admin-shipment-operations"
 import { buildDeliveryHubAcceptedShipmentLifecycleSnapshot } from "./shipment-lifecycle-read-model"
 import { refreshDeliveryHubAcceptedShipmentStatus } from "./shipment-status-polling"
+import { cancelDeliveryHubAcceptedShipment } from "./shipment-cancel-policy"
 import { redactRecord } from "./security/redaction"
 import {
   getDeliveryConnectionById,
@@ -416,6 +417,48 @@ export class DeliveryHubService {
         connection,
       }),
       refresh,
+    }
+  }
+
+  async cancelAdminShipmentOperationsShipment(input: {
+    execution_reference: string
+    correlation_id?: string | null
+  }): Promise<DeliveryHubAdminShipmentOperationsSnapshot & { cancel: Awaited<ReturnType<typeof cancelDeliveryHubAcceptedShipment>> }> {
+    const executionReference = requireString(input.execution_reference, "execution_reference")
+    const shipment = await getDeliveryShipmentByExecutionReference(this.pg, executionReference)
+    const ledger = await new DeliveryHubExecutionLedgerPgRepository({
+      connection: this.pg,
+    }).getExecutionByReference(executionReference)
+    const connection = shipment?.connection_id
+      ? await getDeliveryConnectionByIdReadOnly(this.pg, shipment.connection_id)
+      : null
+    const lifecycle = buildDeliveryHubAcceptedShipmentLifecycleSnapshot({
+      shipment,
+      ledger,
+    })
+    const cancel = await cancelDeliveryHubAcceptedShipment({
+      lifecycle,
+      shipment,
+      connection,
+      correlation_id:
+        normalizeNullableText(input.correlation_id) ??
+        lifecycle.ledger.execution_reference_preview ??
+        "admin-shipment-cancel",
+    })
+    const refreshedShipment = await getDeliveryShipmentByExecutionReference(this.pg, executionReference)
+    const refreshedLifecycle = buildDeliveryHubAcceptedShipmentLifecycleSnapshot({
+      shipment: refreshedShipment,
+      ledger,
+    })
+
+    return {
+      ok: true,
+      operations: buildDeliveryHubAdminShipmentOperationsViewModel({
+        lifecycle: refreshedLifecycle,
+        shipment: refreshedShipment,
+        connection,
+      }),
+      cancel,
     }
   }
 

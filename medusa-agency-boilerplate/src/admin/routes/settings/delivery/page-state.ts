@@ -1209,9 +1209,29 @@ export type DeliveryHubShipmentOperationsSnapshot = {
     updated_at: string | null
     status_refreshed_at: string | null
   }
+  cancel: {
+    readiness: {
+      version: 1
+      available: boolean
+      blocked_reason_code: string | null
+      blocked_reason: string | null
+      lifecycle_classification: string | null
+      accepted: boolean
+      provider_code: string | null
+      provider_shipment_reference_present: boolean
+      status_neutral: string | null
+      redacted: true
+      anti_leak_confirmations: Record<string, false>
+    }
+    last_result: {
+      status: "not_requested"
+      safe_message: string
+      redacted: true
+    }
+  }
   action_posture: {
     refresh_status: "available" | "blocked"
-    cancel: "not_materialized"
+    cancel: "available" | "blocked"
     retry: "not_materialized"
     webhooks: "not_materialized"
     scheduler: "not_materialized"
@@ -1237,12 +1257,18 @@ export type DeliveryHubShipmentOperationsRefreshResponse = DeliveryHubShipmentOp
   refresh: Record<string, unknown>
 }
 
+export type DeliveryHubShipmentOperationsCancelResponse = DeliveryHubShipmentOperationsResponse & {
+  cancel: Record<string, unknown>
+}
+
 export type ShipmentOperationsRenderState = {
   headerText: string
   hasSnapshot: boolean
   lookupReady: boolean
   canRefreshStatus: boolean
+  canCancelShipment: boolean
   refreshButtonText: string
+  cancelButtonText: string
   refreshStatusTone: string
   statusBadgeText: string
   actionBadges: Array<{
@@ -1257,6 +1283,11 @@ export type ShipmentOperationsRenderState = {
     value: string
   }>
   statusRefreshRows: Array<{
+    key: string
+    label: string
+    value: string
+  }>
+  cancelRows: Array<{
     key: string
     label: string
     value: string
@@ -1296,7 +1327,17 @@ export function buildShipmentOperationsRefreshStatusUrl(executionReference: stri
   return `${buildShipmentOperationsSnapshotUrl(executionReference)}/refresh-status`
 }
 
+export function buildShipmentOperationsCancelUrl(executionReference: string) {
+  return `${buildShipmentOperationsSnapshotUrl(executionReference)}/cancel`
+}
+
 export function buildShipmentOperationsRefreshStatusRequestBody(correlationId?: string | null) {
+  const normalized = typeof correlationId === "string" ? correlationId.trim() : ""
+
+  return normalized ? { correlation_id: normalized } : {}
+}
+
+export function buildShipmentOperationsCancelRequestBody(correlationId?: string | null) {
   const normalized = typeof correlationId === "string" ? correlationId.trim() : ""
 
   return normalized ? { correlation_id: normalized } : {}
@@ -1310,6 +1351,7 @@ export function deriveShipmentOperationsRenderState(input: {
   const snapshot = input.snapshot
   const refresh = snapshot?.status.refresh ?? null
   const currentStatus = snapshot?.status.current ?? null
+  const cancelReadiness = snapshot?.cancel.readiness ?? null
 
   return {
     headerText: snapshot
@@ -1318,7 +1360,9 @@ export function deriveShipmentOperationsRenderState(input: {
     hasSnapshot: !!snapshot,
     lookupReady: !!normalizedReference,
     canRefreshStatus: snapshot?.action_posture.refresh_status === "available" && refresh?.available === true,
+    canCancelShipment: snapshot?.action_posture.cancel === "available" && cancelReadiness?.available === true,
     refreshButtonText: refresh?.available ? "Refresh status" : "Refresh status blocked",
+    cancelButtonText: cancelReadiness?.available ? "Cancel shipment" : "Cancel blocked",
     refreshStatusTone: refresh?.available ? "projected" : "deferred",
     statusBadgeText: snapshot
       ? snapshot.lifecycle.accepted
@@ -1335,7 +1379,7 @@ export function deriveShipmentOperationsRenderState(input: {
           {
             key: "cancel",
             label: `cancel: ${snapshot.action_posture.cancel}`,
-            available: false,
+            available: snapshot.action_posture.cancel === "available" && snapshot.cancel.readiness.available,
           },
           {
             key: "retry",
@@ -1385,6 +1429,11 @@ export function deriveShipmentOperationsRenderState(input: {
             key: "refresh",
             label: "Refresh available",
             value: refresh?.available ? "yes" : "no",
+          },
+          {
+            key: "cancel",
+            label: "Cancel available",
+            value: cancelReadiness?.available ? "yes" : "no",
           },
         ]
       : [],
@@ -1465,6 +1514,40 @@ export function deriveShipmentOperationsRenderState(input: {
             key: "safe_message",
             label: "Safe message",
             value: currentStatus?.safe_message ?? "—",
+          },
+        ]
+      : [],
+    cancelRows: snapshot
+      ? [
+          {
+            key: "cancel_available",
+            label: "Available",
+            value: cancelReadiness?.available ? "yes" : "no",
+          },
+          {
+            key: "blocked_reason_code",
+            label: "Blocked reason code",
+            value: cancelReadiness?.blocked_reason_code ?? "—",
+          },
+          {
+            key: "blocked_reason",
+            label: "Blocked reason",
+            value: cancelReadiness?.blocked_reason ?? "—",
+          },
+          {
+            key: "status_neutral",
+            label: "Neutral status gate",
+            value: cancelReadiness?.status_neutral ?? "—",
+          },
+          {
+            key: "provider_reference",
+            label: "Backend provider reference stored",
+            value: cancelReadiness?.provider_shipment_reference_present ? "yes" : "no",
+          },
+          {
+            key: "last_result",
+            label: "Last result",
+            value: snapshot.cancel.last_result.safe_message,
           },
         ]
       : [],

@@ -4,6 +4,8 @@ import type {
   DeliveryHubAcceptedShipmentLifecycleSnapshot,
   DeliveryHubAcceptedShipmentLifecycleClassification,
 } from "./shipment-lifecycle-read-model"
+import type { DeliveryHubShipmentCancelReadiness } from "./shipment-cancel-policy"
+import { resolveDeliveryHubShipmentCancelReadiness } from "./shipment-cancel-policy"
 import type {
   DeliveryHubShipmentRecord,
   DeliveryHubShipmentStatusRefreshOutcome,
@@ -49,6 +51,14 @@ export type DeliveryHubAdminShipmentOperationsViewModel = {
       status_refreshed_at: string | null
     }
   }
+  cancel: {
+    readiness: DeliveryHubShipmentCancelReadiness
+    last_result: {
+      status: "not_requested"
+      safe_message: string
+      redacted: true
+    }
+  }
   ledger: {
     linked: boolean
     state: string | null
@@ -86,7 +96,7 @@ export type DeliveryHubAdminShipmentOperationsViewModel = {
   }
   action_posture: {
     refresh_status: "available" | "blocked"
-    cancel: "not_materialized"
+    cancel: "available" | "blocked"
     retry: "not_materialized"
     webhooks: "not_materialized"
     scheduler: "not_materialized"
@@ -142,6 +152,11 @@ export function buildDeliveryHubAdminShipmentOperationsViewModel(input: {
     connection: input.connection ?? null,
   })
   const refreshAvailable = refreshBlock === null
+  const cancelReadiness = resolveDeliveryHubShipmentCancelReadiness({
+    lifecycle,
+    shipment,
+    connection: input.connection ?? null,
+  })
   const statusSummary = buildSafeStatusSummary(shipment?.provider_status_summary ?? null)
   const statusRefreshedAt = shipment?.status_refreshed_at ?? null
 
@@ -179,6 +194,14 @@ export function buildDeliveryHubAdminShipmentOperationsViewModel(input: {
         status_refreshed_at: statusRefreshedAt,
       },
     },
+    cancel: {
+      readiness: cancelReadiness,
+      last_result: {
+        status: "not_requested",
+        safe_message: "Manual shipment cancellation has not been requested in this snapshot.",
+        redacted: true,
+      },
+    },
     ledger: {
       linked: lifecycle.ledger.linked,
       state: lifecycle.ledger.state,
@@ -204,7 +227,7 @@ export function buildDeliveryHubAdminShipmentOperationsViewModel(input: {
     },
     action_posture: {
       refresh_status: refreshAvailable ? "available" : "blocked",
-      cancel: "not_materialized",
+      cancel: cancelReadiness.available ? "available" : "blocked",
       retry: "not_materialized",
       webhooks: "not_materialized",
       scheduler: "not_materialized",

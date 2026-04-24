@@ -1,5 +1,7 @@
 import { describe, expect, it } from "@jest/globals"
 import {
+  buildShipmentOperationsCancelRequestBody,
+  buildShipmentOperationsCancelUrl,
   buildShipmentOperationsRefreshStatusRequestBody,
   buildShipmentOperationsRefreshStatusUrl,
   buildShipmentOperationsSnapshotUrl,
@@ -2154,7 +2156,11 @@ describe("delivery admin settings page state", () => {
     expect(buildShipmentOperationsRefreshStatusUrl(" exec/ref 1 ")).toBe(
       "/admin/delivery/shipments/exec%2Fref%201/operations/refresh-status"
     )
+    expect(buildShipmentOperationsCancelUrl(" exec/ref 1 ")).toBe(
+      "/admin/delivery/shipments/exec%2Fref%201/operations/cancel"
+    )
     expect(buildShipmentOperationsRefreshStatusRequestBody(" corr_1 ")).toEqual({ correlation_id: "corr_1" })
+    expect(buildShipmentOperationsCancelRequestBody(" cancel_corr_1 ")).toEqual({ correlation_id: "cancel_corr_1" })
     expect(buildShipmentOperationsRefreshStatusRequestBody("   ")).toEqual({})
     expect(() => buildShipmentOperationsSnapshotUrl("   ")).toThrow(
       "execution_reference is required to load shipment operations"
@@ -2207,6 +2213,28 @@ describe("delivery admin settings page state", () => {
           status_refreshed_at: "2026-04-24T07:00:00.000Z",
         },
       },
+      cancel: {
+        readiness: {
+          version: 1,
+          available: true,
+          blocked_reason_code: null,
+          blocked_reason: null,
+          lifecycle_classification: "accepted_shipment",
+          accepted: true,
+          provider_code: "yandex",
+          provider_shipment_reference_present: true,
+          status_neutral: "in_transit",
+          redacted: true,
+          anti_leak_confirmations: {
+            raw_provider_payloads_included: false,
+          },
+        },
+        last_result: {
+          status: "not_requested",
+          safe_message: "Manual shipment cancellation has not been requested in this snapshot.",
+          redacted: true,
+        },
+      },
       ledger: {
         linked: true,
         state: "completed",
@@ -2244,7 +2272,7 @@ describe("delivery admin settings page state", () => {
       },
       action_posture: {
         refresh_status: "available",
-        cancel: "not_materialized",
+        cancel: "available",
         retry: "not_materialized",
         webhooks: "not_materialized",
         scheduler: "not_materialized",
@@ -2269,6 +2297,8 @@ describe("delivery admin settings page state", () => {
     expect(state.lookupReady).toBe(true)
     expect(state.canRefreshStatus).toBe(true)
     expect(state.refreshButtonText).toBe("Refresh status")
+    expect(state.canCancelShipment).toBe(true)
+    expect(state.cancelButtonText).toBe("Cancel shipment")
     expect(state.statusBadgeText).toBe("accepted shipment")
     expect(state.summaryCards.map((card) => [card.key, card.value])).toEqual([
       ["lifecycle", "accepted_shipment"],
@@ -2277,6 +2307,7 @@ describe("delivery admin settings page state", () => {
       ["dispatch", "dispatch_accepted / accepted"],
       ["neutral_status", "in_transit"],
       ["refresh", "yes"],
+      ["cancel", "yes"],
     ])
     expect(state.statusRefreshRows.map((row) => [row.key, row.value])).toEqual(
       expect.arrayContaining([
@@ -2294,9 +2325,20 @@ describe("delivery admin settings page state", () => {
         ["idempotency_key_preview", "idem***42"],
       ])
     )
+    expect(state.cancelRows).toEqual(
+      expect.arrayContaining([
+        { key: "cancel_available", label: "Available", value: "yes" },
+        { key: "status_neutral", label: "Neutral status gate", value: "in_transit" },
+        {
+          key: "last_result",
+          label: "Last result",
+          value: "Manual shipment cancellation has not been requested in this snapshot.",
+        },
+      ])
+    )
     expect(state.actionBadges).toEqual([
       { key: "refresh_status", label: "refresh_status: available", available: true },
-      { key: "cancel", label: "cancel: not_materialized", available: false },
+      { key: "cancel", label: "cancel: available", available: true },
       { key: "retry", label: "retry: not_materialized", available: false },
       { key: "webhooks", label: "webhooks: not_materialized", available: false },
       { key: "scheduler", label: "scheduler: not_materialized", available: false },
@@ -2340,6 +2382,28 @@ describe("delivery admin settings page state", () => {
           status_refreshed_at: null,
         },
       },
+      cancel: {
+        readiness: {
+          version: 1,
+          available: false,
+          blocked_reason_code: "accepted_lifecycle_required",
+          blocked_reason: "Shipment cancellation is allowed only for accepted shipment lifecycle snapshots.",
+          lifecycle_classification: "non_accepted_shipment",
+          accepted: false,
+          provider_code: "yandex",
+          provider_shipment_reference_present: false,
+          status_neutral: null,
+          redacted: true,
+          anti_leak_confirmations: {
+            raw_provider_payloads_included: false,
+          },
+        },
+        last_result: {
+          status: "not_requested",
+          safe_message: "Manual shipment cancellation has not been requested in this snapshot.",
+          redacted: true,
+        },
+      },
       ledger: {
         linked: true,
         state: "failed_blocked",
@@ -2377,7 +2441,7 @@ describe("delivery admin settings page state", () => {
       },
       action_posture: {
         refresh_status: "blocked",
-        cancel: "not_materialized",
+        cancel: "blocked",
         retry: "not_materialized",
         webhooks: "not_materialized",
         scheduler: "not_materialized",
@@ -2401,6 +2465,8 @@ describe("delivery admin settings page state", () => {
 
     expect(state.canRefreshStatus).toBe(false)
     expect(state.refreshButtonText).toBe("Refresh status blocked")
+    expect(state.canCancelShipment).toBe(false)
+    expect(state.cancelButtonText).toBe("Cancel blocked")
     expect(state.statusBadgeText).toBe("blocked: provider_failed")
     expect(state.detailRows).toEqual(
       expect.arrayContaining([
@@ -2424,13 +2490,16 @@ describe("delivery admin settings page state", () => {
       hasSnapshot: false,
       lookupReady: false,
       canRefreshStatus: false,
+      canCancelShipment: false,
       refreshButtonText: "Refresh status blocked",
+      cancelButtonText: "Cancel blocked",
       refreshStatusTone: "deferred",
       statusBadgeText: "not loaded",
       actionBadges: [],
       summaryCards: [],
       detailRows: [],
       statusRefreshRows: [],
+      cancelRows: [],
       ledgerRows: [],
       contextRows: [],
       emptyText:

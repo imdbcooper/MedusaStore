@@ -10,6 +10,8 @@ import {
   type DeliveryHubShippingOptionManualSyncMode,
 } from "./manual-sync"
 import {
+  buildShipmentOperationsCancelRequestBody,
+  buildShipmentOperationsCancelUrl,
   buildShipmentOperationsRefreshStatusRequestBody,
   buildShipmentOperationsRefreshStatusUrl,
   buildShipmentOperationsSnapshotUrl,
@@ -49,6 +51,7 @@ import {
   type DeliveryHubTestQuoteInputEcho,
   type DeliveryHubExecutionPlanObservabilityReadModel,
   type DeliveryHubFulfillmentBridgeReadinessPreview,
+  type DeliveryHubShipmentOperationsCancelResponse,
   type DeliveryHubShipmentOperationsForm,
   type DeliveryHubShipmentOperationsRefreshResponse,
   type DeliveryHubShipmentOperationsResponse,
@@ -209,6 +212,7 @@ const DeliverySettingsPage = () => {
   const [shipmentOperationsNotice, setShipmentOperationsNotice] = useState<string | null>(null)
   const [isLoadingShipmentOperations, setIsLoadingShipmentOperations] = useState(false)
   const [isRefreshingShipmentStatus, setIsRefreshingShipmentStatus] = useState(false)
+  const [isCancellingShipment, setIsCancellingShipment] = useState(false)
 
   const activeConnection = useMemo(() => {
     if (!activeConnectionId) {
@@ -770,6 +774,38 @@ const DeliverySettingsPage = () => {
       }
     } finally {
       setIsRefreshingShipmentStatus(false)
+    }
+  }
+
+  const handleCancelShipment = async () => {
+    setIsCancellingShipment(true)
+    setShipmentOperationsError(null)
+    setShipmentOperationsNotice(null)
+
+    try {
+      const payload = await requestJson<DeliveryHubShipmentOperationsCancelResponse>(
+        buildShipmentOperationsCancelUrl(shipmentOperationsForm.execution_reference),
+        {
+          method: "POST",
+          body: JSON.stringify(buildShipmentOperationsCancelRequestBody()),
+        }
+      )
+
+      setShipmentOperationsSnapshot(payload.operations)
+      setShipmentOperationsNotice(`Cancel returned ${String(payload.cancel?.status ?? "result")}`)
+    } catch (error) {
+      if (error instanceof Error) {
+        setShipmentOperationsError({
+          status: 400,
+          code: "DELIVERY_HUB_SHIPMENT_CANCEL_UI_ERROR",
+          message: error.message,
+          details: null,
+        })
+      } else {
+        setShipmentOperationsError(error as ApiErrorPayload)
+      }
+    } finally {
+      setIsCancellingShipment(false)
     }
   }
 
@@ -1799,7 +1835,7 @@ const DeliverySettingsPage = () => {
             <div>
               <Heading level="h2">Shipment operations lookup</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Single-reference operator lookup for accepted shipment lifecycle, status refresh posture and guarded manual status refresh. No cancel, retry, webhooks or polling are exposed here.
+                Single-reference operator lookup for accepted shipment lifecycle, status refresh posture and guarded manual cancel/status refresh. Retry, webhooks and scheduler remain out of scope.
               </Text>
             </div>
             <Text className="text-ui-fg-subtle text-sm">{shipmentOperationsRenderState.headerText}</Text>
@@ -1812,7 +1848,7 @@ const DeliverySettingsPage = () => {
                 id="shipment-operations-execution-reference"
                 value={shipmentOperationsForm.execution_reference}
                 onChange={(event) => handleShipmentOperationsField("execution_reference", event.target.value)}
-                disabled={isLoadingShipmentOperations || isRefreshingShipmentStatus}
+                disabled={isLoadingShipmentOperations || isRefreshingShipmentStatus || isCancellingShipment}
                 placeholder="Paste execution_reference from controlled fulfillment result or execution ledger"
               />
               <Text className="text-ui-fg-subtle mt-2 text-sm">
@@ -1824,7 +1860,7 @@ const DeliverySettingsPage = () => {
                 type="button"
                 onClick={() => void handleLoadShipmentOperations()}
                 isLoading={isLoadingShipmentOperations}
-                disabled={!shipmentOperationsRenderState.lookupReady || isRefreshingShipmentStatus}
+                disabled={!shipmentOperationsRenderState.lookupReady || isRefreshingShipmentStatus || isCancellingShipment}
               >
                 Load snapshot
               </Button>
@@ -1836,10 +1872,25 @@ const DeliverySettingsPage = () => {
                 disabled={
                   !shipmentOperationsRenderState.lookupReady ||
                   !shipmentOperationsRenderState.canRefreshStatus ||
-                  isLoadingShipmentOperations
+                  isLoadingShipmentOperations ||
+                  isCancellingShipment
                 }
               >
                 {shipmentOperationsRenderState.refreshButtonText}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void handleCancelShipment()}
+                isLoading={isCancellingShipment}
+                disabled={
+                  !shipmentOperationsRenderState.lookupReady ||
+                  !shipmentOperationsRenderState.canCancelShipment ||
+                  isLoadingShipmentOperations ||
+                  isRefreshingShipmentStatus
+                }
+              >
+                {shipmentOperationsRenderState.cancelButtonText}
               </Button>
             </div>
           </div>
@@ -1911,6 +1962,21 @@ const DeliverySettingsPage = () => {
                   </Text>
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     {shipmentOperationsRenderState.statusRefreshRows.map((row) => (
+                      <div key={row.key}>
+                        <Label>{row.label}</Label>
+                        <Input readOnly value={row.value} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-md border p-4">
+                  <Heading level="h3">Cancel readiness and result</Heading>
+                  <Text className="text-ui-fg-subtle mt-1 text-sm">
+                    Cancel is an explicit backend/admin-only action guarded by accepted lifecycle, safe status posture, Yandex connection readiness and backend-only provider reference.
+                  </Text>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {shipmentOperationsRenderState.cancelRows.map((row) => (
                       <div key={row.key}>
                         <Label>{row.label}</Label>
                         <Input readOnly value={row.value} />

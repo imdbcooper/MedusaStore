@@ -1,11 +1,16 @@
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { describe, expect, it, jest } from "@jest/globals"
+import { DeliveryHubError } from "../../modules/delivery-hub/errors"
 import { buildDeliveryHubAdminShipmentOperationsViewModel } from "../../modules/delivery-hub/admin-shipment-operations"
 import { buildDeliveryHubAcceptedShipmentLifecycleSnapshot } from "../../modules/delivery-hub/shipment-lifecycle-read-model"
+import { cancelDeliveryHubAcceptedShipment } from "../../modules/delivery-hub/shipment-cancel-policy"
 import { refreshDeliveryHubAcceptedShipmentStatus } from "../../modules/delivery-hub/shipment-status-polling"
 import type { DeliveryConnectionRecord } from "../../modules/delivery-hub/domain/connection"
 import type { DeliveryHubPgConnection } from "../../modules/delivery-hub/storage/pg"
 import type { DeliveryHubShipmentRecord } from "../../modules/delivery-hub/storage/shipments-repository"
 import type { YandexShipmentStatusClientLike } from "../../modules/delivery-hub/adapters/yandex/shipment-status"
+import type { YandexShipmentCancelClientLike } from "../../modules/delivery-hub/adapters/yandex/shipment-cancel"
 
 const acceptedConnection: DeliveryConnectionRecord = {
   id: "conn_admin_ops",
@@ -97,7 +102,7 @@ describe("Delivery Hub admin shipment operations visibility", () => {
         }),
         action_posture: {
           refresh_status: "available",
-          cancel: "not_materialized",
+          cancel: "available",
           retry: "not_materialized",
           webhooks: "not_materialized",
           scheduler: "not_materialized",
@@ -150,7 +155,208 @@ describe("Delivery Hub admin shipment operations visibility", () => {
         blocked_reason_code: "accepted_shipment_required",
       })
     )
+    expect(view.action_posture.cancel).toBe("blocked")
+    expect(view.cancel.readiness.blocked_reason_code).toBe("accepted_lifecycle_required")
     expect(JSON.stringify(view)).not.toContain("provider-failed-raw-id-should-not-leak")
+  })
+
+  it("cancels accepted shipment from backend-only provider reference through a redacted Yandex boundary", async () => {
+    const providerReference = "provider-admin-cancel-backend-only-ref"
+    const shipment = buildAcceptedShipment({
+      metadata: {
+        provider_shipment_reference: providerReference,
+        redacted: true,
+      },
+      provider_status_summary: {
+        neutral_status: "accepted",
+      },
+    })
+    const lifecycle = buildDeliveryHubAcceptedShipmentLifecycleSnapshot({ shipment })
+    const post = jest.fn(async () => ({
+      status: "cancellation_requested",
+      shipment_id: "provider-cancel-response-raw-id-should-not-leak",
+      request_id: "provider-cancel-correlation-should-not-leak",
+      authorization: "Bearer provider-cancel-token-should-not-leak",
+      quote_key: "provider-cancel-quote-key-should-not-leak",
+    }))
+    const client = { post } as unknown as YandexShipmentCancelClientLike
+
+    const result = await cancelDeliveryHubAcceptedShipment({
+      lifecycle,
+      shipment,
+      connection: acceptedConnection,
+      correlation_id: "admin-cancel-correlation",
+      client,
+    })
+
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(post).toHaveBeenCalledWith(
+      "/shipments/cancel",
+      { shipment_id: providerReference },
+      "admin-cancel-correlation"
+    )
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: "cancel_requested",
+        provider_call_attempted: true,
+        accepted: true,
+        provider_cancel: expect.objectContaining({
+          provider_code: "yandex",
+          operation: "cancel_shipment",
+          status_category: "cancelled",
+          neutral_status: "cancelled",
+          redacted: true,
+          semantics_certainty: "adapter_boundary_mocked_only",
+        }),
+      })
+    )
+
+    const json = JSON.stringify(result)
+    expect(json).not.toContain(providerReference)
+    expect(json).not.toContain("provider-cancel-response-raw-id-should-not-leak")
+    expect(json).not.toContain("provider-cancel-correlation-should-not-leak")
+    expect(json).not.toContain("provider-cancel-token-should-not-leak")
+    expect(json).not.toContain("provider-cancel-quote-key-should-not-leak")
+  })
+
+  it("blocks cancel with zero provider call for terminal or already cancelled lifecycle states", async () => {
+    const deliveredShipment = buildAcceptedShipment({
+      metadata: {
+        provider_shipment_reference: "provider-terminal-ref-should-not-leak",
+      },
+      provider_status_summary: {
+        neutral_status: "delivered",
+      },
+    })
+    const cancelledShipment = buildAcceptedShipment({
+      metadata: {
+        provider_shipment_reference: "provider-cancelled-ref-should-not-leak",
+      },
+      provider_status_summary: {
+        neutral_status: "cancelled",
+      },
+    })
+    const post = jest.fn(async () => ({}))
+    const client = { post } as unknown as YandexShipmentCancelClientLike
+
+    const deliveredResult = await cancelDeliveryHubAcceptedShipment({
+      lifecycle: buildDeliveryHubAcceptedShipmentLifecycleSnapshot({ shipment: deliveredShipment }),
+      shipment: deliveredShipment,
+      connection: acceptedConnection,
+      correlation_id: "admin-cancel-terminal",
+      client,
+    })
+    const cancelledResult = await cancelDeliveryHubAcceptedShipment({
+      lifecycle: buildDeliveryHubAcceptedShipmentLifecycleSnapshot({ shipment: cancelledShipment }),
+      shipment: cancelledShipment,
+      connection: acceptedConnection,
+      correlation_id: "admin-cancel-already-cancelled",
+      client,
+    })
+
+    expect(post).not.toHaveBeenCalled()
+    expect(deliveredResult).toEqual(expect.objectContaining({
+      status: "blocked",
+      provider_call_attempted: false,
+      blocked_reason_code: "terminal_status_not_cancellable",
+    }))
+    expect(cancelledResult).toEqual(expect.objectContaining({
+      status: "blocked",
+      provider_call_attempted: false,
+      blocked_reason_code: "already_cancelled",
+    }))
+    expect(JSON.stringify([deliveredResult, cancelledResult])).not.toContain("provider-terminal-ref-should-not-leak")
+    expect(JSON.stringify([deliveredResult, cancelledResult])).not.toContain("provider-cancelled-ref-should-not-leak")
+  })
+
+  it("blocks cancel before provider call when backend-only provider reference is missing", async () => {
+    const shipment = buildAcceptedShipment({
+      provider_shipment_reference_present: true,
+      metadata: { redacted: true },
+      response_summary: {
+        provider_shipment_reference_present: true,
+        safe_message: "accepted without raw reference",
+      },
+    })
+    const lifecycle = buildDeliveryHubAcceptedShipmentLifecycleSnapshot({ shipment })
+    const post = jest.fn(async () => ({}))
+    const client = { post } as unknown as YandexShipmentCancelClientLike
+
+    const result = await cancelDeliveryHubAcceptedShipment({
+      lifecycle,
+      shipment,
+      connection: acceptedConnection,
+      correlation_id: "admin-cancel-missing-reference",
+      client,
+    })
+
+    expect(post).not.toHaveBeenCalled()
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: "blocked",
+        provider_call_attempted: false,
+        blocked_reason_code: "provider_shipment_reference_required",
+        lifecycle_classification: "accepted_shipment",
+        accepted: false,
+        provider_cancel: null,
+      })
+    )
+  })
+
+  it("sanitizes provider cancel failure without leaking raw body, ids, auth or quotes", async () => {
+    const providerReference = "provider-admin-cancel-failure-backend-ref"
+    const shipment = buildAcceptedShipment({
+      metadata: {
+        provider_shipment_reference: providerReference,
+        redacted: true,
+      },
+    })
+    const lifecycle = buildDeliveryHubAcceptedShipmentLifecycleSnapshot({ shipment })
+    const post = jest.fn(async () => {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_PROVIDER_ERROR",
+        message: "Provider rejected cancellation",
+        status: 502,
+        details: {
+          provider_status: 409,
+          error_category: "provider_rejected",
+          response: {
+            shipment_id: "raw-failure-shipment-id-should-not-leak",
+            token: "raw-failure-token-should-not-leak",
+            quote_key: "raw-failure-quote-key-should-not-leak",
+            body: "raw-failure-body-should-not-leak",
+          },
+        },
+      })
+    })
+    const client = { post } as unknown as YandexShipmentCancelClientLike
+
+    const result = await cancelDeliveryHubAcceptedShipment({
+      lifecycle,
+      shipment,
+      connection: acceptedConnection,
+      correlation_id: "admin-cancel-failure-correlation",
+      client,
+    })
+
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(result).toEqual(expect.objectContaining({
+      status: "cancel_requested",
+      provider_call_attempted: true,
+      provider_cancel: expect.objectContaining({
+        succeeded: false,
+        status_category: "provider_rejected",
+        provider_status_code: 409,
+        redacted: true,
+      }),
+    }))
+
+    const json = JSON.stringify(result)
+    expect(json).not.toContain(providerReference)
+    expect(json).not.toContain("raw-failure-shipment-id-should-not-leak")
+    expect(json).not.toContain("raw-failure-token-should-not-leak")
+    expect(json).not.toContain("raw-failure-quote-key-should-not-leak")
+    expect(json).not.toContain("raw-failure-body-should-not-leak")
   })
 
   it("refreshes from the backend-only provider shipment reference and returns a redacted admin-safe foundation", async () => {
@@ -253,6 +459,23 @@ describe("Delivery Hub admin shipment operations visibility", () => {
           outcome: "not_refreshed",
         },
       })
+    )
+  })
+
+  it("wires explicit admin auth middleware for accepted shipment operation routes", () => {
+    const middlewaresSource = readFileSync(
+      resolve(process.cwd(), "src/api/middlewares.ts"),
+      "utf8"
+    )
+
+    expect(middlewaresSource).toMatch(
+      /matcher:\s*"\/admin\/delivery\/shipments\/:execution_reference\/operations"[\s\S]*?methods:\s*\["GET"\][\s\S]*?middlewares:\s*\[adminAuth\]/
+    )
+    expect(middlewaresSource).toMatch(
+      /matcher:\s*"\/admin\/delivery\/shipments\/:execution_reference\/operations\/refresh-status"[\s\S]*?methods:\s*\["POST"\][\s\S]*?middlewares:\s*\[adminAuth\]/
+    )
+    expect(middlewaresSource).toMatch(
+      /matcher:\s*"\/admin\/delivery\/shipments\/:execution_reference\/operations\/cancel"[\s\S]*?methods:\s*\["POST"\][\s\S]*?middlewares:\s*\[adminAuth\]/
     )
   })
 })
