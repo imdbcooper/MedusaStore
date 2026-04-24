@@ -1055,6 +1055,7 @@ Truthfully closed after valid reopen and remediation: all sanctioned base slices
 - GitHub Actions workflow [`integrity-baseline.yml`](../.github/workflows/integrity-baseline.yml) materialized как минимальный CI boundary;
 - local static pass и local runtime smoke pass подтверждены `2026-04-20`;
 - remaining open scope `Фазы 8` теперь truthfully ограничен staging, deploy path, rollback, backup/restore, monitoring и broader production-readiness contour.
+- Для delivery-specific production readiness canonical source-of-truth теперь лежит в [`delivery_hub_spec.md`](./delivery_hub_spec.md) §16.17.1 `Production-readiness roadmap checkpoint`: общий `Фаза 8` contour должен ссылаться на этот `delivery-hub` roadmap для sequencing around accepted shipment lifecycle read-model, Yandex status polling v1, admin shipment operations, cancel/manual retry policy, live validation, legacy cutover and release-grade readiness gates, without claiming those planned tranches are already implemented.
 
 ### Цель
 

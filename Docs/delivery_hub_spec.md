@@ -1034,6 +1034,101 @@ legacy provider выпиливается только после того, ка�
 - **Этап E (Shipment operations)** — current state now includes the first narrow execution-ledger activation on the already materialized runtime fulfillment path plus the first replay-safety hardening slice. The first real direct Yandex `create_shipment` runtime dispatch still exists only behind a strict gate, but it is no longer persistence-free on the ready contour: runtime [`buildDeliveryHubControlledFulfillmentExecutionResult()`](../medusa-agency-boilerplate/src/modules/delivery-hub/fulfillment-execution-seam.ts:186) and [`createFulfillment()`](../medusa-agency-boilerplate/src/modules/deliveryhub.ts:150) wire the existing Postgres repository [`DeliveryHubExecutionLedgerPgRepository`](../medusa-agency-boilerplate/src/modules/delivery-hub/storage/execution-ledger-pg-repository.ts:49) only around the narrow path `ready -> actual gated dispatch attempt -> accepted shipment result`. Pure helper [`materializeYandexCreateShipmentPayloadPreview()`](../medusa-agency-boilerplate/src/modules/delivery-hub/adapters/yandex/create-shipment-materializer.ts:196) still deterministically assembles a redacted/safe payload preview from persisted backend-only handoff/provider-origin execution context for [`warehouse_to_pickup_point`](../medusa-agency-boilerplate/src/modules/delivery-hub/constants.ts:30) and [`dropoff_point_to_pickup_point`](../medusa-agency-boilerplate/src/modules/delivery-hub/constants.ts:31), returning `ready|blocked` with explicit blockers `missing_or_unsupported_mode`, `missing_provider_origin_dispatch_context`, `wrong_origin_context_for_mode`, `missing_destination_pickup_point`, `missing_pickup_interval_window`, `missing_recipient_contact`, `missing_package_items`; preview still does not include credentials/auth headers/raw backend execution token/raw provider payload and still masks provider/internal references. Narrow direct-Yandex dispatch-port contract [`buildYandexCreateShipmentDispatchPortContract()`](../medusa-agency-boilerplate/src/modules/delivery-hub/adapters/yandex/create-shipment-dispatch-port.ts:172) continues to truthfully report blocked versus attempted runtime states. The same adapter-local file contains reusable executable request/result layer [`buildYandexCreateShipmentDispatchRequest()`](../medusa-agency-boilerplate/src/modules/delivery-hub/adapters/yandex/create-shipment-dispatch-port.ts:223) plus [`executeYandexCreateShipmentDispatch()`](../medusa-agency-boilerplate/src/modules/delivery-hub/adapters/yandex/create-shipment-dispatch-port.ts:254), and these primitives remain wired into the controlled runtime path. On the ready contour, runtime uses existing deterministic execution identity/drafts from [`shipment-execution-contract.ts`](../medusa-agency-boilerplate/src/modules/delivery-hub/shipment-execution-contract.ts:1) to reserve and progress a canonical ledger record before and after the live provider call: fresh reservations progress `planned -> reserved -> dispatch_ready -> dispatch_inflight`; accepted dispatches then continue `result_received -> application_ready -> completed`. Failed dispatches now return a failed controlled result after recording `failed_blocked` and do **not** create/update `delivery_shipments`, so failed replay cannot become completed and cannot imply a shipment record. Replaying an already completed accepted execution identity is hard-blocked before provider dispatch with `execution_ledger_replay_blocked`; replaying an already `failed_blocked` identity is hard-blocked with `execution_ledger_failed_blocked` and explicitly does not auto-retry. Duplicate exact non-terminal reservations remain `execution_ledger_duplicate_execution`, and drifted reservations remain `execution_ledger_drift_detected`; all replay/duplicate/drift blockers are zero-call to provider, have no shipment persistence and no misleading attempted/completed success state. Earlier blocked contours still perform zero network calls. Runtime surface remains deliberately redacted and narrow: controlled execution can reach `status=dispatch_attempted`, [`provider_payload_materialization`](../medusa-agency-boilerplate/src/modules/delivery-hub/fulfillment-execution-seam.ts:100) and [`provider_dispatch_port`](../medusa-agency-boilerplate/src/modules/delivery-hub/fulfillment-execution-seam.ts:99) stay summary-only, while [`dispatch_preparation`](../medusa-agency-boilerplate/src/modules/delivery-hub/fulfillment-execution-seam.ts:88), [`dispatch_result`](../medusa-agency-boilerplate/src/modules/delivery-hub/fulfillment-execution-seam.ts:140) and `contour` truthfully expose whether ledger persistence and shipment persistence were performed. No raw provider response, auth headers, execution token, quote key, credential fragment or secret-bearing payload is persisted into the ledger linkage or shipment metadata surfaces. Polling/status sync, webhooks, retry scheduler/queue, compensation, checkout rewrite and broader shipment lifecycle remain outside this tranche.
 - **Этап F (historical DB residue cleanup, if needed)** — external/operator-approved only. Старые provider ids/rows могут существовать только в ранее использованных local/staging DBs после прошлых запусков; destructive DB migration или automatic cleanup не входят в этот package.
 
+### 16.17.1. Production-readiness roadmap checkpoint
+
+Этот checkpoint фиксирует единый source-of-truth roadmap от текущего gated direct-Yandex contour к production-ready `delivery-hub`. Он опирается на текущие фактические anchors: `779848d73bc542eeaa79d9b77b5bc79754202f2f` — first gated direct Yandex runtime dispatch; `eb943a50d1651cc69f79f84de96502f3841dfeb4` — persist controlled shipment execution; `97a60a0a1ae530b4ea41253cfc17b4d7697fe29f` — narrow execution-ledger activation with truthful failed blocking; `d2de2857e1bfbeb497cf0c0eb66dc1012bad4637` — harden execution-ledger replay blockers.
+
+Current factual baseline: direct Yandex dispatch exists, accepted shipment persistence exists, execution-ledger activation exists, replay/duplicate/drift blockers are hardened, failed path remains failed-blocked, and shipment persistence exists only for accepted dispatch outcome. This roadmap does not claim implemented polling, webhooks, cancel, retry automation, broad admin shipment operations, checkout rewrite or additional providers.
+
+Global sequencing guardrails:
+
+- polling/status synchronization comes before webhooks;
+- manual retry policy comes before any auto-retry/scheduler;
+- no new provider is added before the Yandex lifecycle is stable;
+- no checkout rewrite is introduced; only narrow lifecycle finalization around existing Delivery Hub commit semantics may be added;
+- no secrets may be written to docs, logs, storefront payloads or persisted shopper surfaces;
+- no safety gates may be weakened, including execution gate, ledger replay blockers, duplicate/drift blockers, response-boundary sanitation and redaction.
+
+1. **Accepted shipment lifecycle read-model**
+   - **Current status:** `partial`.
+   - **Why needed:** accepted dispatch persistence needs an operator-readable lifecycle view so support can see accepted shipment linkage, ledger state, safe provider references and unresolved follow-up state without inspecting raw storage.
+   - **Scope:** backend/admin-safe read model over accepted `delivery_shipments` plus execution-ledger linkage, status vocabulary, filters by order/fulfillment/cart/shipment reference, redacted evidence summary and no-mutation service/API seam.
+   - **Explicit non-goals:** no polling, no cancel, no retry, no provider re-dispatch, no label download unless already safely present, no failed-result shipment persistence, no storefront exposure.
+   - **Dependencies:** existing accepted shipment persistence, execution-ledger completed state, redaction helpers, admin auth and response-boundary sanitation.
+   - **Definition of Done/evidence:** admin-only route/service returns sanitized read model for accepted shipments; failed-blocked/replay/duplicate/drift contours remain non-shipment states; focused no-network coverage proves shape, redaction and blocker preservation; docs/current status updated.
+
+2. **Yandex status polling v1**
+   - **Current status:** `planned`.
+   - **Why needed:** shipment lifecycle cannot be production-ready while accepted shipments remain disconnected from Yandex state after `create_shipment` acceptance.
+   - **Scope:** manual/admin-triggered or narrowly scheduled polling against Yandex status endpoint for persisted accepted shipments, idempotent status transition recording, safe event-log/ledger evidence and stale/error classification.
+   - **Explicit non-goals:** no webhooks before polling baseline, no auto-retry of failed `create_shipment`, no broad scheduler fleet, no checkout changes, no new provider.
+   - **Dependencies:** accepted shipment lifecycle read-model, provider shipment reference persistence, Yandex status API mapping, execution-ledger transition rules and redacted diagnostics.
+   - **Definition of Done/evidence:** mocked provider coverage for status mapping and failures; no-secret logs; admin-visible last-polled/result fields; polling updates only accepted persisted shipments; docs state webhooks remain later.
+
+3. **Minimal admin shipment operations panel**
+   - **Current status:** `planned`.
+   - **Why needed:** operators need one sanctioned surface for accepted shipment read-model, polling action, safe diagnostics and future cancel/manual retry actions.
+   - **Scope:** compact `Settings -> Delivery` or order-adjacent admin view listing accepted shipments, current safe lifecycle state, ledger correlation, last polling result, blocked actions and explicit guard messages.
+   - **Explicit non-goals:** no official Admin fork, no broad 40-field form, no automatic sync loop, no raw provider payloads, no cancel/retry execution until their policies are separately approved.
+   - **Dependencies:** read-model tranche, polling v1 output, existing admin auth, page-state seam and response-boundary sanitation.
+   - **Definition of Done/evidence:** admin UI seam coverage for empty/accepted/error/blocked states; route tests prove no secret/provider-internal leakage; UI labels distinguish available actions from planned/blocked actions.
+
+4. **Cancel policy/path v1**
+   - **Current status:** `planned`.
+   - **Why needed:** production operations need a controlled way to cancel accepted shipments and record whether provider cancellation, local state or manual support action is required.
+   - **Scope:** documented cancel eligibility matrix, Yandex cancel/status mapping, admin-only guarded cancel action, ledger/event transitions and safe failure classification.
+   - **Explicit non-goals:** no shopper self-service cancel, no order cancellation rewrite, no compensation automation, no cancel before status/read-model foundations are reliable.
+   - **Dependencies:** polling v1, admin operations panel, accepted shipment read-model, Yandex cancel endpoint validation, execution-ledger transition extension.
+   - **Definition of Done/evidence:** mocked success/failure/provider-rejected cancel tests; admin action requires explicit guard; no raw provider data/secrets in logs; docs define manual fallback cases.
+
+5. **Manual retry policy**
+   - **Current status:** `planned`.
+   - **Why needed:** failed-blocked and provider/transient errors need an explicit operator policy before any re-dispatch can be allowed, otherwise replay blockers or idempotency safety could be bypassed.
+   - **Scope:** classify retryable vs non-retryable failures, define manual-only retry guard, require new execution identity or approved continuation semantics, record audit events and preserve zero-call replay blockers.
+   - **Explicit non-goals:** no auto-retry, no queue/scheduler, no retry from failed-blocked without explicit policy gate, no weakening duplicate/drift/replay blockers.
+   - **Dependencies:** execution-ledger state model, polling/error taxonomy, accepted/failed read-model visibility, support runbook.
+   - **Definition of Done/evidence:** policy doc and tests prove completed replay, failed-blocked replay, duplicate exact reservation and drift still block; any manual retry path is explicitly guarded, audited and redacted.
+
+6. **Checkout/order lifecycle finalization**
+   - **Current status:** `partial`.
+   - **Why needed:** Delivery Hub selection/commit and accepted shipment execution need final lifecycle wording around order/fulfillment state so merchant operations do not confuse saved selection, committed shipping method and provider shipment acceptance.
+   - **Scope:** narrow finalization of existing checkout/order lifecycle semantics, order/fulfillment read-side linkage to Delivery Hub shipment state, confirmation that generic shipping method commit remains provider-neutral, and docs/UI copy alignment.
+   - **Explicit non-goals:** no checkout rewrite, no provider-specific shopper payloads, no broad order mutation beyond sanctioned lifecycle linkage, no secrets/storefront leakage.
+   - **Dependencies:** accepted shipment read-model, admin operations panel, existing Delivery Hub commit semantics and fulfillment execution gate.
+   - **Definition of Done/evidence:** tests/docs show saved selection, committed shipping method, fulfillment handoff and accepted shipment are distinct states; order/admin surfaces expose only safe summaries; no legacy provider fallback is silently removed.
+
+7. **Live Yandex validation matrix**
+   - **Current status:** `partial`.
+   - **Why needed:** no-network and mocked coverage are not enough for release-grade confidence in supported Yandex modes, payloads, status polling and cancel behavior.
+   - **Scope:** operator-approved live/test-mode matrix for `warehouse_to_pickup_point` and `dropoff_point_to_pickup_point`, including quote, pickup points/windows, gated create-shipment acceptance, status polling, cancel where available, redaction checks and failure cases.
+   - **Explicit non-goals:** no secrets in docs or logs, no uncontrolled production calls, no new provider validation, no bypass of execution gate or ledger blockers.
+   - **Dependencies:** status polling v1, cancel policy/path v1, accepted shipment read-model, approved fixtures and environment contract.
+   - **Definition of Done/evidence:** sanitized run log/evidence package with environment labels only, expected/actual matrix, PASS/BLOCKED outcomes, no secret fragments and linked docs update.
+
+8. **Operational runbooks/support hardening**
+   - **Current status:** `partial`.
+   - **Why needed:** production readiness requires support procedures for gated dispatch, accepted shipment lifecycle, polling failures, cancel, manual retry decisions and escalation without relying on implementer memory.
+   - **Scope:** runbooks for dispatch gate use, accepted shipment triage, polling/cancel failure handling, manual retry decisioning, evidence collection, redaction checks and incident escalation.
+   - **Explicit non-goals:** no execution-ledger authority broadening beyond existing source-of-truth docs, no secret capture, no automatic remediation claims.
+   - **Dependencies:** read-model, polling, cancel, manual retry policy, live validation matrix and existing execution-ledger handoff docs.
+   - **Definition of Done/evidence:** operator/reviewer docs link to the canonical spec section, include sanitized examples/checklists, preserve activation boundaries and pass docs-only review for no overclaim/no secrets.
+
+9. **Legacy compatibility/cutover plan**
+   - **Current status:** `partial`.
+   - **Why needed:** existing legacy provider residue and compatibility surfaces need a controlled cutover/sunset plan so Delivery Hub production readiness does not break old local/staging data or active stores.
+   - **Scope:** compatibility inventory, read-only legacy mapping where needed, fresh-template default confirmation, cutover gate criteria, rollback/fallback posture and external/operator-approved cleanup path.
+   - **Explicit non-goals:** no destructive automatic DB cleanup, no silent removal of compatibility before gates pass, no new legacy investment beyond compatibility/sunset, no new provider before Yandex lifecycle stabilizes.
+   - **Dependencies:** checkout/order finalization, admin operations panel, live validation matrix, release-grade gate and existing §16.15 sunset criteria.
+   - **Definition of Done/evidence:** documented cutover checklist with PASS/BLOCKED gates, explicit old-data handling, no active obsolete provider ids in fresh template path, and current_work sunset-readiness checkpoint only after evidence exists.
+
+10. **Release-grade regression/readiness gate**
+    - **Current status:** `planned`.
+    - **Why needed:** production-ready status must be earned by repeatable regression gates, not inferred from local success or partial live checks.
+    - **Scope:** delivery-hub-specific regression pack aggregating no-network tests, admin/store boundary checks, live validation evidence, polling/cancel/manual retry policies, runbook review, env contract review and final go/no-go criteria.
+    - **Explicit non-goals:** no code tests beyond relevant delivery-hub gates in docs-only changes, no weakening existing baseline integrity gates, no claim that production is ready until all previous tranches produce evidence.
+    - **Dependencies:** all prior roadmap tranches, template baseline integrity contour, env contract and support/runbook evidence.
+    - **Definition of Done/evidence:** release checklist records exact commands/evidence, expected results and blockers; `git diff --check` plus broader project gates pass when implementation tranches land; docs declare readiness only after all blocking items are closed.
+
 Текущий automated coverage для tranche-1 остаётся deliberately no-network и intentionally scoped к materialized seams, но больше не ограничивается только базовыми unit tests: service/backend invariants и security/adapter contour закрыты [`delivery-hub-tranche1-coverage.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/delivery-hub-tranche1-coverage.unit.spec.ts), planner/manual-sync internals — [`delivery-hub.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/delivery-hub.unit.spec.ts) и [`delivery-hub-manual-sync-audit.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/delivery-hub-manual-sync-audit.unit.spec.ts), focused Yandex create-shipment payload materializer coverage — [`delivery-hub-yandex-create-shipment-materializer.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/delivery-hub-yandex-create-shipment-materializer.unit.spec.ts), focused controlled-execution seam/provider validation coverage including preview-only `provider_payload_materialization` evidence and the new `provider_dispatch_port` readiness contract — [`delivery-hub-provider-validation.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/delivery-hub-provider-validation.unit.spec.ts), admin/store route boundaries — [`delivery-hub-admin.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/delivery-hub-admin.unit.spec.ts) и [`delivery-hub-store.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/delivery-hub-store.unit.spec.ts), а operator-facing admin page derived state — [`page-state.unit.spec.ts`](../medusa-agency-boilerplate/src/admin/routes/settings/delivery/__tests__/page-state.unit.spec.ts) через pure seam [`page-state.ts`](../medusa-agency-boilerplate/src/admin/routes/settings/delivery/page-state.ts). Это не эквивалент live network verification, live shipment dispatch, shipment/order persistence, storefront write-path wiring или checkout cutover.
 
 ### 16.18. Scope-lock для admin UI
