@@ -56,6 +56,7 @@ import {
   canFailBlockedDeliveryHubControlledExecution,
 } from "./delivery-hub/shipment-execution-contract"
 import { buildDeliveryHubAcceptedShipmentLifecycleSnapshot } from "./delivery-hub/shipment-lifecycle-read-model"
+import { refreshDeliveryHubAcceptedShipmentStatus } from "./delivery-hub/shipment-status-polling"
 
 type InjectedDependencies = {
   logger: Logger
@@ -346,6 +347,30 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       })}`
     )
 
+    const statusRefresh = await this.refreshAcceptedShipmentStatus({
+      lifecycle: lifecycleSnapshot,
+      shipment: persistedShipment,
+      connection: committedConnection,
+      pg_connection: pgConnection,
+      correlation_id:
+        controlledExecution.handoff.correlation_id ??
+        controlledExecution.execution_identity.provider_operation_reference ??
+        "deliveryhub-status-refresh",
+    })
+
+    this.logger_.info(
+      `Delivery Hub accepted shipment status polling evaluated: ${JSON.stringify({
+        status: statusRefresh.status,
+        provider_call_attempted: statusRefresh.provider_call_attempted,
+        blocked_reason_code: statusRefresh.blocked_reason_code,
+        lifecycle_classification: statusRefresh.lifecycle_classification,
+        accepted: statusRefresh.accepted,
+        provider_status: statusRefresh.provider_status,
+        persistence: statusRefresh.persistence,
+        anti_leak_confirmations: statusRefresh.anti_leak_confirmations,
+      })}`
+    )
+
     return {
       data: {
         provider_code: DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,
@@ -364,11 +389,15 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
                 persistedShipment.provider_correlation_reference_present,
               label_document_present: persistedShipment.label_document_present,
               attachment_document_present: persistedShipment.attachment_document_present,
+              provider_status_summary: persistedShipment.provider_status_summary,
+              status_refresh_outcome: persistedShipment.status_refresh_outcome,
+              status_refreshed_at: persistedShipment.status_refreshed_at,
               created_at: persistedShipment.created_at,
               updated_at: persistedShipment.updated_at,
             }
           : null,
         accepted_shipment_lifecycle: lifecycleSnapshot,
+        accepted_shipment_status_refresh: statusRefresh,
     },
     labels: [],
   }
@@ -487,20 +516,22 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
         input.controlled_execution.provider_dispatch_result?.documents_available ?? false,
       request_summary: requestSummary,
       response_summary: responseSummary,
-      metadata: {
-        provider_code: input.controlled_execution.provider_code,
-        execution_path: input.controlled_execution.execution_path,
-        ledger_execution_reference:
-          input.controlled_execution.execution_identity.provider_operation_reference,
-        ledger_idempotency_key_preview:
-          input.controlled_execution.execution_identity.idempotency_key_preview,
-        ledger_persistence_performed:
-          input.controlled_execution.dispatch_result.execution_ledger_persistence_performed,
-        redacted: true,
-      },
-    })
-
-    input.controlled_execution.dispatch_result.persistence_performed = persistedShipment !== null
+        metadata: {
+          provider_code: input.controlled_execution.provider_code,
+          execution_path: input.controlled_execution.execution_path,
+          ledger_execution_reference:
+            input.controlled_execution.execution_identity.provider_operation_reference,
+          ledger_idempotency_key_preview:
+            input.controlled_execution.execution_identity.idempotency_key_preview,
+          ledger_persistence_performed:
+            input.controlled_execution.dispatch_result.execution_ledger_persistence_performed,
+          provider_shipment_reference_present:
+            input.controlled_execution.provider_dispatch_result?.provider_shipment_reference_present ?? false,
+          provider_shipment_reference_redacted: true,
+          redacted: true,
+        },
+      })
+input.controlled_execution.dispatch_result.persistence_performed = persistedShipment !== null
     input.controlled_execution.dispatch_result.safe_message = persistedShipment
       ? input.controlled_execution.dispatch_result.execution_ledger_persistence_performed
         ? "Direct Yandex create_shipment was attempted and accepted in runtime, canonical execution-ledger reservation/result transitions were persisted, and shipment persistence was materialized with ledger linkage; no order or fulfillment mutation was performed."
@@ -566,6 +597,22 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       shipment: shipmentRecord,
       ledger: ledgerRecord,
       controlled_execution: input.controlled_execution,
+    })
+  }
+
+  protected async refreshAcceptedShipmentStatus(input: {
+    lifecycle: Awaited<ReturnType<typeof buildDeliveryHubAcceptedShipmentLifecycleSnapshot>>
+    shipment: Awaited<ReturnType<typeof upsertDeliveryShipment>> | null
+    connection: Awaited<ReturnType<typeof getDeliveryConnectionByIdReadOnly>> | null
+    pg_connection: ReturnType<typeof getDeliveryHubPgConnection> | null
+    correlation_id: string
+  }) {
+    return refreshDeliveryHubAcceptedShipmentStatus({
+      lifecycle: input.lifecycle,
+      shipment: input.shipment,
+      connection: input.connection,
+      pg_connection: input.pg_connection,
+      correlation_id: input.correlation_id,
     })
   }
 

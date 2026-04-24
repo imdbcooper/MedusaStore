@@ -11,6 +11,8 @@ export type DeliveryHubShipmentPersistenceStatus =
   | "dispatch_accepted"
   | "dispatch_failed"
 
+export type DeliveryHubShipmentStatusRefreshOutcome = "not_refreshed" | "refreshed" | "failed"
+
 export type DeliveryHubShipmentRecord = {
   id: string
   execution_reference: string
@@ -34,6 +36,9 @@ export type DeliveryHubShipmentRecord = {
   provider_correlation_reference_present: boolean
   label_document_present: boolean
   attachment_document_present: boolean
+  provider_status_summary: Record<string, unknown>
+  status_refresh_outcome: DeliveryHubShipmentStatusRefreshOutcome
+  status_refreshed_at: string | null
   request_summary: Record<string, unknown>
   response_summary: Record<string, unknown>
   metadata: Record<string, unknown>
@@ -64,9 +69,20 @@ export type DeliveryHubShipmentUpsertInput = {
   provider_correlation_reference_present: boolean
   label_document_present: boolean
   attachment_document_present: boolean
+  provider_status_summary?: Record<string, unknown>
+  status_refresh_outcome?: DeliveryHubShipmentStatusRefreshOutcome
+  status_refreshed_at?: string | null
   request_summary?: Record<string, unknown>
   response_summary?: Record<string, unknown>
   metadata?: Record<string, unknown>
+}
+
+export type DeliveryHubShipmentStatusUpdateInput = {
+  execution_reference: string
+  provider_status_summary: Record<string, unknown>
+  status_refresh_outcome: DeliveryHubShipmentStatusRefreshOutcome
+  status_refreshed_at?: string | null
+  metadata_patch?: Record<string, unknown>
 }
 
 export async function ensureDeliveryShipmentsTable(pg: DeliveryHubPgConnection) {
@@ -94,12 +110,21 @@ export async function ensureDeliveryShipmentsTable(pg: DeliveryHubPgConnection) 
       provider_correlation_reference_present boolean not null default false,
       label_document_present boolean not null default false,
       attachment_document_present boolean not null default false,
+      provider_status_summary jsonb not null default '{}'::jsonb,
+      status_refresh_outcome text not null default 'not_refreshed',
+      status_refreshed_at timestamptz null,
       request_summary jsonb not null default '{}'::jsonb,
       response_summary jsonb not null default '{}'::jsonb,
       metadata jsonb not null default '{}'::jsonb,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     )
+  `)
+  await pg.raw(`
+    alter table ${DELIVERY_HUB_SHIPMENTS_TABLE}
+      add column if not exists provider_status_summary jsonb not null default '{}'::jsonb,
+      add column if not exists status_refresh_outcome text not null default 'not_refreshed',
+      add column if not exists status_refreshed_at timestamptz null
   `)
 }
 
@@ -126,6 +151,9 @@ type DeliveryHubShipmentRow = {
   provider_correlation_reference_present: boolean
   label_document_present: boolean
   attachment_document_present: boolean
+  provider_status_summary?: unknown
+  status_refresh_outcome?: string | null
+  status_refreshed_at?: string | Date | null
   request_summary: unknown
   response_summary: unknown
   metadata: unknown
@@ -192,12 +220,15 @@ export async function upsertDeliveryShipment(
           provider_correlation_reference_present,
           label_document_present,
           attachment_document_present,
+          provider_status_summary,
+          status_refresh_outcome,
+          status_refreshed_at,
           request_summary,
           response_summary,
           metadata,
           updated_at
         )
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, now())
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, now())
         on conflict (execution_reference)
         do update set
           idempotency_key = excluded.idempotency_key,
@@ -220,6 +251,9 @@ export async function upsertDeliveryShipment(
           provider_correlation_reference_present = excluded.provider_correlation_reference_present,
           label_document_present = excluded.label_document_present,
           attachment_document_present = excluded.attachment_document_present,
+          provider_status_summary = excluded.provider_status_summary,
+          status_refresh_outcome = excluded.status_refresh_outcome,
+          status_refreshed_at = excluded.status_refreshed_at,
           request_summary = excluded.request_summary,
           response_summary = excluded.response_summary,
           metadata = excluded.metadata,
@@ -249,9 +283,65 @@ export async function upsertDeliveryShipment(
         !!input.provider_correlation_reference_present,
         !!input.label_document_present,
         !!input.attachment_document_present,
+        JSON.stringify(input.provider_status_summary ?? {}),
+        normalizeStatusRefreshOutcome(input.status_refresh_outcome),
+        normalizeNullableText(input.status_refreshed_at),
         JSON.stringify(input.request_summary ?? {}),
         JSON.stringify(input.response_summary ?? {}),
         JSON.stringify(input.metadata ?? {}),
+      ]
+    )
+  )
+
+  return rows[0] ? normalizeDeliveryShipmentRow(rows[0]) : null
+}
+
+export async function recordDeliveryShipmentStatusUpdate(
+  pg: DeliveryHubPgConnection,
+  input: DeliveryHubShipmentStatusUpdateInput
+) {
+  const executionReference = normalizeNullableText(input.execution_reference)
+
+  if (!executionReference) {
+    return null
+  }
+
+  await ensureDeliveryShipmentsTable(pg)
+
+  const current = await getDeliveryShipmentByExecutionReference(pg, executionReference)
+  if (!isAcceptedShipmentForStatusUpdate(current)) {
+    return null
+  }
+
+  const metadataPatch = {
+    ...(current.metadata ?? {}),
+    ...(input.metadata_patch ?? {}),
+    redacted: true,
+  }
+
+  const rows = getRawRows<DeliveryHubShipmentRow>(
+    await pg.raw(
+      `
+        update ${DELIVERY_HUB_SHIPMENTS_TABLE}
+        set
+          provider_status_summary = ?::jsonb,
+          status_refresh_outcome = ?,
+          status_refreshed_at = ?,
+          metadata = ?::jsonb,
+          updated_at = now()
+        where execution_reference = ?
+          and outcome = 'accepted'
+          and status = 'dispatch_accepted'
+          and accepted = true
+          and succeeded = true
+        returning *
+      `,
+      [
+        JSON.stringify(input.provider_status_summary ?? {}),
+        normalizeStatusRefreshOutcome(input.status_refresh_outcome),
+        normalizeNullableText(input.status_refreshed_at) ?? new Date().toISOString(),
+        JSON.stringify(metadataPatch),
+        executionReference,
       ]
     )
   )
@@ -283,6 +373,9 @@ function normalizeDeliveryShipmentRow(row: DeliveryHubShipmentRow): DeliveryHubS
     provider_correlation_reference_present: !!row.provider_correlation_reference_present,
     label_document_present: !!row.label_document_present,
     attachment_document_present: !!row.attachment_document_present,
+    provider_status_summary: parseJsonObject(row.provider_status_summary),
+    status_refresh_outcome: normalizeStatusRefreshOutcome(row.status_refresh_outcome),
+    status_refreshed_at: normalizeIsoDate(row.status_refreshed_at),
     request_summary: parseJsonObject(row.request_summary),
     response_summary: parseJsonObject(row.response_summary),
     metadata: parseJsonObject(row.metadata),
@@ -318,6 +411,26 @@ function normalizeOutcome(value: unknown): DeliveryHubShipmentPersistenceOutcome
 
 function normalizeStatus(value: unknown): DeliveryHubShipmentPersistenceStatus {
   return value === "dispatch_failed" ? "dispatch_failed" : "dispatch_accepted"
+}
+
+function normalizeStatusRefreshOutcome(value: unknown): DeliveryHubShipmentStatusRefreshOutcome {
+  if (value === "refreshed" || value === "failed") {
+    return value
+  }
+
+  return "not_refreshed"
+}
+
+function isAcceptedShipmentForStatusUpdate(
+  shipment: DeliveryHubShipmentRecord | null
+): shipment is DeliveryHubShipmentRecord {
+  return Boolean(
+    shipment &&
+      shipment.outcome === "accepted" &&
+      shipment.status === "dispatch_accepted" &&
+      shipment.accepted &&
+      shipment.succeeded
+  )
 }
 
 export function buildDeliveryHubShipmentPersistenceRequestSummary(input: {

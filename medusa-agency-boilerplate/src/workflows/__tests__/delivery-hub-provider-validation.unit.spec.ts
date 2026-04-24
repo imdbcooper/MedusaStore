@@ -70,13 +70,18 @@ describe("Delivery Hub provider validation seam", () => {
           location_id: "sloc_1",
         }
       )
-    ).resolves.toEqual({
-      data: {
+    ).resolves.toEqual(expect.objectContaining({
+      data: expect.objectContaining({
         provider_code: "deliveryhub",
         accepted_shipment_lifecycle: expect.objectContaining({
           classification: "blocked_before_acceptance",
           accepted: false,
           shipment: null,
+        }),
+        accepted_shipment_status_refresh: expect.objectContaining({
+          status: "blocked",
+          provider_call_attempted: false,
+          blocked_reason_code: "accepted_lifecycle_required",
         }),
         controlled_execution: expect.objectContaining({
           status: "blocked",
@@ -90,9 +95,9 @@ describe("Delivery Hub provider validation seam", () => {
           },
         }),
         shipment_persistence: null,
-      },
+      }),
       labels: [],
-    })
+    }))
     const executionPreviewLog = logger.info.mock.calls.find((call) =>
       String(call[0]).includes("execution-plan preview seam evaluated")
     )
@@ -267,13 +272,18 @@ describe("Delivery Hub provider validation seam", () => {
           location_id: "sloc_1",
         }
       )
-    ).resolves.toEqual({
-      data: {
+    ).resolves.toEqual(expect.objectContaining({
+      data: expect.objectContaining({
         provider_code: "deliveryhub",
         accepted_shipment_lifecycle: expect.objectContaining({
           classification: "blocked_before_acceptance",
           accepted: false,
           shipment: null,
+        }),
+        accepted_shipment_status_refresh: expect.objectContaining({
+          status: "blocked",
+          provider_call_attempted: false,
+          blocked_reason_code: "accepted_lifecycle_required",
         }),
         controlled_execution: expect.objectContaining({
           status: "dispatch_prepared",
@@ -358,9 +368,9 @@ describe("Delivery Hub provider validation seam", () => {
           },
         }),
         shipment_persistence: null,
-      },
+      }),
       labels: [],
-    })
+    }))
 
     const executionPreviewLog = [...logger.info.mock.calls]
       .reverse()
@@ -800,14 +810,14 @@ describe("Delivery Hub provider validation seam", () => {
     expect(rawIdempotencyKey).toContain(String(rawExecutionFingerprint))
 
     expect(postSpy).toHaveBeenCalledTimes(1)
-    expect(postSpy).toHaveBeenCalledWith(
+    expect(postSpy.mock.calls[0]).toEqual([
       "/shipments/create",
       expect.objectContaining({
         source: expect.objectContaining({ pickup_point_id: "origin_dropoff_1" }),
         destination: expect.objectContaining({ pickup_point_id: "pvz_2" }),
       }),
-      "corr_enabled_boundary"
-    )
+      "corr_enabled_boundary",
+    ])
     expect(result).toEqual(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -947,7 +957,274 @@ describe("Delivery Hub provider validation seam", () => {
     expect(controlledExecutionJson).not.toContain("shipment_dropoff_123456")
     expect(controlledExecutionJson).not.toContain("provider_dropoff_corr_987654")
   })
- 
+
+  it("refreshes accepted persisted shipment status once from backend-only provider shipment reference and persists a safe normalized summary", async () => {
+    process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
+
+    const postSpy = jest.spyOn(YandexDeliveryClient.prototype, "post")
+      .mockResolvedValueOnce({
+        shipment_id: "shipment_status_acceptance_should_not_leak",
+        request_id: "provider_status_corr_should_not_leak",
+        labels: [{ url: "https://example.test/dropoff-label.pdf" }],
+      })
+      .mockResolvedValueOnce({
+        status: "delivering",
+        shipment_id: "shipment_status_poll_should_not_leak",
+        request_id: "provider_status_poll_corr_should_not_leak",
+        token: "status_token_should_not_leak",
+        quote_key: "status_quote_key_should_not_leak",
+        raw_response: "Authorization: Bearer status-auth-should-not-leak",
+      })
+    const backendOnlyProviderShipmentReference = "provider_status_refresh_backend_only_ref_123"
+
+    const provider = buildProvider({
+      resolvedPgConnection: buildReadOnlyLookupPgConnection([buildConnectionRow()], {
+        backendOnlyProviderShipmentReference,
+      }),
+      carts: [buildDropoffCartSelection("cart_1", "corr_status_refresh")],
+    })
+
+    const result = await provider.createFulfillment(
+      {
+        ...buildValidFulfillmentData(),
+        cart_id: "cart_1",
+        shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+        shipping_option_type_id: "deliveryhub_deliveryhub",
+        correlation_id: "corr_status_refresh",
+        updated_at: "2026-04-23T07:00:00.000Z",
+      },
+      [{ line_item_id: "item_1", quantity: 1 }],
+      { id: "order_1", display_id: 42, currency_code: "RUB" },
+      { id: "ful_1", location_id: "sloc_1" }
+    )
+
+    expect(postSpy).toHaveBeenCalledTimes(2)
+    expect(postSpy.mock.calls[1]).toEqual([
+      "/shipments/info",
+      { shipment_id: backendOnlyProviderShipmentReference },
+      "corr_status_refresh",
+    ])
+    expect(result.data.accepted_shipment_status_refresh).toEqual(
+      expect.objectContaining({
+        status: "refreshed",
+        provider_call_attempted: true,
+        accepted: true,
+        provider_status: expect.objectContaining({
+          provider_code: "yandex",
+          operation: "get_shipment_status",
+          attempted: true,
+          succeeded: true,
+          status_category: "received",
+          neutral_status: "in_transit",
+          provider_status_known: true,
+          provider_status_present: true,
+          provider_status_normalized: "in_transit",
+          redacted: true,
+        }),
+        persistence: expect.objectContaining({
+          attempted: true,
+          performed: true,
+          outcome: "refreshed",
+        }),
+        anti_leak_confirmations: {
+          raw_provider_payloads_included: false,
+          raw_provider_request_included: false,
+          raw_provider_response_included: false,
+          raw_yandex_response_body_included: false,
+          auth_headers_included: false,
+          credentials_included: false,
+          raw_quote_key_included: false,
+          raw_provider_identifier_included: false,
+        },
+      })
+    )
+
+    const statusJson = JSON.stringify(result.data.accepted_shipment_status_refresh)
+    expect(statusJson).not.toContain("shipment_status_acceptance_should_not_leak")
+    expect(statusJson).not.toContain("provider_status_corr_should_not_leak")
+    expect(statusJson).not.toContain("shipment_status_poll_should_not_leak")
+    expect(statusJson).not.toContain("provider_status_poll_corr_should_not_leak")
+    expect(statusJson).not.toContain("status_token_should_not_leak")
+    expect(statusJson).not.toContain("status_quote_key_should_not_leak")
+    expect(statusJson).not.toContain("Authorization")
+    expect(statusJson).not.toContain("status-auth-should-not-leak")
+  })
+
+  it("blocks accepted shipment status polling before provider status call when only provider reference presence flag exists", async () => {
+    process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
+
+    const postSpy = jest.spyOn(YandexDeliveryClient.prototype, "post").mockResolvedValue({
+      shipment_id: "shipment_missing_raw_reference_should_not_be_reused",
+      request_id: "provider_missing_raw_reference_corr_should_not_leak",
+      labels: [{ url: "https://example.test/dropoff-label.pdf" }],
+    })
+
+    const provider = buildProvider({
+      resolvedPgConnection: buildReadOnlyLookupPgConnection([buildConnectionRow()]),
+      carts: [buildDropoffCartSelection("cart_1", "corr_status_missing_provider_reference")],
+    })
+
+    const result = await provider.createFulfillment(
+      {
+        ...buildValidFulfillmentData(),
+        cart_id: "cart_1",
+        shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+        shipping_option_type_id: "deliveryhub_deliveryhub",
+        correlation_id: "corr_status_missing_provider_reference",
+        updated_at: "2026-04-23T07:00:00.000Z",
+      },
+      [{ line_item_id: "item_1", quantity: 1 }],
+      { id: "order_1", display_id: 42, currency_code: "RUB" },
+      { id: "ful_1", location_id: "sloc_1" }
+    )
+
+    expect(postSpy).toHaveBeenCalledTimes(1)
+    expect(postSpy.mock.calls[0]?.[0]).toBe("/shipments/create")
+    expect(postSpy.mock.calls.some((call) => call[0] === "/shipments/info")).toBe(false)
+    expect(result.data.accepted_shipment_lifecycle).toEqual(
+      expect.objectContaining({ classification: "accepted_shipment", accepted: true })
+    )
+    expect(result.data.shipment_persistence).toEqual(
+      expect.objectContaining({
+        outcome: "accepted",
+        status: "dispatch_accepted",
+        accepted: true,
+        succeeded: true,
+        provider_shipment_reference_present: true,
+      })
+    )
+    expect(result.data.accepted_shipment_status_refresh).toEqual(
+      expect.objectContaining({
+        status: "blocked",
+        provider_call_attempted: false,
+        blocked_reason_code: "provider_shipment_reference_required",
+        lifecycle_classification: "accepted_shipment",
+        accepted: false,
+        provider_status: null,
+        persistence: { attempted: false, performed: false, outcome: "not_refreshed" },
+      })
+    )
+
+    const statusRefreshJson = JSON.stringify(result.data.accepted_shipment_status_refresh)
+    expect(statusRefreshJson).not.toContain("dhprev_")
+    expect(statusRefreshJson).not.toContain("shipment_missing_raw_reference_should_not_be_reused")
+    expect(statusRefreshJson).not.toContain("provider_missing_raw_reference_corr_should_not_leak")
+  })
+
+  it("blocks Yandex status polling for non-accepted lifecycle paths without provider calls", async () => {
+    const postSpy = jest.spyOn(YandexDeliveryClient.prototype, "post")
+    const provider = buildProvider({
+      resolvedPgConnection: buildReadOnlyLookupPgConnection([buildConnectionRow()]),
+      carts: [buildDropoffCartSelection("cart_1", "corr_status_blocked")],
+    })
+
+    const result = await provider.createFulfillment(
+      {
+        ...buildValidFulfillmentData(),
+        cart_id: "cart_1",
+        shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+        shipping_option_type_id: "deliveryhub_deliveryhub",
+        correlation_id: "corr_status_blocked",
+        updated_at: "2026-04-23T07:00:00.000Z",
+      },
+      [{ line_item_id: "item_1", quantity: 1 }],
+      { id: "order_1", display_id: 42, currency_code: "RUB" },
+      { id: "ful_1", location_id: "sloc_1" }
+    )
+
+    expect(postSpy).not.toHaveBeenCalled()
+    expect(result.data.accepted_shipment_lifecycle).toEqual(
+      expect.objectContaining({ classification: "blocked_before_acceptance", accepted: false })
+    )
+    expect(result.data.accepted_shipment_status_refresh).toEqual(
+      expect.objectContaining({
+        status: "blocked",
+        provider_call_attempted: false,
+        blocked_reason_code: "accepted_lifecycle_required",
+        lifecycle_classification: "blocked_before_acceptance",
+        accepted: false,
+        provider_status: null,
+        persistence: { attempted: false, performed: false, outcome: "not_refreshed" },
+      })
+    )
+  })
+
+  it("normalizes unknown provider status safely without corrupting the accepted shipment snapshot", async () => {
+    process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
+
+    const postSpy = jest.spyOn(YandexDeliveryClient.prototype, "post")
+      .mockResolvedValueOnce({ shipment_id: "shipment_unknown_status_acceptance_should_not_leak" })
+      .mockResolvedValueOnce({
+        status: "provider-brand-new-state",
+        shipment_id: "shipment_unknown_status_poll_should_not_leak",
+        authorization: "Bearer unknown-status-auth-should-not-leak",
+      })
+
+    const provider = buildProvider({
+      resolvedPgConnection: buildReadOnlyLookupPgConnection([buildConnectionRow()], {
+        backendOnlyProviderShipmentReference: "provider_unknown_status_backend_only_ref_123",
+      }),
+      carts: [buildDropoffCartSelection("cart_1", "corr_unknown_status")],
+    })
+
+    const result = await provider.createFulfillment(
+      {
+        ...buildValidFulfillmentData(),
+        cart_id: "cart_1",
+        shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+        shipping_option_type_id: "deliveryhub_deliveryhub",
+        correlation_id: "corr_unknown_status",
+        updated_at: "2026-04-23T07:00:00.000Z",
+      },
+      [{ line_item_id: "item_1", quantity: 1 }],
+      { id: "order_1", display_id: 42, currency_code: "RUB" },
+      { id: "ful_1", location_id: "sloc_1" }
+    )
+
+    expect(postSpy).toHaveBeenCalledTimes(2)
+    expect(postSpy.mock.calls[1]).toEqual([
+      "/shipments/info",
+      { shipment_id: "provider_unknown_status_backend_only_ref_123" },
+      "corr_unknown_status",
+    ])
+    expect(result.data.accepted_shipment_lifecycle).toEqual(
+      expect.objectContaining({
+        classification: "accepted_shipment",
+        accepted: true,
+        shipment: expect.objectContaining({
+          outcome: "accepted",
+          status: "dispatch_accepted",
+          accepted: true,
+          succeeded: true,
+        }),
+      })
+    )
+    expect(result.data.accepted_shipment_status_refresh).toEqual(
+      expect.objectContaining({
+        status: "refreshed",
+        provider_call_attempted: true,
+        provider_status: expect.objectContaining({
+          status_category: "unknown_provider_status",
+          neutral_status: "unknown",
+          provider_status_known: false,
+          provider_status_present: true,
+          provider_status_normalized: "unknown",
+        }),
+        persistence: expect.objectContaining({
+          attempted: true,
+          performed: true,
+          outcome: "refreshed",
+        }),
+      })
+    )
+
+    const resultJson = JSON.stringify(result.data)
+    expect(resultJson).not.toContain("provider-brand-new-state")
+    expect(resultJson).not.toContain("shipment_unknown_status_acceptance_should_not_leak")
+    expect(resultJson).not.toContain("shipment_unknown_status_poll_should_not_leak")
+    expect(resultJson).not.toContain("unknown-status-auth-should-not-leak")
+  })
+
   it("truthfully shifts the warehouse direct Yandex blocker after provider-origin context is available and the shipment execution gate is enabled", async () => {
     process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
 
@@ -1225,7 +1502,7 @@ describe("Delivery Hub provider validation seam", () => {
     )
 
     expect(postSpy).toHaveBeenCalledTimes(1)
-    expect(postSpy).toHaveBeenCalledWith(
+    expect(postSpy.mock.calls[0]).toEqual([
       "/shipments/create",
       expect.objectContaining({
         source: expect.objectContaining({
@@ -1237,8 +1514,8 @@ describe("Delivery Hub provider validation seam", () => {
         }),
         destination: expect.objectContaining({ pickup_point_id: "pvz_2" }),
       }),
-      "corr_enabled_boundary_wh_live"
-    )
+      "corr_enabled_boundary_wh_live",
+    ])
     expect(result).toEqual(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -2727,6 +3004,7 @@ function buildReadOnlyLookupPgConnection(
     forceReserveDrift?: boolean
     existingLedgerState?: (typeof DELIVERY_HUB_EXECUTION_STATE)[keyof typeof DELIVERY_HUB_EXECUTION_STATE]
     seedAcceptedShipmentForExistingLedger?: boolean
+    backendOnlyProviderShipmentReference?: string
   }
 ) {
   const state = {
@@ -2862,6 +3140,9 @@ function buildReadOnlyLookupPgConnection(
                 provider_correlation_reference_present: true,
                 label_document_present: true,
                 attachment_document_present: true,
+                provider_status_summary: {},
+                status_refresh_outcome: "not_refreshed",
+                status_refreshed_at: null,
                 request_summary: {},
                 response_summary: {},
                 metadata: { ledger_persistence_performed: true, redacted: true },
@@ -2946,11 +3227,24 @@ function buildReadOnlyLookupPgConnection(
           provider_correlation_reference_present: Boolean(bindings?.[19]),
           label_document_present: Boolean(bindings?.[20]),
           attachment_document_present: Boolean(bindings?.[21]),
-          request_summary:
+          provider_status_summary:
             typeof bindings?.[22] === "string" ? JSON.parse(bindings[22] as string) : {},
+          status_refresh_outcome:
+            typeof bindings?.[23] === "string" ? bindings[23] : "not_refreshed",
+          status_refreshed_at: typeof bindings?.[24] === "string" ? bindings[24] : null,
+          request_summary:
+            typeof bindings?.[25] === "string" ? JSON.parse(bindings[25] as string) : {},
           response_summary:
-            typeof bindings?.[23] === "string" ? JSON.parse(bindings[23] as string) : {},
-          metadata: typeof bindings?.[24] === "string" ? JSON.parse(bindings[24] as string) : {},
+            typeof bindings?.[26] === "string" ? JSON.parse(bindings[26] as string) : {},
+          metadata: {
+            ...(typeof bindings?.[27] === "string" ? JSON.parse(bindings[27] as string) : {}),
+            ...(options?.backendOnlyProviderShipmentReference
+              ? {
+                  provider_shipment_reference:
+                    options.backendOnlyProviderShipmentReference,
+                }
+              : {}),
+          },
           created_at: "2026-04-23T08:00:00.000Z",
           updated_at: "2026-04-23T08:00:00.000Z",
         }
@@ -2966,6 +3260,41 @@ function buildReadOnlyLookupPgConnection(
         }
 
         return { rows: [row] }
+      }
+
+      if (sql.includes("update delivery_shipments")) {
+        const providerStatusSummary =
+          typeof bindings?.[0] === "string" ? JSON.parse(bindings[0] as string) : {}
+        const statusRefreshOutcome =
+          typeof bindings?.[1] === "string" ? bindings[1] : "not_refreshed"
+        const statusRefreshedAt =
+          typeof bindings?.[2] === "string" ? bindings[2] : "2026-04-23T09:00:00.000Z"
+        const metadata = typeof bindings?.[3] === "string" ? JSON.parse(bindings[3] as string) : {}
+        const executionReference = typeof bindings?.[4] === "string" ? bindings[4] : ""
+        const existingIndex = state.shipments.findIndex(
+          (entry) =>
+            entry.execution_reference === executionReference &&
+            entry.outcome === "accepted" &&
+            entry.status === "dispatch_accepted" &&
+            entry.accepted === true &&
+            entry.succeeded === true
+        )
+
+        if (existingIndex < 0) {
+          return { rowCount: 0, rows: [] }
+        }
+
+        const row = {
+          ...state.shipments[existingIndex],
+          provider_status_summary: providerStatusSummary,
+          status_refresh_outcome: statusRefreshOutcome,
+          status_refreshed_at: statusRefreshedAt,
+          metadata,
+          updated_at: "2026-04-23T09:00:00.000Z",
+        }
+        state.shipments[existingIndex] = row
+
+        return { rowCount: 1, rows: [row] }
       }
 
       return { rows }
@@ -3008,6 +3337,67 @@ function buildValidOptionData() {
     provider_code: "deliveryhub",
     provider_id: "deliveryhub_deliveryhub",
     mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+  }
+}
+
+function buildDropoffCartSelection(id: string, correlationId: string) {
+  return {
+    id,
+    metadata: {
+      delivery_hub: {
+        selection: {
+          version: 1,
+          provider_code: "yandex",
+          connection_id: "conn_ready",
+          quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+          quote_reference: createDeliveryHubQuoteReference({
+            connection_id: "conn_ready",
+            quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+            quote_key: "quote_provider_validation",
+            provider_origin_dispatch_context: {
+              mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+              origin_point_id: "origin_dropoff_1",
+            },
+          }),
+          backend_execution_reference: createDeliveryHubProviderExecutionReference({
+            connection_id: "conn_ready",
+            quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+            quote_key: "quote_provider_validation",
+            provider_origin_dispatch_context: {
+              mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+              origin_point_id: "origin_dropoff_1",
+            },
+          }),
+          quote: {
+            carrier_code: "yandex",
+            carrier_label: "Yandex Delivery",
+            amount: 299,
+            currency_code: "RUB",
+            delivery_eta_min: 1,
+            delivery_eta_max: 1,
+            pickup_point_required: true,
+            pickup_window_required: false,
+          },
+          pickup_point: {
+            provider_point_id: "pvz_1",
+            provider_point_code: null,
+            name: "PVZ 1",
+            address: "Tverskaya 1",
+            city: "Moscow",
+            region: null,
+            postal_code: null,
+            lat: null,
+            lng: null,
+            is_origin_dropoff_allowed: false,
+            is_destination_pickup_allowed: true,
+            payment_methods: [],
+          },
+          pickup_window: null,
+          correlation_id: correlationId,
+          updated_at: "2026-04-23T07:00:00.000Z",
+        },
+      },
+    },
   }
 }
 
