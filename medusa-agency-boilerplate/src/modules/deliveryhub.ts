@@ -50,6 +50,8 @@ import {
   buildDeliveryHubControlledExecutionAuditDraft,
   buildDeliveryHubControlledExecutionRecordDraft,
   buildDeliveryHubControlledExecutionReservationDraft,
+  canDispatchDeliveryHubControlledExecution,
+  canFailBlockedDeliveryHubControlledExecution,
 } from "./delivery-hub/shipment-execution-contract"
 
 type InjectedDependencies = {
@@ -389,7 +391,11 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
     fulfillment: Record<string, unknown>
     pg_connection: ReturnType<typeof getDeliveryHubPgConnection> | null
   }) {
-    if (!input.pg_connection || input.controlled_execution.status !== "dispatch_attempted") {
+    if (
+      !input.pg_connection ||
+      input.controlled_execution.status !== "dispatch_attempted" ||
+      input.controlled_execution.dispatch_result.outcome !== "accepted"
+    ) {
       return null
     }
 
@@ -479,13 +485,9 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
 
     input.controlled_execution.dispatch_result.persistence_performed = persistedShipment !== null
     input.controlled_execution.dispatch_result.safe_message = persistedShipment
-      ? input.controlled_execution.provider_dispatch_result?.succeeded
-        ? input.controlled_execution.dispatch_result.execution_ledger_persistence_performed
-          ? "Direct Yandex create_shipment was attempted and accepted in runtime, canonical execution-ledger reservation/result transitions were persisted, and shipment persistence was materialized with ledger linkage; no order or fulfillment mutation was performed."
-          : "Direct Yandex create_shipment was attempted and accepted in runtime, with a redacted result returned and shipment persistence materialized; no execution-ledger persistence and no order or fulfillment mutation were performed."
-        : input.controlled_execution.dispatch_result.execution_ledger_persistence_performed
-          ? `Direct Yandex create_shipment was attempted in runtime and returned a redacted failure category (${input.controlled_execution.provider_dispatch_result?.status_category ?? "unknown"}); canonical execution-ledger reservation/result transitions and shipment persistence with ledger linkage were materialized, while order or fulfillment mutation was not performed.`
-          : `Direct Yandex create_shipment was attempted in runtime and returned a redacted failure category (${input.controlled_execution.provider_dispatch_result?.status_category ?? "unknown"}); shipment persistence was materialized, while execution-ledger persistence and order or fulfillment mutation were not performed.`
+      ? input.controlled_execution.dispatch_result.execution_ledger_persistence_performed
+        ? "Direct Yandex create_shipment was attempted and accepted in runtime, canonical execution-ledger reservation/result transitions were persisted, and shipment persistence was materialized with ledger linkage; no order or fulfillment mutation was performed."
+        : "Direct Yandex create_shipment was attempted and accepted in runtime, with a redacted result returned and shipment persistence materialized; no execution-ledger persistence and no order or fulfillment mutation were performed."
       : input.controlled_execution.dispatch_result.safe_message
 
     if (persistedShipment !== null) {
@@ -553,6 +555,7 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
           return {
             status: "drifted",
             persistence_performed: false,
+            existing_state: null,
           }
         }
 
@@ -567,9 +570,44 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
         })
 
         if (reserveResult.status !== "created") {
+          const existingState = reserveResult.record.execution.current_state
+
+          if (reserveResult.status === "drifted") {
+            return {
+              status: "drifted",
+              persistence_performed: false,
+              existing_state: existingState,
+            }
+          }
+
+          if (existingState === DELIVERY_HUB_EXECUTION_STATE.completed) {
+            return {
+              status: "replay_blocked",
+              persistence_performed: false,
+              existing_state: existingState,
+            }
+          }
+
+          if (existingState === DELIVERY_HUB_EXECUTION_STATE.failedBlocked) {
+            return {
+              status: "failed_blocked",
+              persistence_performed: false,
+              existing_state: existingState,
+            }
+          }
+
+          if (!canDispatchDeliveryHubControlledExecution(existingState)) {
+            return {
+              status: "matched",
+              persistence_performed: false,
+              existing_state: existingState,
+            }
+          }
+
           return {
-            status: reserveResult.status,
+            status: "matched",
             persistence_performed: false,
+            existing_state: existingState,
           }
         }
 
@@ -602,9 +640,36 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
         return {
           status: "created",
           persistence_performed: true,
+          existing_state: DELIVERY_HUB_EXECUTION_STATE.dispatchInflight,
         }
       },
       markDispatchResultReceived: async ({ execution_reference, outcome }) => {
+        const existingRecord = await repository.getExecutionByReference(execution_reference)
+
+        if (!existingRecord) {
+          return {
+            persistence_performed: false,
+          }
+        }
+
+        if (existingRecord.execution.current_state !== DELIVERY_HUB_EXECUTION_STATE.dispatchInflight) {
+          if (outcome === "failed" && canFailBlockedDeliveryHubControlledExecution(existingRecord.execution.current_state)) {
+            const failedBlocked = await repository.recordTransition({
+              execution_reference,
+              from: existingRecord.execution.current_state,
+              to: DELIVERY_HUB_EXECUTION_STATE.failedBlocked,
+            })
+
+            return {
+              persistence_performed: failedBlocked.status === "recorded",
+            }
+          }
+
+          return {
+            persistence_performed: false,
+          }
+        }
+
         const resultReceived = await repository.recordTransition({
           execution_reference,
           from: DELIVERY_HUB_EXECUTION_STATE.dispatchInflight,
