@@ -1374,6 +1374,47 @@ const AdminDeliveryAdminShipmentOperationsSchema = z
           .strict(),
       })
       .strict(),
+    retry: z
+      .object({
+        readiness: z
+          .object({
+            version: z.literal(1),
+            available: z.boolean(),
+            blocked_reason_code: z.string().nullable(),
+            blocked_reason: z.string().nullable(),
+            lifecycle_classification: z.string().nullable(),
+            ledger_state: z.string().nullable(),
+            terminal_completed: z.boolean(),
+            terminal_blocked: z.boolean(),
+            idempotency_linked: z.boolean(),
+            persisted_shipment_present: z.boolean(),
+            accepted_shipment_present: z.boolean(),
+            provider_shipment_reference_present: z.boolean(),
+            redacted: z.literal(true),
+            anti_leak_confirmations: z
+              .object({
+                raw_provider_payloads_included: z.literal(false),
+                raw_provider_request_included: z.literal(false),
+                raw_provider_response_included: z.literal(false),
+                raw_yandex_response_body_included: z.literal(false),
+                auth_headers_included: z.literal(false),
+                credentials_included: z.literal(false),
+                raw_quote_key_included: z.literal(false),
+                raw_provider_identifier_included: z.literal(false),
+                raw_execution_secret_included: z.literal(false),
+              })
+              .strict(),
+          })
+          .strict(),
+        last_result: z
+          .object({
+            status: z.literal("not_requested"),
+            safe_message: z.string(),
+            redacted: z.literal(true),
+          })
+          .strict(),
+      })
+      .strict(),
     ledger: z
       .object({
         linked: z.boolean(),
@@ -1423,7 +1464,7 @@ const AdminDeliveryAdminShipmentOperationsSchema = z
       .object({
         refresh_status: z.enum(["available", "blocked"]),
         cancel: z.enum(["available", "blocked"]),
-        retry: z.literal("not_materialized"),
+        retry: z.enum(["available", "blocked"]),
         webhooks: z.literal("not_materialized"),
         scheduler: z.literal("not_materialized"),
       })
@@ -1463,6 +1504,14 @@ const AdminDeliveryAdminShipmentOperationsCancelResponseSchema = z
     ok: z.literal(true),
     operations: AdminDeliveryAdminShipmentOperationsSchema,
     cancel: z.record(z.unknown()),
+  })
+  .strict()
+
+const AdminDeliveryAdminShipmentOperationsRetryResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    operations: AdminDeliveryAdminShipmentOperationsSchema,
+    retry: z.record(z.unknown()),
   })
   .strict()
 
@@ -1649,6 +1698,16 @@ export function sanitizeAdminDeliveryAdminShipmentOperationsCancelResponse(resul
   })
 }
 
+export function sanitizeAdminDeliveryAdminShipmentOperationsRetryResponse(result: unknown) {
+  const root = asRecord(result)
+
+  return AdminDeliveryAdminShipmentOperationsRetryResponseSchema.parse({
+    ...root,
+    operations: sanitizeAdminDeliveryAdminShipmentOperations(root.operations),
+    retry: sanitizeAdminStructuredPayload(root.retry),
+  })
+}
+
 export function sanitizeAdminDeliveryExecutionPlanObservabilityPreview(preview: unknown) {
   const root = asRecord(preview)
 
@@ -1685,6 +1744,10 @@ function sanitizeAdminDeliveryAdminShipmentOperations(value: unknown) {
   const cancelReadiness = asRecord(cancel.readiness)
   const cancelReadinessAntiLeak = asRecord(cancelReadiness.anti_leak_confirmations)
   const cancelLastResult = asRecord(cancel.last_result)
+  const retry = asRecord(root.retry)
+  const retryReadiness = asRecord(retry.readiness)
+  const retryReadinessAntiLeak = asRecord(retryReadiness.anti_leak_confirmations)
+  const retryLastResult = asRecord(retry.last_result)
   const ledger = asRecord(root.ledger)
   const lifecycle = asRecord(root.lifecycle)
   const provider = asRecord(root.provider)
@@ -1751,6 +1814,29 @@ function sanitizeAdminDeliveryAdminShipmentOperations(value: unknown) {
         status: cancelLastResult.status,
         safe_message: sanitizeAdminString(cancelLastResult.safe_message),
         redacted: cancelLastResult.redacted,
+      },
+    },
+    retry: {
+      readiness: {
+        version: retryReadiness.version,
+        available: retryReadiness.available,
+        blocked_reason_code: sanitizeNullableAdminString(retryReadiness.blocked_reason_code),
+        blocked_reason: sanitizeNullableAdminString(retryReadiness.blocked_reason),
+        lifecycle_classification: sanitizeNullableAdminString(retryReadiness.lifecycle_classification),
+        ledger_state: sanitizeNullableAdminString(retryReadiness.ledger_state),
+        terminal_completed: retryReadiness.terminal_completed,
+        terminal_blocked: retryReadiness.terminal_blocked,
+        idempotency_linked: retryReadiness.idempotency_linked,
+        persisted_shipment_present: retryReadiness.persisted_shipment_present,
+        accepted_shipment_present: retryReadiness.accepted_shipment_present,
+        provider_shipment_reference_present: retryReadiness.provider_shipment_reference_present,
+        redacted: retryReadiness.redacted,
+        anti_leak_confirmations: retryReadinessAntiLeak,
+      },
+      last_result: {
+        status: retryLastResult.status,
+        safe_message: sanitizeAdminString(retryLastResult.safe_message),
+        redacted: retryLastResult.redacted,
       },
     },
     ledger: {

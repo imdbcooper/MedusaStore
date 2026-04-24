@@ -4,6 +4,7 @@ import {
   buildShipmentOperationsCancelUrl,
   buildShipmentOperationsRefreshStatusRequestBody,
   buildShipmentOperationsRefreshStatusUrl,
+  buildShipmentOperationsRetryUrl,
   buildShipmentOperationsSnapshotUrl,
   connectionToForm,
   defaultConnectionForm,
@@ -2159,6 +2160,9 @@ describe("delivery admin settings page state", () => {
     expect(buildShipmentOperationsCancelUrl(" exec/ref 1 ")).toBe(
       "/admin/delivery/shipments/exec%2Fref%201/operations/cancel"
     )
+    expect(buildShipmentOperationsRetryUrl(" exec/ref 1 ")).toBe(
+      "/admin/delivery/shipments/exec%2Fref%201/operations/retry"
+    )
     expect(buildShipmentOperationsRefreshStatusRequestBody(" corr_1 ")).toEqual({ correlation_id: "corr_1" })
     expect(buildShipmentOperationsCancelRequestBody(" cancel_corr_1 ")).toEqual({ correlation_id: "cancel_corr_1" })
     expect(buildShipmentOperationsRefreshStatusRequestBody("   ")).toEqual({})
@@ -2235,6 +2239,32 @@ describe("delivery admin settings page state", () => {
           redacted: true,
         },
       },
+      retry: {
+        readiness: {
+          version: 1,
+          available: false,
+          blocked_reason_code: "accepted_shipment_not_retryable",
+          blocked_reason:
+            "Manual retry is blocked because this execution already has an accepted shipment and redispatch would risk duplicate shipment creation.",
+          lifecycle_classification: "accepted_shipment",
+          ledger_state: "completed",
+          terminal_completed: true,
+          terminal_blocked: false,
+          idempotency_linked: true,
+          persisted_shipment_present: true,
+          accepted_shipment_present: true,
+          provider_shipment_reference_present: true,
+          redacted: true,
+          anti_leak_confirmations: {
+            raw_provider_payloads_included: false,
+          },
+        },
+        last_result: {
+          status: "not_requested",
+          safe_message: "Manual shipment retry has not been requested in this snapshot.",
+          redacted: true,
+        },
+      },
       ledger: {
         linked: true,
         state: "completed",
@@ -2273,7 +2303,7 @@ describe("delivery admin settings page state", () => {
       action_posture: {
         refresh_status: "available",
         cancel: "available",
-        retry: "not_materialized",
+        retry: "blocked",
         webhooks: "not_materialized",
         scheduler: "not_materialized",
       },
@@ -2308,6 +2338,7 @@ describe("delivery admin settings page state", () => {
       ["neutral_status", "in_transit"],
       ["refresh", "yes"],
       ["cancel", "yes"],
+      ["retry", "no"],
     ])
     expect(state.statusRefreshRows.map((row) => [row.key, row.value])).toEqual(
       expect.arrayContaining([
@@ -2339,7 +2370,7 @@ describe("delivery admin settings page state", () => {
     expect(state.actionBadges).toEqual([
       { key: "refresh_status", label: "refresh_status: available", available: true },
       { key: "cancel", label: "cancel: available", available: true },
-      { key: "retry", label: "retry: not_materialized", available: false },
+      { key: "retry", label: "retry: blocked", available: false },
       { key: "webhooks", label: "webhooks: not_materialized", available: false },
       { key: "scheduler", label: "scheduler: not_materialized", available: false },
     ])
@@ -2404,6 +2435,32 @@ describe("delivery admin settings page state", () => {
           redacted: true,
         },
       },
+      retry: {
+        readiness: {
+          version: 1,
+          available: false,
+          blocked_reason_code: "execution_ledger_state_not_retryable",
+          blocked_reason:
+            "Manual retry is allowed only for execution-ledger state failed_blocked in this tranche.",
+          lifecycle_classification: "non_accepted_shipment",
+          ledger_state: "failed_blocked",
+          terminal_completed: false,
+          terminal_blocked: true,
+          idempotency_linked: true,
+          persisted_shipment_present: false,
+          accepted_shipment_present: false,
+          provider_shipment_reference_present: false,
+          redacted: true,
+          anti_leak_confirmations: {
+            raw_provider_payloads_included: false,
+          },
+        },
+        last_result: {
+          status: "not_requested",
+          safe_message: "Manual shipment retry has not been requested in this snapshot.",
+          redacted: true,
+        },
+      },
       ledger: {
         linked: true,
         state: "failed_blocked",
@@ -2442,7 +2499,7 @@ describe("delivery admin settings page state", () => {
       action_posture: {
         refresh_status: "blocked",
         cancel: "blocked",
-        retry: "not_materialized",
+        retry: "blocked",
         webhooks: "not_materialized",
         scheduler: "not_materialized",
       },
@@ -2468,6 +2525,8 @@ describe("delivery admin settings page state", () => {
     expect(state.canCancelShipment).toBe(false)
     expect(state.cancelButtonText).toBe("Cancel blocked")
     expect(state.statusBadgeText).toBe("blocked: provider_failed")
+    expect(state.canRetryShipment).toBe(false)
+    expect(state.retryButtonText).toBe("Retry blocked")
     expect(state.detailRows).toEqual(
       expect.arrayContaining([
         {
@@ -2491,8 +2550,10 @@ describe("delivery admin settings page state", () => {
       lookupReady: false,
       canRefreshStatus: false,
       canCancelShipment: false,
+      canRetryShipment: false,
       refreshButtonText: "Refresh status blocked",
       cancelButtonText: "Cancel blocked",
+      retryButtonText: "Retry blocked",
       refreshStatusTone: "deferred",
       statusBadgeText: "not loaded",
       actionBadges: [],

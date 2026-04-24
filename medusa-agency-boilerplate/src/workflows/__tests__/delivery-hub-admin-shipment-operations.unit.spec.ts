@@ -103,7 +103,7 @@ describe("Delivery Hub admin shipment operations visibility", () => {
         action_posture: {
           refresh_status: "available",
           cancel: "available",
-          retry: "not_materialized",
+          retry: "blocked",
           webhooks: "not_materialized",
           scheduler: "not_materialized",
         },
@@ -476,6 +476,9 @@ describe("Delivery Hub admin shipment operations visibility", () => {
     )
     expect(middlewaresSource).toMatch(
       /matcher:\s*"\/admin\/delivery\/shipments\/:execution_reference\/operations\/cancel"[\s\S]*?methods:\s*\["POST"\][\s\S]*?middlewares:\s*\[adminAuth\]/
+    )
+    expect(middlewaresSource).toMatch(
+      /matcher:\s*"\/admin\/delivery\/shipments\/:execution_reference\/operations\/retry"[\s\S]*?methods:\s*\["POST"\][\s\S]*?middlewares:\s*\[adminAuth\]/
     )
   })
 })

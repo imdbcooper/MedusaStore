@@ -82,6 +82,11 @@ export default defineMiddlewares({
       middlewares: [adminAuth],
     },
     {
+      matcher: "/admin/delivery/shipments/:execution_reference/operations/retry",
+      methods: ["POST"],
+      middlewares: [adminAuth],
+    },
+    {
       matcher: "/admin/delivery/connections",
       methods: ["GET"],
       middlewares: [adminAuth],

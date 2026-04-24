@@ -14,6 +14,7 @@ import {
   buildShipmentOperationsCancelUrl,
   buildShipmentOperationsRefreshStatusRequestBody,
   buildShipmentOperationsRefreshStatusUrl,
+  buildShipmentOperationsRetryUrl,
   buildShipmentOperationsSnapshotUrl,
   capabilityLabels,
   connectionToForm,
@@ -55,6 +56,7 @@ import {
   type DeliveryHubShipmentOperationsForm,
   type DeliveryHubShipmentOperationsRefreshResponse,
   type DeliveryHubShipmentOperationsResponse,
+  type DeliveryHubShipmentOperationsRetryResponse,
   type DeliveryHubShipmentOperationsSnapshot,
   type DeliveryHubShippingOptionManualSyncResponse,
   type DeliveryHubShippingOptionPreview,
@@ -213,6 +215,7 @@ const DeliverySettingsPage = () => {
   const [isLoadingShipmentOperations, setIsLoadingShipmentOperations] = useState(false)
   const [isRefreshingShipmentStatus, setIsRefreshingShipmentStatus] = useState(false)
   const [isCancellingShipment, setIsCancellingShipment] = useState(false)
+  const [isRetryingShipment, setIsRetryingShipment] = useState(false)
 
   const activeConnection = useMemo(() => {
     if (!activeConnectionId) {
@@ -806,6 +809,38 @@ const DeliverySettingsPage = () => {
       }
     } finally {
       setIsCancellingShipment(false)
+    }
+  }
+
+  const handleRetryShipment = async () => {
+    setIsRetryingShipment(true)
+    setShipmentOperationsError(null)
+    setShipmentOperationsNotice(null)
+
+    try {
+      const payload = await requestJson<DeliveryHubShipmentOperationsRetryResponse>(
+        buildShipmentOperationsRetryUrl(shipmentOperationsForm.execution_reference),
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        }
+      )
+
+      setShipmentOperationsSnapshot(payload.operations)
+      setShipmentOperationsNotice(`Retry returned ${String(payload.retry?.status ?? "result")}`)
+    } catch (error) {
+      if (error instanceof Error) {
+        setShipmentOperationsError({
+          status: 400,
+          code: "DELIVERY_HUB_SHIPMENT_RETRY_UI_ERROR",
+          message: error.message,
+          details: null,
+        })
+      } else {
+        setShipmentOperationsError(error as ApiErrorPayload)
+      }
+    } finally {
+      setIsRetryingShipment(false)
     }
   }
 
@@ -1835,7 +1870,7 @@ const DeliverySettingsPage = () => {
             <div>
               <Heading level="h2">Shipment operations lookup</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Single-reference operator lookup for accepted shipment lifecycle, status refresh posture and guarded manual cancel/status refresh. Retry, webhooks and scheduler remain out of scope.
+                Single-reference operator lookup for accepted shipment lifecycle, status refresh posture and guarded manual cancel/status refresh. Manual retry v1 follows backend readiness-only policy and returns blocked diagnostics when live redispatch is not materialized.
               </Text>
             </div>
             <Text className="text-ui-fg-subtle text-sm">{shipmentOperationsRenderState.headerText}</Text>
@@ -1848,7 +1883,7 @@ const DeliverySettingsPage = () => {
                 id="shipment-operations-execution-reference"
                 value={shipmentOperationsForm.execution_reference}
                 onChange={(event) => handleShipmentOperationsField("execution_reference", event.target.value)}
-                disabled={isLoadingShipmentOperations || isRefreshingShipmentStatus || isCancellingShipment}
+                disabled={isLoadingShipmentOperations || isRefreshingShipmentStatus || isCancellingShipment || isRetryingShipment}
                 placeholder="Paste execution_reference from controlled fulfillment result or execution ledger"
               />
               <Text className="text-ui-fg-subtle mt-2 text-sm">
@@ -1860,7 +1895,12 @@ const DeliverySettingsPage = () => {
                 type="button"
                 onClick={() => void handleLoadShipmentOperations()}
                 isLoading={isLoadingShipmentOperations}
-                disabled={!shipmentOperationsRenderState.lookupReady || isRefreshingShipmentStatus || isCancellingShipment}
+                disabled={
+                  !shipmentOperationsRenderState.lookupReady ||
+                  isRefreshingShipmentStatus ||
+                  isCancellingShipment ||
+                  isRetryingShipment
+                }
               >
                 Load snapshot
               </Button>
@@ -1873,7 +1913,8 @@ const DeliverySettingsPage = () => {
                   !shipmentOperationsRenderState.lookupReady ||
                   !shipmentOperationsRenderState.canRefreshStatus ||
                   isLoadingShipmentOperations ||
-                  isCancellingShipment
+                  isCancellingShipment ||
+                  isRetryingShipment
                 }
               >
                 {shipmentOperationsRenderState.refreshButtonText}
@@ -1887,10 +1928,26 @@ const DeliverySettingsPage = () => {
                   !shipmentOperationsRenderState.lookupReady ||
                   !shipmentOperationsRenderState.canCancelShipment ||
                   isLoadingShipmentOperations ||
-                  isRefreshingShipmentStatus
+                  isRefreshingShipmentStatus ||
+                  isRetryingShipment
                 }
               >
                 {shipmentOperationsRenderState.cancelButtonText}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void handleRetryShipment()}
+                isLoading={isRetryingShipment}
+                disabled={
+                  !shipmentOperationsRenderState.lookupReady ||
+                  !shipmentOperationsRenderState.canRetryShipment ||
+                  isLoadingShipmentOperations ||
+                  isRefreshingShipmentStatus ||
+                  isCancellingShipment
+                }
+              >
+                {shipmentOperationsRenderState.retryButtonText}
               </Button>
             </div>
           </div>

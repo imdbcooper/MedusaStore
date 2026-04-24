@@ -7,6 +7,11 @@ import type {
 import type { DeliveryHubShipmentCancelReadiness } from "./shipment-cancel-policy"
 import { resolveDeliveryHubShipmentCancelReadiness } from "./shipment-cancel-policy"
 import type {
+  DeliveryHubShipmentRetryReadiness,
+} from "./shipment-retry-policy"
+import { resolveDeliveryHubShipmentRetryReadiness } from "./shipment-retry-policy"
+import type { DeliveryHubExecutionLedgerRecord } from "./storage/execution-ledger-repository"
+import type {
   DeliveryHubShipmentRecord,
   DeliveryHubShipmentStatusRefreshOutcome,
 } from "./storage/shipments-repository"
@@ -59,6 +64,14 @@ export type DeliveryHubAdminShipmentOperationsViewModel = {
       redacted: true
     }
   }
+  retry: {
+    readiness: DeliveryHubShipmentRetryReadiness
+    last_result: {
+      status: "not_requested"
+      safe_message: string
+      redacted: true
+    }
+  }
   ledger: {
     linked: boolean
     state: string | null
@@ -97,7 +110,7 @@ export type DeliveryHubAdminShipmentOperationsViewModel = {
   action_posture: {
     refresh_status: "available" | "blocked"
     cancel: "available" | "blocked"
-    retry: "not_materialized"
+    retry: "available" | "blocked"
     webhooks: "not_materialized"
     scheduler: "not_materialized"
   }
@@ -143,6 +156,7 @@ export function buildDeliveryHubAdminShipmentOperationsViewModel(input: {
   lifecycle: DeliveryHubAcceptedShipmentLifecycleSnapshot
   shipment: DeliveryHubShipmentRecord | null
   connection?: DeliveryConnectionRecord | null
+  ledger?: DeliveryHubExecutionLedgerRecord | null
 }): DeliveryHubAdminShipmentOperationsViewModel {
   const shipment = input.shipment ?? null
   const lifecycle = input.lifecycle
@@ -156,6 +170,11 @@ export function buildDeliveryHubAdminShipmentOperationsViewModel(input: {
     lifecycle,
     shipment,
     connection: input.connection ?? null,
+  })
+  const retryReadiness = resolveDeliveryHubShipmentRetryReadiness({
+    lifecycle,
+    shipment,
+    ledger: input.ledger ?? null,
   })
   const statusSummary = buildSafeStatusSummary(shipment?.provider_status_summary ?? null)
   const statusRefreshedAt = shipment?.status_refreshed_at ?? null
@@ -202,6 +221,14 @@ export function buildDeliveryHubAdminShipmentOperationsViewModel(input: {
         redacted: true,
       },
     },
+    retry: {
+      readiness: retryReadiness,
+      last_result: {
+        status: "not_requested",
+        safe_message: "Manual shipment retry has not been requested in this snapshot.",
+        redacted: true,
+      },
+    },
     ledger: {
       linked: lifecycle.ledger.linked,
       state: lifecycle.ledger.state,
@@ -228,7 +255,7 @@ export function buildDeliveryHubAdminShipmentOperationsViewModel(input: {
     action_posture: {
       refresh_status: refreshAvailable ? "available" : "blocked",
       cancel: cancelReadiness.available ? "available" : "blocked",
-      retry: "not_materialized",
+      retry: retryReadiness.available ? "available" : "blocked",
       webhooks: "not_materialized",
       scheduler: "not_materialized",
     },

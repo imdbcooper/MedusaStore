@@ -1229,10 +1229,33 @@ export type DeliveryHubShipmentOperationsSnapshot = {
       redacted: true
     }
   }
+  retry: {
+    readiness: {
+      version: 1
+      available: boolean
+      blocked_reason_code: string | null
+      blocked_reason: string | null
+      lifecycle_classification: string | null
+      ledger_state: string | null
+      terminal_completed: boolean
+      terminal_blocked: boolean
+      idempotency_linked: boolean
+      persisted_shipment_present: boolean
+      accepted_shipment_present: boolean
+      provider_shipment_reference_present: boolean
+      redacted: true
+      anti_leak_confirmations: Record<string, false>
+    }
+    last_result: {
+      status: "not_requested"
+      safe_message: string
+      redacted: true
+    }
+  }
   action_posture: {
     refresh_status: "available" | "blocked"
     cancel: "available" | "blocked"
-    retry: "not_materialized"
+    retry: "available" | "blocked"
     webhooks: "not_materialized"
     scheduler: "not_materialized"
   }
@@ -1261,14 +1284,20 @@ export type DeliveryHubShipmentOperationsCancelResponse = DeliveryHubShipmentOpe
   cancel: Record<string, unknown>
 }
 
+export type DeliveryHubShipmentOperationsRetryResponse = DeliveryHubShipmentOperationsResponse & {
+  retry: Record<string, unknown>
+}
+
 export type ShipmentOperationsRenderState = {
   headerText: string
   hasSnapshot: boolean
   lookupReady: boolean
   canRefreshStatus: boolean
   canCancelShipment: boolean
+  canRetryShipment: boolean
   refreshButtonText: string
   cancelButtonText: string
+  retryButtonText: string
   refreshStatusTone: string
   statusBadgeText: string
   actionBadges: Array<{
@@ -1331,6 +1360,10 @@ export function buildShipmentOperationsCancelUrl(executionReference: string) {
   return `${buildShipmentOperationsSnapshotUrl(executionReference)}/cancel`
 }
 
+export function buildShipmentOperationsRetryUrl(executionReference: string) {
+  return `${buildShipmentOperationsSnapshotUrl(executionReference)}/retry`
+}
+
 export function buildShipmentOperationsRefreshStatusRequestBody(correlationId?: string | null) {
   const normalized = typeof correlationId === "string" ? correlationId.trim() : ""
 
@@ -1352,6 +1385,7 @@ export function deriveShipmentOperationsRenderState(input: {
   const refresh = snapshot?.status.refresh ?? null
   const currentStatus = snapshot?.status.current ?? null
   const cancelReadiness = snapshot?.cancel.readiness ?? null
+  const retryReadiness = snapshot?.retry.readiness ?? null
 
   return {
     headerText: snapshot
@@ -1361,8 +1395,10 @@ export function deriveShipmentOperationsRenderState(input: {
     lookupReady: !!normalizedReference,
     canRefreshStatus: snapshot?.action_posture.refresh_status === "available" && refresh?.available === true,
     canCancelShipment: snapshot?.action_posture.cancel === "available" && cancelReadiness?.available === true,
+    canRetryShipment: snapshot?.action_posture.retry === "available" && retryReadiness?.available === true,
     refreshButtonText: refresh?.available ? "Refresh status" : "Refresh status blocked",
     cancelButtonText: cancelReadiness?.available ? "Cancel shipment" : "Cancel blocked",
+    retryButtonText: retryReadiness?.available ? "Retry execution" : "Retry blocked",
     refreshStatusTone: refresh?.available ? "projected" : "deferred",
     statusBadgeText: snapshot
       ? snapshot.lifecycle.accepted
@@ -1384,7 +1420,7 @@ export function deriveShipmentOperationsRenderState(input: {
           {
             key: "retry",
             label: `retry: ${snapshot.action_posture.retry}`,
-            available: false,
+            available: snapshot.action_posture.retry === "available" && snapshot.retry.readiness.available,
           },
           {
             key: "webhooks",
@@ -1434,6 +1470,11 @@ export function deriveShipmentOperationsRenderState(input: {
             key: "cancel",
             label: "Cancel available",
             value: cancelReadiness?.available ? "yes" : "no",
+          },
+          {
+            key: "retry",
+            label: "Retry available",
+            value: retryReadiness?.available ? "yes" : "no",
           },
         ]
       : [],
