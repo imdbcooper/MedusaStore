@@ -1,9 +1,13 @@
 import { describe, expect, it } from "@jest/globals"
 import {
+  buildShipmentOperationsRefreshStatusRequestBody,
+  buildShipmentOperationsRefreshStatusUrl,
+  buildShipmentOperationsSnapshotUrl,
   connectionToForm,
   defaultConnectionForm,
   deriveExecutionPlanObservabilityRenderState,
   deriveFulfillmentBridgePreviewRenderState,
+  deriveShipmentOperationsRenderState,
   deriveShippingOptionManualSyncRenderState,
   deriveShippingOptionPreviewRenderState,
   getDiagnosticsSummaryText,
@@ -21,6 +25,7 @@ import {
   type DeliveryEventLog,
   type DeliveryHubExecutionPlanObservabilityReadModel,
   type DeliveryHubFulfillmentBridgeReadinessPreview,
+  type DeliveryHubShipmentOperationsSnapshot,
   type DeliveryHubShippingOptionManualSyncResponse,
   type DeliveryHubShippingOptionPreview,
   type DeliveryWarehouse,
@@ -2140,6 +2145,297 @@ describe("delivery admin settings page state", () => {
 
     const renderedState = JSON.stringify(state)
     expect(renderedState).not.toContain("must-not-leak")
+  })
+
+  it("builds shipment operations endpoint URLs and request bodies from trimmed execution references", () => {
+    expect(buildShipmentOperationsSnapshotUrl(" exec/ref 1 ")).toBe(
+      "/admin/delivery/shipments/exec%2Fref%201/operations"
+    )
+    expect(buildShipmentOperationsRefreshStatusUrl(" exec/ref 1 ")).toBe(
+      "/admin/delivery/shipments/exec%2Fref%201/operations/refresh-status"
+    )
+    expect(buildShipmentOperationsRefreshStatusRequestBody(" corr_1 ")).toEqual({ correlation_id: "corr_1" })
+    expect(buildShipmentOperationsRefreshStatusRequestBody("   ")).toEqual({})
+    expect(() => buildShipmentOperationsSnapshotUrl("   ")).toThrow(
+      "execution_reference is required to load shipment operations"
+    )
+  })
+
+  it("derives accepted shipment operations display model and guarded refresh availability without leaking raw fields", () => {
+    const snapshot: DeliveryHubShipmentOperationsSnapshot = {
+      version: 1,
+      safe: true,
+      reference: {
+        lookup_kind: "execution_reference",
+        execution_reference_preview: "ex***42",
+      },
+      lifecycle: {
+        classification: "accepted_shipment",
+        accepted: true,
+        blocked_reason_code: null,
+      },
+      provider: {
+        provider_code: "yandex",
+        mode_code: "warehouse_to_pickup_point",
+        dispatch_status: "dispatch_accepted",
+        dispatch_outcome: "accepted",
+        provider_shipment_reference_present: true,
+        provider_correlation_reference_present: true,
+      },
+      status: {
+        current: {
+          provider_code: "yandex",
+          operation: "get_shipment_status",
+          attempted: true,
+          succeeded: true,
+          status_category: "in_transit",
+          neutral_status: "in_transit",
+          provider_status_known: true,
+          provider_status_present: true,
+          provider_status_normalized: "ready_to_ship",
+          provider_status_code: 200,
+          correlation_id_present: true,
+          provider_shipment_reference_present: true,
+          safe_message: "Status refreshed safely",
+          redacted: true,
+        },
+        refresh: {
+          available: true,
+          blocked_reason_code: null,
+          blocked_reason: null,
+          last_outcome: "refreshed",
+          status_refreshed_at: "2026-04-24T07:00:00.000Z",
+        },
+      },
+      ledger: {
+        linked: true,
+        state: "completed",
+        terminal_completed: true,
+        terminal_blocked: false,
+        execution_reference_preview: "ex***42",
+        idempotency_key_preview: "idem***42",
+        transition_count: 6,
+        audit_event_count: 4,
+      },
+      shipment: {
+        id: "ship_123",
+        accepted: true,
+        status: "dispatch_accepted",
+        label_document_present: false,
+        attachment_document_present: false,
+      },
+      context: {
+        connection_id: "conn_1",
+        order_id: "order_1",
+        fulfillment_id: "ful_1",
+        cart_id: "cart_1",
+        shipping_option_id: "so_1",
+        location_id: "loc_1",
+        quote_reference: {
+          id: "quote_safe_1",
+          version: 1,
+        },
+        correlation_id_present: true,
+      },
+      timestamps: {
+        created_at: "2026-04-24T06:00:00.000Z",
+        updated_at: "2026-04-24T06:30:00.000Z",
+        status_refreshed_at: "2026-04-24T07:00:00.000Z",
+      },
+      action_posture: {
+        refresh_status: "available",
+        cancel: "not_materialized",
+        retry: "not_materialized",
+        webhooks: "not_materialized",
+        scheduler: "not_materialized",
+      },
+      anti_leak_confirmations: {
+        raw_provider_payloads_included: false,
+        raw_provider_request_included: false,
+        raw_provider_response_included: false,
+        auth_headers_included: false,
+        credentials_included: false,
+        raw_quote_key_included: false,
+        raw_provider_identifier_included: false,
+        raw_execution_secret_included: false,
+      },
+    }
+
+    const state = deriveShipmentOperationsRenderState({
+      form: { execution_reference: " execution-secret-that-stays-input-only " },
+      snapshot,
+    })
+
+    expect(state.lookupReady).toBe(true)
+    expect(state.canRefreshStatus).toBe(true)
+    expect(state.refreshButtonText).toBe("Refresh status")
+    expect(state.statusBadgeText).toBe("accepted shipment")
+    expect(state.summaryCards.map((card) => [card.key, card.value])).toEqual([
+      ["lifecycle", "accepted_shipment"],
+      ["accepted", "yes"],
+      ["provider_mode", "yandex / warehouse_to_pickup_point"],
+      ["dispatch", "dispatch_accepted / accepted"],
+      ["neutral_status", "in_transit"],
+      ["refresh", "yes"],
+    ])
+    expect(state.statusRefreshRows.map((row) => [row.key, row.value])).toEqual(
+      expect.arrayContaining([
+        ["refresh_available", "yes"],
+        ["last_outcome", "refreshed"],
+        ["provider_status", "ready_to_ship"],
+        ["status_category", "in_transit"],
+        ["safe_message", "Status refreshed safely"],
+      ])
+    )
+    expect(state.ledgerRows.map((row) => [row.key, row.value])).toEqual(
+      expect.arrayContaining([
+        ["transition_count", "6"],
+        ["audit_event_count", "4"],
+        ["idempotency_key_preview", "idem***42"],
+      ])
+    )
+    expect(state.actionBadges).toEqual([
+      { key: "refresh_status", label: "refresh_status: available", available: true },
+      { key: "cancel", label: "cancel: not_materialized", available: false },
+      { key: "retry", label: "retry: not_materialized", available: false },
+      { key: "webhooks", label: "webhooks: not_materialized", available: false },
+      { key: "scheduler", label: "scheduler: not_materialized", available: false },
+    ])
+
+    const renderedState = JSON.stringify(state)
+    expect(renderedState).not.toContain("execution-secret-that-stays-input-only")
+    expect(renderedState).not.toContain("raw-provider-id")
+    expect(renderedState).not.toContain("auth-token")
+    expect(renderedState).not.toContain("quote-secret")
+  })
+
+  it("keeps shipment status refresh blocked when backend action posture is unavailable", () => {
+    const snapshot: DeliveryHubShipmentOperationsSnapshot = {
+      version: 1,
+      safe: true,
+      reference: {
+        lookup_kind: "execution_reference",
+        execution_reference_preview: "ex***blocked",
+      },
+      lifecycle: {
+        classification: "non_accepted_shipment",
+        accepted: false,
+        blocked_reason_code: "provider_failed",
+      },
+      provider: {
+        provider_code: "yandex",
+        mode_code: "dropoff_point_to_pickup_point",
+        dispatch_status: "failed_blocked",
+        dispatch_outcome: "failed",
+        provider_shipment_reference_present: false,
+        provider_correlation_reference_present: false,
+      },
+      status: {
+        current: null,
+        refresh: {
+          available: false,
+          blocked_reason_code: "accepted_shipment_required",
+          blocked_reason: "Status refresh is available only for accepted shipment lifecycle snapshots.",
+          last_outcome: "failed",
+          status_refreshed_at: null,
+        },
+      },
+      ledger: {
+        linked: true,
+        state: "failed_blocked",
+        terminal_completed: false,
+        terminal_blocked: true,
+        execution_reference_preview: "ex***blocked",
+        idempotency_key_preview: "idem***blocked",
+        transition_count: 3,
+        audit_event_count: 2,
+      },
+      shipment: {
+        id: null,
+        accepted: false,
+        status: null,
+        label_document_present: false,
+        attachment_document_present: false,
+      },
+      context: {
+        connection_id: null,
+        order_id: null,
+        fulfillment_id: null,
+        cart_id: null,
+        shipping_option_id: null,
+        location_id: null,
+        quote_reference: {
+          id: null,
+          version: null,
+        },
+        correlation_id_present: false,
+      },
+      timestamps: {
+        created_at: null,
+        updated_at: null,
+        status_refreshed_at: null,
+      },
+      action_posture: {
+        refresh_status: "blocked",
+        cancel: "not_materialized",
+        retry: "not_materialized",
+        webhooks: "not_materialized",
+        scheduler: "not_materialized",
+      },
+      anti_leak_confirmations: {
+        raw_provider_payloads_included: false,
+        raw_provider_request_included: false,
+        raw_provider_response_included: false,
+        auth_headers_included: false,
+        credentials_included: false,
+        raw_quote_key_included: false,
+        raw_provider_identifier_included: false,
+        raw_execution_secret_included: false,
+      },
+    }
+
+    const state = deriveShipmentOperationsRenderState({
+      form: { execution_reference: "exec_blocked" },
+      snapshot,
+    })
+
+    expect(state.canRefreshStatus).toBe(false)
+    expect(state.refreshButtonText).toBe("Refresh status blocked")
+    expect(state.statusBadgeText).toBe("blocked: provider_failed")
+    expect(state.detailRows).toEqual(
+      expect.arrayContaining([
+        {
+          key: "blocked_reason",
+          label: "Blocked reason",
+          value: "Status refresh is available only for accepted shipment lifecycle snapshots.",
+        },
+      ])
+    )
+  })
+
+  it("derives empty shipment operations state before lookup", () => {
+    expect(
+      deriveShipmentOperationsRenderState({
+        form: { execution_reference: "   " },
+        snapshot: null,
+      })
+    ).toEqual({
+      headerText: "No shipment operations snapshot loaded",
+      hasSnapshot: false,
+      lookupReady: false,
+      canRefreshStatus: false,
+      refreshButtonText: "Refresh status blocked",
+      refreshStatusTone: "deferred",
+      statusBadgeText: "not loaded",
+      actionBadges: [],
+      summaryCards: [],
+      detailRows: [],
+      statusRefreshRows: [],
+      ledgerRows: [],
+      contextRows: [],
+      emptyText:
+        "Paste an execution_reference from the controlled fulfillment result or execution ledger, then load the safe operator snapshot.",
+    })
   })
 
   it("derives manual sync safe-default execute guard state before any result snapshot exists", () => {

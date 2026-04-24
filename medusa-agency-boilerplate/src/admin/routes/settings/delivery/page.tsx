@@ -10,12 +10,17 @@ import {
   type DeliveryHubShippingOptionManualSyncMode,
 } from "./manual-sync"
 import {
+  buildShipmentOperationsRefreshStatusRequestBody,
+  buildShipmentOperationsRefreshStatusUrl,
+  buildShipmentOperationsSnapshotUrl,
   capabilityLabels,
   connectionToForm,
   defaultConnectionForm,
+  defaultShipmentOperationsForm,
   defaultWarehouseForm,
   deriveExecutionPlanObservabilityRenderState,
   deriveFulfillmentBridgePreviewRenderState,
+  deriveShipmentOperationsRenderState,
   deriveShippingOptionManualSyncRenderState,
   deriveShippingOptionPreviewRenderState,
   formatTimestamp,
@@ -44,6 +49,10 @@ import {
   type DeliveryHubTestQuoteInputEcho,
   type DeliveryHubExecutionPlanObservabilityReadModel,
   type DeliveryHubFulfillmentBridgeReadinessPreview,
+  type DeliveryHubShipmentOperationsForm,
+  type DeliveryHubShipmentOperationsRefreshResponse,
+  type DeliveryHubShipmentOperationsResponse,
+  type DeliveryHubShipmentOperationsSnapshot,
   type DeliveryHubShippingOptionManualSyncResponse,
   type DeliveryHubShippingOptionPreview,
   type DeliveryProviderDefinition,
@@ -192,6 +201,14 @@ const DeliverySettingsPage = () => {
   const [shippingOptionSyncExecuteGuard, setShippingOptionSyncExecuteGuard] = useState("")
   const [shippingOptionSyncServiceZoneId, setShippingOptionSyncServiceZoneId] = useState("")
   const [shippingOptionSyncShippingProfileId, setShippingOptionSyncShippingProfileId] = useState("")
+  const [shipmentOperationsForm, setShipmentOperationsForm] =
+    useState<DeliveryHubShipmentOperationsForm>(defaultShipmentOperationsForm)
+  const [shipmentOperationsSnapshot, setShipmentOperationsSnapshot] =
+    useState<DeliveryHubShipmentOperationsSnapshot | null>(null)
+  const [shipmentOperationsError, setShipmentOperationsError] = useState<ApiErrorPayload | null>(null)
+  const [shipmentOperationsNotice, setShipmentOperationsNotice] = useState<string | null>(null)
+  const [isLoadingShipmentOperations, setIsLoadingShipmentOperations] = useState(false)
+  const [isRefreshingShipmentStatus, setIsRefreshingShipmentStatus] = useState(false)
 
   const activeConnection = useMemo(() => {
     if (!activeConnectionId) {
@@ -275,6 +292,15 @@ const DeliverySettingsPage = () => {
   const executionPlanRenderState = useMemo(
     () => deriveExecutionPlanObservabilityRenderState(executionPlanPreview),
     [executionPlanPreview]
+  )
+
+  const shipmentOperationsRenderState = useMemo(
+    () =>
+      deriveShipmentOperationsRenderState({
+        form: shipmentOperationsForm,
+        snapshot: shipmentOperationsSnapshot,
+      }),
+    [shipmentOperationsForm, shipmentOperationsSnapshot]
   )
 
   const loadData = async (silent = false) => {
@@ -429,6 +455,16 @@ const DeliverySettingsPage = () => {
     value: DeliveryWarehouseForm[K]
   ) => {
     setWarehouseForm((current) => ({
+      ...current,
+      [key]: value,
+    }))
+  }
+
+  const handleShipmentOperationsField = <K extends keyof DeliveryHubShipmentOperationsForm>(
+    key: K,
+    value: DeliveryHubShipmentOperationsForm[K]
+  ) => {
+    setShipmentOperationsForm((current) => ({
       ...current,
       [key]: value,
     }))
@@ -670,6 +706,70 @@ const DeliverySettingsPage = () => {
       }
     } finally {
       setIsRunningShippingOptionSync(false)
+    }
+  }
+
+  const handleLoadShipmentOperations = async () => {
+    setIsLoadingShipmentOperations(true)
+    setShipmentOperationsError(null)
+    setShipmentOperationsNotice(null)
+
+    try {
+      const payload = await requestJson<DeliveryHubShipmentOperationsResponse>(
+        buildShipmentOperationsSnapshotUrl(shipmentOperationsForm.execution_reference),
+        {
+          method: "GET",
+        }
+      )
+
+      setShipmentOperationsSnapshot(payload.operations)
+      setShipmentOperationsNotice("Shipment operations snapshot loaded")
+    } catch (error) {
+      if (error instanceof Error) {
+        setShipmentOperationsError({
+          status: 400,
+          code: "DELIVERY_HUB_SHIPMENT_OPERATIONS_UI_ERROR",
+          message: error.message,
+          details: null,
+        })
+      } else {
+        setShipmentOperationsError(error as ApiErrorPayload)
+      }
+      setShipmentOperationsSnapshot(null)
+    } finally {
+      setIsLoadingShipmentOperations(false)
+    }
+  }
+
+  const handleRefreshShipmentStatus = async () => {
+    setIsRefreshingShipmentStatus(true)
+    setShipmentOperationsError(null)
+    setShipmentOperationsNotice(null)
+
+    try {
+      const payload = await requestJson<DeliveryHubShipmentOperationsRefreshResponse>(
+        buildShipmentOperationsRefreshStatusUrl(shipmentOperationsForm.execution_reference),
+        {
+          method: "POST",
+          body: JSON.stringify(buildShipmentOperationsRefreshStatusRequestBody()),
+        }
+      )
+
+      setShipmentOperationsSnapshot(payload.operations)
+      setShipmentOperationsNotice(`Status refresh returned ${String(payload.refresh?.status ?? "result")}`)
+    } catch (error) {
+      if (error instanceof Error) {
+        setShipmentOperationsError({
+          status: 400,
+          code: "DELIVERY_HUB_SHIPMENT_STATUS_REFRESH_UI_ERROR",
+          message: error.message,
+          details: null,
+        })
+      } else {
+        setShipmentOperationsError(error as ApiErrorPayload)
+      }
+    } finally {
+      setIsRefreshingShipmentStatus(false)
     }
   }
 
@@ -1691,6 +1791,163 @@ const DeliverySettingsPage = () => {
             </div>
           ) : (
             <Text className="text-ui-fg-subtle mt-4">{executionPlanRenderState.emptyText}</Text>
+          )}
+        </div>
+
+        <div className="rounded-lg border p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Heading level="h2">Shipment operations lookup</Heading>
+              <Text className="text-ui-fg-subtle mt-2">
+                Single-reference operator lookup for accepted shipment lifecycle, status refresh posture and guarded manual status refresh. No cancel, retry, webhooks or polling are exposed here.
+              </Text>
+            </div>
+            <Text className="text-ui-fg-subtle text-sm">{shipmentOperationsRenderState.headerText}</Text>
+          </div>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
+            <div>
+              <Label htmlFor="shipment-operations-execution-reference">Execution reference</Label>
+              <Input
+                id="shipment-operations-execution-reference"
+                value={shipmentOperationsForm.execution_reference}
+                onChange={(event) => handleShipmentOperationsField("execution_reference", event.target.value)}
+                disabled={isLoadingShipmentOperations || isRefreshingShipmentStatus}
+                placeholder="Paste execution_reference from controlled fulfillment result or execution ledger"
+              />
+              <Text className="text-ui-fg-subtle mt-2 text-sm">
+                The backend response returns only masked/safe references and boolean presence markers, never raw provider ids, auth tokens, quote keys or execution secrets.
+              </Text>
+            </div>
+            <div className="flex items-end gap-3">
+              <Button
+                type="button"
+                onClick={() => void handleLoadShipmentOperations()}
+                isLoading={isLoadingShipmentOperations}
+                disabled={!shipmentOperationsRenderState.lookupReady || isRefreshingShipmentStatus}
+              >
+                Load snapshot
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void handleRefreshShipmentStatus()}
+                isLoading={isRefreshingShipmentStatus}
+                disabled={
+                  !shipmentOperationsRenderState.lookupReady ||
+                  !shipmentOperationsRenderState.canRefreshStatus ||
+                  isLoadingShipmentOperations
+                }
+              >
+                {shipmentOperationsRenderState.refreshButtonText}
+              </Button>
+            </div>
+          </div>
+
+          {shipmentOperationsError ? (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+              <Text className="text-ui-fg-error font-medium">{shipmentOperationsError.message}</Text>
+              <Text className="text-ui-fg-subtle mt-1">
+                {shipmentOperationsError.code} · HTTP {shipmentOperationsError.status}
+              </Text>
+              {shipmentOperationsError.details ? (
+                <pre className="mt-3 overflow-auto rounded-md border bg-white p-3 text-xs">
+                  {JSON.stringify(shipmentOperationsError.details, null, 2)}
+                </pre>
+              ) : null}
+            </div>
+          ) : null}
+
+          {shipmentOperationsNotice ? (
+            <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4">
+              <Text className="font-medium text-green-800">{shipmentOperationsNotice}</Text>
+            </div>
+          ) : null}
+
+          {shipmentOperationsSnapshot ? (
+            <div className="mt-6 grid gap-6">
+              <div className="flex flex-wrap gap-2">
+                <span className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(shipmentOperationsRenderState.refreshStatusTone)}`}>
+                  {shipmentOperationsRenderState.statusBadgeText}
+                </span>
+                {shipmentOperationsRenderState.actionBadges.map((badge) => (
+                  <span
+                    key={badge.key}
+                    className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(
+                      badge.available ? "projected" : "deferred"
+                    )}`}
+                  >
+                    {badge.label}
+                  </span>
+                ))}
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                {shipmentOperationsRenderState.summaryCards.map((card) => (
+                  <div key={card.key} className="rounded-md border p-3">
+                    <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
+                    <Text className="mt-2 font-medium">{card.value}</Text>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="rounded-md border p-4">
+                  <Heading level="h3">Lifecycle and shipment summary</Heading>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {shipmentOperationsRenderState.detailRows.map((row) => (
+                      <div key={row.key}>
+                        <Label>{row.label}</Label>
+                        <Input readOnly value={row.value} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-md border p-4">
+                  <Heading level="h3">Status refresh outcome</Heading>
+                  <Text className="text-ui-fg-subtle mt-1 text-sm">
+                    Refresh is backend-guarded by accepted shipment, active sealed Yandex connection and stored backend-only provider shipment reference.
+                  </Text>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {shipmentOperationsRenderState.statusRefreshRows.map((row) => (
+                      <div key={row.key}>
+                        <Label>{row.label}</Label>
+                        <Input readOnly value={row.value} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="rounded-md border p-4">
+                  <Heading level="h3">Ledger counts and previews</Heading>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {shipmentOperationsRenderState.ledgerRows.map((row) => (
+                      <div key={row.key}>
+                        <Label>{row.label}</Label>
+                        <Input readOnly value={row.value} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-md border p-4">
+                  <Heading level="h3">Context references</Heading>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {shipmentOperationsRenderState.contextRows.map((row) => (
+                      <div key={row.key}>
+                        <Label>{row.label}</Label>
+                        <Input readOnly value={row.value} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <Text className="text-ui-fg-subtle mt-6">{shipmentOperationsRenderState.emptyText}</Text>
           )}
         </div>
 

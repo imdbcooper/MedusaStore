@@ -1114,6 +1114,427 @@ export type ExecutionPlanObservabilityRenderState = {
   emptyText: string
 }
 
+export type DeliveryHubShipmentOperationsForm = {
+  execution_reference: string
+}
+
+export type DeliveryHubShipmentOperationsStatusSummary = {
+  provider_code: "yandex" | null
+  operation: "get_shipment_status" | null
+  attempted: boolean
+  succeeded: boolean
+  status_category: string | null
+  neutral_status:
+    | "accepted"
+    | "in_transit"
+    | "ready_for_pickup"
+    | "delivered"
+    | "cancelled"
+    | "failed"
+    | "returned"
+    | "unknown"
+    | null
+  provider_status_known: boolean
+  provider_status_present: boolean
+  provider_status_normalized: string | null
+  provider_status_code: number | null
+  correlation_id_present: boolean
+  provider_shipment_reference_present: boolean
+  safe_message: string | null
+  redacted: true
+}
+
+export type DeliveryHubShipmentOperationsSnapshot = {
+  version: 1
+  safe: true
+  reference: {
+    lookup_kind: "execution_reference"
+    execution_reference_preview: string | null
+  }
+  lifecycle: {
+    classification: string
+    accepted: boolean
+    blocked_reason_code: string | null
+  }
+  provider: {
+    provider_code: string | null
+    mode_code: string | null
+    dispatch_status: string | null
+    dispatch_outcome: string | null
+    provider_shipment_reference_present: boolean
+    provider_correlation_reference_present: boolean
+  }
+  status: {
+    current: DeliveryHubShipmentOperationsStatusSummary | null
+    refresh: {
+      available: boolean
+      blocked_reason_code: string | null
+      blocked_reason: string | null
+      last_outcome: "not_refreshed" | "refreshed" | "failed" | null
+      status_refreshed_at: string | null
+    }
+  }
+  ledger: {
+    linked: boolean
+    state: string | null
+    terminal_completed: boolean
+    terminal_blocked: boolean
+    execution_reference_preview: string | null
+    idempotency_key_preview: string | null
+    transition_count: number
+    audit_event_count: number
+  }
+  shipment: {
+    id: string | null
+    accepted: boolean
+    status: "dispatch_accepted" | null
+    label_document_present: boolean
+    attachment_document_present: boolean
+  }
+  context: {
+    connection_id: string | null
+    order_id: string | null
+    fulfillment_id: string | null
+    cart_id: string | null
+    shipping_option_id: string | null
+    location_id: string | null
+    quote_reference: {
+      id: string | null
+      version: number | null
+    }
+    correlation_id_present: boolean
+  }
+  timestamps: {
+    created_at: string | null
+    updated_at: string | null
+    status_refreshed_at: string | null
+  }
+  action_posture: {
+    refresh_status: "available" | "blocked"
+    cancel: "not_materialized"
+    retry: "not_materialized"
+    webhooks: "not_materialized"
+    scheduler: "not_materialized"
+  }
+  anti_leak_confirmations: {
+    raw_provider_payloads_included: false
+    raw_provider_request_included: false
+    raw_provider_response_included: false
+    auth_headers_included: false
+    credentials_included: false
+    raw_quote_key_included: false
+    raw_provider_identifier_included: false
+    raw_execution_secret_included: false
+  }
+}
+
+export type DeliveryHubShipmentOperationsResponse = {
+  ok: true
+  operations: DeliveryHubShipmentOperationsSnapshot
+}
+
+export type DeliveryHubShipmentOperationsRefreshResponse = DeliveryHubShipmentOperationsResponse & {
+  refresh: Record<string, unknown>
+}
+
+export type ShipmentOperationsRenderState = {
+  headerText: string
+  hasSnapshot: boolean
+  lookupReady: boolean
+  canRefreshStatus: boolean
+  refreshButtonText: string
+  refreshStatusTone: string
+  statusBadgeText: string
+  actionBadges: Array<{
+    key: string
+    label: string
+    available: boolean
+  }>
+  summaryCards: RenderCard[]
+  detailRows: Array<{
+    key: string
+    label: string
+    value: string
+  }>
+  statusRefreshRows: Array<{
+    key: string
+    label: string
+    value: string
+  }>
+  ledgerRows: Array<{
+    key: string
+    label: string
+    value: string
+  }>
+  contextRows: Array<{
+    key: string
+    label: string
+    value: string
+  }>
+  emptyText: string
+}
+
+export const defaultShipmentOperationsForm: DeliveryHubShipmentOperationsForm = {
+  execution_reference: "",
+}
+
+export function normalizeShipmentOperationsExecutionReference(value: string) {
+  return value.trim()
+}
+
+export function buildShipmentOperationsSnapshotUrl(executionReference: string) {
+  const normalized = normalizeShipmentOperationsExecutionReference(executionReference)
+
+  if (!normalized) {
+    throw new Error("execution_reference is required to load shipment operations")
+  }
+
+  return `/admin/delivery/shipments/${encodeURIComponent(normalized)}/operations`
+}
+
+export function buildShipmentOperationsRefreshStatusUrl(executionReference: string) {
+  return `${buildShipmentOperationsSnapshotUrl(executionReference)}/refresh-status`
+}
+
+export function buildShipmentOperationsRefreshStatusRequestBody(correlationId?: string | null) {
+  const normalized = typeof correlationId === "string" ? correlationId.trim() : ""
+
+  return normalized ? { correlation_id: normalized } : {}
+}
+
+export function deriveShipmentOperationsRenderState(input: {
+  form: DeliveryHubShipmentOperationsForm
+  snapshot: DeliveryHubShipmentOperationsSnapshot | null
+}): ShipmentOperationsRenderState {
+  const normalizedReference = normalizeShipmentOperationsExecutionReference(input.form.execution_reference)
+  const snapshot = input.snapshot
+  const refresh = snapshot?.status.refresh ?? null
+  const currentStatus = snapshot?.status.current ?? null
+
+  return {
+    headerText: snapshot
+      ? `${snapshot.lifecycle.classification} · ${snapshot.reference.execution_reference_preview ?? "execution reference masked"}`
+      : "No shipment operations snapshot loaded",
+    hasSnapshot: !!snapshot,
+    lookupReady: !!normalizedReference,
+    canRefreshStatus: snapshot?.action_posture.refresh_status === "available" && refresh?.available === true,
+    refreshButtonText: refresh?.available ? "Refresh status" : "Refresh status blocked",
+    refreshStatusTone: refresh?.available ? "projected" : "deferred",
+    statusBadgeText: snapshot
+      ? snapshot.lifecycle.accepted
+        ? "accepted shipment"
+        : `blocked: ${snapshot.lifecycle.blocked_reason_code ?? "not accepted"}`
+      : "not loaded",
+    actionBadges: snapshot
+      ? [
+          {
+            key: "refresh_status",
+            label: `refresh_status: ${snapshot.action_posture.refresh_status}`,
+            available: snapshot.action_posture.refresh_status === "available",
+          },
+          {
+            key: "cancel",
+            label: `cancel: ${snapshot.action_posture.cancel}`,
+            available: false,
+          },
+          {
+            key: "retry",
+            label: `retry: ${snapshot.action_posture.retry}`,
+            available: false,
+          },
+          {
+            key: "webhooks",
+            label: `webhooks: ${snapshot.action_posture.webhooks}`,
+            available: false,
+          },
+          {
+            key: "scheduler",
+            label: `scheduler: ${snapshot.action_posture.scheduler}`,
+            available: false,
+          },
+        ]
+      : [],
+    summaryCards: snapshot
+      ? [
+          {
+            key: "lifecycle",
+            label: "Lifecycle",
+            value: snapshot.lifecycle.classification,
+          },
+          {
+            key: "accepted",
+            label: "Accepted",
+            value: snapshot.lifecycle.accepted ? "yes" : "no",
+          },
+          {
+            key: "provider_mode",
+            label: "Provider / mode",
+            value: `${snapshot.provider.provider_code ?? "—"} / ${snapshot.provider.mode_code ?? "—"}`,
+          },
+          {
+            key: "dispatch",
+            label: "Dispatch",
+            value: `${snapshot.provider.dispatch_status ?? "—"} / ${snapshot.provider.dispatch_outcome ?? "—"}`,
+          },
+          {
+            key: "neutral_status",
+            label: "Neutral status",
+            value: currentStatus?.neutral_status ?? "—",
+          },
+          {
+            key: "refresh",
+            label: "Refresh available",
+            value: refresh?.available ? "yes" : "no",
+          },
+        ]
+      : [],
+    detailRows: snapshot
+      ? [
+          { key: "shipment_id", label: "Shipment id", value: snapshot.shipment.id ?? "—" },
+          { key: "shipment_status", label: "Shipment status", value: snapshot.shipment.status ?? "—" },
+          {
+            key: "provider_shipment_reference_present",
+            label: "Provider shipment reference stored",
+            value: snapshot.provider.provider_shipment_reference_present ? "yes" : "no",
+          },
+          {
+            key: "provider_correlation_reference_present",
+            label: "Provider correlation reference stored",
+            value: snapshot.provider.provider_correlation_reference_present ? "yes" : "no",
+          },
+          {
+            key: "label_document_present",
+            label: "Label document present",
+            value: snapshot.shipment.label_document_present ? "yes" : "no",
+          },
+          {
+            key: "attachment_document_present",
+            label: "Attachment document present",
+            value: snapshot.shipment.attachment_document_present ? "yes" : "no",
+          },
+          {
+            key: "blocked_reason",
+            label: "Blocked reason",
+            value: refresh?.blocked_reason ?? snapshot.lifecycle.blocked_reason_code ?? "—",
+          },
+          {
+            key: "created_at",
+            label: "Created at",
+            value: formatTimestamp(snapshot.timestamps.created_at),
+          },
+          {
+            key: "updated_at",
+            label: "Updated at",
+            value: formatTimestamp(snapshot.timestamps.updated_at),
+          },
+        ]
+      : [],
+    statusRefreshRows: snapshot
+      ? [
+          {
+            key: "refresh_available",
+            label: "Available",
+            value: refresh?.available ? "yes" : "no",
+          },
+          {
+            key: "blocked_reason_code",
+            label: "Blocked reason code",
+            value: refresh?.blocked_reason_code ?? "—",
+          },
+          {
+            key: "last_outcome",
+            label: "Last outcome",
+            value: refresh?.last_outcome ?? "—",
+          },
+          {
+            key: "status_refreshed_at",
+            label: "Status refreshed at",
+            value: formatTimestamp(refresh?.status_refreshed_at ?? null),
+          },
+          {
+            key: "provider_status",
+            label: "Provider status",
+            value: currentStatus?.provider_status_normalized ?? "—",
+          },
+          {
+            key: "status_category",
+            label: "Status category",
+            value: currentStatus?.status_category ?? "—",
+          },
+          {
+            key: "safe_message",
+            label: "Safe message",
+            value: currentStatus?.safe_message ?? "—",
+          },
+        ]
+      : [],
+    ledgerRows: snapshot
+      ? [
+          { key: "linked", label: "Ledger linked", value: snapshot.ledger.linked ? "yes" : "no" },
+          { key: "state", label: "Ledger state", value: snapshot.ledger.state ?? "—" },
+          {
+            key: "execution_reference_preview",
+            label: "Execution reference preview",
+            value: snapshot.ledger.execution_reference_preview ?? snapshot.reference.execution_reference_preview ?? "—",
+          },
+          {
+            key: "idempotency_key_preview",
+            label: "Idempotency key preview",
+            value: snapshot.ledger.idempotency_key_preview ?? "—",
+          },
+          {
+            key: "transition_count",
+            label: "Transition count",
+            value: String(snapshot.ledger.transition_count),
+          },
+          {
+            key: "audit_event_count",
+            label: "Audit event count",
+            value: String(snapshot.ledger.audit_event_count),
+          },
+          {
+            key: "terminal_completed",
+            label: "Terminal completed",
+            value: snapshot.ledger.terminal_completed ? "yes" : "no",
+          },
+          {
+            key: "terminal_blocked",
+            label: "Terminal blocked",
+            value: snapshot.ledger.terminal_blocked ? "yes" : "no",
+          },
+        ]
+      : [],
+    contextRows: snapshot
+      ? [
+          { key: "connection_id", label: "Connection id", value: snapshot.context.connection_id ?? "—" },
+          { key: "order_id", label: "Order id", value: snapshot.context.order_id ?? "—" },
+          { key: "fulfillment_id", label: "Fulfillment id", value: snapshot.context.fulfillment_id ?? "—" },
+          { key: "cart_id", label: "Cart id", value: snapshot.context.cart_id ?? "—" },
+          {
+            key: "shipping_option_id",
+            label: "Shipping option id",
+            value: snapshot.context.shipping_option_id ?? "—",
+          },
+          { key: "location_id", label: "Location id", value: snapshot.context.location_id ?? "—" },
+          {
+            key: "quote_reference",
+            label: "Quote reference",
+            value: snapshot.context.quote_reference.id
+              ? `${snapshot.context.quote_reference.id} v${snapshot.context.quote_reference.version ?? "?"}`
+              : "—",
+          },
+          {
+            key: "correlation_id_present",
+            label: "Correlation id present",
+            value: snapshot.context.correlation_id_present ? "yes" : "no",
+          },
+        ]
+      : [],
+    emptyText:
+      "Paste an execution_reference from the controlled fulfillment result or execution ledger, then load the safe operator snapshot.",
+  }
+}
+
 export function formatTimestamp(value: string | null) {
   if (!value) {
     return "—"
