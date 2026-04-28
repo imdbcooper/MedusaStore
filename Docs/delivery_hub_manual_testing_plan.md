@@ -123,6 +123,18 @@ Expected result:
 - UI text scan не содержит raw provider body, token/auth header, ciphertext or publishable key value;
 - no checkout cutover: existing shipping contour остаётся visible, Delivery Hub preview не вызывает `setShippingMethod()` и не создаёт shipment operations.
 
+### Checkout cutover readiness gate
+
+Формальный go/no-go gate для будущего checkout source-of-truth cutover теперь вынесен в [`delivery_hub_checkout_cutover_plan.md`](./delivery_hub_checkout_cutover_plan.md).
+
+Критично для ручной проверки:
+
+- успешный Admin quote smoke, store-neutral quote/selection smoke, storefront preview validation и mock browser smoke являются readiness evidence only;
+- manual preview validation **не** является approval на checkout cutover;
+- default decision remains **NO-GO** until a separate approval gate explicitly records `GO`;
+- reserved future flag `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false` is default-off and has no runtime effect in this docs/flag-only checkpoint;
+- до отдельного approved cutover task Delivery Hub preview/selection path не должен вызывать `setShippingMethod()`, не должен заменять ApiShip/Medusa fallback checkout, и не должен запускать shipment create/cancel/status/retry.
+
 ---
 
 ## 2) Что обязательно помнить по безопасности

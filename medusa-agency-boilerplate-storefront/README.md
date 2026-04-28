@@ -10,6 +10,8 @@ Checkout contains an operator/dev-only Delivery Hub preview/shadow block guarded
 
 Optional sandbox defaults can be prefilled only with `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED=true` plus the documented `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_*` ids. Do not put secrets, tokens, auth headers or provider raw payloads in these variables.
 
+`NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false` is reserved for a future approved checkout cutover. It is default-off, has no runtime effect in this checkpoint, and must not be enabled or wired until `Docs/delivery_hub_checkout_cutover_plan.md` records an explicit go/no-go approval.
+
 Manual/runtime validation hooks are intentionally stable for smoke automation and screenshots: the block root is `data-testid="delivery-hub-preview-shadow-block"`, guardrails are under `delivery-hub-preview-guardrails`, actions use `delivery-hub-preview-get-quotes-button`, `delivery-hub-preview-save-selection-button`, `delivery-hub-preview-clear-selection-button`, and results use `delivery-hub-preview-operation-status`, `delivery-hub-preview-quote-count`, `delivery-hub-preview-selection-status`, plus source-of-truth/correlation status hooks. See `Docs/delivery_hub_manual_testing_plan.md` for the exact checklist.
 
 From the repository root, run `npm run smoke:delivery-hub-preview:browser` for the mock-friendly browser smoke. The command starts a local mocked Store API plus temporary storefront dev servers, verifies disabled/enabled feature-flag behavior, mocked quote/save/clear UI status, no visible raw provider/auth/secret material, and that the existing ApiShip/Medusa checkout contour remains adjacent. It must not require live Yandex and must not perform checkout cutover.
