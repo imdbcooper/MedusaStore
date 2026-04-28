@@ -4,6 +4,7 @@ import { sdk } from "@lib/config"
 import medusaError from "@lib/util/medusa-error"
 import {
   normalizeDeliveryHubCatalogResponse,
+  normalizeDeliveryHubCutoverApprovalArtifactResponse,
   normalizeDeliveryHubCutoverCandidateResponse,
   normalizeDeliveryHubCutoverPreconditionsResponse,
   normalizeDeliveryHubPickupPointsResponse,
@@ -20,6 +21,7 @@ import {
   shapeDeliveryHubSaveSelectionPayload,
   type DeliveryHubCatalogResponse,
   type DeliveryHubClearSelectionInput,
+  type DeliveryHubCutoverApprovalArtifactResponse,
   type DeliveryHubCutoverCandidateResponse,
   type DeliveryHubCutoverPreconditionsResponse,
   type DeliveryHubListPickupPointsInput,
@@ -115,6 +117,24 @@ export async function retrieveDeliveryHubCutoverCandidate(cartId: string) {
       cache: "no-store",
     })
     .then((response) => normalizeDeliveryHubCutoverCandidateResponse(response))
+    .catch(() => null)
+}
+
+export async function retrieveDeliveryHubCutoverApprovalArtifact(cartId?: string | null) {
+  const headers = await getDeliveryHubHeaders()
+
+  return sdk.client
+    .fetch<DeliveryHubCutoverApprovalArtifactResponse>(`/store/delivery/cutover-approval-template`, {
+      method: "GET",
+      query: cartId
+        ? {
+            cart_id: cartId,
+          }
+        : undefined,
+      headers,
+      cache: "no-store",
+    })
+    .then((response) => normalizeDeliveryHubCutoverApprovalArtifactResponse(response))
     .catch(() => null)
 }
 

@@ -292,6 +292,11 @@ async function startMockBackend() {
         return
       }
 
+      if (req.method === "GET" && pathname === "/store/delivery/cutover-approval-template") {
+        sendJson(res, 200, buildCutoverApprovalArtifactResponse())
+        return
+      }
+
       if (req.method === "GET" && pathname === "/store/delivery/readiness") {
         sendJson(res, 200, {
           ok: true,
@@ -419,6 +424,76 @@ async function startMockBackend() {
   const url = `http://127.0.0.1:${port}`
   log(`Delivery Hub preview mock Store API listening on ${url}`)
   return url
+}
+
+function buildCutoverApprovalArtifactResponse() {
+  const preconditions = buildCutoverPreconditionsResponse()
+  const candidate = buildCutoverCandidateResponse()
+
+  return {
+    ok: true,
+    version: 1,
+    artifact_type: "delivery_hub_checkout_cutover_decision",
+    decision_status: "not_requested",
+    cart_id: cartId,
+    generated_at: "2026-04-28T06:30:00.000Z",
+    reviewer_identity_placeholder: "reviewer_identity_required_before_future_cutover",
+    operator_identity_placeholder: "operator_identity_required_before_future_cutover",
+    technical_owner_identity_placeholder: "technical_owner_identity_required_before_future_cutover",
+    preconditions_summary: {
+      posture: preconditions.posture,
+      status: preconditions.status,
+      ready_count: preconditions.summary.ready_count,
+      missing_count: preconditions.summary.missing_count,
+      required_count: preconditions.summary.required_count,
+      blocked_count: preconditions.summary.blocked_count,
+      not_enabled_count: preconditions.summary.not_enabled_count,
+      total_count: preconditions.summary.total_count,
+      required_codes: preconditions.preconditions.filter((entry) => entry.status === "required").map((entry) => entry.code),
+      blocked_codes: preconditions.preconditions.filter((entry) => entry.status === "blocked").map((entry) => entry.code),
+      missing_codes: preconditions.preconditions.filter((entry) => entry.status === "missing").map((entry) => entry.code),
+      guardrails: preconditions.guardrails,
+    },
+    candidate_summary: {
+      available: true,
+      candidate_status: candidate.candidate_status,
+      selection_present: candidate.selection_present,
+      selection_reference_id: candidate.selection_reference_id,
+      candidate_shipping_option_id: candidate.candidate_shipping_option_id,
+      candidate_shipping_option_name: candidate.candidate_shipping_option_name,
+      candidate_amount: candidate.candidate_amount,
+      currency_code: candidate.currency_code,
+      candidate_pickup_point_id: candidate.candidate_pickup_point_id,
+      required_preconditions: candidate.required_preconditions,
+      blocked_reasons: candidate.blocked_reasons,
+      checkout_source_of_truth: candidate.checkout_source_of_truth,
+      can_commit_shipping_method: false,
+      guardrails: candidate.guardrails,
+    },
+    required_acknowledgements: {
+      rollback_reviewed: false,
+      apiship_fallback_available: false,
+      no_secrets_logged: false,
+      shipment_lifecycle_not_enabled: false,
+      approval_does_not_enable_commit: false,
+    },
+    required_signoffs: {
+      operator: "pending",
+      reviewer: "pending",
+      technical_owner: "pending",
+    },
+    rollback_acknowledgement: {
+      required: true,
+      statement: "Operator must confirm rollback before future cutover.",
+    },
+    commit_controls: {
+      can_commit_shipping_method: false,
+      requires_separate_implementation: true,
+      requires_feature_flag: true,
+      approval_is_executable: false,
+    },
+    non_executable_notice: "Decision artifact only / no approval execution.",
+  }
 }
 
 function buildCutoverCandidateResponse() {
@@ -915,6 +990,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
       cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
       cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.innerText || '',
       cutoverCandidate: document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')?.innerText || '',
+      approvalArtifact: document.querySelector('[data-testid="delivery-hub-cutover-approval-artifact"]')?.innerText || '',
       operationStatus: document.querySelector('[data-testid="delivery-hub-preview-operation-status"]')?.innerText || '',
       selectionStatus: document.querySelector('[data-testid="delivery-hub-preview-selection-status"]')?.innerText || '',
     }
@@ -927,6 +1003,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
   assertCutoverGate(initial.cutoverGate, expectedCutoverEnabled)
   assertCutoverPreconditions(initial.cutoverPreconditions)
   assertCutoverCandidate(initial.cutoverCandidate, "ready_for_review")
+  assertCutoverApprovalArtifact(initial.approvalArtifact)
   assertNoUnsafeNeedles(initial.text, "initial enabled preview page")
 
   await evaluate(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-get-quotes-button\"]').click()")
@@ -966,6 +1043,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
       cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
       cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.innerText || '',
       cutoverCandidate: document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')?.innerText || '',
+      approvalArtifact: document.querySelector('[data-testid="delivery-hub-cutover-approval-artifact"]')?.innerText || '',
     }
   })()`)
 
@@ -975,6 +1053,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
   assertCutoverGate(afterSave.cutoverGate, expectedCutoverEnabled)
   assertCutoverPreconditions(afterSave.cutoverPreconditions)
   assertCutoverCandidate(afterSave.cutoverCandidate, "ready_for_review")
+  assertCutoverApprovalArtifact(afterSave.approvalArtifact)
   assertNoUnsafeNeedles(afterSave.text, "after mocked selection save")
 
   await evaluate(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-clear-selection-button\"]').click()")
@@ -1057,6 +1136,28 @@ function assertCutoverPreconditions(text) {
   }
   if (!verifierText.includes("can_commit_shipping_method")) {
     fail("Cutover preconditions verifier did not surface commit blocker evidence.")
+  }
+}
+
+function assertCutoverApprovalArtifact(text) {
+  const artifactText = String(text || "")
+  if (!artifactText.includes("Approval artifact: available")) {
+    fail("Cutover approval artifact availability is not visible in preview guardrails.")
+  }
+  if (!artifactText.includes("Decision artifact only / no approval execution")) {
+    fail("Cutover approval artifact did not state non-executable decision-only posture.")
+  }
+  if (!artifactText.includes("can_commit_shipping_method=false") || !artifactText.includes("canCommitShippingMethod=false")) {
+    fail("Cutover approval artifact did not preserve commit false controls.")
+  }
+  if (!artifactText.includes("approval_is_executable=false")) {
+    fail("Cutover approval artifact did not show approval_is_executable=false.")
+  }
+  if (!artifactText.includes("requires_separate_implementation=true")) {
+    fail("Cutover approval artifact did not require separate implementation.")
+  }
+  if (!artifactText.includes("operator=pending") || !artifactText.includes("reviewer=pending")) {
+    fail("Cutover approval artifact did not surface pending signoff placeholders.")
   }
 }
 

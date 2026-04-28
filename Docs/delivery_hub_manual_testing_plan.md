@@ -84,7 +84,9 @@ NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID=fa279b9d-316d-45c2-aa8d-aa
    - `data-testid="delivery-hub-preview-source-of-truth-guardrail"` содержит `checkout source-of-truth unchanged` и говорит, что Delivery Hub preview metadata не commits Medusa shipping method;
    - `data-testid="delivery-hub-preview-no-provider-raw-guardrail"` говорит, что отображаются только shopper-safe diagnostics и не выводятся raw provider body/token/auth header/ciphertext/publishable key value;
    - `data-testid="delivery-hub-cutover-gate-status"` показывает reserved cutover flag state и `canCommitShippingMethod=false`;
-   - `data-testid="delivery-hub-cutover-preconditions-status"` показывает read-only verifier status. Если backend verifier доступен, expected availability is `available`, summary is evidence/preflight only, required/blocked labels include `operator_approval_required`, `shipment_lifecycle_not_enabled`, `can_commit_shipping_method`, and commit line still says `canCommitShippingMethod=false`. Если route недоступен, expected fail-safe is `unavailable` and commit remains blocked.
+   - `data-testid="delivery-hub-cutover-preconditions-status"` показывает read-only verifier status. Если backend verifier доступен, expected availability is `available`, summary is evidence/preflight only, required/blocked labels include `operator_approval_required`, `shipment_lifecycle_not_enabled`, `can_commit_shipping_method`, and commit line still says `canCommitShippingMethod=false`. Если route недоступен, expected fail-safe is `unavailable` and commit remains blocked;
+   - `data-testid="delivery-hub-cutover-candidate-status"` показывает read-only candidate planner summary for the current cart without enabling checkout commit;
+   - `data-testid="delivery-hub-cutover-approval-artifact"` показывает read-only decision artifact template. Expected text includes `Decision artifact only / no approval execution`, default decision `not_requested`, pending signoffs, and commit controls `can_commit_shipping_method=false`, `approval_is_executable=false`, `requires_separate_implementation=true`, plus storefront `canCommitShippingMethod=false`. Если route недоступен, expected fail-safe is `unavailable` and commit remains blocked.
 6. Для `dropoff_point_to_pickup_point` укажите connection id, destination pickup point id и origin dropoff point id; для `warehouse_to_pickup_point` укажите connection id, destination pickup point id и warehouse id. Поля имеют hooks `delivery-hub-preview-connection-id`, `delivery-hub-preview-destination-point-id`, `delivery-hub-preview-origin-point-id`, `delivery-hub-preview-warehouse-id`.
 7. Нажмите **Get neutral preview quotes** (`data-testid="delivery-hub-preview-get-quotes-button"`).
 8. Ожидаемо в results-блоке (`data-testid="delivery-hub-preview-results"`) видно:
@@ -104,7 +106,7 @@ Guardrails:
 - Preview UI не должен вызывать `setShippingMethod()` и не должен заменять существующий shipping method selection.
 - На экране должна быть явная фраза `checkout source-of-truth unchanged` в guardrail и results blocks.
 - В browser console/network не должно быть token/auth header/ciphertext/raw provider body/publishable key value в выводе или UI.
-- Для automated/manual Playwright smoke не требуется live Yandex в CI: достаточно mock/stub backend responses для `POST /store/delivery/quotes`, `POST /store/delivery/selection`, `DELETE /store/delivery/selection` и `GET /store/delivery/cutover-preconditions`; проверять нужно только перечисленные `data-testid` hooks plus source-of-truth and preflight-only guardrails.
+- Для automated/manual Playwright smoke не требуется live Yandex в CI: достаточно mock/stub backend responses для `POST /store/delivery/quotes`, `POST /store/delivery/selection`, `DELETE /store/delivery/selection`, `GET /store/delivery/cutover-preconditions`, `GET /store/delivery/cutover-candidate` и `GET /store/delivery/cutover-approval-template`; проверять нужно только перечисленные `data-testid` hooks plus source-of-truth, candidate/decision evidence, and preflight-only guardrails.
 
 ### Mock-friendly browser smoke
 
@@ -114,7 +116,7 @@ Guardrails:
 npm run smoke:delivery-hub-preview:browser
 ```
 
-Команда intentionally не использует live backend/Yandex. Она поднимает локальный mock Store API для `GET /store/regions`, cart/fulfillment/payment prerequisites и Delivery Hub endpoints `POST /store/delivery/quotes`, `POST /store/delivery/selection`, `DELETE /store/delivery/selection`, `GET /store/delivery/cutover-preconditions`; затем запускает временный storefront `next dev` трижды: с `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=false`, с preview enabled / cutover flag false, and with preview enabled / cutover flag true. Browser automation использует Chrome/Chromium DevTools Protocol без добавления Playwright dependency; при необходимости путь к браузеру задаётся через `BROWSER_SMOKE_BROWSER_BIN=/path/to/chrome`.
+Команда intentionally не использует live backend/Yandex. Она поднимает локальный mock Store API для `GET /store/regions`, cart/fulfillment/payment prerequisites и Delivery Hub endpoints `POST /store/delivery/quotes`, `POST /store/delivery/selection`, `DELETE /store/delivery/selection`, `GET /store/delivery/cutover-preconditions`, `GET /store/delivery/cutover-candidate`, `GET /store/delivery/cutover-approval-template`; затем запускает временный storefront `next dev` трижды: с `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=false`, с preview enabled / cutover flag false, and with preview enabled / cutover flag true. Browser automation использует Chrome/Chromium DevTools Protocol без добавления Playwright dependency; при необходимости путь к браузеру задаётся через `BROWSER_SMOKE_BROWSER_BIN=/path/to/chrome`.
 
 Expected result:
 
@@ -122,6 +124,8 @@ Expected result:
 - enabled run with cutover flag false: preview/shadow block, guardrails, operation status, selection status and the default-off cutover gate status are visible;
 - enabled run with cutover flag true: the cutover gate status recognizes `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` but still shows preflight/blocked-only and `canCommitShippingMethod=false`;
 - mocked verifier response is visible at `data-testid="delivery-hub-cutover-preconditions-status"`, includes `operator_approval_required`, `shipment_lifecycle_not_enabled`, `can_commit_shipping_method`, and preserves `canCommitShippingMethod=false`;
+- mocked candidate response is visible at `data-testid="delivery-hub-cutover-candidate-status"` and preserves `canCommitShippingMethod=false`;
+- mocked decision artifact response is visible at `data-testid="delivery-hub-cutover-approval-artifact"`, includes `Decision artifact only / no approval execution`, pending signoff placeholders, `can_commit_shipping_method=false`, `approval_is_executable=false`, `requires_separate_implementation=true`, and storefront `canCommitShippingMethod=false`;
 - mocked quote response отображает quote count `1`, safe correlation id, `Neutral Carrier`, price/currency and unchanged checkout source-of-truth;
 - mocked save/clear меняют только preview metadata status (`saved` / `cleared`) while keeping checkout source-of-truth unchanged;
 - UI text scan не содержит raw provider body, token/auth header, ciphertext or publishable key value;
@@ -138,9 +142,12 @@ Expected result:
 - default decision remains **NO-GO** until a separate approval gate explicitly records `GO`;
 - reserved future flag `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false` is now runtime-visible in the storefront preview/shadow guardrails as a default-off read-only/preflight gate;
 - read-only verifier `GET /store/delivery/cutover-preconditions` is evidence/preflight only: it must not call Yandex/live providers, must not expose raw provider/Yandex DTOs or secrets, and must not be treated as approval;
+- read-only artifact endpoint `GET /store/delivery/cutover-approval-template?cart_id=<cart_id>` is a decision-record template only: default `decision_status=not_requested`, allowed statuses are `not_requested | go_requested | no_go | approved_but_commit_disabled`, and even an approved evidence state does not enable checkout commit;
+- human record template for operators is [`delivery_hub_cutover_decision_record_template.md`](./delivery_hub_cutover_decision_record_template.md); use it only as sanitized evidence, not runtime state;
 - when the flag is absent/false, `data-testid="delivery-hub-cutover-gate-status"` must show default-off and `canCommitShippingMethod=false`;
 - if an operator explicitly sets `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` in local/staging, the same guardrail must recognize `true` but still show preflight/blocked-only status and `canCommitShippingMethod=false`;
 - `data-testid="delivery-hub-cutover-preconditions-status"` must show either available verifier evidence or fail-safe unavailable state, and in both cases `canCommitShippingMethod=false`;
+- `data-testid="delivery-hub-cutover-approval-artifact"` must show either available non-executable decision evidence or fail-safe unavailable state, and in both cases `canCommitShippingMethod=false`;
 - до отдельного approved cutover task Delivery Hub preview/selection path не должен вызывать `setShippingMethod()`, не должен заменять ApiShip/Medusa fallback checkout, и не должен запускать shipment create/cancel/status/retry.
 
 ---

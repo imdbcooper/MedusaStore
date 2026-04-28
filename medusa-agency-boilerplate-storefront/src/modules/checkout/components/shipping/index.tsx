@@ -7,6 +7,7 @@ import {
   listDeliveryHubPickupPoints,
   listDeliveryHubPickupWindows,
   previewDeliveryHubQuotes,
+  retrieveDeliveryHubCutoverApprovalArtifact,
   retrieveDeliveryHubCutoverCandidate,
   retrieveDeliveryHubCutoverPreconditions,
   retrieveDeliveryHubReadiness,
@@ -28,6 +29,7 @@ import { storefrontConfig } from "@lib/storefront-config"
 import {
   buildDeliveryHubCheckoutCutoverGateStatus,
   buildDeliveryHubCommitEligibilityModel,
+  buildDeliveryHubCutoverApprovalArtifactPreviewModel,
   buildDeliveryHubCutoverCandidatePreviewModel,
   buildDeliveryHubCutoverPreconditionsPreviewModel,
   buildDeliveryHubHandoffContractMatrixPreviewModel,
@@ -42,6 +44,7 @@ import {
   buildDeliveryHubShippingOptionParityPreviewModel,
   buildDeliveryHubWriteIntentContractPreviewModel,
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
+  type DeliveryHubCutoverApprovalArtifactResponse,
   type DeliveryHubCutoverCandidateResponse,
   type DeliveryHubCutoverPreconditionsResponse,
   type DeliveryHubListQuotesInput,
@@ -89,6 +92,11 @@ type DeliveryHubCutoverPreconditionsState = {
 type DeliveryHubCutoverCandidateState = {
   status: "idle" | "loading" | "ready" | "unavailable"
   candidate: DeliveryHubCutoverCandidateResponse | null
+}
+
+type DeliveryHubCutoverApprovalArtifactState = {
+  status: "idle" | "loading" | "ready" | "unavailable"
+  artifact: DeliveryHubCutoverApprovalArtifactResponse | null
 }
 
 type DeliveryHubSelectionCutInState = {
@@ -188,6 +196,11 @@ const Shipping: React.FC<ShippingProps> = ({
     useState<DeliveryHubCutoverCandidateState>({
       status: "idle",
       candidate: null,
+    })
+  const [deliveryHubCutoverApprovalArtifactState, setDeliveryHubCutoverApprovalArtifactState] =
+    useState<DeliveryHubCutoverApprovalArtifactState>({
+      status: "idle",
+      artifact: null,
     })
   const [deliveryHubNeutralPreviewForm, setDeliveryHubNeutralPreviewForm] =
     useState<DeliveryHubNeutralPreviewFormState>({
@@ -291,6 +304,11 @@ const Shipping: React.FC<ShippingProps> = ({
       candidate: null,
     })
 
+    setDeliveryHubCutoverApprovalArtifactState({
+      status: "loading",
+      artifact: null,
+    })
+
     Promise.allSettled([
       retrieveDeliveryHubSettings(),
       retrieveDeliveryHubSelection(cart.id),
@@ -302,6 +320,7 @@ const Shipping: React.FC<ShippingProps> = ({
       listDeliveryHubPickupWindows(),
       retrieveDeliveryHubCutoverPreconditions(),
       retrieveDeliveryHubCutoverCandidate(cart.id),
+      retrieveDeliveryHubCutoverApprovalArtifact(cart.id),
     ])
       .then(async (results) => {
         if (cancelled) {
@@ -315,6 +334,7 @@ const Shipping: React.FC<ShippingProps> = ({
         const pickupWindows = results[4].status === "fulfilled" ? results[4].value : null
         const cutoverPreconditions = results[5].status === "fulfilled" ? results[5].value : null
         const cutoverCandidate = results[6].status === "fulfilled" ? results[6].value : null
+        const cutoverApprovalArtifact = results[7].status === "fulfilled" ? results[7].value : null
         setDeliveryHubCutoverPreconditionsState({
           status: cutoverPreconditions ? "ready" : "unavailable",
           preconditions: cutoverPreconditions,
@@ -322,6 +342,10 @@ const Shipping: React.FC<ShippingProps> = ({
         setDeliveryHubCutoverCandidateState({
           status: cutoverCandidate ? "ready" : "unavailable",
           candidate: cutoverCandidate,
+        })
+        setDeliveryHubCutoverApprovalArtifactState({
+          status: cutoverApprovalArtifact ? "ready" : "unavailable",
+          artifact: cutoverApprovalArtifact,
         })
         const destinationPoint =
           pickupPoints?.points.find((point) => point.is_destination_pickup_allowed) ??
@@ -612,10 +636,17 @@ const Shipping: React.FC<ShippingProps> = ({
       correlation_id: deliveryHubNeutralPreviewState.quotes?.diagnostics?.correlation_id ?? null,
     })
       .then(async (selection) => {
-        const candidate = await retrieveDeliveryHubCutoverCandidate(cart.id)
+        const [candidate, artifact] = await Promise.all([
+          retrieveDeliveryHubCutoverCandidate(cart.id),
+          retrieveDeliveryHubCutoverApprovalArtifact(cart.id),
+        ])
         setDeliveryHubCutoverCandidateState({
           status: candidate ? "ready" : "unavailable",
           candidate,
+        })
+        setDeliveryHubCutoverApprovalArtifactState({
+          status: artifact ? "ready" : "unavailable",
+          artifact,
         })
         setDeliveryHubNeutralPreviewState((current) => ({
           ...current,
@@ -645,10 +676,17 @@ const Shipping: React.FC<ShippingProps> = ({
 
     await clearDeliveryHubSelection({ cart_id: cart.id })
       .then(async (selection) => {
-        const candidate = await retrieveDeliveryHubCutoverCandidate(cart.id)
+        const [candidate, artifact] = await Promise.all([
+          retrieveDeliveryHubCutoverCandidate(cart.id),
+          retrieveDeliveryHubCutoverApprovalArtifact(cart.id),
+        ])
         setDeliveryHubCutoverCandidateState({
           status: candidate ? "ready" : "unavailable",
           candidate,
+        })
+        setDeliveryHubCutoverApprovalArtifactState({
+          status: artifact ? "ready" : "unavailable",
+          artifact,
         })
         setDeliveryHubNeutralPreviewState((current) => ({
           ...current,
@@ -843,6 +881,10 @@ const Shipping: React.FC<ShippingProps> = ({
   const deliveryHubCutoverCandidatePreview =
     buildDeliveryHubCutoverCandidatePreviewModel(
       deliveryHubCutoverCandidateState.candidate
+    )
+  const deliveryHubCutoverApprovalArtifactPreview =
+    buildDeliveryHubCutoverApprovalArtifactPreviewModel(
+      deliveryHubCutoverApprovalArtifactState.artifact
     )
   const deliveryHubNeutralPreviewQuotes =
     deliveryHubNeutralPreviewState.quotes?.quotes ?? []
@@ -1584,6 +1626,40 @@ const Shipping: React.FC<ShippingProps> = ({
                             Guardrails: {deliveryHubCutoverCandidatePreview.guardrail_labels.join("; ")}.
                           </span>
                           {deliveryHubCutoverCandidatePreview.hint_messages.slice(0, 4).map((message) => (
+                            <span key={message}>{message}</span>
+                          ))}
+                        </div>
+                        <div
+                          className="mt-2 grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-base p-3"
+                          data-testid="delivery-hub-cutover-approval-artifact"
+                        >
+                          <span data-testid="delivery-hub-cutover-approval-artifact-availability">
+                            Approval artifact: {deliveryHubCutoverApprovalArtifactPreview.availability}; load status={deliveryHubCutoverApprovalArtifactState.status}.
+                          </span>
+                          <span data-testid="delivery-hub-cutover-approval-artifact-status">
+                            {deliveryHubCutoverApprovalArtifactPreview.status_label} · {deliveryHubCutoverApprovalArtifactPreview.detail_label}
+                          </span>
+                          <span data-testid="delivery-hub-cutover-approval-artifact-evidence">
+                            Evidence snapshot: {deliveryHubCutoverApprovalArtifactPreview.evidence_label}
+                          </span>
+                          {deliveryHubCutoverApprovalArtifactPreview.cart_label && (
+                            <span data-testid="delivery-hub-cutover-approval-artifact-cart">
+                              Artifact cart scope: {deliveryHubCutoverApprovalArtifactPreview.cart_label}.
+                            </span>
+                          )}
+                          <span data-testid="delivery-hub-cutover-approval-artifact-candidate">
+                            Candidate summary: {deliveryHubCutoverApprovalArtifactPreview.candidate_label}
+                          </span>
+                          <span data-testid="delivery-hub-cutover-approval-artifact-commit-controls">
+                            Commit controls: {deliveryHubCutoverApprovalArtifactPreview.commit_control_labels.join("; ")}; canCommitShippingMethod={String(deliveryHubCutoverApprovalArtifactPreview.canCommitShippingMethod)}.
+                          </span>
+                          <span data-testid="delivery-hub-cutover-approval-artifact-signoffs">
+                            Required signoffs: {deliveryHubCutoverApprovalArtifactPreview.signoff_labels.join("; ")}.
+                          </span>
+                          <span data-testid="delivery-hub-cutover-approval-artifact-acknowledgements">
+                            Required acknowledgements placeholders: {deliveryHubCutoverApprovalArtifactPreview.acknowledgement_labels.join("; ")}.
+                          </span>
+                          {deliveryHubCutoverApprovalArtifactPreview.hint_messages.slice(0, 4).map((message) => (
                             <span key={message}>{message}</span>
                           ))}
                         </div>

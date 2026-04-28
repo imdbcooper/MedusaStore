@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs"
 import {
   buildDeliveryHubCheckoutCutoverGateStatus,
   buildDeliveryHubCommitEligibilityModel,
+  buildDeliveryHubCutoverApprovalArtifactPreviewModel,
   buildDeliveryHubCutoverCandidatePreviewModel,
   buildDeliveryHubCutoverPreconditionsPreviewModel,
   buildDeliveryHubHandoffContractMatrixPreviewModel,
@@ -44,6 +45,7 @@ import {
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
   normalizeDeliveryHubCatalogResponse,
   normalizeDeliveryHubPickupPointsResponse,
+  normalizeDeliveryHubCutoverApprovalArtifactResponse,
   normalizeDeliveryHubCutoverCandidateResponse,
   normalizeDeliveryHubCutoverPreconditionsResponse,
   normalizeDeliveryHubQuotesResponse,
@@ -1082,6 +1084,87 @@ function buildCutoverPreconditionsFixture(overrides: Record<string, unknown> = {
   }
 }
 
+function buildCutoverApprovalArtifactFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    ok: true,
+    version: 1,
+    artifact_type: "delivery_hub_checkout_cutover_decision",
+    decision_status: "not_requested",
+    cart_id: "cart_decision",
+    generated_at: "2026-04-28T06:30:00.000Z",
+    reviewer_identity_placeholder: "reviewer_identity_required_before_future_cutover",
+    operator_identity_placeholder: "operator_identity_required_before_future_cutover",
+    technical_owner_identity_placeholder: "technical_owner_identity_required_before_future_cutover",
+    preconditions_summary: {
+      posture: "evidence_preflight_only",
+      status: "preflight_only",
+      ready_count: 7,
+      missing_count: 1,
+      required_count: 1,
+      blocked_count: 1,
+      not_enabled_count: 1,
+      total_count: 11,
+      required_codes: ["operator_approval_required"],
+      blocked_codes: ["can_commit_shipping_method"],
+      missing_codes: ["admin_yandex_quote_baseline_recorded"],
+      guardrails: {
+        checkout_source_of_truth: "unchanged",
+        no_network_calls: true,
+        no_provider_payloads: true,
+        no_secret_material: true,
+        shipment_lifecycle_not_enabled: true,
+        can_commit_shipping_method: false,
+      },
+    },
+    candidate_summary: {
+      available: true,
+      candidate_status: "ready_for_review",
+      selection_present: true,
+      selection_reference_id: "dhsel_0123456789abcdef0123456789abcdef",
+      candidate_shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+      candidate_shipping_option_name: "Delivery Hub Pickup Candidate",
+      candidate_amount: 749,
+      currency_code: "RUB",
+      candidate_pickup_point_id: "pvz_decision",
+      required_preconditions: ["operator_approval_required"],
+      blocked_reasons: ["can_commit_shipping_method_false"],
+      checkout_source_of_truth: "unchanged",
+      can_commit_shipping_method: false,
+      guardrails: {
+        no_network_calls: true,
+        no_provider_payloads: true,
+        no_secret_material: true,
+        shipment_lifecycle_not_enabled: true,
+        can_commit_shipping_method: false,
+      },
+    },
+    required_acknowledgements: {
+      rollback_reviewed: false,
+      apiship_fallback_available: false,
+      no_secrets_logged: false,
+      shipment_lifecycle_not_enabled: false,
+      approval_does_not_enable_commit: false,
+    },
+    required_signoffs: {
+      operator: "pending",
+      reviewer: "pending",
+      technical_owner: "pending",
+    },
+    rollback_acknowledgement: {
+      required: true,
+      statement: "Operator must confirm rollback before future cutover.",
+    },
+    commit_controls: {
+      can_commit_shipping_method: false,
+      requires_separate_implementation: true,
+      requires_feature_flag: true,
+      approval_is_executable: false,
+    },
+    non_executable_notice: "Decision artifact only / no approval execution.",
+    ...overrides,
+  }
+}
+
 test("normalizeDeliveryHubCutoverPreconditionsResponse keeps verifier safe and commit-blocked", () => {
   const response = normalizeDeliveryHubCutoverPreconditionsResponse({
     ...buildCutoverPreconditionsFixture(),
@@ -1175,6 +1258,141 @@ test("buildDeliveryHubCutoverPreconditionsPreviewModel aggregates available veri
   assert.equal(model.guardrail_labels.includes("no_network_calls=true"), true)
   assert.equal(
     model.hint_messages.some((message) => message.includes("not cutover approval")),
+    true
+  )
+})
+
+test("normalizeDeliveryHubCutoverApprovalArtifactResponse keeps artifact non-executable and sanitized", () => {
+  const response = normalizeDeliveryHubCutoverApprovalArtifactResponse({
+    ok: true,
+    version: 1,
+    artifact_type: "delivery_hub_checkout_cutover_decision",
+    decision_status: "not_requested",
+    cart_id: "cart_decision",
+    generated_at: "2026-04-28T06:30:00.000Z",
+    reviewer_identity_placeholder: "reviewer_identity_required_before_future_cutover",
+    operator_identity_placeholder: "operator_identity_required_before_future_cutover",
+    technical_owner_identity_placeholder: "technical_owner_identity_required_before_future_cutover",
+    preconditions_summary: {
+      posture: "evidence_preflight_only",
+      status: "preflight_only",
+      ready_count: 7,
+      missing_count: 1,
+      required_count: 1,
+      blocked_count: 1,
+      not_enabled_count: 1,
+      total_count: 11,
+      required_codes: ["operator_approval_required"],
+      blocked_codes: ["can_commit_shipping_method"],
+      missing_codes: ["admin_yandex_quote_baseline_recorded"],
+      guardrails: {
+        checkout_source_of_truth: "unchanged",
+        no_network_calls: true,
+        no_provider_payloads: true,
+        no_secret_material: true,
+        shipment_lifecycle_not_enabled: true,
+        can_commit_shipping_method: false,
+      },
+    },
+    candidate_summary: {
+      available: true,
+      candidate_status: "ready_for_review",
+      selection_present: true,
+      selection_reference_id: "dhsel_0123456789abcdef0123456789abcdef",
+      candidate_shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+      candidate_shipping_option_name: "Delivery Hub Pickup Candidate",
+      candidate_amount: 749,
+      currency_code: "RUB",
+      candidate_pickup_point_id: "pvz_decision",
+      required_preconditions: ["operator_approval_required"],
+      blocked_reasons: ["can_commit_shipping_method_false"],
+      checkout_source_of_truth: "unchanged",
+      can_commit_shipping_method: false,
+      guardrails: {
+        no_network_calls: true,
+        no_provider_payloads: true,
+        no_secret_material: true,
+        shipment_lifecycle_not_enabled: true,
+        can_commit_shipping_method: false,
+      },
+    },
+    required_acknowledgements: {
+      rollback_reviewed: false,
+      apiship_fallback_available: false,
+      no_secrets_logged: false,
+      shipment_lifecycle_not_enabled: false,
+      approval_does_not_enable_commit: false,
+    },
+    required_signoffs: {
+      operator: "pending",
+      reviewer: "pending",
+      technical_owner: "pending",
+    },
+    rollback_acknowledgement: {
+      required: true,
+      statement: "Operator must confirm rollback before future cutover.",
+    },
+    commit_controls: {
+      can_commit_shipping_method: false,
+      requires_separate_implementation: true,
+      requires_feature_flag: true,
+      approval_is_executable: false,
+    },
+    non_executable_notice: "Decision artifact only / no approval execution.",
+    raw_reference: { offer_id: "must-not-leak" },
+  })
+
+  assert.equal(response.artifact_type, "delivery_hub_checkout_cutover_decision")
+  assert.equal(response.decision_status, "not_requested")
+  assert.equal(response.commit_controls.can_commit_shipping_method, false)
+  assert.equal(response.commit_controls.approval_is_executable, false)
+  assert.equal(response.candidate_summary.can_commit_shipping_method, false)
+  assert.equal(JSON.stringify(response).includes("must-not-leak"), false)
+})
+
+test("normalizeDeliveryHubCutoverApprovalArtifactResponse rejects executable or unsafe artifact", () => {
+  const fixture = buildCutoverApprovalArtifactFixture()
+
+  assert.throws(
+    () => normalizeDeliveryHubCutoverApprovalArtifactResponse({
+      ...fixture,
+      commit_controls: {
+        ...fixture.commit_controls,
+        approval_is_executable: true,
+      },
+    }),
+    /cannot enable shipping-method commit/
+  )
+
+  assert.throws(
+    () => normalizeDeliveryHubCutoverApprovalArtifactResponse({
+      ...fixture,
+      candidate_summary: {
+        ...fixture.candidate_summary,
+        candidate_shipping_option_name: "token=secret",
+      },
+    }),
+    /must not expose provider internals/
+  )
+})
+
+test("buildDeliveryHubCutoverApprovalArtifactPreviewModel fails safe and keeps commit false", () => {
+  const unavailable = buildDeliveryHubCutoverApprovalArtifactPreviewModel(null)
+  assert.equal(unavailable.availability, "unavailable")
+  assert.equal(unavailable.canCommitShippingMethod, false)
+  assert.equal(unavailable.commit_control_labels.includes("can_commit_shipping_method=false"), true)
+
+  const model = buildDeliveryHubCutoverApprovalArtifactPreviewModel(
+    normalizeDeliveryHubCutoverApprovalArtifactResponse(buildCutoverApprovalArtifactFixture())
+  )
+
+  assert.equal(model.availability, "available")
+  assert.equal(model.decision_status, "not_requested")
+  assert.equal(model.canCommitShippingMethod, false)
+  assert.equal(model.commit_control_labels.includes("approval_is_executable=false"), true)
+  assert.equal(model.status_label.includes("not_requested"), true)
+  assert.equal(
+    model.hint_messages.some((message) => message.includes("no approval execution")),
     true
   )
 })

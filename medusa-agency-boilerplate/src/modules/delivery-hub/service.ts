@@ -52,6 +52,10 @@ import {
   type DeliveryHubCutoverCandidateResponse,
 } from "./cutover-candidate"
 import {
+  buildDeliveryHubCutoverApprovalArtifact,
+  type DeliveryHubCutoverApprovalArtifact,
+} from "./cutover-approval-artifact"
+import {
   buildDeliveryHubStoreSelectionConnectionSummary,
   buildDeliveryHubStoreSelectionReadiness,
   createMissingDeliveryHubSelectionConnectionSummary,
@@ -1308,6 +1312,31 @@ export class DeliveryHubService {
   }
 
   async getStoreCutoverPreconditions(): Promise<DeliveryHubCutoverPreconditionsResponse> {
+    return this.buildStoreCutoverPreconditionsSnapshot()
+  }
+
+  async getStoreCutoverApprovalArtifact(input: {
+    cart_id?: string | null
+    metadata?: unknown
+    current_shipping_options?: DeliveryHubShippingOptionSnapshot[] | null
+  }): Promise<DeliveryHubCutoverApprovalArtifact> {
+    const preconditions = await this.buildStoreCutoverPreconditionsSnapshot()
+    const candidate = input.cart_id
+      ? buildDeliveryHubCutoverCandidate({
+          cart_id: input.cart_id,
+          metadata: input.metadata,
+          current_shipping_options: input.current_shipping_options ?? [],
+        })
+      : null
+
+    return buildDeliveryHubCutoverApprovalArtifact({
+      cart_id: input.cart_id ?? null,
+      preconditions,
+      candidate,
+    })
+  }
+
+  private async buildStoreCutoverPreconditionsSnapshot(): Promise<DeliveryHubCutoverPreconditionsResponse> {
     const [connections, warehouses, quoteEventLogs] = await Promise.all([
       listDeliveryConnectionsReadOnly(this.pg),
       listDeliveryWarehousesReadOnly(this.pg),

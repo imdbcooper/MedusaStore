@@ -332,6 +332,112 @@ const StoreDeliveryCutoverPreconditionCodeSchema = z.enum([
   "can_commit_shipping_method",
 ])
 
+const StoreDeliveryCutoverApprovalDecisionStatusSchema = z.enum([
+  "not_requested",
+  "go_requested",
+  "no_go",
+  "approved_but_commit_disabled",
+])
+
+const StoreDeliveryCutoverApprovalArtifactResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    version: z.literal(1),
+    artifact_type: z.literal("delivery_hub_checkout_cutover_decision"),
+    decision_status: StoreDeliveryCutoverApprovalDecisionStatusSchema,
+    cart_id: z.string().nullable(),
+    generated_at: z.string(),
+    reviewer_identity_placeholder: z.string(),
+    operator_identity_placeholder: z.string(),
+    technical_owner_identity_placeholder: z.string(),
+    preconditions_summary: z
+      .object({
+        posture: z.literal("evidence_preflight_only"),
+        status: z.literal("preflight_only"),
+        ready_count: z.number().int().nonnegative(),
+        missing_count: z.number().int().nonnegative(),
+        required_count: z.number().int().nonnegative(),
+        blocked_count: z.number().int().nonnegative(),
+        not_enabled_count: z.number().int().nonnegative(),
+        total_count: z.number().int().nonnegative(),
+        required_codes: z.array(z.string()),
+        blocked_codes: z.array(z.string()),
+        missing_codes: z.array(z.string()),
+        guardrails: z
+          .object({
+            checkout_source_of_truth: z.literal("unchanged"),
+            no_network_calls: z.literal(true),
+            no_provider_payloads: z.literal(true),
+            no_secret_material: z.literal(true),
+            shipment_lifecycle_not_enabled: z.literal(true),
+            can_commit_shipping_method: z.literal(false),
+          })
+          .strict(),
+      })
+      .strict(),
+    candidate_summary: z
+      .object({
+        available: z.boolean(),
+        candidate_status: z.union([
+          StoreDeliveryCutoverCandidateStatusSchema,
+          z.literal("not_requested"),
+        ]),
+        selection_present: z.boolean(),
+        selection_reference_id: z.string().nullable(),
+        candidate_shipping_option_id: z.string().nullable(),
+        candidate_shipping_option_name: z.string().nullable(),
+        candidate_amount: z.number().nullable(),
+        currency_code: z.string().nullable(),
+        candidate_pickup_point_id: z.string().nullable(),
+        required_preconditions: z.array(z.string()),
+        blocked_reasons: z.array(z.string()),
+        checkout_source_of_truth: z.literal("unchanged"),
+        can_commit_shipping_method: z.literal(false),
+        guardrails: z
+          .object({
+            no_network_calls: z.literal(true),
+            no_provider_payloads: z.literal(true),
+            no_secret_material: z.literal(true),
+            shipment_lifecycle_not_enabled: z.literal(true),
+            can_commit_shipping_method: z.literal(false),
+          })
+          .strict(),
+      })
+      .strict(),
+    required_acknowledgements: z
+      .object({
+        rollback_reviewed: z.literal(false),
+        apiship_fallback_available: z.literal(false),
+        no_secrets_logged: z.literal(false),
+        shipment_lifecycle_not_enabled: z.literal(false),
+        approval_does_not_enable_commit: z.literal(false),
+      })
+      .strict(),
+    required_signoffs: z
+      .object({
+        operator: z.literal("pending"),
+        reviewer: z.literal("pending"),
+        technical_owner: z.literal("pending"),
+      })
+      .strict(),
+    rollback_acknowledgement: z
+      .object({
+        required: z.literal(true),
+        statement: z.string(),
+      })
+      .strict(),
+    commit_controls: z
+      .object({
+        can_commit_shipping_method: z.literal(false),
+        requires_separate_implementation: z.literal(true),
+        requires_feature_flag: z.literal(true),
+        approval_is_executable: z.literal(false),
+      })
+      .strict(),
+    non_executable_notice: z.string(),
+  })
+  .strict()
+
 const StoreDeliveryCutoverPreconditionsResponseSchema = z
   .object({
     ok: z.literal(true),
@@ -459,6 +565,10 @@ export function sanitizeStoreDeliveryCutoverPreconditionsResponse(result: unknow
 
 export function sanitizeStoreDeliveryCutoverCandidateResponse(result: unknown) {
   return StoreDeliveryCutoverCandidateResponseSchema.parse(result)
+}
+
+export function sanitizeStoreDeliveryCutoverApprovalArtifactResponse(result: unknown) {
+  return StoreDeliveryCutoverApprovalArtifactResponseSchema.parse(result)
 }
 
 export function parseStoreDeliveryItems(rawItems: string | undefined) {

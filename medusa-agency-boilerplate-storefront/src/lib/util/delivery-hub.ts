@@ -38,6 +38,13 @@ export const DELIVERY_HUB_CUTOVER_CANDIDATE_STATUSES = [
   "shipping_option_missing",
 ] as const
 
+export const DELIVERY_HUB_CUTOVER_DECISION_STATUSES = [
+  "not_requested",
+  "go_requested",
+  "no_go",
+  "approved_but_commit_disabled",
+] as const
+
 export type DeliveryHubQuoteType = (typeof DELIVERY_HUB_QUOTE_TYPES)[number]
 
 export type DeliveryHubConnectionState =
@@ -67,6 +74,9 @@ export type DeliveryHubSelectionReadinessIssueCode =
 
 export type DeliveryHubCutoverCandidateStatus =
   (typeof DELIVERY_HUB_CUTOVER_CANDIDATE_STATUSES)[number]
+
+export type DeliveryHubCutoverDecisionStatus =
+  (typeof DELIVERY_HUB_CUTOVER_DECISION_STATUSES)[number]
 
 export type DeliveryHubIntervalUtc = {
   from: string
@@ -257,6 +267,100 @@ export type DeliveryHubReadinessResponse = {
   issues: DeliveryHubSelectionReadinessIssue[]
   selection: DeliveryHubSelection | null
   quote_context: DeliveryHubSelectionQuoteContext | null
+}
+
+export type DeliveryHubCutoverApprovalArtifactResponse = {
+  ok: true
+  version: 1
+  artifact_type: "delivery_hub_checkout_cutover_decision"
+  decision_status: DeliveryHubCutoverDecisionStatus
+  cart_id: string | null
+  generated_at: string
+  reviewer_identity_placeholder: string
+  operator_identity_placeholder: string
+  technical_owner_identity_placeholder: string
+  preconditions_summary: {
+    posture: "evidence_preflight_only"
+    status: "preflight_only"
+    ready_count: number
+    missing_count: number
+    required_count: number
+    blocked_count: number
+    not_enabled_count: number
+    total_count: number
+    required_codes: string[]
+    blocked_codes: string[]
+    missing_codes: string[]
+    guardrails: {
+      checkout_source_of_truth: "unchanged"
+      no_network_calls: true
+      no_provider_payloads: true
+      no_secret_material: true
+      shipment_lifecycle_not_enabled: true
+      can_commit_shipping_method: false
+    }
+  }
+  candidate_summary: {
+    available: boolean
+    candidate_status: DeliveryHubCutoverCandidateStatus | "not_requested"
+    selection_present: boolean
+    selection_reference_id: string | null
+    candidate_shipping_option_id: string | null
+    candidate_shipping_option_name: string | null
+    candidate_amount: number | null
+    currency_code: string | null
+    candidate_pickup_point_id: string | null
+    required_preconditions: string[]
+    blocked_reasons: string[]
+    checkout_source_of_truth: "unchanged"
+    can_commit_shipping_method: false
+    guardrails: {
+      no_network_calls: true
+      no_provider_payloads: true
+      no_secret_material: true
+      shipment_lifecycle_not_enabled: true
+      can_commit_shipping_method: false
+    }
+  }
+  required_acknowledgements: {
+    rollback_reviewed: false
+    apiship_fallback_available: false
+    no_secrets_logged: false
+    shipment_lifecycle_not_enabled: false
+    approval_does_not_enable_commit: false
+  }
+  required_signoffs: {
+    operator: "pending"
+    reviewer: "pending"
+    technical_owner: "pending"
+  }
+  rollback_acknowledgement: {
+    required: true
+    statement: string
+  }
+  commit_controls: {
+    can_commit_shipping_method: false
+    requires_separate_implementation: true
+    requires_feature_flag: true
+    approval_is_executable: false
+  }
+  non_executable_notice: string
+}
+
+export type DeliveryHubCutoverApprovalArtifactPreviewModel = {
+  tone: "neutral" | "warning" | "positive"
+  availability: "available" | "unavailable"
+  status_label: string
+  detail_label: string
+  decision_status: DeliveryHubCutoverDecisionStatus
+  cart_label: string | null
+  evidence_label: string
+  candidate_label: string
+  acknowledgement_labels: string[]
+  signoff_labels: string[]
+  commit_control_labels: string[]
+  canCommitShippingMethod: false
+  hint_messages: string[]
 }
 
 export type DeliveryHubListQuotesInput = {
@@ -913,6 +1017,41 @@ function readCutoverCandidateStatus(
   return value as DeliveryHubCutoverCandidateStatus
 }
 
+function readCutoverDecisionStatus(value: unknown, field: string): DeliveryHubCutoverDecisionStatus {
+  if (
+    typeof value !== "string" ||
+    !DELIVERY_HUB_CUTOVER_DECISION_STATUSES.includes(value as DeliveryHubCutoverDecisionStatus)
+  ) {
+    throw new Error(`Delivery Hub payload field \"${field}\" must be a supported decision status`)
+  }
+
+  return value as DeliveryHubCutoverDecisionStatus
+}
+
+function readCutoverArtifactCandidateStatus(value: unknown, field: string) {
+  if (value === "not_requested") {
+    return "not_requested"
+  }
+
+  return readCutoverCandidateStatus(value, field)
+}
+
+function readFalseLiteral(value: unknown, field: string): false {
+  if (value !== false) {
+    throw new Error(`Delivery Hub payload field \"${field}\" must be false`)
+  }
+
+  return false
+}
+
+function readPendingLiteral(value: unknown, field: string): "pending" {
+  if (value !== "pending") {
+    throw new Error(`Delivery Hub payload field \"${field}\" must be pending`)
+  }
+
+  return "pending"
+}
+
 function readSafeCutoverLabel(value: unknown, field: string) {
   const label = readRequiredString(value, field)
 
@@ -927,6 +1066,16 @@ function normalizeDeliveryHubSafeStringArray(value: unknown, field: string) {
   const entries = Array.isArray(value) ? value : []
 
   return entries.map((entry, index) => readSafeCutoverLabel(entry, `${field}.${index}`))
+}
+
+function readLiteralString<T extends string>(value: unknown, field: string, expected: T): T {
+  const actual = readRequiredString(value, field)
+
+  if (actual !== expected) {
+    throw new Error(`Delivery Hub payload field \"${field}\" must equal ${expected}`)
+  }
+
+  return expected
 }
 
 function readCutoverPreconditionStatus(
@@ -1104,6 +1253,211 @@ export function normalizeDeliveryHubCutoverCandidateResponse(
   }
 }
 
+export function normalizeDeliveryHubCutoverApprovalArtifactResponse(
+  payload: unknown
+): DeliveryHubCutoverApprovalArtifactResponse {
+  const record = requireRecord(payload, "cutover-approval-artifact")
+  const preconditions = requireRecord(record.preconditions_summary, "preconditions_summary")
+  const preconditionGuardrails = requireRecord(
+    preconditions.guardrails,
+    "preconditions_summary.guardrails"
+  )
+  const candidate = requireRecord(record.candidate_summary, "candidate_summary")
+  const candidateGuardrails = requireRecord(candidate.guardrails, "candidate_summary.guardrails")
+  const requiredAcknowledgements = requireRecord(
+    record.required_acknowledgements,
+    "required_acknowledgements"
+  )
+  const requiredSignoffs = requireRecord(record.required_signoffs, "required_signoffs")
+  const rollbackAcknowledgement = requireRecord(
+    record.rollback_acknowledgement,
+    "rollback_acknowledgement"
+  )
+  const commitControls = requireRecord(record.commit_controls, "commit_controls")
+  const commitEnabled = readBoolean(
+    commitControls.can_commit_shipping_method,
+    "commit_controls.can_commit_shipping_method"
+  )
+  const approvalExecutable = readBoolean(
+    commitControls.approval_is_executable,
+    "commit_controls.approval_is_executable"
+  )
+  const candidateCanCommit = readBoolean(
+    candidate.can_commit_shipping_method,
+    "candidate_summary.can_commit_shipping_method"
+  )
+
+  if (commitEnabled || approvalExecutable || candidateCanCommit) {
+    throw new Error("Delivery Hub cutover approval artifact cannot enable shipping-method commit")
+  }
+
+  return {
+    ok: true,
+    version: readLiteralOne(record.version, "version"),
+    artifact_type: readLiteralString(
+      record.artifact_type,
+      "artifact_type",
+      "delivery_hub_checkout_cutover_decision"
+    ),
+    decision_status: readCutoverDecisionStatus(record.decision_status, "decision_status"),
+    cart_id: readOptionalString(record.cart_id),
+    generated_at: readRequiredString(record.generated_at, "generated_at"),
+    reviewer_identity_placeholder: readSafeCutoverLabel(
+      record.reviewer_identity_placeholder,
+      "reviewer_identity_placeholder"
+    ),
+    operator_identity_placeholder: readSafeCutoverLabel(
+      record.operator_identity_placeholder,
+      "operator_identity_placeholder"
+    ),
+    technical_owner_identity_placeholder: readSafeCutoverLabel(
+      record.technical_owner_identity_placeholder,
+      "technical_owner_identity_placeholder"
+    ),
+    preconditions_summary: {
+      posture: readLiteralString(
+        preconditions.posture,
+        "preconditions_summary.posture",
+        "evidence_preflight_only"
+      ),
+      status: readLiteralString(
+        preconditions.status,
+        "preconditions_summary.status",
+        "preflight_only"
+      ),
+      ready_count: readNonNegativeInteger(preconditions.ready_count, "preconditions_summary.ready_count"),
+      missing_count: readNonNegativeInteger(preconditions.missing_count, "preconditions_summary.missing_count"),
+      required_count: readNonNegativeInteger(preconditions.required_count, "preconditions_summary.required_count"),
+      blocked_count: readNonNegativeInteger(preconditions.blocked_count, "preconditions_summary.blocked_count"),
+      not_enabled_count: readNonNegativeInteger(
+        preconditions.not_enabled_count,
+        "preconditions_summary.not_enabled_count"
+      ),
+      total_count: readNonNegativeInteger(preconditions.total_count, "preconditions_summary.total_count"),
+      required_codes: normalizeDeliveryHubSafeStringArray(
+        preconditions.required_codes,
+        "preconditions_summary.required_codes"
+      ),
+      blocked_codes: normalizeDeliveryHubSafeStringArray(
+        preconditions.blocked_codes,
+        "preconditions_summary.blocked_codes"
+      ),
+      missing_codes: normalizeDeliveryHubSafeStringArray(
+        preconditions.missing_codes,
+        "preconditions_summary.missing_codes"
+      ),
+      guardrails: {
+        checkout_source_of_truth: readLiteralString(
+          preconditionGuardrails.checkout_source_of_truth,
+          "preconditions_summary.guardrails.checkout_source_of_truth",
+          "unchanged"
+        ),
+        no_network_calls: readBoolean(
+          preconditionGuardrails.no_network_calls,
+          "preconditions_summary.guardrails.no_network_calls"
+        ) ? true : failDeliveryHubBooleanGuardrail("preconditions_summary.guardrails.no_network_calls"),
+        no_provider_payloads: readBoolean(
+          preconditionGuardrails.no_provider_payloads,
+          "preconditions_summary.guardrails.no_provider_payloads"
+        ) ? true : failDeliveryHubBooleanGuardrail("preconditions_summary.guardrails.no_provider_payloads"),
+        no_secret_material: readBoolean(
+          preconditionGuardrails.no_secret_material,
+          "preconditions_summary.guardrails.no_secret_material"
+        ) ? true : failDeliveryHubBooleanGuardrail("preconditions_summary.guardrails.no_secret_material"),
+        shipment_lifecycle_not_enabled: readBoolean(
+          preconditionGuardrails.shipment_lifecycle_not_enabled,
+          "preconditions_summary.guardrails.shipment_lifecycle_not_enabled"
+        ) ? true : failDeliveryHubBooleanGuardrail("preconditions_summary.guardrails.shipment_lifecycle_not_enabled"),
+        can_commit_shipping_method: false,
+      },
+    },
+    candidate_summary: {
+      available: readBoolean(candidate.available, "candidate_summary.available"),
+      candidate_status: readCutoverArtifactCandidateStatus(
+        candidate.candidate_status,
+        "candidate_summary.candidate_status"
+      ),
+      selection_present: readBoolean(candidate.selection_present, "candidate_summary.selection_present"),
+      selection_reference_id: readOptionalString(candidate.selection_reference_id),
+      candidate_shipping_option_id: readOptionalString(candidate.candidate_shipping_option_id),
+      candidate_shipping_option_name: candidate.candidate_shipping_option_name === null || candidate.candidate_shipping_option_name === undefined
+        ? null
+        : readSafeCutoverLabel(
+            candidate.candidate_shipping_option_name,
+            "candidate_summary.candidate_shipping_option_name"
+          ),
+      candidate_amount: readNullableFiniteNumber(candidate.candidate_amount, "candidate_summary.candidate_amount"),
+      currency_code: readOptionalString(candidate.currency_code),
+      candidate_pickup_point_id: readOptionalString(candidate.candidate_pickup_point_id),
+      required_preconditions: normalizeDeliveryHubSafeStringArray(
+        candidate.required_preconditions,
+        "candidate_summary.required_preconditions"
+      ),
+      blocked_reasons: normalizeDeliveryHubSafeStringArray(
+        candidate.blocked_reasons,
+        "candidate_summary.blocked_reasons"
+      ),
+      checkout_source_of_truth: readLiteralString(
+        candidate.checkout_source_of_truth,
+        "candidate_summary.checkout_source_of_truth",
+        "unchanged"
+      ),
+      can_commit_shipping_method: false,
+      guardrails: {
+        no_network_calls: readBoolean(candidateGuardrails.no_network_calls, "candidate_summary.guardrails.no_network_calls")
+          ? true
+          : failDeliveryHubBooleanGuardrail("candidate_summary.guardrails.no_network_calls"),
+        no_provider_payloads: readBoolean(candidateGuardrails.no_provider_payloads, "candidate_summary.guardrails.no_provider_payloads")
+          ? true
+          : failDeliveryHubBooleanGuardrail("candidate_summary.guardrails.no_provider_payloads"),
+        no_secret_material: readBoolean(candidateGuardrails.no_secret_material, "candidate_summary.guardrails.no_secret_material")
+          ? true
+          : failDeliveryHubBooleanGuardrail("candidate_summary.guardrails.no_secret_material"),
+        shipment_lifecycle_not_enabled: readBoolean(
+          candidateGuardrails.shipment_lifecycle_not_enabled,
+          "candidate_summary.guardrails.shipment_lifecycle_not_enabled"
+        )
+          ? true
+          : failDeliveryHubBooleanGuardrail("candidate_summary.guardrails.shipment_lifecycle_not_enabled"),
+        can_commit_shipping_method: false,
+      },
+    },
+    required_acknowledgements: {
+      rollback_reviewed: readFalseLiteral(requiredAcknowledgements.rollback_reviewed, "required_acknowledgements.rollback_reviewed"),
+      apiship_fallback_available: readFalseLiteral(requiredAcknowledgements.apiship_fallback_available, "required_acknowledgements.apiship_fallback_available"),
+      no_secrets_logged: readFalseLiteral(requiredAcknowledgements.no_secrets_logged, "required_acknowledgements.no_secrets_logged"),
+      shipment_lifecycle_not_enabled: readFalseLiteral(requiredAcknowledgements.shipment_lifecycle_not_enabled, "required_acknowledgements.shipment_lifecycle_not_enabled"),
+      approval_does_not_enable_commit: readFalseLiteral(requiredAcknowledgements.approval_does_not_enable_commit, "required_acknowledgements.approval_does_not_enable_commit"),
+    },
+    required_signoffs: {
+      operator: readPendingLiteral(requiredSignoffs.operator, "required_signoffs.operator"),
+      reviewer: readPendingLiteral(requiredSignoffs.reviewer, "required_signoffs.reviewer"),
+      technical_owner: readPendingLiteral(requiredSignoffs.technical_owner, "required_signoffs.technical_owner"),
+    },
+    rollback_acknowledgement: {
+      required: readBoolean(rollbackAcknowledgement.required, "rollback_acknowledgement.required")
+        ? true
+        : failDeliveryHubBooleanGuardrail("rollback_acknowledgement.required"),
+      statement: readSafeCutoverLabel(rollbackAcknowledgement.statement, "rollback_acknowledgement.statement"),
+    },
+    commit_controls: {
+      can_commit_shipping_method: false,
+      requires_separate_implementation: readBoolean(
+        commitControls.requires_separate_implementation,
+        "commit_controls.requires_separate_implementation"
+      ) ? true : failDeliveryHubBooleanGuardrail("commit_controls.requires_separate_implementation"),
+      requires_feature_flag: readBoolean(commitControls.requires_feature_flag, "commit_controls.requires_feature_flag")
+        ? true
+        : failDeliveryHubBooleanGuardrail("commit_controls.requires_feature_flag"),
+      approval_is_executable: false,
+    },
+    non_executable_notice: readSafeCutoverLabel(
+      record.non_executable_notice,
+      "non_executable_notice"
+    ),
+  }
+}
+
 export function normalizeDeliveryHubCutoverPreconditionsResponse(
   payload: unknown
 ): DeliveryHubCutoverPreconditionsResponse {
@@ -1194,6 +1548,80 @@ export function normalizeDeliveryHubCutoverPreconditionsResponse(
 
 function failDeliveryHubBooleanGuardrail(field: string): never {
   throw new Error(`Delivery Hub payload field \"${field}\" must be true`)
+}
+
+export function buildDeliveryHubCutoverApprovalArtifactPreviewModel(
+  artifact: DeliveryHubCutoverApprovalArtifactResponse | null | undefined
+): DeliveryHubCutoverApprovalArtifactPreviewModel {
+  if (!artifact) {
+    return {
+      tone: "warning",
+      availability: "unavailable",
+      status_label: "Cutover decision artifact unavailable",
+      detail_label:
+        "Approval artifact template could not be loaded; no approval execution is possible and checkout commit remains blocked.",
+      decision_status: "not_requested",
+      cart_label: null,
+      evidence_label: "Preconditions/candidate evidence unavailable; fail-safe no-go.",
+      candidate_label: "Candidate evidence unavailable.",
+      acknowledgement_labels: ["approval_does_not_enable_commit=false placeholder missing"],
+      signoff_labels: ["operator=pending", "reviewer=pending", "technical_owner=pending"],
+      commit_control_labels: [
+        "can_commit_shipping_method=false",
+        "approval_is_executable=false",
+        "requires_separate_implementation=true",
+      ],
+      canCommitShippingMethod: false,
+      hint_messages: [
+        "Decision artifact only / no approval execution.",
+        "Unavailable artifact cannot approve Delivery Hub checkout cutover.",
+      ],
+    }
+  }
+
+  const candidate = artifact.candidate_summary
+  const commitControls = artifact.commit_controls
+  const preconditions = artifact.preconditions_summary
+
+  return {
+    tone: artifact.decision_status === "no_go" ? "warning" : "neutral",
+    availability: "available",
+    status_label: `Cutover decision artifact: ${artifact.decision_status}`,
+    detail_label:
+      "Decision artifact only / no approval execution; it records operator evidence placeholders without enabling checkout commit.",
+    decision_status: artifact.decision_status,
+    cart_label: artifact.cart_id ? `cart_id=${artifact.cart_id}` : null,
+    evidence_label:
+      `${preconditions.ready_count}/${preconditions.total_count} preconditions ready; ` +
+      `required=${preconditions.required_count}; blocked=${preconditions.blocked_count}; candidate=${candidate.candidate_status}.`,
+    candidate_label: candidate.available
+      ? [
+          candidate.candidate_shipping_option_name ?? "Delivery Hub shipping option",
+          candidate.candidate_shipping_option_id,
+          candidate.candidate_pickup_point_id ? `pickup_point_id=${candidate.candidate_pickup_point_id}` : null,
+        ].filter(Boolean).join(" · ")
+      : "Candidate not requested or unavailable.",
+    acknowledgement_labels: Object.entries(artifact.required_acknowledgements).map(
+      ([key, value]) => `${key}=${String(value)}`
+    ),
+    signoff_labels: Object.entries(artifact.required_signoffs).map(
+      ([key, value]) => `${key}=${value}`
+    ),
+    commit_control_labels: [
+      `can_commit_shipping_method=${String(commitControls.can_commit_shipping_method)}`,
+      `approval_is_executable=${String(commitControls.approval_is_executable)}`,
+      `requires_separate_implementation=${String(commitControls.requires_separate_implementation)}`,
+      `requires_feature_flag=${String(commitControls.requires_feature_flag)}`,
+    ],
+    canCommitShippingMethod: false,
+    hint_messages: uniqueDeliveryHubMessages([
+      artifact.non_executable_notice,
+      artifact.rollback_acknowledgement.statement,
+      candidate.blocked_reasons.includes("can_commit_shipping_method_false")
+        ? "Candidate evidence still carries can_commit_shipping_method_false."
+        : "Commit invariant remains false by storefront normalizer.",
+    ]),
+  }
 }
 
 export function buildDeliveryHubCutoverPreconditionsPreviewModel(

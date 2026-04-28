@@ -4,7 +4,7 @@
 >
 > Current decision: **NO-GO for real checkout source-of-truth cutover** until this document's approval gates are explicitly passed in a later scoped task.
 >
-> Scope of this document: readiness gate plus runtime-visible, read-only/preflight storefront status surfaces for the reserved flag and cutover preconditions verifier. It does not implement runtime checkout cutover, does not call `setShippingMethod()` for Delivery Hub, does not remove ApiShip/legacy compatibility, and does not perform shipment create/cancel/status/retry.
+> Scope of this document: readiness gate plus runtime-visible, read-only/preflight storefront status surfaces for the reserved flag, cutover preconditions verifier, candidate planner, and non-executable operator decision artifact. It does not implement runtime checkout cutover, does not call `setShippingMethod()` for Delivery Hub, does not remove ApiShip/legacy compatibility, and does not perform shipment create/cancel/status/retry.
 
 ---
 
@@ -20,7 +20,9 @@ The Delivery Hub contour has already reached these confirmed milestones:
   - warehouse: quote `4`, neutral selection saved, checkout source-of-truth unchanged.
 - Storefront Delivery Hub Preview/Shadow UI exists and is covered by source-level tests plus a mock browser smoke.
 - A read-only Store API verifier `GET /store/delivery/cutover-preconditions` aggregates safe precondition evidence labels for future planning only; it uses stored/configured state, does not call Yandex/live providers, and always reports `can_commit_shipping_method=false`.
-- The preview/shadow UI is intentionally labeled as metadata-only: quote and selection can be exercised, the cutover gate and verifier can be observed, but the committed checkout shipping method remains the existing Medusa/ApiShip/legacy-compatible contour.
+- A read-only Store API candidate planner `GET /store/delivery/cutover-candidate?cart_id=<cart_id>` summarizes the saved neutral selection plus matching Delivery Hub shipping-option candidate without enabling commit.
+- A read-only Store API decision artifact template `GET /store/delivery/cutover-approval-template?cart_id=<cart_id>` now binds preconditions plus optional candidate evidence into the non-executable artifact type `delivery_hub_checkout_cutover_decision`, with default `decision_status=not_requested` and commit controls locked false.
+- The preview/shadow UI is intentionally labeled as metadata-only: quote and selection can be exercised, the cutover gate, verifier, candidate planner, and decision artifact can be observed, but the committed checkout shipping method remains the existing Medusa/ApiShip/legacy-compatible contour.
 
 ### Explicit non-goal for the current checkpoint
 
@@ -107,6 +109,21 @@ Required before approval:
 - Response boundary keeps `can_commit_shipping_method=false` and never exposes raw provider payloads, raw Yandex DTOs, auth headers, ciphertext, token values, publishable key values, backend execution tokens, or arbitrary provider metadata.
 - Storefront failure mode is fail-safe: if the verifier is unavailable or invalid, `delivery-hub-cutover-preconditions-status` shows unavailable and checkout commit remains blocked.
 - Verifier output is evidence/preflight only; it is not operator approval, not shipment lifecycle enablement, and not a checkout cutover.
+
+### 3.5.1 Cutover decision artifact readiness
+
+Required before approval:
+
+- `GET /store/delivery/cutover-approval-template?cart_id=<cart_id>` remains read-only/template-only and must not persist executable approval state.
+- Artifact type is exactly `delivery_hub_checkout_cutover_decision` and default `decision_status` is `not_requested`.
+- Allowed decision-status vocabulary is `not_requested`, `go_requested`, `no_go`, and `approved_but_commit_disabled`; none of these states may enable checkout commit by themselves.
+- Artifact binds a sanitized `preconditions_summary`, sanitized `candidate_summary`, reviewer/operator/technical-owner placeholders, generated timestamp, rollback acknowledgement statement, required acknowledgement placeholders, and required signoff placeholders.
+- Required acknowledgements stay placeholders in endpoint output: rollback reviewed, ApiShip fallback available, no secrets logged, shipment lifecycle not enabled, and approval does not enable commit are all returned as `false` until manually reviewed outside runtime execution.
+- Required signoffs stay `pending` placeholders in endpoint output for operator, reviewer, and technical owner.
+- Commit controls are invariant: `can_commit_shipping_method=false`, `requires_separate_implementation=true`, `requires_feature_flag=true`, and `approval_is_executable=false`.
+- The route may include safe opaque selection/shipping-option/pickup-point ids already exposed by the candidate planner, but must not expose raw quote keys, raw provider offer ids, raw provider bodies, auth headers, token values, ciphertext, publishable key values, backend execution tokens, or arbitrary provider metadata.
+- Storefront failure mode is fail-safe: if the artifact endpoint is unavailable or invalid, `delivery-hub-cutover-approval-artifact` shows unavailable and `canCommitShippingMethod=false`.
+- Canonical human decision-record template lives in `delivery_hub_cutover_decision_record_template.md`; it is evidence documentation only and is not runtime approval authority.
 
 ### 3.6 Storefront preview readiness
 
@@ -287,7 +304,10 @@ Go only if a reviewer/operator explicitly records:
 - no-secret scan result;
 - cutover flag default state;
 - rollback decision owner;
+- sanitized decision artifact evidence from `GET /store/delivery/cutover-approval-template?cart_id=<cart_id>`;
 - final `GO` or `NO-GO` decision.
+
+Allowed artifact decision statuses are `not_requested`, `go_requested`, `no_go`, and `approved_but_commit_disabled`. Even `approved_but_commit_disabled` is non-executable and still requires a separate implementation, separate feature flag behavior, and separate review before any checkout shipping-method commit path can exist.
 
 Default without explicit approval: **NO-GO**.
 
@@ -359,15 +379,17 @@ This document does not add that call and does not approve adding it without a se
 - Store API quote and selection schema validation.
 - Selection persistence/read/clear shape.
 - Readiness matching for valid, stale, missing, malformed, mismatched connection, mismatched quote type, mismatched pickup point/window, and missing shipping option.
-- Storefront helper/model tests for disabled flag, blocked state, cutover preconditions normalization/fail-safe behavior, ready state, and no-secret rendering.
+- Backend decision artifact builder tests for default `not_requested`, missing/present cart behavior, preconditions/candidate evidence shape, no-secret rejection, and commit controls false.
+- Storefront helper/model tests for disabled flag, blocked state, cutover preconditions/candidate/approval artifact normalization, fail-safe behavior, ready state, and no-secret rendering.
 - Fulfillment bridge metadata shape tests.
 - Rollback/fallback helper tests.
 
 ### No-network API tests
 
-- Exported Store API route handlers for quote/selection/readiness/cutover-preconditions.
+- Exported Store API route handlers for quote/selection/readiness/cutover-preconditions/cutover-candidate/cutover-approval-template.
 - Admin route handlers for quote diagnostics and pickup point/warehouse readiness.
 - Response-boundary rejection of raw provider/internal/secret-like fragments.
+- Approval artifact response-boundary enforcement of `can_commit_shipping_method=false` and `approval_is_executable=false`.
 - No Delivery Hub `setShippingMethod()` call when cutover flag is false.
 
 ### Browser mock smoke
@@ -375,6 +397,8 @@ This document does not add that call and does not approve adding it without a se
 - Preview flag disabled: Delivery Hub block hidden or preview-only, fallback shipping visible.
 - Preview flag enabled but cutover flag disabled: quote/save/clear works, no shipping-method commit.
 - Mock verifier response is visible at `delivery-hub-cutover-preconditions-status`, includes required/blocked preconditions, and preserves `canCommitShippingMethod=false`.
+- Mock candidate response is visible at `delivery-hub-cutover-candidate-status`, summarizes the candidate without enabling commit.
+- Mock decision artifact response is visible at `delivery-hub-cutover-approval-artifact`, says `Decision artifact only / no approval execution`, shows pending signoff placeholders, and preserves `can_commit_shipping_method=false`, `canCommitShippingMethod=false`, and `approval_is_executable=false`.
 - Current cutover-prep flag enabled with mocked ready backend: the UI recognizes the flag but still shows preflight/blocked-only and `canCommitShippingMethod=false`; no commit CTA/path exists in this step.
 - Future approved cutover implementation only: commit CTA may appear only when exact preconditions pass.
 - Blocked states: stale selection, missing option, mismatched option, failed readiness.
