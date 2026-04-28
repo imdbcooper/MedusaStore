@@ -182,6 +182,10 @@ Backend/provider-facing internal quote payload при этом может доп
 
 - `provider_point_id`
 - `provider_point_code`
+- `provider_operator_id` — безопасный provider-catalog operator/network id, если провайдер его отдаёт, например Yandex `market_l4g` или `5post`;
+- `network_label` — человекочитаемая сеть ПВЗ отдельно от провайдера доставки, например `Яндекс Маркет` или `5 Post`;
+- `is_yandex_branded` / `is_market_partner` — optional brand/partner hints для Yandex catalog UI filtering;
+- `station_type` — тип станции provider catalog, например `pickup_point`, `terminal`, `warehouse`;
 - `name`
 - `address`
 - `city`
@@ -245,9 +249,11 @@ Truthful backend-only nuance текущего шага:
 
 Truthful status на текущую tranche-1 реализацию `Settings -> Delivery`:
 
-- реализованы разделы `Providers`, `Connections`, `Yandex connection`, `Warehouses`, `Connection diagnostics`, `Test Quote`, read-only `Event logs`, read-only `Shipping option preview` и новый operator-facing `Shipping option manual sync`;
+- реализован user-friendly основной путь на русском: **1. Подключение Яндекс Доставки**, **2. Проверить подключение**, **3. Найти ПВЗ**, **4. Проверить стоимость доставки**;
+- advanced/diagnostic sections (`Providers/capabilities`, advanced connection fields, warehouse/source mapping, pickup windows lookup, technical JSON diagnostics, read-only previews, event logs, shipment operations) отодвинуты в раскрываемые details/диагностические блоки, чтобы basic Test connection/Test quote не требовал разбираться во всех внутренних полях;
+- UI явно помечает ключевые поля как **Обязательно/Необязательно** и объясняет write-only token, saved connection, warehouse/source `provider_warehouse_id`, destination PVZ/platform station id, origin dropoff point с `available_for_dropoff=true`, `platform_station_id`, `5 Post`, optional `interval_utc`, label format, auto confirm и API host selector;
 - `Warehouses` materialized как минимальный admin-managed local warehouse surface с list/create/update, optional provider mapping и использованием в `default warehouse` binding; отдельный экран `Delivery Modes` в UI этой tranche все еще не реализован;
-- страница работает поверх backend endpoints `GET /admin/delivery/providers`, `GET /admin/delivery/connections`, `POST /admin/delivery/connections`, `PUT /admin/delivery/connections/:id`, `POST /admin/delivery/connections/:id/test`, `GET /admin/delivery/warehouses`, `POST /admin/delivery/warehouses`, `PUT /admin/delivery/warehouses/:id`, `POST /admin/delivery/test-quote`, `GET /admin/delivery/logs`, `GET /admin/delivery/shipping-options/preview`, `POST /admin/delivery/shipping-options/sync`; manual sync UI default-но отправляет safe `dry_run`, truthfully показывает returned `execution.mode`, summaries и structured details, а execute-path deliberately требует exact guard string + явные `service_zone_id`/`shipping_profile_id` и не выполняется одним обычным кликом.
+- страница работает поверх backend endpoints `GET /admin/delivery/providers`, `GET /admin/delivery/connections`, `POST /admin/delivery/connections`, `PUT /admin/delivery/connections/:id`, `POST /admin/delivery/connections/:id/test`, `GET /admin/delivery/warehouses`, `POST /admin/delivery/warehouses`, `PUT /admin/delivery/warehouses/:id`, `GET /admin/delivery/pickup-points`, `GET /admin/delivery/pickup-windows`, `POST /admin/delivery/test-quote`, `GET /admin/delivery/logs`, `GET /admin/delivery/shipping-options/preview`, `POST /admin/delivery/shipping-options/sync`; manual sync UI default-но отправляет safe `dry_run`, truthfully показывает returned `execution.mode`, summaries и structured details, а execute-path deliberately требует exact guard string + явные `service_zone_id`/`shipping_profile_id` и не выполняется одним обычным кликом.
 
 Страница подключения `Yandex` в текущем состоянии содержит:
 
@@ -267,6 +273,8 @@ Merchant UX в текущем состоянии поддерживает дей
 - `Create connection` / `Save changes`;
 - `Test connection`;
 - `Connection diagnostics` с optional pickup-points listing, structured redacted `diagnostics_summary` и visible `correlation_id`;
+- operator-triggered **3. Найти ПВЗ** через sanitized/capped admin lookup; `points[].id` используется как destination `platform_station_id`, а `available_for_dropoff=true` разрешает использовать точку как origin dropoff;
+- optional/advanced pickup windows diagnostics через `/offers/info?last_mile_policy=self_pickup`; эти windows могут заполнить optional `interval_utc`, но не являются обязательным prerequisite для warehouse `/offers/create` Test quote;
 - `Test quote` для поддержанных `Yandex` mode-кодов со structured redacted `diagnostics_summary`, safe `input_echo` без секретов/provider tokens и readable result summary;
 - просмотр truthful статусов `credentials_state`, `status`, `credentials_last_error_code` и controlled `encryption disabled` state.
 
@@ -314,10 +322,12 @@ Merchant должен уметь указать:
 
 `Yandex Delivery` уже исследован глубже остальных и имеет подтвержденные прямые тесты:
 
-- `pickup-points/list` возвращает тестовые ПВЗ;
-- `pricing-calculator` считает `warehouse -> PVZ`;
-- `offers/create` возвращает офферы для `dropoff point -> PVZ`;
-- `pickups/pickup-options` показывает pickup windows для склада.
+- `pickup-points/list` возвращает тестовые ПВЗ и партнёрские сети; без `operator_ids` Yandex catalog может включать Yandex Market, partner pickup points и `5Post`;
+- для поиска Yandex Market sandbox PVZ нужно использовать documented filters вроде `geo_id=213`, `operator_ids=[market_l4g]`, `type=pickup_point`, optionally `is_yandex_branded=true`;
+- deterministic sandbox destination PVZ `e1139f6d-e34f-47a9-a55f-31f032a861a6` (`Пункт выдачи заказов Яндекс Маркета`, Москва) возвращает offers с documented test warehouse `fbed3aa1-2cc6-4370-ab4d-59c5cc9bb924`;
+- `pricing-calculator` остаётся предварительной оценкой стоимости;
+- `offers/create` возвращает офферы для `warehouse -> PVZ` и `dropoff point -> PVZ`, а actual order/shipment flow отделён от confirmation / `request/create`;
+- `offers/info` показывает delivery/pickup intervals, но не является обязательным prerequisite для sandbox Test quote.
 
 ### 8.2. Что уже подтверждено по модели Яндекса
 
@@ -325,10 +335,9 @@ Merchant должен уметь указать:
 
 - `warehouse` — отдельная сущность от `pickup_point`;
 - `pickup_point` может иметь `available_for_dropoff=true`;
-- `pickups/pickup-options` работают для `warehouse`, но не для обычного `pickup_point`;
-- `offers/create` работает для `pickup_point -> pickup_point`;
-- `offers/create` работает для `warehouse -> pickup_point`, если `source.interval_utc` попадает в реально доступный pickup window;
-- `interval_utc` нужно передавать в UTC, а не в локальном времени Москвы.
+- `platform_station_id` используется для склада/source, PVZ/destination и self-dropoff points;
+- `offers/create` работает как documented offer/quote boundary для `warehouse -> pickup_point` и `pickup_point -> pickup_point`;
+- `interval_utc`, если передаётся, нужно передавать в UTC, а не в локальном времени Москвы; для sandbox Test quote он optional до provider-specific validation.
 
 ### 8.3. Как маппим модель Яндекса во внутренний слой
 
@@ -341,11 +350,13 @@ Merchant должен уметь указать:
 Mapping:
 
 - `warehouse_to_pickup_point`
-  - source = yandex warehouse station
-  - destination = yandex pickup point
+  - backend/admin input = saved local warehouse;
+  - source = local warehouse `provider_warehouse_id` / Yandex `platform_station_id`, передаваемый в `/offers/create` как `source.platform_station.platform_id`;
+  - destination = Yandex pickup point/PVZ `id` из catalog, передаваемый как `destination.platform_station.platform_id`;
+  - `interval_utc` optional и добавляется в `source.interval_utc` только когда заполнены both `from` and `to`;
 - `dropoff_point_to_pickup_point`
-  - source = yandex pickup point с `available_for_dropoff=true`
-  - destination = yandex pickup point
+  - source = yandex pickup point с `available_for_dropoff=true`, передаваемый как `source.platform_station.platform_id`;
+  - destination = yandex pickup point/PVZ, передаваемый как `destination.platform_station.platform_id`;
 - `courier_pickup_to_pickup_point`
   - source = yandex warehouse station
   - quote должен включать pickup interval
@@ -355,9 +366,9 @@ Mapping:
 Обязательные методы:
 
 - `pickup-points/list`
-- `pricing-calculator`
-- `offers/info`
-- `offers/create`
+- `pricing-calculator` как legacy/preliminary diagnostic only, не authoritative для current warehouse/dropoff PVZ Test quote;
+- `offers/info` как optional pickup-window diagnostics/helper;
+- `offers/create` как current documented offer/quote endpoint для `warehouse_to_pickup_point` и `dropoff_point_to_pickup_point` Test quote;
 - `claims/create` или актуальный order/claim path
 - `claims/info` / status path
 - `pickups/pickup-options`
@@ -766,21 +777,21 @@ Store API всё ещё intentionally узкий:
 
 ### 16.6. Yandex pathway decision table
 
-Прямая интеграция с Yandex Delivery в v1 идёт против base URL `https://b2b.taxi.yandex.net/b2b/cargo/integration/v2`, см. [`adapters/yandex/client.ts`](../medusa-agency-boilerplate/src/modules/delivery-hub/adapters/yandex/client.ts). Base URL фиксирован в коде и не вынесен в env, потому что является частью архитектурного решения «direct b2b cargo integration v2», а не client-specific input.
+Прямая интеграция с Yandex Delivery в v1 идёт против documented Other-day API family `/api/b2b/platform`: sandbox `https://b2b.taxi.tst.yandex.net/api/b2b/platform`, production `https://b2b-authproxy.taxi.yandex.net/api/b2b/platform`, см. [`endpoints.ts`](../medusa-agency-boilerplate/src/modules/delivery-hub/adapters/yandex/endpoints.ts). Host выбирается по connection mode или allowlisted admin override.
 
 Routing решений по endpoint:
 
 | Сценарий | Origin | Destination | Endpoint | Доп. требование |
 | --- | --- | --- | --- | --- |
-| `warehouse_to_pickup_point` | yandex warehouse station | yandex pickup point | `POST /pricing-calculator` с `last_mile_policy=self_pickup` | требуется `interval_utc`; если merchant не задал, adapter подставляет первый доступный pickup window из `POST /pickups/pickup-options` |
+| `warehouse_to_pickup_point` | yandex warehouse station `platform_station_id` | yandex pickup point `platform_station_id` | `POST /offers/create` с `last_mile_policy=self_pickup` | quote/offer only; no confirmation; `interval_utc` optional until provider validation |
 | `dropoff_point_to_pickup_point` | yandex pickup point с `available_for_dropoff=true` | yandex pickup point | `POST /offers/create` с `last_mile_policy=self_pickup` | TTL offer фиксируется provider-side; quote_key хранит `offer_id` |
-| `list_pickup_points` | — | — | `POST /pickup-points/list` | фильтр `country` берётся из `connection.country_code` |
-| `list_pickup_windows` | yandex warehouse station | — | `POST /pickups/pickup-options` | используется только для warehouse origin |
-| `test_connection` | — | — | `POST /pickup-points/list` с `limit=1` | success ⇒ ставим `connection.status=active`, `credentials_last_validated_at` |
+| `list_pickup_points` | — | — | `POST /pickup-points/list` | documented filters: `geo_id`, `pickup_point_ids`, `operator_ids`, `type`, `available_for_dropoff`, `is_yandex_branded`; `market_l4g` ищет Yandex Market/partners, `5post` ищет 5Post |
+| `list_pickup_windows` | yandex warehouse station | yandex pickup point или address | `POST /offers/info?last_mile_policy=self_pickup` | optional helper для interval diagnostics; response `offers[].from/to` |
+| `test_connection` | — | — | `POST /pickup-points/list` с `{}` | success ⇒ ставим `connection.status=active`, `credentials_last_validated_at` |
 
-Принципиальное различие, ранее не зафиксированное в §8: для warehouse origin Yandex использует `pricing-calculator`, для pickup point origin — `offers/create`. Эти два потока живут в разных методах adapter и не объединяются.
+Принципиальное различие, уточнённое после проверки docs: `pricing-calculator` — предварительная оценка, а `offers/create` — documented offer boundary для Test quote с source/destination `platform_station`. Actual shipment/order side effects отделены от `/offers/create` confirmation и `/request/create`, которые не вызываются в Test quote.
 
-`interval_utc` всегда передаётся в UTC, не в Europe/Moscow. Конвертацию обязан делать caller (admin UI / адаптер), не Yandex.
+`interval_utc`, если используется, всегда передаётся в UTC, не в Europe/Moscow. Конвертацию обязан делать caller (admin UI / адаптер), не Yandex.
 
 Webhook vs polling: в v1 выбрано `polling`-only поведение для статусов отгрузок (когда дойдёт до этапа E). Webhook reserved для post-v1 и появится одновременно с тем, как будет добавлен `handleWebhook` в adapter contract v2.
 
