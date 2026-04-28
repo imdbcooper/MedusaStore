@@ -104,6 +104,25 @@ Guardrails:
 - В browser console/network не должно быть token/auth header/ciphertext/raw provider body/publishable key value в выводе или UI.
 - Для automated/manual Playwright smoke не требуется live Yandex в CI: достаточно mock/stub backend responses для `POST /store/delivery/quotes`, `POST /store/delivery/selection`, `DELETE /store/delivery/selection` и проверять только перечисленные `data-testid` hooks plus source-of-truth guardrail.
 
+### Mock-friendly browser smoke
+
+Автоматический browser-level smoke добавлен как root command:
+
+```bash
+npm run smoke:delivery-hub-preview:browser
+```
+
+Команда intentionally не использует live backend/Yandex. Она поднимает локальный mock Store API для `GET /store/regions`, cart/fulfillment/payment prerequisites и Delivery Hub endpoints `POST /store/delivery/quotes`, `POST /store/delivery/selection`, `DELETE /store/delivery/selection`; затем запускает временный storefront `next dev` дважды: сначала с `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=false`, потом с `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true`. Browser automation использует Chrome/Chromium DevTools Protocol без добавления Playwright dependency; при необходимости путь к браузеру задаётся через `BROWSER_SMOKE_BROWSER_BIN=/path/to/chrome`.
+
+Expected result:
+
+- disabled run: checkout delivery step показывает existing `ApiShip/Medusa fallback shipping`, а `delivery-hub-preview-shadow-block` отсутствует;
+- enabled run: preview/shadow block, guardrails, operation status и selection status видимы;
+- mocked quote response отображает quote count `1`, safe correlation id, `Neutral Carrier`, price/currency and unchanged checkout source-of-truth;
+- mocked save/clear меняют только preview metadata status (`saved` / `cleared`) while keeping checkout source-of-truth unchanged;
+- UI text scan не содержит raw provider body, token/auth header, ciphertext or publishable key value;
+- no checkout cutover: existing shipping contour остаётся visible, Delivery Hub preview не вызывает `setShippingMethod()` и не создаёт shipment operations.
+
 ---
 
 ## 2) Что обязательно помнить по безопасности
