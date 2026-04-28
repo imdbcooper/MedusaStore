@@ -44,6 +44,7 @@ import {
   normalizeDeliveryHubQuotesResponse,
   normalizeDeliveryHubReadinessResponse,
   normalizeDeliveryHubSettingsResponse,
+  shapeDeliveryHubQuotesPayload,
   shapeDeliveryHubQuotesQuery,
   shapeDeliveryHubSaveSelectionPayload,
 } from "./delivery-hub.ts"
@@ -254,6 +255,70 @@ test("shapeDeliveryHubQuotesQuery serializes interval and items for neutral stor
       },
     ]),
   })
+})
+
+test("shapeDeliveryHubQuotesPayload shapes POST body and diagnostics stay shopper-safe", () => {
+  const payload = shapeDeliveryHubQuotesPayload({
+    connection_id: "conn_post_preview",
+    mode_code: "dropoff_point_to_pickup_point",
+    currency_code: "RUB",
+    destination_point_id: "pvz_post_preview",
+    origin_point_id: "dropoff_post_preview",
+    warehouse_id: "warehouse_should_be_preserved_when_explicit",
+    items: [
+      {
+        quantity: 1,
+        weight_grams: 500,
+        price: 2000,
+      },
+    ],
+  })
+  const quotes = normalizeDeliveryHubQuotesResponse({
+    ok: true,
+    quotes: [
+      {
+        carrier_code: "neutral_carrier",
+        carrier_label: "Neutral Carrier",
+        mode_code: "dropoff_point_to_pickup_point",
+        quote_reference: { id: "dhsel_quote_post_preview", version: 1 },
+        amount: 181.9,
+        currency_code: "RUB",
+        delivery_eta_min: 2,
+        delivery_eta_max: 4,
+        pickup_point_required: true,
+        pickup_point_ids: ["pvz_post_preview"],
+        pickup_window_required: false,
+      },
+    ],
+    diagnostics: {
+      correlation_id: "corr_post_preview",
+      checkout_source_of_truth: "unchanged",
+      contour: "delivery_hub_storefront_preview",
+      token: "must-not-leak",
+    },
+  })
+
+  assert.deepEqual(payload, {
+    connection_id: "conn_post_preview",
+    mode_code: "dropoff_point_to_pickup_point",
+    currency_code: "RUB",
+    destination_point_id: "pvz_post_preview",
+    origin_point_id: "dropoff_post_preview",
+    warehouse_id: "warehouse_should_be_preserved_when_explicit",
+    items: [
+      {
+        quantity: 1,
+        weight_grams: 500,
+        price: 2000,
+      },
+    ],
+  })
+  assert.deepEqual(quotes.diagnostics, {
+    correlation_id: "corr_post_preview",
+    checkout_source_of_truth: "unchanged",
+    contour: "delivery_hub_storefront_preview",
+  })
+  assert.equal(JSON.stringify(quotes).includes("must-not-leak"), false)
 })
 
 test("shapeDeliveryHubSaveSelectionPayload preserves neutral selection structure", () => {
@@ -10245,6 +10310,12 @@ test("delivery hub selection cut-in wires only neutral save/clear helpers and ke
   assert.equal(/saveDeliveryHubSelection\s*[,(]/.test(shippingSource), true)
   assert.equal(/clearDeliveryHubSelection\s*[,(]/.test(shippingSource), true)
   assert.equal(/buildDeliveryHubSelectionSaveCutInPayload\s*\(/.test(shippingSource), true)
+  assert.equal(shippingSource.includes("NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED"), true)
+  assert.equal(shippingSource.includes("checkout source-of-truth unchanged"), true)
+  assert.equal(shippingSource.includes("Delivery Hub Preview/Shadow UI"), true)
+  assert.equal(shippingSource.includes("void handleDeliveryHubNeutralPreviewQuote()"), true)
+  assert.equal(shippingSource.includes("setShippingMethod"), true)
+  assert.equal(/handleDeliveryHubNeutralPreviewSelection[\s\S]*setShippingMethod/.test(shippingSource), false)
   assert.equal(/saveDeliveryHubSelection\s*\(/.test(utilSource), false)
   assert.equal(/clearDeliveryHubSelection\s*\(/.test(utilSource), false)
   assert.equal(/setShippingMethod\s*\(/.test(utilSource), false)

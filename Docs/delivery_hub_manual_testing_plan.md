@@ -48,6 +48,52 @@
 
 ---
 
+## 1.1) Storefront preview/shadow UI без checkout cutover
+
+Цель этого шага — проверить уже подтверждённый store-facing neutral quote/selection flow из checkout-adjacent storefront UI, не меняя фактический checkout source-of-truth.
+
+### Включение preview UI
+
+В `medusa-agency-boilerplate-storefront/.env.local` включите только preview-флаг:
+
+```text
+NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true
+```
+
+Опциональные dev/sandbox defaults можно включать только для локальной песочницы:
+
+```text
+NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED=true
+NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_CONNECTION_ID=30e7b02b-71de-42d8-8587-86780c2850b8
+NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_DESTINATION_POINT_ID=e1139f6d-e34f-47a9-a55f-31f032a861a6
+NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_ORIGIN_POINT_ID=019d2a9da5877011a771b75e903f3039
+NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID=fa279b9d-316d-45c2-aa8d-aa92a77d15ba
+```
+
+Эти значения — только documented sandbox/dev defaults для уже проверенного local smoke. Не переносите их как production behavior и не добавляйте туда секреты.
+
+### Ручная проверка в storefront
+
+1. Перезапустите storefront после изменения env.
+2. Откройте checkout и перейдите на шаг доставки.
+3. Убедитесь, что legacy/Medusa/ApiShip shipping selection UI остаётся на месте выше preview-блока.
+4. Найдите блок **Delivery Hub Preview/Shadow UI**.
+5. Для `dropoff_point_to_pickup_point` укажите connection id, destination pickup point id и origin dropoff point id; для `warehouse_to_pickup_point` укажите connection id, destination pickup point id и warehouse id.
+6. Нажмите **Get neutral preview quotes**.
+7. Ожидаемо UI показывает `checkout source-of-truth unchanged`, quote count, price/currency, ETA, pickup point id, quote correlation id если backend вернул diagnostics.
+8. Опционально выберите quote и нажмите **Save preview metadata**. Это вызывает только `POST /store/delivery/selection` как neutral metadata save; Medusa shipping method не меняется.
+9. Опционально нажмите **Clear preview metadata**. Это вызывает только `DELETE /store/delivery/selection` и не меняет выбранный checkout shipping method.
+10. Не нажимайте и не ожидайте shipment create/status/cancel/retry: preview UI их не вызывает.
+
+Guardrails:
+
+- Delivery Hub preview UI должен быть виден только при `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true`.
+- Preview UI не должен вызывать `setShippingMethod()` и не должен заменять существующий shipping method selection.
+- На экране должна быть явная фраза `checkout source-of-truth unchanged`.
+- В browser console/network не должно быть token/auth header/ciphertext/raw provider body/publishable key value в выводе или UI.
+
+---
+
 ## 2) Что обязательно помнить по безопасности
 
 1. **Yandex API token вводится только в Admin UI**.

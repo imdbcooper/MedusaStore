@@ -13,6 +13,7 @@ import {
   shapeDeliveryHubClearSelectionPayload,
   shapeDeliveryHubPickupPointsQuery,
   shapeDeliveryHubPickupWindowsQuery,
+  shapeDeliveryHubQuotesPayload,
   shapeDeliveryHubQuotesQuery,
   shapeDeliveryHubSaveSelectionPayload,
   type DeliveryHubCatalogResponse,
@@ -30,8 +31,6 @@ import {
 } from "@lib/util/delivery-hub"
 import { revalidateTag } from "next/cache"
 import { getAuthHeaders, getCacheTag } from "./cookies"
-
-export * from "@lib/util/delivery-hub"
 
 async function getDeliveryHubHeaders(options?: { json?: boolean }) {
   const headers = {
@@ -94,6 +93,20 @@ export async function listDeliveryHubQuotes(input: DeliveryHubListQuotesInput) {
       method: "GET",
       query: shapeDeliveryHubQuotesQuery(input),
       headers,
+      cache: "no-store",
+    })
+    .then((response) => normalizeDeliveryHubQuotesResponse(response))
+    .catch(() => null)
+}
+
+export async function previewDeliveryHubQuotes(input: DeliveryHubListQuotesInput) {
+  const headers = await getDeliveryHubHeaders({ json: true })
+
+  return sdk.client
+    .fetch<DeliveryHubQuotesResponse>(`/store/delivery/quotes`, {
+      method: "POST",
+      headers,
+      body: shapeDeliveryHubQuotesPayload(input),
       cache: "no-store",
     })
     .then((response) => normalizeDeliveryHubQuotesResponse(response))

@@ -139,9 +139,16 @@ export type DeliveryHubQuote = {
   pickup_window_required: boolean
 }
 
+export type DeliveryHubStorePreviewDiagnostics = {
+  correlation_id: string | null
+  checkout_source_of_truth: "unchanged"
+  contour: "delivery_hub_storefront_preview"
+}
+
 export type DeliveryHubQuotesResponse = {
   ok: true
   quotes: DeliveryHubQuote[]
+  diagnostics?: DeliveryHubStorePreviewDiagnostics
 }
 
 export type DeliveryHubPickupPoint = {
@@ -209,6 +216,7 @@ export type DeliveryHubSelectionResponse = {
   ok: true
   cart_id: string
   selection: DeliveryHubSelection | null
+  diagnostics?: DeliveryHubStorePreviewDiagnostics
 }
 
 export type DeliveryHubSelectionConnectionSummary = {
@@ -607,6 +615,36 @@ function normalizeDeliveryHubQuote(value: unknown, field: string): DeliveryHubQu
   }
 }
 
+function normalizeDeliveryHubStorePreviewDiagnostics(
+  value: unknown,
+  field: string
+): DeliveryHubStorePreviewDiagnostics {
+  const record = requireRecord(value, field)
+  const checkoutSourceOfTruth = readRequiredString(
+    record.checkout_source_of_truth,
+    `${field}.checkout_source_of_truth`
+  )
+  const contour = readRequiredString(record.contour, `${field}.contour`)
+
+  if (checkoutSourceOfTruth !== "unchanged") {
+    throw new Error(
+      `Delivery Hub payload field \"${field}.checkout_source_of_truth\" must be unchanged`
+    )
+  }
+
+  if (contour !== "delivery_hub_storefront_preview") {
+    throw new Error(
+      `Delivery Hub payload field \"${field}.contour\" must be delivery_hub_storefront_preview`
+    )
+  }
+
+  return {
+    correlation_id: readOptionalString(record.correlation_id),
+    checkout_source_of_truth: "unchanged",
+    contour: "delivery_hub_storefront_preview",
+  }
+}
+
 function normalizeDeliveryHubSelectionConnectionSummary(
   value: unknown,
   field: string
@@ -783,11 +821,19 @@ export function normalizeDeliveryHubQuotesResponse(
 ): DeliveryHubQuotesResponse {
   const record = requireRecord(payload, "quotes")
   const quotes = Array.isArray(record.quotes) ? record.quotes : []
-
-  return {
+  const response: DeliveryHubQuotesResponse = {
     ok: true,
     quotes: quotes.map((quote, index) => normalizeDeliveryHubQuote(quote, `quotes.${index}`)),
   }
+
+  if (record.diagnostics !== null && record.diagnostics !== undefined) {
+    response.diagnostics = normalizeDeliveryHubStorePreviewDiagnostics(
+      record.diagnostics,
+      "diagnostics"
+    )
+  }
+
+  return response
 }
 
 export function normalizeDeliveryHubPickupPointsResponse(
@@ -822,8 +868,7 @@ export function normalizeDeliveryHubSelectionResponse(
   payload: unknown
 ): DeliveryHubSelectionResponse {
   const record = requireRecord(payload, "selection")
-
-  return {
+  const response: DeliveryHubSelectionResponse = {
     ok: true,
     cart_id: readRequiredString(record.cart_id, "cart_id"),
     selection:
@@ -831,6 +876,15 @@ export function normalizeDeliveryHubSelectionResponse(
         ? null
         : normalizeDeliveryHubSelection(record.selection, "selection"),
   }
+
+  if (record.diagnostics !== null && record.diagnostics !== undefined) {
+    response.diagnostics = normalizeDeliveryHubStorePreviewDiagnostics(
+      record.diagnostics,
+      "diagnostics"
+    )
+  }
+
+  return response
 }
 
 export function normalizeDeliveryHubReadinessResponse(
@@ -886,6 +940,54 @@ export function shapeDeliveryHubQuotesQuery(
   }
 
   return query
+}
+
+export function shapeDeliveryHubQuotesPayload(
+  input: DeliveryHubListQuotesInput
+): DeliveryHubListQuotesInput {
+  const record = requireRecord(input, "quotes")
+  const payload: DeliveryHubListQuotesInput = {
+    mode_code: readQuoteType(record.mode_code, "mode_code"),
+    destination_point_id: readRequiredString(
+      record.destination_point_id,
+      "destination_point_id"
+    ),
+  }
+
+  const connectionId = readOptionalString(record.connection_id)
+  if (connectionId) {
+    payload.connection_id = connectionId
+  }
+
+  const currencyCode = readOptionalString(record.currency_code)
+  if (currencyCode) {
+    payload.currency_code = currencyCode
+  }
+
+  const originPointId = readOptionalString(record.origin_point_id)
+  if (originPointId) {
+    payload.origin_point_id = originPointId
+  }
+
+  const warehouseId = readOptionalString(record.warehouse_id)
+  if (warehouseId) {
+    payload.warehouse_id = warehouseId
+  }
+
+  if (record.interval_utc !== null && record.interval_utc !== undefined) {
+    payload.interval_utc = normalizeDeliveryHubIntervalUtc(
+      record.interval_utc,
+      "interval_utc"
+    )
+  }
+
+  if (Array.isArray(record.items) && record.items.length > 0) {
+    payload.items = record.items.map((item, index) =>
+      shapeDeliveryHubQuoteRequestItem(item, `items.${index}`)
+    )
+  }
+
+  return payload
 }
 
 function shapeDeliveryHubQuoteRequestItem(

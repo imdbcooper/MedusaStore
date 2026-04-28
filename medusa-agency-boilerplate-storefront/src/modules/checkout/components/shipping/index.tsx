@@ -6,13 +6,21 @@ import {
   clearDeliveryHubSelection,
   listDeliveryHubPickupPoints,
   listDeliveryHubPickupWindows,
-  listDeliveryHubQuotes,
+  previewDeliveryHubQuotes,
   retrieveDeliveryHubReadiness,
   retrieveDeliveryHubSelection,
   retrieveDeliveryHubSettings,
   saveDeliveryHubSelection,
 } from "@lib/data/delivery-hub"
 import { calculatePriceForShippingOption } from "@lib/data/fulfillment"
+import {
+  DELIVERY_HUB_PREVIEW_DEFAULT_CONNECTION_ID,
+  DELIVERY_HUB_PREVIEW_DEFAULT_DESTINATION_POINT_ID,
+  DELIVERY_HUB_PREVIEW_DEFAULT_ORIGIN_POINT_ID,
+  DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID,
+  DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED,
+  DELIVERY_HUB_PREVIEW_ENABLED,
+} from "@lib/config"
 import { storefrontConfig } from "@lib/storefront-config"
 import {
   buildDeliveryHubCommitEligibilityModel,
@@ -28,8 +36,13 @@ import {
   buildDeliveryHubShippingOptionParityPreviewModel,
   buildDeliveryHubWriteIntentContractPreviewModel,
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
+  type DeliveryHubListQuotesInput,
   type DeliveryHubNeutralSelectionRehearsalInput,
   type DeliveryHubNeutralSelectionRehearsalModel,
+  type DeliveryHubQuote,
+  type DeliveryHubQuoteType,
+  type DeliveryHubQuotesResponse,
+  type DeliveryHubSelectionResponse,
 } from "@lib/util/delivery-hub"
 import { convertToLocale } from "@lib/util/money"
 import { CheckCircleSolid, Loader } from "@medusajs/icons"
@@ -71,6 +84,22 @@ type DeliveryHubSelectionCutInState = {
     | "committed"
     | "blocked"
     | "error"
+  message: string | null
+}
+
+type DeliveryHubNeutralPreviewFormState = {
+  quote_type: DeliveryHubQuoteType
+  connection_id: string
+  destination_point_id: string
+  origin_point_id: string
+  warehouse_id: string
+}
+
+type DeliveryHubNeutralPreviewState = {
+  status: "idle" | "loading" | "ready" | "saved" | "cleared" | "blocked" | "error"
+  quotes: DeliveryHubQuotesResponse | null
+  selected_quote_reference_id: string | null
+  selection: DeliveryHubSelectionResponse | null
   message: string | null
 }
 
@@ -130,6 +159,30 @@ const Shipping: React.FC<ShippingProps> = ({
   const [deliveryHubSelectionCutInState, setDeliveryHubSelectionCutInState] =
     useState<DeliveryHubSelectionCutInState>({
       status: "idle",
+      message: null,
+    })
+  const [deliveryHubNeutralPreviewForm, setDeliveryHubNeutralPreviewForm] =
+    useState<DeliveryHubNeutralPreviewFormState>({
+      quote_type: "dropoff_point_to_pickup_point",
+      connection_id: DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED
+        ? DELIVERY_HUB_PREVIEW_DEFAULT_CONNECTION_ID
+        : "",
+      destination_point_id: DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED
+        ? DELIVERY_HUB_PREVIEW_DEFAULT_DESTINATION_POINT_ID
+        : "",
+      origin_point_id: DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED
+        ? DELIVERY_HUB_PREVIEW_DEFAULT_ORIGIN_POINT_ID
+        : "",
+      warehouse_id: DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED
+        ? DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID
+        : "",
+    })
+  const [deliveryHubNeutralPreviewState, setDeliveryHubNeutralPreviewState] =
+    useState<DeliveryHubNeutralPreviewState>({
+      status: "idle",
+      quotes: null,
+      selected_quote_reference_id: null,
+      selection: null,
       message: null,
     })
   const [error, setError] = useState<string | null>(null)
@@ -229,7 +282,7 @@ const Shipping: React.FC<ShippingProps> = ({
           selection?.selection?.quote_type ??
           "warehouse_to_pickup_point"
         const quotes = destinationPoint
-          ? await listDeliveryHubQuotes({
+          ? await previewDeliveryHubQuotes({
               mode_code: modeCode,
               currency_code: cart.currency_code,
               destination_point_id: destinationPoint.provider_point_id,
@@ -310,6 +363,240 @@ const Shipping: React.FC<ShippingProps> = ({
 
   const handleSubmit = () => {
     router.push(pathname + "?step=payment", { scroll: false })
+  }
+
+  const updateDeliveryHubNeutralPreviewField = (
+    field: keyof DeliveryHubNeutralPreviewFormState,
+    value: string
+  ) => {
+    setDeliveryHubNeutralPreviewForm((current) => ({
+      ...current,
+      [field]: value,
+    }))
+  }
+
+  const buildDeliveryHubNeutralPreviewQuoteInput = (): DeliveryHubListQuotesInput | null => {
+    const connectionId = deliveryHubNeutralPreviewForm.connection_id.trim()
+    const destinationPointId = deliveryHubNeutralPreviewForm.destination_point_id.trim()
+    const originPointId = deliveryHubNeutralPreviewForm.origin_point_id.trim()
+    const warehouseId = deliveryHubNeutralPreviewForm.warehouse_id.trim()
+
+    if (!destinationPointId) {
+      setDeliveryHubNeutralPreviewState((current) => ({
+        ...current,
+        status: "blocked",
+        message: "Destination pickup point id is required for Delivery Hub preview quotes.",
+      }))
+      return null
+    }
+
+    if (
+      deliveryHubNeutralPreviewForm.quote_type === "dropoff_point_to_pickup_point" &&
+      !originPointId
+    ) {
+      setDeliveryHubNeutralPreviewState((current) => ({
+        ...current,
+        status: "blocked",
+        message: "Origin dropoff point id is required for dropoff → pickup preview quotes.",
+      }))
+      return null
+    }
+
+    if (
+      deliveryHubNeutralPreviewForm.quote_type === "warehouse_to_pickup_point" &&
+      !warehouseId
+    ) {
+      setDeliveryHubNeutralPreviewState((current) => ({
+        ...current,
+        status: "blocked",
+        message: "Warehouse id is required for warehouse → pickup preview quotes.",
+      }))
+      return null
+    }
+
+    return {
+      connection_id: connectionId || null,
+      mode_code: deliveryHubNeutralPreviewForm.quote_type,
+      currency_code: cart.currency_code,
+      destination_point_id: destinationPointId,
+      origin_point_id:
+        deliveryHubNeutralPreviewForm.quote_type === "dropoff_point_to_pickup_point"
+          ? originPointId
+          : null,
+      warehouse_id:
+        deliveryHubNeutralPreviewForm.quote_type === "warehouse_to_pickup_point"
+          ? warehouseId
+          : null,
+      items: [
+        {
+          quantity: 1,
+          weight_grams: 500,
+          price: typeof cart.subtotal === "number" ? cart.subtotal : undefined,
+        },
+      ],
+    }
+  }
+
+  const handleDeliveryHubNeutralPreviewQuote = async () => {
+    const quoteInput = buildDeliveryHubNeutralPreviewQuoteInput()
+
+    if (!quoteInput) {
+      return
+    }
+
+    setDeliveryHubNeutralPreviewState({
+      status: "loading",
+      quotes: null,
+      selected_quote_reference_id: null,
+      selection: null,
+      message:
+        "Requesting neutral Delivery Hub quotes. Checkout source-of-truth remains unchanged.",
+    })
+
+    const quotes = await previewDeliveryHubQuotes(quoteInput)
+
+    if (!quotes) {
+      setDeliveryHubNeutralPreviewState({
+        status: "error",
+        quotes: null,
+        selected_quote_reference_id: null,
+        selection: null,
+        message: "Delivery Hub preview quote request failed or returned an unsafe payload.",
+      })
+      return
+    }
+
+    setDeliveryHubNeutralPreviewState({
+      status: "ready",
+      quotes,
+      selected_quote_reference_id: quotes.quotes[0]?.quote_reference.id ?? null,
+      selection: null,
+      message: `Delivery Hub preview returned ${quotes.quotes.length} neutral quote(s). Checkout source-of-truth unchanged.`,
+    })
+  }
+
+  const getSelectedDeliveryHubNeutralPreviewQuote = (): DeliveryHubQuote | null => {
+    const quotes = deliveryHubNeutralPreviewState.quotes?.quotes ?? []
+
+    return (
+      quotes.find(
+        (quote) =>
+          quote.quote_reference.id ===
+          deliveryHubNeutralPreviewState.selected_quote_reference_id
+      ) ??
+      quotes[0] ??
+      null
+    )
+  }
+
+  const handleSaveDeliveryHubNeutralPreviewSelection = async () => {
+    const selectedQuote = getSelectedDeliveryHubNeutralPreviewQuote()
+    const destinationPointId = deliveryHubNeutralPreviewForm.destination_point_id.trim()
+    const connectionId = deliveryHubNeutralPreviewForm.connection_id.trim()
+
+    if (!selectedQuote) {
+      setDeliveryHubNeutralPreviewState((current) => ({
+        ...current,
+        status: "blocked",
+        message: "Run Delivery Hub preview quote before saving selection metadata.",
+      }))
+      return
+    }
+
+    if (!connectionId) {
+      setDeliveryHubNeutralPreviewState((current) => ({
+        ...current,
+        status: "blocked",
+        message: "Connection id is required to save Delivery Hub preview selection metadata.",
+      }))
+      return
+    }
+
+    setDeliveryHubNeutralPreviewState((current) => ({
+      ...current,
+      status: "loading",
+      message:
+        "Saving Delivery Hub neutral selection metadata only. Medusa shipping method is not changed.",
+    }))
+
+    await saveDeliveryHubSelection({
+      cart_id: cart.id,
+      connection_id: connectionId,
+      quote_type: selectedQuote.mode_code,
+      quote_reference: selectedQuote.quote_reference,
+      quote: {
+        carrier_code: selectedQuote.carrier_code,
+        carrier_label: selectedQuote.carrier_label,
+        amount: selectedQuote.amount,
+        currency_code: selectedQuote.currency_code,
+        delivery_eta_min: selectedQuote.delivery_eta_min,
+        delivery_eta_max: selectedQuote.delivery_eta_max,
+        pickup_point_required: selectedQuote.pickup_point_required,
+        pickup_window_required: selectedQuote.pickup_window_required,
+      },
+      pickup_point: {
+        provider_point_id: destinationPointId,
+        provider_point_code: null,
+        name: `Preview pickup point ${destinationPointId}`,
+        address: "Preview/sandbox pickup point id supplied by operator",
+        city: cart.shipping_address?.city ?? null,
+        region: cart.shipping_address?.province ?? null,
+        postal_code: cart.shipping_address?.postal_code ?? null,
+        lat: null,
+        lng: null,
+        is_origin_dropoff_allowed:
+          deliveryHubNeutralPreviewForm.quote_type === "dropoff_point_to_pickup_point",
+        is_destination_pickup_allowed: true,
+        payment_methods: [],
+      },
+      pickup_window: null,
+      correlation_id: deliveryHubNeutralPreviewState.quotes?.diagnostics?.correlation_id ?? null,
+    })
+      .then((selection) => {
+        setDeliveryHubNeutralPreviewState((current) => ({
+          ...current,
+          status: "saved",
+          selection,
+          message:
+            "Delivery Hub preview selection metadata saved. checkout source-of-truth unchanged.",
+        }))
+        router.refresh()
+      })
+      .catch((err) => {
+        setDeliveryHubNeutralPreviewState((current) => ({
+          ...current,
+          status: "error",
+          message: err.message ?? "Unable to save Delivery Hub preview selection.",
+        }))
+      })
+  }
+
+  const handleClearDeliveryHubNeutralPreviewSelection = async () => {
+    setDeliveryHubNeutralPreviewState((current) => ({
+      ...current,
+      status: "loading",
+      message:
+        "Clearing Delivery Hub neutral selection metadata only. Medusa shipping method is not changed.",
+    }))
+
+    await clearDeliveryHubSelection({ cart_id: cart.id })
+      .then((selection) => {
+        setDeliveryHubNeutralPreviewState((current) => ({
+          ...current,
+          status: "cleared",
+          selection,
+          message:
+            "Delivery Hub preview selection metadata cleared. checkout source-of-truth unchanged.",
+        }))
+        router.refresh()
+      })
+      .catch((err) => {
+        setDeliveryHubNeutralPreviewState((current) => ({
+          ...current,
+          status: "error",
+          message: err.message ?? "Unable to clear Delivery Hub preview selection.",
+        }))
+      })
   }
 
   const commitShippingMethod = async (
@@ -476,6 +763,12 @@ const Shipping: React.FC<ShippingProps> = ({
     buildDeliveryHubHandoffContractMatrixPreviewModel(
       deliveryHubRehearsalState.preview_input
     )
+  const deliveryHubNeutralPreviewQuotes =
+    deliveryHubNeutralPreviewState.quotes?.quotes ?? []
+  const selectedDeliveryHubNeutralPreviewQuote =
+    getSelectedDeliveryHubNeutralPreviewQuote()
+  const deliveryHubNeutralPreviewBusy =
+    deliveryHubNeutralPreviewState.status === "loading"
 
   return (
     <div className="bg-white">
@@ -1087,6 +1380,202 @@ const Shipping: React.FC<ShippingProps> = ({
                   )}
                 </div>
               </div>
+
+              {DELIVERY_HUB_PREVIEW_ENABLED && (
+                <div className="border-t border-ui-border-base pt-4">
+                  <div className="flex flex-col gap-y-3 rounded-rounded border border-ui-border-base bg-ui-bg-base p-4">
+                    <div className="flex flex-col gap-y-2">
+                      <Text className="text-ui-fg-base txt-medium-plus">
+                        Delivery Hub Preview/Shadow UI
+                      </Text>
+                      <Text className="text-ui-fg-muted txt-small">
+                        Operator/dev validation surface only. It calls neutral Delivery Hub store endpoints, can save neutral metadata, and keeps checkout source-of-truth unchanged. It never calls setShippingMethod() and does not replace the legacy ApiShip/Medusa delivery selection above.
+                      </Text>
+                      <Text className="text-ui-fg-subtle txt-small">
+                        Feature flag: NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true. Sandbox defaults are only prefilled when NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED=true; otherwise enter non-secret ids manually.
+                      </Text>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="flex flex-col gap-y-1 text-ui-fg-muted txt-small">
+                        Quote type
+                        <select
+                          className="rounded-rounded border border-ui-border-base bg-ui-bg-base px-3 py-2 text-ui-fg-base"
+                          value={deliveryHubNeutralPreviewForm.quote_type}
+                          onChange={(event) =>
+                            updateDeliveryHubNeutralPreviewField(
+                              "quote_type",
+                              event.target.value as DeliveryHubQuoteType
+                            )
+                          }
+                        >
+                          <option value="dropoff_point_to_pickup_point">
+                            Dropoff point → pickup point
+                          </option>
+                          <option value="warehouse_to_pickup_point">
+                            Warehouse → pickup point
+                          </option>
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-y-1 text-ui-fg-muted txt-small">
+                        Connection id
+                        <input
+                          className="rounded-rounded border border-ui-border-base bg-ui-bg-base px-3 py-2 text-ui-fg-base"
+                          value={deliveryHubNeutralPreviewForm.connection_id}
+                          onChange={(event) =>
+                            updateDeliveryHubNeutralPreviewField(
+                              "connection_id",
+                              event.target.value
+                            )
+                          }
+                          placeholder="Optional default connection id"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-y-1 text-ui-fg-muted txt-small">
+                        Destination pickup point id
+                        <input
+                          className="rounded-rounded border border-ui-border-base bg-ui-bg-base px-3 py-2 text-ui-fg-base"
+                          value={deliveryHubNeutralPreviewForm.destination_point_id}
+                          onChange={(event) =>
+                            updateDeliveryHubNeutralPreviewField(
+                              "destination_point_id",
+                              event.target.value
+                            )
+                          }
+                          placeholder="PVZ/provider point id"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-y-1 text-ui-fg-muted txt-small">
+                        Origin dropoff point id
+                        <input
+                          className="rounded-rounded border border-ui-border-base bg-ui-bg-base px-3 py-2 text-ui-fg-base"
+                          value={deliveryHubNeutralPreviewForm.origin_point_id}
+                          onChange={(event) =>
+                            updateDeliveryHubNeutralPreviewField(
+                              "origin_point_id",
+                              event.target.value
+                            )
+                          }
+                          placeholder="Required for dropoff → pickup"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-y-1 text-ui-fg-muted txt-small">
+                        Warehouse id
+                        <input
+                          className="rounded-rounded border border-ui-border-base bg-ui-bg-base px-3 py-2 text-ui-fg-base"
+                          value={deliveryHubNeutralPreviewForm.warehouse_id}
+                          onChange={(event) =>
+                            updateDeliveryHubNeutralPreviewField(
+                              "warehouse_id",
+                              event.target.value
+                            )
+                          }
+                          placeholder="Required for warehouse → pickup"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        type="button"
+                        disabled={deliveryHubNeutralPreviewBusy}
+                        onClick={() => {
+                          void handleDeliveryHubNeutralPreviewQuote()
+                        }}
+                      >
+                        {deliveryHubNeutralPreviewBusy ? (
+                          <span className="flex items-center gap-x-2">
+                            <Loader /> Loading preview quotes
+                          </span>
+                        ) : (
+                          "Get neutral preview quotes"
+                        )}
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        type="button"
+                        disabled={
+                          deliveryHubNeutralPreviewBusy ||
+                          !selectedDeliveryHubNeutralPreviewQuote
+                        }
+                        onClick={() => {
+                          void handleSaveDeliveryHubNeutralPreviewSelection()
+                        }}
+                      >
+                        Save preview metadata
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="transparent"
+                        type="button"
+                        disabled={deliveryHubNeutralPreviewBusy}
+                        onClick={() => {
+                          void handleClearDeliveryHubNeutralPreviewSelection()
+                        }}
+                      >
+                        Clear preview metadata
+                      </Button>
+                    </div>
+
+                    <div className="grid gap-y-1 text-ui-fg-muted txt-small">
+                      <span>checkout source-of-truth unchanged</span>
+                      <span>Quote count: {deliveryHubNeutralPreviewQuotes.length}</span>
+                      <span>
+                        Quote correlation id: {deliveryHubNeutralPreviewState.quotes?.diagnostics?.correlation_id ?? "not returned"}
+                      </span>
+                      <span>
+                        Selection saved status: {deliveryHubNeutralPreviewState.selection?.selection ? "saved" : deliveryHubNeutralPreviewState.selection ? "cleared" : "not saved in this preview session"}
+                      </span>
+                      <span>
+                        Selection correlation id: {deliveryHubNeutralPreviewState.selection?.diagnostics?.correlation_id ?? "not returned"}
+                      </span>
+                      {deliveryHubNeutralPreviewState.message && (
+                        <span>{deliveryHubNeutralPreviewState.message}</span>
+                      )}
+                    </div>
+
+                    {deliveryHubNeutralPreviewQuotes.length > 0 && (
+                      <div className="grid gap-y-2">
+                        <Text className="text-ui-fg-base txt-small-plus">
+                          Neutral quotes
+                        </Text>
+                        {deliveryHubNeutralPreviewQuotes.slice(0, 6).map((quote) => (
+                          <label
+                            key={quote.quote_reference.id}
+                            className="flex cursor-pointer flex-col gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"
+                          >
+                            <span className="flex items-center gap-x-2 text-ui-fg-base">
+                              <input
+                                type="radio"
+                                name="delivery-hub-preview-quote"
+                                checked={
+                                  deliveryHubNeutralPreviewState.selected_quote_reference_id ===
+                                  quote.quote_reference.id
+                                }
+                                onChange={() =>
+                                  setDeliveryHubNeutralPreviewState((current) => ({
+                                    ...current,
+                                    selected_quote_reference_id: quote.quote_reference.id,
+                                  }))
+                                }
+                              />
+                              {quote.carrier_label} · {formatPrice(quote.amount, quote.currency_code)}
+                            </span>
+                            <span>
+                              ETA: {quote.delivery_eta_min ?? "?"}–{quote.delivery_eta_max ?? "?"} days
+                            </span>
+                            <span>Pickup point id: {deliveryHubNeutralPreviewForm.destination_point_id || quote.pickup_point_ids[0] || "not supplied"}</span>
+                            <span>Quote reference v{quote.quote_reference.version}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="border-t border-ui-border-base pt-4">
                 <div className="flex flex-col gap-y-2">
