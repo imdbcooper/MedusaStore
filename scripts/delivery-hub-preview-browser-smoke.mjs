@@ -1210,6 +1210,18 @@ async function runRollbackDrillSequence(mockBackendUrl) {
   log("Delivery Hub rollback/fallback drill passed: flag-off runs hide/disable Delivery Hub commit artifacts, flag-on commits only the mapped mock Medusa shipping option, and rollback flag-off returns to no commit requests.")
 }
 
+async function runCutoverSmokeSequence(mockBackendUrl) {
+  log("Starting cutover flag-on smoke: preview enabled with explicit checkout cutover flag true, local mock Store API only.")
+
+  mockSelection = null
+  const storefront = await startStorefront({ enabled: true, cutoverEnabled: true, mockBackendUrl })
+  await runEnabledFlow(storefront.url, { expectedCutoverEnabled: true, label: "cutover flag-on browser smoke" })
+  await storefront.stop()
+  nextProcess = null
+
+  log("Delivery Hub cutover flag-on browser smoke passed: explicit flag-on contour committed only the mapped mock Medusa shipping option and used no live backend/provider network.")
+}
+
 function assertCutoverGate(text, expectedEnabled) {
   const gateText = String(text || "")
   if (!gateText.includes("NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED")) {
@@ -1423,6 +1435,10 @@ function isRollbackDrillMode() {
   return process.argv.includes("--rollback-drill") || process.env.DELIVERY_HUB_ROLLBACK_DRILL === "true"
 }
 
+function isCutoverSmokeMode() {
+  return process.argv.includes("--cutover-smoke") || process.env.DELIVERY_HUB_CUTOVER_SMOKE === "true"
+}
+
 async function main() {
   process.on("SIGINT", () => cleanup().finally(() => process.exit(130)))
   process.on("SIGTERM", () => cleanup().finally(() => process.exit(143)))
@@ -1433,6 +1449,11 @@ async function main() {
 
   if (isRollbackDrillMode()) {
     await runRollbackDrillSequence(mockBackendUrl)
+    return
+  }
+
+  if (isCutoverSmokeMode()) {
+    await runCutoverSmokeSequence(mockBackendUrl)
     return
   }
 

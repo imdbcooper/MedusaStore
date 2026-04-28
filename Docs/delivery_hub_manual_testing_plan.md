@@ -116,13 +116,19 @@ Guardrails:
 npm run smoke:delivery-hub-preview:browser
 ```
 
-Команда intentionally не использует live backend/Yandex. Она поднимает локальный mock Store API для `GET /store/regions`, cart/fulfillment/payment prerequisites и Delivery Hub endpoints `POST /store/delivery/quotes`, `POST /store/delivery/selection`, `DELETE /store/delivery/selection`, `GET /store/delivery/cutover-preconditions`, `GET /store/delivery/cutover-candidate`, `GET /store/delivery/cutover-approval-template`; затем запускает временный storefront `next dev` трижды: с `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=false`, с preview enabled / cutover flag false, and with preview enabled / cutover flag true. Browser automation использует Chrome/Chromium DevTools Protocol без добавления Playwright dependency; при необходимости путь к браузеру задаётся через `BROWSER_SMOKE_BROWSER_BIN=/path/to/chrome`.
+Команда intentionally не использует live backend/Yandex. Она поднимает локальный mock Store API для `GET /store/regions`, cart/fulfillment/payment prerequisites и Delivery Hub endpoints `POST /store/delivery/quotes`, `POST /store/delivery/selection`, `DELETE /store/delivery/selection`, `GET /store/delivery/cutover-preconditions`, `GET /store/delivery/cutover-candidate`, `GET /store/delivery/cutover-approval-template`; затем запускает временный storefront `next dev` трижды: с `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=false`, с preview enabled / cutover flag false, and with preview enabled / cutover flag true. Dedicated flag-on operator shortcut:
+
+```bash
+npm run smoke:delivery-hub-cutover:browser
+```
+
+The shortcut reuses the same mock harness in cutover mode: it runs only the explicit `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` scenario, verifies the guarded mapped-option commit against the local mock Store API, and still does not call live backend/Yandex/provider APIs. Browser automation использует Chrome/Chromium DevTools Protocol без добавления Playwright dependency; при необходимости путь к браузеру задаётся через `BROWSER_SMOKE_BROWSER_BIN=/path/to/chrome`.
 
 Expected result:
 
 - disabled run: checkout delivery step показывает existing `ApiShip/Medusa fallback shipping`, а `delivery-hub-preview-shadow-block` отсутствует;
 - enabled run with cutover flag false: preview/shadow block, guardrails, operation status, selection status and the default-off cutover gate status are visible;
-- enabled run with cutover flag true: the cutover gate status recognizes `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` but still shows preflight/blocked-only and `canCommitShippingMethod=false`;
+- enabled run with cutover flag true: the cutover gate status recognizes `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true`; with the mocked ready candidate it can show `canCommitShippingMethod=true` and commit only the mapped mock Delivery Hub Medusa shipping option id;
 - mocked verifier response is visible at `data-testid="delivery-hub-cutover-preconditions-status"`, includes `operator_approval_required`, `shipment_lifecycle_not_enabled`, `can_commit_shipping_method`, and preserves `canCommitShippingMethod=false`;
 - mocked candidate response is visible at `data-testid="delivery-hub-cutover-candidate-status"` and preserves `canCommitShippingMethod=false`;
 - mocked decision artifact response is visible at `data-testid="delivery-hub-cutover-approval-artifact"`, includes `Decision artifact only / no approval execution`, pending signoff placeholders, `can_commit_shipping_method=false`, `approval_is_executable=false`, `requires_separate_implementation=true`, and storefront `canCommitShippingMethod=false`;
@@ -143,10 +149,30 @@ This drill is intentionally mock/no-network. It reuses the local mocked Store AP
 
 1. **All Delivery Hub flags off**: `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=false` and `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false`; expected result is no preview block, no cutover gate/preconditions/candidate/decision artifact blocks, no Delivery Hub shipping-method commit request, and visible existing `ApiShip/Medusa fallback shipping`.
 2. **Preview enabled, cutover flag false**: preview/shadow blocks are visible and can quote/save/clear mocked neutral metadata, but source-of-truth remains unchanged, existing ApiShip/Medusa contour remains visible, and no Medusa shipping-method commit request is made.
-3. **Preview enabled, cutover flag true**: the reserved cutover flag is recognized, but UI remains preflight/blocked-only with `canCommitShippingMethod=false`; mocked candidate/decision artifacts remain evidence-only and no commit request is made.
+3. **Preview enabled, cutover flag true**: the reserved cutover flag is recognized; with the mocked ready candidate the UI can enable guarded commit eligibility and commit only the mapped mock Delivery Hub Medusa shipping option id, while mocked backend candidate/decision artifacts remain evidence-only and no provider payload is sent.
 4. **Simulated rollback/off restart**: after the cutover-true rehearsal, the script restarts storefront with both flags off while mock Delivery Hub selection still exists; expected result is that Delivery Hub UI/artifacts disappear again, no Delivery Hub preview/cutover endpoint is called, and the existing ApiShip/Medusa shipping contour remains visible.
 
 The drill additionally scans visible UI text for unsafe raw provider/auth/secret needles and shipment lifecycle action strings, and fails if any Delivery Hub-specific Medusa shipping-method commit path is observed in mock requests. Passing this command means rollback/fallback is still flag-off, mock-only, and source-of-truth remains the existing Medusa/ApiShip checkout contour; it is not production cutover approval.
+
+### Controlled staging enablement / rollback checklist
+
+1. Confirm committed examples/templates keep `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false`; do not commit a `true` default.
+2. Set `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` only in the staging deployment config for the intended storefront environment, not in production and not in committed examples.
+3. Run the local mock/no-network cutover smoke before staging rollout:
+
+   ```bash
+   npm run smoke:delivery-hub-cutover:browser
+   ```
+
+4. If a controlled staging cart/order path is available, place one operator-approved test cart/order through the guarded Delivery Hub checkout path and record only sanitized outcome/status. Do not put secrets, auth headers, provider raw bodies, raw Yandex DTOs, raw offer ids, raw quote keys, ciphertext, or publishable key values into docs/log excerpts.
+5. Roll back by setting `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false` in staging and redeploying/restarting the storefront. Existing ApiShip/Medusa fallback must remain available.
+6. Run the rollback/fallback smoke after rollback:
+
+   ```bash
+   npm run smoke:delivery-hub-rollback:browser
+   ```
+
+This checklist is for controlled staging enablement only. It is not production rollout approval, does not change committed defaults, and does not enable shipment create/cancel/status/retry.
 
 ### Cutover evidence bundle exporter
 
@@ -163,7 +189,7 @@ Important boundaries:
 
 - exporter mode is read-only/no-network;
 - it does not call Yandex/live providers, backend runtime, Store API endpoints, storefront runtime, or browser smoke commands;
-- it records command/status placeholders for `npm run smoke:delivery-hub-preview:browser` and `npm run smoke:delivery-hub-rollback:browser`, but those smokes remain separate operator actions;
+- it records command/status placeholders for `npm run smoke:delivery-hub-preview:browser`, `npm run smoke:delivery-hub-cutover:browser`, and `npm run smoke:delivery-hub-rollback:browser`, but those smokes remain separate operator actions;
 - it does not create executable approval, does not enable `can_commit_shipping_method`, and does not add Delivery Hub checkout commit wiring.
 
 Full convention: [`delivery_hub_cutover_evidence_bundle.md`](./delivery_hub_cutover_evidence_bundle.md).
@@ -182,7 +208,7 @@ Full convention: [`delivery_hub_cutover_evidence_bundle.md`](./delivery_hub_cuto
 - read-only artifact endpoint `GET /store/delivery/cutover-approval-template?cart_id=<cart_id>` is a decision-record template only: default `decision_status=not_requested`, allowed statuses are `not_requested | go_requested | no_go | approved_but_commit_disabled`, and even an approved evidence state does not enable checkout commit;
 - human record template for operators is [`delivery_hub_cutover_decision_record_template.md`](./delivery_hub_cutover_decision_record_template.md); use it only as sanitized evidence, not runtime state;
 - when the flag is absent/false, `data-testid="delivery-hub-cutover-gate-status"` must show default-off and `canCommitShippingMethod=false`;
-- if an operator explicitly sets `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` in local/staging, the same guardrail must recognize `true` but still show preflight/blocked-only status and `canCommitShippingMethod=false`;
+- if an operator explicitly sets `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` in local/staging, the same guardrail must recognize `true`; `canCommitShippingMethod` may become `true` only when a ready candidate maps to an available Delivery Hub Medusa shipping option, otherwise it must fail closed as `false`;
 - `data-testid="delivery-hub-cutover-preconditions-status"` must show either available verifier evidence or fail-safe unavailable state, and in both cases `canCommitShippingMethod=false`;
 - `data-testid="delivery-hub-cutover-approval-artifact"` must show either available non-executable decision evidence or fail-safe unavailable state, and in both cases `canCommitShippingMethod=false`;
 - до отдельного approved cutover task Delivery Hub preview/selection path не должен вызывать `setShippingMethod()`, не должен заменять ApiShip/Medusa fallback checkout, и не должен запускать shipment create/cancel/status/retry.

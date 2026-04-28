@@ -38,11 +38,12 @@ This is the review index for the evidence chain plus the first default-off imple
 Defined in [`package.json`](../package.json):
 
 - Preview browser smoke: `npm run smoke:delivery-hub-preview:browser`
+- Cutover flag-on staging smoke: `npm run smoke:delivery-hub-cutover:browser`
 - Rollback/fallback browser smoke: `npm run smoke:delivery-hub-rollback:browser`
 - Evidence bundle check: `npm run evidence:delivery-hub-cutover:check`
 - Evidence bundle generation: `npm run evidence:delivery-hub-cutover`
 
-These commands remain evidence/review actions. They do not approve production checkout cutover; the updated browser smoke can exercise the local mock commit only under the explicit flag and ready candidate.
+These commands remain evidence/review actions. They do not approve production checkout cutover; the cutover smoke exercises the local mock commit only under the explicit flag and ready candidate.
 
 ### Store API evidence endpoints
 
@@ -59,22 +60,25 @@ Endpoint outputs are evidence-only. They must keep commit controls disabled and 
 1. Run preview browser smoke:
    - `npm run smoke:delivery-hub-preview:browser`
    - Expected posture: preview/shadow UI visible only when enabled; flag-off makes no Delivery Hub shipping-method commit; flag-on with a ready mock candidate commits only the mapped mock Medusa shipping option.
-2. Run rollback browser smoke:
+2. Run cutover flag-on staging smoke:
+   - `npm run smoke:delivery-hub-cutover:browser`
+   - Expected posture: explicit flag-on local mock path commits only the mapped Delivery Hub Medusa shipping option and uses no live provider/network calls.
+3. Run rollback browser smoke:
    - `npm run smoke:delivery-hub-rollback:browser`
    - Expected posture: flags-off fallback keeps existing ApiShip/Medusa checkout visible and active.
-3. Run evidence bundle check/export:
+4. Run evidence bundle check/export:
    - `npm run evidence:delivery-hub-cutover:check`
    - `npm run evidence:delivery-hub-cutover`
    - Generated environment-specific bundle stays uncommitted and attached only as sanitized review evidence.
-4. Inspect preconditions/candidate/decision artifact outputs:
+5. Inspect preconditions/candidate/decision artifact outputs:
    - `GET /store/delivery/cutover-preconditions`
    - `GET /store/delivery/cutover-candidate?cart_id=<cart_id>`
    - `GET /store/delivery/cutover-approval-template?cart_id=<cart_id>`
    - Required invariant: backend `can_commit_shipping_method=false` and `approval_is_executable=false` remain non-executable evidence; storefront `canCommitShippingMethod` may become true only from explicit flag + ready mapped candidate.
-5. Complete the human decision record:
+6. Complete the human decision record:
    - Use [`delivery_hub_cutover_decision_record_template.md`](./delivery_hub_cutover_decision_record_template.md).
    - Allowed outcome for production remains `NO-GO` or evidence accepted with production commit disabled until explicit rollout approval is recorded.
-6. Delegate separate implementation review and then plan rollout only if approved:
+7. Delegate separate implementation review and then plan rollout only if approved:
    - The default-off code tranche must be reviewed separately before production enablement.
    - Any production source-of-truth rollout must explicitly preserve rollback/fallback and must not reuse this index as executable approval.
 
@@ -104,6 +108,7 @@ For this review state:
 - disabling Delivery Hub preview/cutover flags must leave fallback checkout available;
 - saved Delivery Hub neutral metadata must not block existing fallback shipping;
 - no ApiShip/Medusa fallback path is removed or functionally changed;
+- staging enablement evidence should follow the concise checklist in [`delivery_hub_manual_testing_plan.md`](./delivery_hub_manual_testing_plan.md): keep committed defaults false, set the cutover flag only in staging deployment config, run cutover smoke, optionally place one sanitized controlled staging cart/order, set the flag false to roll back, and run rollback smoke;
 - rollback evidence is mock/no-network unless separately documented by an operator.
 
 ---

@@ -35,6 +35,7 @@
     "smoke:storefront": "bash ./scripts/smoke-storefront.sh",
     "smoke:browser": "bash ./scripts/browser-smoke.sh",
     "smoke:delivery-hub-preview:browser": "node ./scripts/delivery-hub-preview-browser-smoke.mjs",
+    "smoke:delivery-hub-cutover:browser": "node ./scripts/delivery-hub-preview-browser-smoke.mjs --cutover-smoke",
     "smoke:delivery-hub-rollback:browser": "node ./scripts/delivery-hub-preview-browser-smoke.mjs --rollback-drill",
     "evidence:delivery-hub-cutover": "node ./scripts/delivery-hub-cutover-evidence-bundle.mjs",
     "evidence:delivery-hub-cutover:check": "node ./scripts/delivery-hub-cutover-evidence-bundle.mjs --check",
