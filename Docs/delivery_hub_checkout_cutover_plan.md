@@ -337,6 +337,15 @@ Expected behavior:
 
 The bundle convention is documented in [`delivery_hub_cutover_evidence_bundle.md`](./delivery_hub_cutover_evidence_bundle.md). The bundle is an attachment container only: it does not approve cutover, does not create executable approval, does not change `can_commit_shipping_method=false`, and does not enable a Delivery Hub `setShippingMethod()` path.
 
+For a controlled staging dry-run, operators should also attach the local staging bundle as rollout input after the cutover smoke, optional sanitized staging cart/order note, rollback flag-off action, and rollback smoke:
+
+```bash
+npm run evidence:delivery-hub-staging-dry-run:check
+npm run evidence:delivery-hub-staging-dry-run
+```
+
+This staging bundle writes under `.delivery-hub-cutover-evidence/staging-dry-run/`, records only operator assertions and safe guardrails, and remains non-production evidence; it does not read committed templates as proof of staging flag state and does not collect provider request/response bodies.
+
 ---
 
 ## 7. Feature flag strategy
@@ -366,7 +375,8 @@ Controlled staging enablement path is intentionally narrow:
 3. run `npm run smoke:delivery-hub-cutover:browser` before rollout evidence capture;
 4. run one controlled staging cart/order path only if available and record sanitized outcome without secrets/provider raw data;
 5. roll back by setting the staging flag back to `false` and redeploying/restarting storefront;
-6. run `npm run smoke:delivery-hub-rollback:browser` after rollback.
+6. run `npm run smoke:delivery-hub-rollback:browser` after rollback;
+7. generate `npm run evidence:delivery-hub-staging-dry-run` with `PASS|FAIL|NOT_RUN` smoke assertions, staging flag state assertion, sanitized manual note, and sanitized rollback note as staging rollout decision input.
 
 This is not production default enablement and not production rollout approval.
 
@@ -536,6 +546,7 @@ Current outcome:
 - commit invariant: backend verifier/artifact controls remain `can_commit_shipping_method=false`; storefront `canCommitShippingMethod` becomes true only under explicit flag plus ready mapped candidate;
 - checkout cutover: **implemented only as default-off guarded storefront commit handoff, not production-enabled**;
 - operator staging smoke: `npm run smoke:delivery-hub-cutover:browser` exercises explicit flag-on behavior against local mock/no-network Store API;
+- staging dry-run evidence: `npm run evidence:delivery-hub-staging-dry-run` is available as sanitized staging rollout input under `.delivery-hub-cutover-evidence/staging-dry-run/`;
 - Delivery Hub call to `setShippingMethod()`: **added only for the matched Medusa shipping option id after guard success**;
 - ApiShip/legacy compatibility: **preserved**;
 - shipment create/cancel/status/retry: **not performed**;

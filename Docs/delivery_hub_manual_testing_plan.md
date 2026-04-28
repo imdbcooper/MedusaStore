@@ -174,6 +174,22 @@ The drill additionally scans visible UI text for unsafe raw provider/auth/secret
 
 This checklist is for controlled staging enablement only. It is not production rollout approval, does not change committed defaults, and does not enable shipment create/cancel/status/retry.
 
+### Staging dry-run evidence bundle
+
+After the controlled staging run/rollback above, generate a local sanitized staging dry-run bundle from the repository root:
+
+```bash
+npm run evidence:delivery-hub-staging-dry-run:check
+npm run evidence:delivery-hub-staging-dry-run -- \
+  --cutover-smoke-status PASS \
+  --rollback-smoke-status PASS \
+  --staging-flag-state false \
+  --manual-staging-note "sanitized staging cart/order outcome only" \
+  --rollback-verification-note "sanitized fallback verified after flag-off redeploy"
+```
+
+The default statuses are `NOT_RUN` and the default staging flag assertion is `unknown` unless the operator explicitly passes values or the matching `STAGING_CUTOVER_SMOKE_STATUS`, `STAGING_ROLLBACK_SMOKE_STATUS`, `STAGING_DELIVERY_HUB_CUTOVER_FLAG_STATE`, `STAGING_DELIVERY_HUB_MANUAL_NOTE`, and `STAGING_DELIVERY_HUB_ROLLBACK_NOTE` environment variables. Output is local/ignored under `.delivery-hub-cutover-evidence/staging-dry-run/` and must not be committed. The exporter records only timestamp, safe git summary, expected smoke commands/status assertions, staging flag assertion, sanitized manual note, sanitized rollback note, and hard guardrails. It rejects notes that look like credentials, auth headers, token/ciphertext fragments, raw provider/Yandex payloads, raw offer ids, raw quote keys, request/response bodies, or `.env` contents. It performs no live provider/Yandex calls and captures no request/response bodies.
+
 ### Cutover evidence bundle exporter
 
 Before attaching evidence to a Delivery Hub checkout go/no-go review, generate the read-only bundle from the repository root:

@@ -38,6 +38,15 @@ Default behavior writes markdown to an ignored local artifact path:
 
 The ignored output is environment-specific and should be attached to the operator review when appropriate, but it must not be committed.
 
+A separate staging dry-run evidence convention exists for controlled staging enablement/rollback input after the local cutover and rollback smokes plus optional controlled staging cart/order run:
+
+```bash
+npm run evidence:delivery-hub-staging-dry-run:check
+npm run evidence:delivery-hub-staging-dry-run
+```
+
+That command writes to `.delivery-hub-cutover-evidence/staging-dry-run/`, records operator assertions for `smoke:delivery-hub-cutover:browser`, `smoke:delivery-hub-rollback:browser`, staging flag state, sanitized manual staging note, sanitized rollback verification note, and hard guardrails. It is local-only, does not read `.env` files, does not capture raw provider/Yandex request or response bodies, and does not enable production.
+
 Check-only mode:
 
 ```bash
@@ -67,6 +76,8 @@ The generated bundle includes:
 - checklist entries for backend Yandex direct quote baseline, store-neutral quote/selection smoke baseline, storefront preview smoke, default-off/preflight-only cutover gate, preconditions verifier, candidate planner, non-executable decision artifact, rollback/fallback browser smoke, redaction guardrails, and remaining blockers;
 - command/status placeholders for `npm run smoke:delivery-hub-preview:browser` and `npm run smoke:delivery-hub-rollback:browser`;
 - preserved invariants proving the exporter did not perform checkout cutover or provider execution.
+
+The staging dry-run bundle additionally includes the current git commit/dirty-clean status without diff dumps, expected cutover and rollback smoke commands, operator statuses (`PASS|FAIL|NOT_RUN`), staging cutover flag state assertion (`true|false|unknown`), sanitized manual staging cart/order note, sanitized rollback verification note, and explicit guardrails that production defaults remain unchanged and ApiShip/Medusa fallback is preserved.
 
 The exporter records smoke command status placeholders only. Browser smokes remain separate operator actions.
 
