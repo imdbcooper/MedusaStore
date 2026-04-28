@@ -77,20 +77,32 @@ NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID=fa279b9d-316d-45c2-aa8d-aa
 1. Перезапустите storefront после изменения env.
 2. Откройте checkout и перейдите на шаг доставки.
 3. Убедитесь, что legacy/Medusa/ApiShip shipping selection UI остаётся на месте выше preview-блока.
-4. Найдите блок **Delivery Hub Preview/Shadow UI**.
-5. Для `dropoff_point_to_pickup_point` укажите connection id, destination pickup point id и origin dropoff point id; для `warehouse_to_pickup_point` укажите connection id, destination pickup point id и warehouse id.
-6. Нажмите **Get neutral preview quotes**.
-7. Ожидаемо UI показывает `checkout source-of-truth unchanged`, quote count, price/currency, ETA, pickup point id, quote correlation id если backend вернул diagnostics.
-8. Опционально выберите quote и нажмите **Save preview metadata**. Это вызывает только `POST /store/delivery/selection` как neutral metadata save; Medusa shipping method не меняется.
-9. Опционально нажмите **Clear preview metadata**. Это вызывает только `DELETE /store/delivery/selection` и не меняет выбранный checkout shipping method.
-10. Не нажимайте и не ожидайте shipment create/status/cancel/retry: preview UI их не вызывает.
+4. Найдите блок **Delivery Hub Preview/Shadow UI**. Для DOM/Playwright/manual locator можно использовать stable hook `data-testid="delivery-hub-preview-shadow-block"`.
+5. В guardrail-блоке (`data-testid="delivery-hub-preview-guardrails"`) проверьте видимые признаки:
+   - `data-testid="delivery-hub-preview-feature-flag-status"` показывает `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true`;
+   - `data-testid="delivery-hub-preview-dev-defaults-status"` честно показывает, включены ли local/dev defaults;
+   - `data-testid="delivery-hub-preview-source-of-truth-guardrail"` содержит `checkout source-of-truth unchanged` и говорит, что Delivery Hub preview metadata не commits Medusa shipping method;
+   - `data-testid="delivery-hub-preview-no-provider-raw-guardrail"` говорит, что отображаются только shopper-safe diagnostics и не выводятся raw provider body/token/auth header/ciphertext/publishable key value.
+6. Для `dropoff_point_to_pickup_point` укажите connection id, destination pickup point id и origin dropoff point id; для `warehouse_to_pickup_point` укажите connection id, destination pickup point id и warehouse id. Поля имеют hooks `delivery-hub-preview-connection-id`, `delivery-hub-preview-destination-point-id`, `delivery-hub-preview-origin-point-id`, `delivery-hub-preview-warehouse-id`.
+7. Нажмите **Get neutral preview quotes** (`data-testid="delivery-hub-preview-get-quotes-button"`).
+8. Ожидаемо в results-блоке (`data-testid="delivery-hub-preview-results"`) видно:
+   - `data-testid="delivery-hub-preview-source-of-truth-status"`: `checkout source-of-truth unchanged`;
+   - `data-testid="delivery-hub-preview-operation-status"`: переход `loading → ready` при success или `blocked/error` при controlled failure;
+   - `data-testid="delivery-hub-preview-quote-count"`: quote count, для успешного smoke больше `0`;
+   - `data-testid="delivery-hub-preview-quote-correlation-id"`: safe correlation id или `not returned`;
+   - `data-testid="delivery-hub-preview-message"`: success/failure/blocked message без raw provider body.
+9. Если quote count больше `0`, список `data-testid="delivery-hub-preview-quotes-list"` содержит варианты `data-testid="delivery-hub-preview-quote-option"` с price/currency, ETA, pickup point id и quote reference version. Выбор quote делается через `data-testid="delivery-hub-preview-quote-radio"`.
+10. Опционально выберите quote и нажмите **Save preview metadata** (`data-testid="delivery-hub-preview-save-selection-button"`). Это вызывает только `POST /store/delivery/selection` как neutral metadata save; Medusa shipping method не меняется. Expected UI signs: operation status `saved`, selection status `saved`, message содержит `checkout source-of-truth unchanged`.
+11. Опционально нажмите **Clear preview metadata** (`data-testid="delivery-hub-preview-clear-selection-button"`). Это вызывает только `DELETE /store/delivery/selection` и не меняет выбранный checkout shipping method. Expected UI signs: operation status `cleared`, selection status `cleared`, message содержит `checkout source-of-truth unchanged`.
+12. Не нажимайте и не ожидайте shipment create/status/cancel/retry: preview UI их не вызывает.
 
 Guardrails:
 
-- Delivery Hub preview UI должен быть виден только при `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true`.
+- Delivery Hub preview UI должен быть виден только при `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true`; при disabled flag block с `data-testid="delivery-hub-preview-shadow-block"` отсутствует.
 - Preview UI не должен вызывать `setShippingMethod()` и не должен заменять существующий shipping method selection.
-- На экране должна быть явная фраза `checkout source-of-truth unchanged`.
+- На экране должна быть явная фраза `checkout source-of-truth unchanged` в guardrail и results blocks.
 - В browser console/network не должно быть token/auth header/ciphertext/raw provider body/publishable key value в выводе или UI.
+- Для automated/manual Playwright smoke не требуется live Yandex в CI: достаточно mock/stub backend responses для `POST /store/delivery/quotes`, `POST /store/delivery/selection`, `DELETE /store/delivery/selection` и проверять только перечисленные `data-testid` hooks plus source-of-truth guardrail.
 
 ---
 

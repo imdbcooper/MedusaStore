@@ -1382,18 +1382,38 @@ const Shipping: React.FC<ShippingProps> = ({
               </div>
 
               {DELIVERY_HUB_PREVIEW_ENABLED && (
-                <div className="border-t border-ui-border-base pt-4">
+                <div
+                  className="border-t border-ui-border-base pt-4"
+                  data-testid="delivery-hub-preview-shadow-block"
+                >
                   <div className="flex flex-col gap-y-3 rounded-rounded border border-ui-border-base bg-ui-bg-base p-4">
                     <div className="flex flex-col gap-y-2">
-                      <Text className="text-ui-fg-base txt-medium-plus">
+                      <Text
+                        className="text-ui-fg-base txt-medium-plus"
+                        data-testid="delivery-hub-preview-heading"
+                      >
                         Delivery Hub Preview/Shadow UI
                       </Text>
                       <Text className="text-ui-fg-muted txt-small">
                         Operator/dev validation surface only. It calls neutral Delivery Hub store endpoints, can save neutral metadata, and keeps checkout source-of-truth unchanged. It never calls setShippingMethod() and does not replace the legacy ApiShip/Medusa delivery selection above.
                       </Text>
-                      <Text className="text-ui-fg-subtle txt-small">
-                        Feature flag: NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true. Sandbox defaults are only prefilled when NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED=true; otherwise enter non-secret ids manually.
-                      </Text>
+                      <div
+                        className="grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"
+                        data-testid="delivery-hub-preview-guardrails"
+                      >
+                        <span data-testid="delivery-hub-preview-feature-flag-status">
+                          Feature flag: NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true.
+                        </span>
+                        <span data-testid="delivery-hub-preview-dev-defaults-status">
+                          Sandbox defaults: {DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED ? "enabled for local/dev ids" : "disabled; enter non-secret ids manually"}.
+                        </span>
+                        <span data-testid="delivery-hub-preview-source-of-truth-guardrail">
+                          Guardrail: checkout source-of-truth unchanged; Delivery Hub preview metadata does not commit a Medusa shipping method.
+                        </span>
+                        <span data-testid="delivery-hub-preview-no-provider-raw-guardrail">
+                          Diagnostics are shopper-safe only: quote/selection status, count, price, ETA and safe correlation id; no raw provider body, token, auth header, ciphertext or publishable key value is displayed.
+                        </span>
+                      </div>
                     </div>
 
                     <div className="grid gap-3 md:grid-cols-2">
@@ -1408,6 +1428,7 @@ const Shipping: React.FC<ShippingProps> = ({
                               event.target.value as DeliveryHubQuoteType
                             )
                           }
+                          data-testid="delivery-hub-preview-quote-type"
                         >
                           <option value="dropoff_point_to_pickup_point">
                             Dropoff point → pickup point
@@ -1429,6 +1450,7 @@ const Shipping: React.FC<ShippingProps> = ({
                             )
                           }
                           placeholder="Optional default connection id"
+                          data-testid="delivery-hub-preview-connection-id"
                         />
                       </label>
                       <label className="flex flex-col gap-y-1 text-ui-fg-muted txt-small">
@@ -1443,6 +1465,7 @@ const Shipping: React.FC<ShippingProps> = ({
                             )
                           }
                           placeholder="PVZ/provider point id"
+                          data-testid="delivery-hub-preview-destination-point-id"
                         />
                       </label>
                       <label className="flex flex-col gap-y-1 text-ui-fg-muted txt-small">
@@ -1457,6 +1480,7 @@ const Shipping: React.FC<ShippingProps> = ({
                             )
                           }
                           placeholder="Required for dropoff → pickup"
+                          data-testid="delivery-hub-preview-origin-point-id"
                         />
                       </label>
                       <label className="flex flex-col gap-y-1 text-ui-fg-muted txt-small">
@@ -1471,6 +1495,7 @@ const Shipping: React.FC<ShippingProps> = ({
                             )
                           }
                           placeholder="Required for warehouse → pickup"
+                          data-testid="delivery-hub-preview-warehouse-id"
                         />
                       </label>
                     </div>
@@ -1484,6 +1509,7 @@ const Shipping: React.FC<ShippingProps> = ({
                         onClick={() => {
                           void handleDeliveryHubNeutralPreviewQuote()
                         }}
+                        data-testid="delivery-hub-preview-get-quotes-button"
                       >
                         {deliveryHubNeutralPreviewBusy ? (
                           <span className="flex items-center gap-x-2">
@@ -1504,6 +1530,7 @@ const Shipping: React.FC<ShippingProps> = ({
                         onClick={() => {
                           void handleSaveDeliveryHubNeutralPreviewSelection()
                         }}
+                        data-testid="delivery-hub-preview-save-selection-button"
                       >
                         Save preview metadata
                       </Button>
@@ -1515,30 +1542,43 @@ const Shipping: React.FC<ShippingProps> = ({
                         onClick={() => {
                           void handleClearDeliveryHubNeutralPreviewSelection()
                         }}
+                        data-testid="delivery-hub-preview-clear-selection-button"
                       >
                         Clear preview metadata
                       </Button>
                     </div>
 
-                    <div className="grid gap-y-1 text-ui-fg-muted txt-small">
-                      <span>checkout source-of-truth unchanged</span>
-                      <span>Quote count: {deliveryHubNeutralPreviewQuotes.length}</span>
-                      <span>
+                    <div
+                      className="grid gap-y-1 text-ui-fg-muted txt-small"
+                      data-testid="delivery-hub-preview-results"
+                    >
+                      <span data-testid="delivery-hub-preview-source-of-truth-status">
+                        checkout source-of-truth unchanged
+                      </span>
+                      <span data-testid="delivery-hub-preview-operation-status">
+                        Operation status: {deliveryHubNeutralPreviewState.status}
+                      </span>
+                      <span data-testid="delivery-hub-preview-quote-count">
+                        Quote count: {deliveryHubNeutralPreviewQuotes.length}
+                      </span>
+                      <span data-testid="delivery-hub-preview-quote-correlation-id">
                         Quote correlation id: {deliveryHubNeutralPreviewState.quotes?.diagnostics?.correlation_id ?? "not returned"}
                       </span>
-                      <span>
+                      <span data-testid="delivery-hub-preview-selection-status">
                         Selection saved status: {deliveryHubNeutralPreviewState.selection?.selection ? "saved" : deliveryHubNeutralPreviewState.selection ? "cleared" : "not saved in this preview session"}
                       </span>
-                      <span>
+                      <span data-testid="delivery-hub-preview-selection-correlation-id">
                         Selection correlation id: {deliveryHubNeutralPreviewState.selection?.diagnostics?.correlation_id ?? "not returned"}
                       </span>
                       {deliveryHubNeutralPreviewState.message && (
-                        <span>{deliveryHubNeutralPreviewState.message}</span>
+                        <span data-testid="delivery-hub-preview-message">
+                          {deliveryHubNeutralPreviewState.message}
+                        </span>
                       )}
                     </div>
 
                     {deliveryHubNeutralPreviewQuotes.length > 0 && (
-                      <div className="grid gap-y-2">
+                      <div className="grid gap-y-2" data-testid="delivery-hub-preview-quotes-list">
                         <Text className="text-ui-fg-base txt-small-plus">
                           Neutral quotes
                         </Text>
@@ -1546,6 +1586,7 @@ const Shipping: React.FC<ShippingProps> = ({
                           <label
                             key={quote.quote_reference.id}
                             className="flex cursor-pointer flex-col gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"
+                            data-testid="delivery-hub-preview-quote-option"
                           >
                             <span className="flex items-center gap-x-2 text-ui-fg-base">
                               <input
@@ -1561,6 +1602,7 @@ const Shipping: React.FC<ShippingProps> = ({
                                     selected_quote_reference_id: quote.quote_reference.id,
                                   }))
                                 }
+                                data-testid="delivery-hub-preview-quote-radio"
                               />
                               {quote.carrier_label} · {formatPrice(quote.amount, quote.currency_code)}
                             </span>

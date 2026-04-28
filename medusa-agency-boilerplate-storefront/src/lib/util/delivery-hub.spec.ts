@@ -10323,3 +10323,81 @@ test("delivery hub selection cut-in wires only neutral save/clear helpers and ke
   assert.equal(/createFulfillment\s*\(/.test(shippingSource + utilSource), false)
   assert.equal(/activation[_ -]?ready/i.test(utilSource), false)
 })
+
+test("delivery hub preview shadow UI exposes stable manual validation hooks and guardrails", () => {
+  const shippingSource = readFileSync(
+    new URL("../../modules/checkout/components/shipping/index.tsx", import.meta.url),
+    "utf8"
+  )
+
+  for (const testId of [
+    "delivery-hub-preview-shadow-block",
+    "delivery-hub-preview-heading",
+    "delivery-hub-preview-guardrails",
+    "delivery-hub-preview-feature-flag-status",
+    "delivery-hub-preview-dev-defaults-status",
+    "delivery-hub-preview-source-of-truth-guardrail",
+    "delivery-hub-preview-no-provider-raw-guardrail",
+    "delivery-hub-preview-quote-type",
+    "delivery-hub-preview-connection-id",
+    "delivery-hub-preview-destination-point-id",
+    "delivery-hub-preview-origin-point-id",
+    "delivery-hub-preview-warehouse-id",
+    "delivery-hub-preview-get-quotes-button",
+    "delivery-hub-preview-save-selection-button",
+    "delivery-hub-preview-clear-selection-button",
+    "delivery-hub-preview-results",
+    "delivery-hub-preview-source-of-truth-status",
+    "delivery-hub-preview-operation-status",
+    "delivery-hub-preview-quote-count",
+    "delivery-hub-preview-quote-correlation-id",
+    "delivery-hub-preview-selection-status",
+    "delivery-hub-preview-selection-correlation-id",
+    "delivery-hub-preview-message",
+    "delivery-hub-preview-quotes-list",
+    "delivery-hub-preview-quote-option",
+    "delivery-hub-preview-quote-radio",
+  ]) {
+    assert.equal(
+      shippingSource.includes(`data-testid="${testId}"`),
+      true,
+      `${testId} should be present for manual/runtime validation`
+    )
+  }
+
+  assert.equal(
+    shippingSource.includes(
+      "Guardrail: checkout source-of-truth unchanged; Delivery Hub preview metadata does not commit a Medusa shipping method."
+    ),
+    true
+  )
+  assert.equal(
+    shippingSource.includes(
+      "Diagnostics are shopper-safe only: quote/selection status, count, price, ETA and safe correlation id; no raw provider body, token, auth header, ciphertext or publishable key value is displayed."
+    ),
+    true
+  )
+  assert.equal(
+    shippingSource.includes(
+      "Operation status: {deliveryHubNeutralPreviewState.status}"
+    ),
+    true
+  )
+  assert.equal(
+    /status:\s*"idle" \| "loading" \| "ready" \| "saved" \| "cleared" \| "blocked" \| "error"/.test(
+      shippingSource
+    ),
+    true
+  )
+  const previewBlockStart = shippingSource.indexOf(
+    'data-testid="delivery-hub-preview-shadow-block"'
+  )
+  const previewBlockEnd = shippingSource.indexOf(
+    'data-testid="delivery-hub-preview-quote-radio"'
+  )
+  const previewBlockSource = shippingSource.slice(previewBlockStart, previewBlockEnd)
+
+  assert.equal(previewBlockStart > -1, true)
+  assert.equal(previewBlockEnd > previewBlockStart, true)
+  assert.equal(/setShippingMethod\s*\(\s*\{/.test(previewBlockSource), false)
+})
