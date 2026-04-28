@@ -148,6 +148,26 @@ This drill is intentionally mock/no-network. It reuses the local mocked Store AP
 
 The drill additionally scans visible UI text for unsafe raw provider/auth/secret needles and shipment lifecycle action strings, and fails if any Delivery Hub-specific Medusa shipping-method commit path is observed in mock requests. Passing this command means rollback/fallback is still flag-off, mock-only, and source-of-truth remains the existing Medusa/ApiShip checkout contour; it is not production cutover approval.
 
+### Cutover evidence bundle exporter
+
+Before attaching evidence to a Delivery Hub checkout go/no-go review, generate the read-only bundle from the repository root:
+
+```bash
+npm run evidence:delivery-hub-cutover:check
+npm run evidence:delivery-hub-cutover
+```
+
+The exporter writes a sanitized markdown bundle by default to `.delivery-hub-cutover-evidence/delivery-hub-cutover-evidence-bundle.md`; that directory is ignored and the generated artifact should not be committed. The bundle contains safe summaries and placeholders for the cutover plan, this manual testing plan, preconditions verifier, candidate planner, decision artifact, preview browser smoke, rollback smoke, redaction guardrails, and remaining blockers.
+
+Important boundaries:
+
+- exporter mode is read-only/no-network;
+- it does not call Yandex/live providers, backend runtime, Store API endpoints, storefront runtime, or browser smoke commands;
+- it records command/status placeholders for `npm run smoke:delivery-hub-preview:browser` and `npm run smoke:delivery-hub-rollback:browser`, but those smokes remain separate operator actions;
+- it does not create executable approval, does not enable `can_commit_shipping_method`, and does not add Delivery Hub checkout commit wiring.
+
+Full convention: [`delivery_hub_cutover_evidence_bundle.md`](./delivery_hub_cutover_evidence_bundle.md).
+
 ### Checkout cutover readiness gate
 
 Формальный go/no-go gate для будущего checkout source-of-truth cutover теперь вынесен в [`delivery_hub_checkout_cutover_plan.md`](./delivery_hub_checkout_cutover_plan.md).

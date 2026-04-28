@@ -314,6 +314,27 @@ Allowed artifact decision statuses are `not_requested`, `go_requested`, `no_go`,
 
 Default without explicit approval: **NO-GO**.
 
+### Gate G — evidence bundle attachment gate
+
+Before the go/no-go meeting, operator may generate one safe evidence bundle with [`delivery-hub-cutover-evidence-bundle.mjs`](../scripts/delivery-hub-cutover-evidence-bundle.mjs):
+
+```bash
+npm run evidence:delivery-hub-cutover:check
+npm run evidence:delivery-hub-cutover
+```
+
+Expected behavior:
+
+- `--check` validates required docs/scripts/routes and scans generated bundle content for unsafe sentinel fields;
+- default generation writes markdown to ignored local path `.delivery-hub-cutover-evidence/delivery-hub-cutover-evidence-bundle.md`;
+- artifact type is `delivery_hub_checkout_cutover_evidence_bundle`;
+- bundle links/summarizes cutover plan, manual testing plan, preconditions verifier, candidate planner, decision artifact, preview browser smoke, and rollback smoke;
+- bundle records command/status placeholders only and does not run browser smokes automatically;
+- exporter is read-only/no-network and does not call Store API, backend runtime, storefront runtime, Yandex, or provider endpoints;
+- generated environment-specific output must not be committed.
+
+The bundle convention is documented in [`delivery_hub_cutover_evidence_bundle.md`](./delivery_hub_cutover_evidence_bundle.md). The bundle is an attachment container only: it does not approve cutover, does not create executable approval, does not change `can_commit_shipping_method=false`, and does not enable a Delivery Hub `setShippingMethod()` path.
+
 ---
 
 ## 7. Feature flag strategy
