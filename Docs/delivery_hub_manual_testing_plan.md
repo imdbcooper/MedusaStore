@@ -122,20 +122,20 @@ npm run smoke:delivery-hub-preview:browser
 npm run smoke:delivery-hub-cutover:browser
 ```
 
-The shortcut reuses the same mock harness in cutover mode: it runs only the explicit `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` scenario, verifies the guarded mapped-option commit against the local mock Store API, and still does not call live backend/Yandex/provider APIs. Browser automation использует Chrome/Chromium DevTools Protocol без добавления Playwright dependency; при необходимости путь к браузеру задаётся через `BROWSER_SMOKE_BROWSER_BIN=/path/to/chrome`.
+The shortcut reuses the same mock harness in cutover mode: it runs only the explicit `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` scenario, clicks the actual storefront commit CTA `data-testid="delivery-hub-checkout-commit-button"`, verifies the guarded mapped-option commit against the local mock Store API, and still does not call live backend/Yandex/provider APIs. Browser automation использует Chrome/Chromium DevTools Protocol без добавления Playwright dependency; при необходимости путь к браузеру задаётся через `BROWSER_SMOKE_BROWSER_BIN=/path/to/chrome`.
 
 Expected result:
 
 - disabled run: checkout delivery step показывает existing `ApiShip/Medusa fallback shipping`, а `delivery-hub-preview-shadow-block` отсутствует;
 - enabled run with cutover flag false: preview/shadow block, guardrails, operation status, selection status and the default-off cutover gate status are visible;
-- enabled run with cutover flag true: the cutover gate status recognizes `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true`; with the mocked ready candidate it can show `canCommitShippingMethod=true` and commit only the mapped mock Delivery Hub Medusa shipping option id;
+- enabled run with cutover flag true: the cutover gate status recognizes `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true`; with the mocked ready candidate it can show `canCommitShippingMethod=true`, the smoke clicks the actual storefront commit CTA, and the mock Store API receives exactly one commit containing only the mapped Delivery Hub Medusa shipping option id;
 - mocked verifier response is visible at `data-testid="delivery-hub-cutover-preconditions-status"`, includes `operator_approval_required`, `shipment_lifecycle_not_enabled`, `can_commit_shipping_method`, and preserves `canCommitShippingMethod=false`;
-- mocked candidate response is visible at `data-testid="delivery-hub-cutover-candidate-status"` and preserves `canCommitShippingMethod=false`;
+- mocked candidate response is visible at `data-testid="delivery-hub-cutover-candidate-status"` as candidate-only evidence; its backend artifact still preserves `can_commit_shipping_method=false`, while the separate local browser commit guard can become `canCommitShippingMethod=true` only in the explicit cutover flag-on smoke;
 - mocked decision artifact response is visible at `data-testid="delivery-hub-cutover-approval-artifact"`, includes `Decision artifact only / no approval execution`, pending signoff placeholders, `can_commit_shipping_method=false`, `approval_is_executable=false`, `requires_separate_implementation=true`, and storefront `canCommitShippingMethod=false`;
 - mocked quote response отображает quote count `1`, safe correlation id, `Neutral Carrier`, price/currency and unchanged checkout source-of-truth;
 - mocked save/clear меняют только preview metadata status (`saved` / `cleared`) while keeping checkout source-of-truth unchanged;
 - UI text scan не содержит raw provider body, token/auth header, ciphertext or publishable key value;
-- no checkout cutover: existing shipping contour остаётся visible, Delivery Hub preview не вызывает `setShippingMethod()` и не создаёт shipment operations.
+- positive cutover smoke does exercise the guarded browser `setShippingMethod()` path only after the explicit cutover flag and ready mocked candidate; preview-only/flag-off runs still do not call it, existing ApiShip/Medusa fallback remains visible, and no shipment operations are created.
 
 ### Rollback/fallback browser drill
 

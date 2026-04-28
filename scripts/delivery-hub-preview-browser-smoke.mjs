@@ -172,6 +172,7 @@ function buildCart() {
 function buildSelectionFromBody(body) {
   return {
     version: 1,
+    provider_code: "deliveryhub",
     connection_id: body.connection_id || connectionId,
     quote_type: body.quote_type || "dropoff_point_to_pickup_point",
     quote_reference: body.quote_reference || { id: quoteReferenceId, version: 1 },
@@ -210,7 +211,8 @@ async function startMockBackend() {
     try {
       const url = new URL(req.url || "/", "http://127.0.0.1")
       const pathname = url.pathname
-      mockRequests.push({ method: req.method || "GET", pathname })
+      const requestRecord = { method: req.method || "GET", pathname }
+      mockRequests.push(requestRecord)
 
       if (req.method === "GET" && pathname === "/health") {
         sendJson(res, 200, { ok: true })
@@ -232,7 +234,16 @@ async function startMockBackend() {
       }
 
       if (req.method === "GET" && pathname === `/store/carts/${cartId}`) {
+        requestRecord.query = Object.fromEntries(url.searchParams.entries())
         sendJson(res, 200, { cart: buildCart() })
+        return
+      }
+
+      if (req.method === "GET" && pathname === `/store/carts/${cartId}/shipping-methods`) {
+        sendJson(res, 200, {
+          shipping_methods: buildCart().shipping_methods,
+          cart: buildCart(),
+        })
         return
       }
 
@@ -267,6 +278,7 @@ async function startMockBackend() {
 
       if (req.method === "POST" && pathname === `/store/carts/${cartId}/shipping-methods`) {
         const body = await readJsonBody(req)
+        requestRecord.body = body
         const optionId = typeof body.option_id === "string" ? body.option_id : null
         if (body.data || optionId !== candidateShippingOptionId) {
           sendJson(res, 400, { message: "Unsafe or unexpected mock shipping-method commit payload." })
@@ -356,6 +368,11 @@ async function startMockBackend() {
         return
       }
 
+      if (req.method === "GET" && pathname === "/store/delivery/quotes") {
+        sendJson(res, 200, buildMockQuotesResponse())
+        return
+      }
+
       if (req.method === "GET" && pathname === "/store/delivery/pickup-points") {
         sendJson(res, 200, {
           ok: true,
@@ -386,34 +403,13 @@ async function startMockBackend() {
 
       if (req.method === "POST" && pathname === "/store/delivery/quotes") {
         await readJsonBody(req)
-        sendJson(res, 200, {
-          ok: true,
-          quotes: [
-            {
-              carrier_code: "neutral_carrier",
-              carrier_label: "Neutral Carrier",
-              mode_code: "dropoff_point_to_pickup_point",
-              quote_reference: { id: quoteReferenceId, version: 1 },
-              amount: 749,
-              currency_code: "RUB",
-              delivery_eta_min: 2,
-              delivery_eta_max: 4,
-              pickup_point_required: true,
-              pickup_point_ids: [destinationPointId],
-              pickup_window_required: false,
-            },
-          ],
-          diagnostics: {
-            correlation_id: correlationId,
-            checkout_source_of_truth: "unchanged",
-            contour: "delivery_hub_storefront_preview",
-          },
-        })
+        sendJson(res, 200, buildMockQuotesResponse())
         return
       }
 
       if (req.method === "POST" && pathname === "/store/delivery/selection") {
         const body = await readJsonBody(req)
+        requestRecord.body = body
         mockSelection = buildSelectionFromBody(body)
         sendJson(res, 200, {
           ok: true,
@@ -462,6 +458,32 @@ async function startMockBackend() {
   const url = `http://127.0.0.1:${port}`
   log(`Delivery Hub preview mock Store API listening on ${url}`)
   return url
+}
+
+function buildMockQuotesResponse() {
+  return {
+    ok: true,
+    quotes: [
+      {
+        carrier_code: "neutral_carrier",
+        carrier_label: "Neutral Carrier",
+        mode_code: "dropoff_point_to_pickup_point",
+        quote_reference: { id: quoteReferenceId, version: 1 },
+        amount: 749,
+        currency_code: "RUB",
+        delivery_eta_min: 2,
+        delivery_eta_max: 4,
+        pickup_point_required: true,
+        pickup_point_ids: [destinationPointId],
+        pickup_window_required: false,
+      },
+    ],
+    diagnostics: {
+      correlation_id: correlationId,
+      checkout_source_of_truth: "unchanged",
+      contour: "delivery_hub_storefront_preview",
+    },
+  }
 }
 
 function buildCutoverApprovalArtifactResponse() {
@@ -944,9 +966,14 @@ async function newPageSession(baseUrl) {
       await send({ method: "Page.enable" }, sessionId)
       await send({ method: "Runtime.enable" }, sessionId)
       await send({ method: "Network.enable" }, sessionId)
+      await send({ method: "Network.setCacheDisabled", params: { cacheDisabled: true } }, sessionId)
       await send({
         method: "Network.setCookie",
         params: { name: "_medusa_cart_id", value: cartId, url: baseUrl, path: "/" },
+      }, sessionId)
+      await send({
+        method: "Network.setCookie",
+        params: { name: "_medusa_cache_id", value: "delivery-hub-preview-smoke", url: baseUrl, path: "/" },
       }, sessionId)
       return sessionId
     }
@@ -985,6 +1012,25 @@ async function waitFor(sessionId, expression, description) {
     await delay(250)
   }
   fail(`Timed out waiting for ${description}.`)
+}
+
+async function waitForMockCommitRequest(label, expectedOptionId) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      assertDeliveryHubCommitRequest(label, expectedOptionId)
+      return
+    } catch (error) {
+      const commits = mockRequests.filter((entry) =>
+        entry.method === "POST" && entry.pathname === `/store/carts/${cartId}/shipping-methods`
+      )
+      if (commits.length > 1) {
+        throw error
+      }
+    }
+    await delay(250)
+  }
+  assertDeliveryHubCommitRequest(label, expectedOptionId)
 }
 
 async function runDisabledCheck(baseUrl, label = "disabled feature-flag check") {
@@ -1100,7 +1146,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
   assertNoUnsafeNeedles(afterQuote.text, "after mocked quote")
 
   await evaluate(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-save-selection-button\"]').click()")
-  await waitFor(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-selection-status\"]')?.innerText.includes('saved')", "mocked selection saved status")
+  await waitFor(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-selection-status\"]')?.innerText.includes('saved')", "mocked preview selection saved status")
 
   const afterSave = await evaluate(sessionId, `(() => {
     const text = document.body.innerText
@@ -1131,8 +1177,37 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
   assertNoUnsafeNeedles(afterSave.text, "after mocked selection save")
 
   if (expectedCutoverEnabled) {
-    await requestMockCommitShippingOption(candidateShippingOptionId)
-    assertDeliveryHubCommitRequest(label, candidateShippingOptionId)
+    try {
+      await navigate(sessionId, `${baseUrl}/ru/checkout?step=delivery&dh_smoke_refresh=${Date.now()}`)
+      await waitFor(
+        sessionId,
+        `(() => {
+          const guard = document.querySelector('[data-testid="delivery-hub-checkout-commit-guard"]')
+          const button = document.querySelector('[data-testid="delivery-hub-checkout-commit-button"]')
+          return Boolean(guard?.innerText.includes('canCommitShippingMethod=true') && button && !button.disabled)
+        })()`,
+        "Delivery Hub checkout commit CTA enabled after browser save/refresh"
+      )
+    } catch (error) {
+      const debugState = await evaluate(sessionId, `(() => ({
+        guard: document.querySelector('[data-testid="delivery-hub-checkout-commit-guard"]')?.innerText || '',
+        gate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
+        candidate: document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')?.innerText || '',
+        selection: document.querySelector('[data-testid="delivery-hub-preview-selection-status"]')?.innerText || '',
+        readiness: document.body.innerText.includes('selection_not_ready'),
+        buttonExists: Boolean(document.querySelector('[data-testid="delivery-hub-checkout-commit-button"]')),
+        buttonDisabled: Boolean(document.querySelector('[data-testid="delivery-hub-checkout-commit-button"]')?.disabled),
+      }))()`)
+      fail(`${error.message}. Debug state: ${JSON.stringify(debugState)}`)
+    }
+    await evaluate(sessionId, `(() => {
+      const button = document.querySelector('[data-testid="delivery-hub-checkout-commit-button"]')
+      if (!button) throw new Error('Delivery Hub checkout commit button is missing')
+      if (button.disabled) throw new Error('Delivery Hub checkout commit button is disabled')
+      button.click()
+      return true
+    })()`)
+    await waitForMockCommitRequest(label, candidateShippingOptionId)
   } else {
     if (!afterSave.commitButtonDisabled) fail("Flag-off run unexpectedly enabled Delivery Hub commit button.")
     assertNoDeliveryHubCommitRequests(label)
@@ -1255,8 +1330,8 @@ function assertCutoverCandidate(text, expectedStatus, { expectedCutoverEnabled =
   if (!candidateText.includes("candidate evidence only")) {
     fail("Cutover candidate planner did not state candidate evidence/local guard posture.")
   }
-  if (!candidateText.includes("canCommitShippingMethod=false")) {
-    fail(`Cutover candidate planner did not preserve backend evidence canCommitShippingMethod=false: ${candidateText.slice(0, 500)}`)
+  if (!expectedCutoverEnabled && !candidateText.includes("canCommitShippingMethod=false")) {
+    fail(`Cutover candidate planner did not preserve flag-off canCommitShippingMethod=false: ${candidateText.slice(0, 500)}`)
   }
   const statusSatisfied =
     candidateText.includes(expectedStatus) ||
@@ -1336,33 +1411,6 @@ async function requestMockClearSelection() {
   })
 }
 
-async function requestMockCommitShippingOption(optionId) {
-  await new Promise((resolve, reject) => {
-    const body = JSON.stringify({ option_id: optionId })
-    const req = http.request({
-      hostname: "127.0.0.1",
-      port: mockServer.address().port,
-      path: `/store/carts/${cartId}/shipping-methods`,
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "content-length": Buffer.byteLength(body),
-      },
-    }, (res) => {
-      res.resume()
-      res.on("end", () => {
-        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-          resolve()
-        } else {
-          reject(new Error(`Mock shipping-method commit failed with HTTP ${res.statusCode}`))
-        }
-      })
-    })
-    req.on("error", reject)
-    req.end(body)
-  })
-}
-
 function resetMockRequestLog() {
   mockRequests.length = 0
   mockCommittedShippingOptionId = null
@@ -1387,6 +1435,42 @@ function assertDeliveryHubCommitRequest(label, expectedOptionId) {
   )
   if (commits.length !== 1) {
     fail(`${label} expected exactly one mocked Medusa shipping-method commit, saw ${commits.length}.`)
+  }
+
+  const [commit] = commits
+  const body = commit.body && typeof commit.body === "object" ? commit.body : {}
+  const keys = Object.keys(body).sort()
+  if (keys.length !== 1 || keys[0] !== "option_id") {
+    fail(`${label} sent unsafe Medusa commit payload keys: ${keys.join(", ") || "none"}.`)
+  }
+  if (body.option_id !== expectedOptionId) {
+    fail(`${label} sent option_id ${body.option_id || "none"}, expected ${expectedOptionId}.`)
+  }
+  if (!/^deliveryhub:[a-z0-9_]+$/.test(body.option_id)) {
+    fail(`${label} sent an option_id outside the expected Delivery Hub Medusa option-id shape.`)
+  }
+
+  const serializedBody = JSON.stringify(body).toLowerCase()
+  for (const forbiddenNeedle of [
+    "provider",
+    "secret",
+    "token",
+    "authorization",
+    "ciphertext",
+    "raw",
+    "quote_reference",
+    "quote_key",
+    "offer",
+    "yandex",
+    "connection_id",
+    "pickup_window",
+    "correlation_id",
+    "metadata",
+    "data",
+  ]) {
+    if (serializedBody.includes(forbiddenNeedle)) {
+      fail(`${label} leaked unsafe provider/selection material in Medusa commit payload: ${forbiddenNeedle}`)
+    }
   }
   if (mockCommittedShippingOptionId !== expectedOptionId) {
     fail(`${label} committed ${mockCommittedShippingOptionId || "none"}, expected ${expectedOptionId}.`)
