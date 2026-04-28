@@ -4,6 +4,8 @@
 >
 > Current decision: **NO-GO for real checkout source-of-truth cutover** until this document's approval gates are explicitly passed in a later scoped task.
 >
+> Operator go/no-go review index: [`delivery_hub_cutover_go_no_go_index.md`](./delivery_hub_cutover_go_no_go_index.md).
+>
 > Scope of this document: readiness gate plus runtime-visible, read-only/preflight storefront status surfaces for the reserved flag, cutover preconditions verifier, candidate planner, and non-executable operator decision artifact. It does not implement runtime checkout cutover, does not call `setShippingMethod()` for Delivery Hub, does not remove ApiShip/legacy compatibility, and does not perform shipment create/cancel/status/retry.
 
 ---

@@ -2,6 +2,8 @@
 
 > Status: operator/reviewer evidence bundle convention for Delivery Hub checkout cutover go/no-go review.
 >
+> Operator go/no-go review index: [`delivery_hub_cutover_go_no_go_index.md`](./delivery_hub_cutover_go_no_go_index.md).
+>
 > Scope: read-only, no-network, safe-summary bundle generation. This document and exporter do not implement checkout cutover, do not approve runtime execution, do not change checkout source-of-truth, and do not create executable approval state.
 
 ---
