@@ -1,5 +1,8 @@
-import { describe, expect, it } from "@jest/globals"
+import { describe, expect, it } from "@jest/globals";
 import {
+  buildPickupPointLookupQuery,
+  buildPickupWindowLookupQuery,
+  buildYandexSandboxPickupPointLookupForm,
   buildShipmentOperationsCancelRequestBody,
   buildShipmentOperationsCancelUrl,
   buildShipmentOperationsRefreshStatusRequestBody,
@@ -13,17 +16,27 @@ import {
   deriveShipmentOperationsRenderState,
   deriveShippingOptionManualSyncRenderState,
   deriveShippingOptionPreviewRenderState,
+  getDeliveryHubApiErrorSafeLines,
   getDiagnosticsSummaryText,
+  getFieldRequirementText,
   getFilteredEventLogs,
   getObservedEncryptionDisabled,
+  getPickupPointOptionLabel,
+  getPickupWindowOptionLabel,
+  getProviderCodeOperatorHint,
   getQuoteInputEchoLines,
   getQuoteModeHint,
+  getRequiredBadgeText,
   getShippingOptionSyncCapability,
+  getTestConnectionCapability,
+  getTestQuoteCapability,
   getWarehouseOptionLabel,
   getYandexConnections,
   getYandexWarehouses,
   normalizeConfig,
+  normalizeYandexApiBaseUrlForForm,
   warehouseToForm,
+  YANDEX_VERIFIED_SANDBOX_PVZ,
   type DeliveryConnection,
   type DeliveryEventLog,
   type DeliveryHubExecutionPlanObservabilityReadModel,
@@ -32,8 +45,8 @@ import {
   type DeliveryHubShippingOptionManualSyncResponse,
   type DeliveryHubShippingOptionPreview,
   type DeliveryWarehouse,
-} from "../page-state"
-import { DELIVERY_HUB_MANUAL_SYNC_EXECUTE_GUARD } from "../manual-sync"
+} from "../page-state";
+import { DELIVERY_HUB_MANUAL_SYNC_EXECUTE_GUARD } from "../manual-sync";
 
 describe("delivery admin settings page state", () => {
   it("keeps connection form token write-only while preserving supported config fields", () => {
@@ -54,6 +67,7 @@ describe("delivery admin settings page state", () => {
         auto_confirm: true,
         label_format: "pdf",
         default_warehouse_id: "wh_main",
+        api_base_url: "https://b2b.taxi.tst.yandex.net/api/b2b/platform",
         token: "secret-token-that-must-not-roundtrip",
       },
       metadata: {
@@ -61,7 +75,7 @@ describe("delivery admin settings page state", () => {
       },
       created_at: "2026-04-20T10:00:00.000Z",
       updated_at: "2026-04-21T10:00:00.000Z",
-    }
+    };
 
     expect(connectionToForm(connection)).toEqual({
       provider_code: "yandex",
@@ -73,8 +87,9 @@ describe("delivery admin settings page state", () => {
       auto_confirm: true,
       label_format: "pdf",
       default_warehouse_id: "wh_main",
-    })
-  })
+      api_base_url: "https://b2b.taxi.tst.yandex.net/api/b2b/platform",
+    });
+  });
 
   it("normalizes only truthful non-empty connection config fields", () => {
     expect(
@@ -83,12 +98,15 @@ describe("delivery admin settings page state", () => {
         auto_confirm: true,
         label_format: "  pdf  ",
         default_warehouse_id: "  wh_123  ",
-      })
+        api_base_url:
+          "  https://b2b.taxi.tst.yandex.net/b2b/cargo/integration/v2  ",
+      }),
     ).toEqual({
       auto_confirm: true,
       label_format: "pdf",
       default_warehouse_id: "wh_123",
-    })
+      api_base_url: "https://b2b.taxi.tst.yandex.net/api/b2b/platform",
+    });
 
     expect(
       normalizeConfig({
@@ -96,9 +114,22 @@ describe("delivery admin settings page state", () => {
         auto_confirm: false,
         label_format: "   ",
         default_warehouse_id: "",
-      })
-    ).toEqual({})
-  })
+      }),
+    ).toEqual({});
+  });
+
+  it("normalizes legacy Yandex API base URL aliases for save payloads", () => {
+    expect(
+      normalizeYandexApiBaseUrlForForm(
+        "https://b2b.taxi.tst.yandex.net/b2b/cargo/integration/v2/",
+      ),
+    ).toBe("https://b2b.taxi.tst.yandex.net/api/b2b/platform");
+    expect(
+      normalizeYandexApiBaseUrlForForm(
+        "https://b2b.taxi.yandex.net/b2b/cargo/integration/v2",
+      ),
+    ).toBe("https://b2b-authproxy.taxi.yandex.net/api/b2b/platform");
+  });
 
   it("derives yandex-only connection and warehouse contours for admin selectors", () => {
     const warehouseWithoutProvider: DeliveryWarehouse = {
@@ -115,7 +146,7 @@ describe("delivery admin settings page state", () => {
       metadata: {},
       created_at: "2026-04-20T10:00:00.000Z",
       updated_at: "2026-04-21T10:00:00.000Z",
-    }
+    };
 
     expect(
       getYandexConnections([
@@ -155,8 +186,8 @@ describe("delivery admin settings page state", () => {
           created_at: "2026-04-20T10:00:00.000Z",
           updated_at: "2026-04-21T10:00:00.000Z",
         },
-      ]).map((connection) => connection.id)
-    ).toEqual(["conn_yandex"])
+      ]).map((connection) => connection.id),
+    ).toEqual(["conn_yandex"]);
 
     expect(
       getYandexWarehouses([
@@ -171,10 +202,9 @@ describe("delivery admin settings page state", () => {
           id: "wh_other",
           provider_code: "cdek",
         },
-      ]).map((warehouse) => warehouse.id)
-    ).toEqual(["wh_legacy", "wh_yandex"])
-  })
-
+      ]).map((warehouse) => warehouse.id),
+    ).toEqual(["wh_legacy", "wh_yandex"]);
+  });
 
   it("derives redacted diagnostics and quote input helper text for operators", () => {
     expect(
@@ -186,11 +216,58 @@ describe("delivery admin settings page state", () => {
         correlation_id: "corr_1",
         checked_at: "2026-04-21T10:00:00.000Z",
         redacted: true,
-      })
-    ).toBe("ok · provider=ok · category=n/a · correlation=corr_1")
+      }),
+    ).toBe("ok · provider=ok · category=n/a · correlation=corr_1");
 
-    expect(getQuoteModeHint("warehouse_to_pickup_point")).toContain("mapped Delivery Hub warehouse")
-    expect(getQuoteModeHint("dropoff_point_to_pickup_point")).toContain("origin Yandex dropoff")
+    expect(
+      getDeliveryHubApiErrorSafeLines({
+        status: 502,
+        code: "DELIVERY_HUB_PROVIDER_ERROR",
+        message: "Yandex Delivery request failed with status 400",
+        details: {
+          details: {
+            provider_status: 400,
+            error_category: "provider_rejected",
+            correlation_id: "corr_safe_1",
+            operator_hint: "Yandex rejected or failed the request.",
+            request: {
+              path: "/offers/create",
+            },
+            response: {
+              code: "no_delivery_options",
+              message: "No delivery options for interval",
+            },
+          },
+        },
+      }),
+    ).toEqual([
+      "status=502",
+      "code=DELIVERY_HUB_PROVIDER_ERROR",
+      "provider_status=400",
+      "category=provider_rejected",
+      "provider_code=no_delivery_options",
+      "provider_message=No delivery options for interval",
+      "provider_path=/offers/create",
+      "operator_hint=Yandex rejected or failed the request.",
+      "correlation=corr_safe_1",
+    ]);
+
+    expect(getProviderCodeOperatorHint("pickups_not_configured")).toContain(
+      "pickup-настройку",
+    );
+    expect(getProviderCodeOperatorHint("no_delivery_options")).toContain(
+      "delivery options",
+    );
+
+    expect(getQuoteModeHint("warehouse_to_pickup_point")).toContain(
+      "source.platform_station.platform_id",
+    );
+    expect(getQuoteModeHint("warehouse_to_pickup_point")).toContain(
+      "pickup windows необязательны",
+    );
+    expect(getQuoteModeHint("dropoff_point_to_pickup_point")).toContain(
+      "available_for_dropoff=true",
+    );
     expect(
       getQuoteInputEchoLines({
         connection_id: "conn_1",
@@ -201,15 +278,193 @@ describe("delivery admin settings page state", () => {
         interval_utc: null,
         currency_code: "RUB",
         item_count: 1,
-      })
+      }),
     ).toEqual([
       "mode=warehouse_to_pickup_point",
       "destination=pvz_1",
       "warehouse=wh_1",
       "currency=RUB",
       "items=1",
-    ])
-  })
+    ]);
+  });
+
+  it("explains required and optional fields for the basic admin flow", () => {
+    expect(getRequiredBadgeText(true)).toBe("Обязательно");
+    expect(getRequiredBadgeText(false)).toBe("Необязательно");
+    expect(getFieldRequirementText({ field: "token", hasSavedToken: true })).toContain(
+      "оставьте поле пустым",
+    );
+    expect(getFieldRequirementText({ field: "token", hasSavedToken: false })).toContain(
+      "Обязательно при создании",
+    );
+    expect(getFieldRequirementText({ field: "warehouse" })).toContain(
+      "source.platform_station.platform_id",
+    );
+    expect(getFieldRequirementText({ field: "destination_point" })).toContain(
+      "destination.platform_station.platform_id",
+    );
+    expect(getFieldRequirementText({ field: "interval" })).toContain(
+      "Необязательно для /offers/create Test quote",
+    );
+    expect(getFieldRequirementText({ field: "five_post" })).toContain("5 Post");
+  });
+
+  it("prepares deterministic Yandex sandbox PVZ lookup and marks verified labels", () => {
+    const form = buildYandexSandboxPickupPointLookupForm({
+      connection_id: "conn_1",
+      city: "",
+      country_code: "RU",
+      geo_id: "",
+      pickup_point_id: "",
+      operator_id: "",
+      station_type: "",
+      available_for_dropoff: "true",
+      is_yandex_branded: "",
+      is_not_branded_partner_station: "true",
+      limit: "20",
+    });
+
+    expect(form).toMatchObject({
+      connection_id: "conn_1",
+      geo_id: "213",
+      pickup_point_id: YANDEX_VERIFIED_SANDBOX_PVZ.id,
+      operator_id: "market_l4g",
+      station_type: "pickup_point",
+      available_for_dropoff: "",
+      is_yandex_branded: "true",
+      is_not_branded_partner_station: "",
+      limit: "1",
+    });
+
+    expect(
+      buildPickupPointLookupQuery(form),
+    ).toContain(`pickup_point_id=${YANDEX_VERIFIED_SANDBOX_PVZ.id}`);
+
+    expect(
+      getPickupPointOptionLabel({
+        id: YANDEX_VERIFIED_SANDBOX_PVZ.id,
+        code: null,
+        operator_id: "market_l4g",
+        network_label: "Яндекс Маркет",
+        station_type: "pickup_point",
+        is_yandex_branded: true,
+        is_market_partner: true,
+        name: "Пункт выдачи заказов Яндекс Маркета",
+        address: "Москва Ленинградский проспект 27",
+        city: "Москва",
+        available_for_dropoff: true,
+        coordinates: { lat: null, lng: null },
+      }),
+    ).toContain("verified sandbox");
+  });
+
+  it("allows warehouse quote without pickup windows interval and allows optional future interval", () => {
+    expect(
+      getTestQuoteCapability({
+        connection_id: "conn_1",
+        mode_code: "warehouse_to_pickup_point",
+        warehouse_id: "wh_1",
+        destination_point_id: "pvz_1",
+        item_quantity: "1",
+        item_weight_grams: "500",
+        item_price: "0",
+      }),
+    ).toMatchObject({
+      canTest: true,
+      blockingReasons: [],
+    });
+
+    const futureFrom = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const futureTo = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+
+    expect(
+      getTestQuoteCapability({
+        connection_id: "conn_1",
+        mode_code: "warehouse_to_pickup_point",
+        warehouse_id: "wh_1",
+        destination_point_id: "pvz_1",
+        interval_from: futureFrom,
+        interval_to: futureTo,
+        item_quantity: "1",
+        item_weight_grams: "500",
+        item_price: "0",
+      }),
+    ).toMatchObject({
+      canTest: true,
+      blockingReasons: [],
+    });
+
+    expect(
+      getTestQuoteCapability({
+        connection_id: "conn_1",
+        mode_code: "dropoff_point_to_pickup_point",
+        origin_point_id: "dropoff_1",
+        destination_point_id: "pvz_1",
+        item_quantity: "1",
+        item_weight_grams: "500",
+        item_price: "0",
+      }),
+    ).toMatchObject({
+      canTest: true,
+      blockingReasons: [],
+    });
+  });
+
+  it("builds pickup windows lookup query and labels sanitized windows", () => {
+    expect(
+      buildPickupWindowLookupQuery({
+        connection_id: " conn_1 ",
+        warehouse_id: " wh_1 ",
+        destination_point_id: " pvz_1 ",
+        limit: "20",
+      }),
+    ).toBe(
+      "connection_id=conn_1&warehouse_id=wh_1&destination_point_id=pvz_1&limit=20",
+    );
+
+    expect(
+      buildPickupWindowLookupQuery({
+        connection_id: "conn_1",
+        warehouse_id: "wh_1",
+        destination_point_id: "",
+        limit: "20",
+      }),
+    ).toBe(
+      "connection_id=conn_1&warehouse_id=wh_1&destination_point_id=&limit=20",
+    );
+
+    expect(
+      getPickupPointOptionLabel({
+        id: "pvz_5post",
+        code: null,
+        operator_id: "5post",
+        network_label: "5 Post",
+        station_type: "pickup_point",
+        is_yandex_branded: false,
+        is_market_partner: false,
+        name: "5 Post (Пятерочка)",
+        address: "Москва",
+        city: "г.Москва",
+        available_for_dropoff: false,
+        coordinates: { lat: null, lng: null },
+      }),
+    ).toContain("5 Post (Пятерочка)");
+
+    expect(
+      getPickupWindowOptionLabel({
+        date: "2026-04-28",
+        time_from: "10:00",
+        time_to: "14:00",
+        interval_utc: {
+          from: "2026-04-28T07:00:00.000Z",
+          to: "2026-04-28T11:00:00.000Z",
+        },
+        label: "2026-04-28 10:00-14:00",
+      }),
+    ).toBe(
+      "2026-04-28 10:00-14:00 · 2026-04-28T07:00:00.000Z → 2026-04-28T11:00:00.000Z",
+    );
+  });
 
   it("formats warehouse labels and warehouse form fields for operator-facing selectors", () => {
     const warehouse: DeliveryWarehouse = {
@@ -226,11 +481,11 @@ describe("delivery admin settings page state", () => {
       metadata: {},
       created_at: "2026-04-20T10:00:00.000Z",
       updated_at: "2026-04-21T10:00:00.000Z",
-    }
+    };
 
     expect(getWarehouseOptionLabel(warehouse)).toBe(
-      "Main warehouse · Moscow, Tverskaya 1 · provider: YANDEX-01"
-    )
+      "Main warehouse · Moscow, Tverskaya 1 · provider: YANDEX-01",
+    );
 
     expect(warehouseToForm(warehouse)).toEqual({
       name: "Main warehouse",
@@ -242,8 +497,8 @@ describe("delivery admin settings page state", () => {
       contact_phone: "+79990000000",
       provider_code: "yandex",
       provider_warehouse_id: "YANDEX-01",
-    })
-  })
+    });
+  });
 
   it("derives preview state for happy path sections without exposing hidden payload fragments", () => {
     const preview: DeliveryHubShippingOptionPreview = {
@@ -439,18 +694,18 @@ describe("delivery admin settings page state", () => {
         orphaned_managed_option_count: 1,
         ignored_foreign_option_count: 1,
       },
-    }
+    };
 
-    const state = deriveShippingOptionPreviewRenderState(preview)
+    const state = deriveShippingOptionPreviewRenderState(preview);
 
-    expect(state.headerText).toBe("yandex · prov_yandex")
+    expect(state.headerText).toBe("yandex · prov_yandex");
     expect(state.summaryCards.map((card) => [card.key, card.value])).toEqual(
       expect.arrayContaining([
         ["desired_option_count", "2"],
         ["deferred_option_count", "1"],
         ["connection_plan_count", "2"],
-      ])
-    )
+      ]),
+    );
     expect(state.desiredOptions).toEqual([
       {
         key: "deliveryhub.warehouse_to_pickup_point",
@@ -458,7 +713,7 @@ describe("delivery admin settings page state", () => {
         id: "deliveryhub.warehouse_to_pickup_point",
         supportingConnectionsText: "conn_a, conn_b",
       },
-    ])
+    ]);
     expect(state.deferredOptions[0]).toEqual({
       key: "deliveryhub.dropoff_point_to_pickup_point",
       modeCode: "dropoff_point_to_pickup_point",
@@ -471,44 +726,52 @@ describe("delivery admin settings page state", () => {
           connectionText: "connection: conn_b · provider: yandex",
         },
       ],
-    })
+    });
     expect(state.reconciliationCounts).toEqual({
       createCandidates: "1",
       updateCandidates: "1",
       unchanged: "1",
       orphanedManaged: "1",
       ignoredForeign: "1",
-    })
+    });
     expect(state.updateCandidates[0].subtitle).toBe(
-      "desired: deliveryhub.dropoff_point_to_pickup_point · reasons: name_mismatch, price_type_mismatch"
-    )
+      "desired: deliveryhub.dropoff_point_to_pickup_point · reasons: name_mismatch, price_type_mismatch",
+    );
     expect(state.orphanedManagedEntries[0].subtitle).toBe(
-      "deliveryhub.orphaned · reason: provider_connection_missing"
-    )
+      "deliveryhub.orphaned · reason: provider_connection_missing",
+    );
     expect(state.ignoredForeignEntries[0]).toEqual({
       key: "so_foreign",
       title: "so_foreign",
       subtitle: "provider: foreign_provider",
-    })
-    expect(state.connectionPlans.map((plan) => [plan.connectionId, plan.status, plan.projectedModesText])).toEqual([
+    });
+    expect(
+      state.connectionPlans.map((plan) => [
+        plan.connectionId,
+        plan.status,
+        plan.projectedModesText,
+      ]),
+    ).toEqual([
       ["conn_a", "projected", "warehouse_to_pickup_point"],
       ["conn_b", "deferred", "—"],
-    ])
+    ]);
 
-    const renderedState = JSON.stringify(state)
-    expect(renderedState).not.toContain("secret-token-that-must-not-roundtrip")
-    expect(renderedState).not.toContain("still-must-not-surface")
-    expect(renderedState).not.toContain("foreign-secret")
-  })
+    const renderedState = JSON.stringify(state);
+    expect(renderedState).not.toContain("secret-token-that-must-not-roundtrip");
+    expect(renderedState).not.toContain("still-must-not-surface");
+    expect(renderedState).not.toContain("foreign-secret");
+  });
 
   it("derives preview empty and guard states when backend returns no preview payload", () => {
     expect(deriveShippingOptionPreviewRenderState(null)).toEqual({
       headerText: "Preview unavailable",
       summaryCards: [],
       desiredOptions: [],
-      desiredEmptyText: "Planner has no rollout-ready desired deliveryhub options yet.",
+      desiredEmptyText:
+        "Planner has no rollout-ready desired deliveryhub options yet.",
       deferredOptions: [],
-      deferredEmptyText: "No deferred deliveryhub mode projections currently reported by planner.",
+      deferredEmptyText:
+        "No deferred deliveryhub mode projections currently reported by planner.",
       reconciliationCounts: {
         createCandidates: "0",
         updateCandidates: "0",
@@ -522,9 +785,10 @@ describe("delivery admin settings page state", () => {
       orphanedManagedEntries: [],
       ignoredForeignEntries: [],
       connectionPlans: [],
-      connectionPlansEmptyText: "No delivery connection planner state returned by backend.",
-    })
-  })
+      connectionPlansEmptyText:
+        "No delivery connection planner state returned by backend.",
+    });
+  });
 
   it("derives fulfillment bridge preview state without leaking payload internals", () => {
     const preview: DeliveryHubFulfillmentBridgeReadinessPreview = {
@@ -653,18 +917,18 @@ describe("delivery admin settings page state", () => {
         projected_mode_count: 1,
         deferred_mode_count: 1,
       },
-    }
+    };
 
-    const state = deriveFulfillmentBridgePreviewRenderState(preview)
+    const state = deriveFulfillmentBridgePreviewRenderState(preview);
 
-    expect(state.headerText).toBe("deliveryhub · deliveryhub_deliveryhub")
+    expect(state.headerText).toBe("deliveryhub · deliveryhub_deliveryhub");
     expect(state.summaryCards.map((card) => [card.key, card.value])).toEqual([
       ["mode_count", "2"],
       ["ready_mode_count", "1"],
       ["error_mode_count", "1"],
       ["projected_mode_count", "1"],
       ["deferred_mode_count", "1"],
-    ])
+    ]);
     expect(state.modePreviews).toEqual([
       {
         key: "warehouse_to_pickup_point",
@@ -693,11 +957,11 @@ describe("delivery admin settings page state", () => {
         errorText: "validation failed",
         shipmentExecutionText: "Shipment execution remains disabled.",
       },
-    ])
+    ]);
 
-    const renderedState = JSON.stringify(state)
-    expect(renderedState).not.toContain("must-not-leak")
-  })
+    const renderedState = JSON.stringify(state);
+    expect(renderedState).not.toContain("must-not-leak");
+  });
 
   it("derives fulfillment bridge empty state when backend returns no bridge preview payload", () => {
     expect(deriveFulfillmentBridgePreviewRenderState(null)).toEqual({
@@ -706,8 +970,8 @@ describe("delivery admin settings page state", () => {
       modePreviews: [],
       emptyText:
         "Fulfillment bridge readiness preview is unavailable until backend returns a diagnostic-only bridge preview payload.",
-    })
-  })
+    });
+  });
 
   it("derives execution-plan observability render state without leaking internal payload fragments", () => {
     const preview: DeliveryHubExecutionPlanObservabilityReadModel = {
@@ -836,11 +1100,13 @@ describe("delivery admin settings page state", () => {
               version: 1,
               redacted: true,
               operation: "create_shipment",
-              provider_operation_label: "create_shipment:warehouse_to_pickup_point",
+              provider_operation_label:
+                "create_shipment:warehouse_to_pickup_point",
               provider_operation_reference: "dhprev_1234567890abcdef",
               plan_fingerprint: "plan_fp_123",
               execution_fingerprint: "execution_fp_456",
-              idempotency_key_preview: "deliveryhub:preview:create_shipment:identity_789",
+              idempotency_key_preview:
+                "deliveryhub:preview:create_shipment:identity_789",
             },
             outbound_payload_preview: {
               redacted: true,
@@ -873,13 +1139,15 @@ describe("delivery admin settings page state", () => {
                 connection_id: "conn_a",
                 mode_code: "warehouse_to_pickup_point",
                 execution_reference: "dhprev_1234567890abcdef",
-                idempotency_key_preview: "deliveryhub:preview:create_shipment:identity_789",
+                idempotency_key_preview:
+                  "deliveryhub:preview:create_shipment:identity_789",
                 initial_status: "planned",
               },
               idempotency_reservation: {
                 ready: true,
                 dedupe_scope: "deliveryhub:create_shipment",
-                reservation_key_preview: "deliveryhub:preview:create_shipment:identity_789",
+                reservation_key_preview:
+                  "deliveryhub:preview:create_shipment:identity_789",
                 matched_fields: [
                   {
                     field: "execution_fingerprint",
@@ -926,7 +1194,8 @@ describe("delivery admin settings page state", () => {
               future_execution_flag: {
                 name: "DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED",
                 status: "future_inert_not_read",
-                description: "Future inert flag name; not read by this preview.",
+                description:
+                  "Future inert flag name; not read by this preview.",
               },
               reasons: [
                 {
@@ -983,11 +1252,13 @@ describe("delivery admin settings page state", () => {
                 provider_id: "deliveryhub_deliveryhub",
                 provider_key: "deliveryhub",
                 adapter_operation: "create_shipment",
-                adapter_operation_label: "create_shipment:warehouse_to_pickup_point",
+                adapter_operation_label:
+                  "create_shipment:warehouse_to_pickup_point",
               },
               command_identity: {
                 provider_operation_reference: "dhprev_1234567890abcdef",
-                idempotency_key_preview: "deliveryhub:preview:create_shipment:identity_789",
+                idempotency_key_preview:
+                  "deliveryhub:preview:create_shipment:identity_789",
                 plan_fingerprint: "plan_fp_123",
                 execution_fingerprint: "execution_fp_456",
               },
@@ -1040,7 +1311,8 @@ describe("delivery admin settings page state", () => {
               redacted: true,
               current_mode: "preview_only",
               failure_path_decision: "projected_retry_policy",
-              projected_failure_status: "manual_intervention_required_when_enabled",
+              projected_failure_status:
+                "manual_intervention_required_when_enabled",
               failure_classes: [
                 {
                   code: "provider_dispatch_failure",
@@ -1052,14 +1324,17 @@ describe("delivery admin settings page state", () => {
               ],
               identity_linkage: {
                 provider_operation_reference: "dhprev_1234567890abcdef",
-                idempotency_key_preview: "deliveryhub:preview:create_shipment:identity_789",
+                idempotency_key_preview:
+                  "deliveryhub:preview:create_shipment:identity_789",
                 plan_fingerprint: "plan_fp_123",
                 execution_fingerprint: "execution_fp_456",
               },
               retry_projection: {
                 eligibility: "eligible_when_enabled",
                 policy: "deterministic_preview_only",
-                retry_block_reasons: ["retry_scheduling_disabled_in_preview_only_mode"],
+                retry_block_reasons: [
+                  "retry_scheduling_disabled_in_preview_only_mode",
+                ],
                 scheduling_status: "disabled",
               },
               compensation_projection: {
@@ -1111,7 +1386,8 @@ describe("delivery admin settings page state", () => {
               provider_normalization_target: "create_shipment_response",
               identity_linkage: {
                 provider_operation_reference: "dhprev_1234567890abcdef",
-                idempotency_key_preview: "deliveryhub:preview:create_shipment:identity_789",
+                idempotency_key_preview:
+                  "deliveryhub:preview:create_shipment:identity_789",
                 plan_fingerprint: "plan_fp_123",
                 execution_fingerprint: "execution_fp_456",
               },
@@ -1173,7 +1449,8 @@ describe("delivery admin settings page state", () => {
               },
               identity_linkage: {
                 provider_operation_reference: "dhprev_1234567890abcdef",
-                idempotency_key_preview: "deliveryhub:preview:create_shipment:identity_789",
+                idempotency_key_preview:
+                  "deliveryhub:preview:create_shipment:identity_789",
                 plan_fingerprint: "plan_fp_123",
                 execution_fingerprint: "execution_fp_456",
               },
@@ -1220,7 +1497,8 @@ describe("delivery admin settings page state", () => {
               ],
               identity_correlation: {
                 provider_operation_reference: "dhprev_1234567890abcdef",
-                idempotency_key_preview: "deliveryhub:preview:create_shipment:identity_789",
+                idempotency_key_preview:
+                  "deliveryhub:preview:create_shipment:identity_789",
                 plan_fingerprint: "plan_fp_123",
                 execution_fingerprint: "execution_fp_456",
               },
@@ -1250,13 +1528,20 @@ describe("delivery admin settings page state", () => {
                   order: 2,
                   status: "projected_for_future_execution",
                   readiness_posture: "ready_when_enabled",
-                  block_reasons: ["Adapter disabled.", "Network disabled.", "Checkout disabled."],
+                  block_reasons: [
+                    "Adapter disabled.",
+                    "Network disabled.",
+                    "Checkout disabled.",
+                  ],
                   disabled_live_actions: [
                     "adapter_invocation",
                     "provider_network_call",
                     "checkout_cutover",
                   ],
-                  linked_preview_artifacts: ["provider_dispatch_preview", "execution_identity"],
+                  linked_preview_artifacts: [
+                    "provider_dispatch_preview",
+                    "execution_identity",
+                  ],
                 },
                 {
                   code: "shipment_result_normalization",
@@ -1284,8 +1569,14 @@ describe("delivery admin settings page state", () => {
                   order: 4,
                   status: "projected_for_future_execution",
                   readiness_posture: "ready_when_enabled",
-                  block_reasons: ["Order mutation disabled.", "Event persistence disabled."],
-                  disabled_live_actions: ["order_mutation", "event_persistence"],
+                  block_reasons: [
+                    "Order mutation disabled.",
+                    "Event persistence disabled.",
+                  ],
+                  disabled_live_actions: [
+                    "order_mutation",
+                    "event_persistence",
+                  ],
                   linked_preview_artifacts: [
                     "fulfillment_application_preview",
                     "shipment_result_preview",
@@ -1303,7 +1594,10 @@ describe("delivery admin settings page state", () => {
                     "Retry scheduling remains disabled.",
                     "Compensation persistence remains disabled.",
                   ],
-                  disabled_live_actions: ["retry_scheduling", "compensation_write"],
+                  disabled_live_actions: [
+                    "retry_scheduling",
+                    "compensation_write",
+                  ],
                   linked_preview_artifacts: [
                     "failure_handling_preview",
                     "provider_dispatch_preview",
@@ -1341,7 +1635,10 @@ describe("delivery admin settings page state", () => {
               status: "blocked",
               blocked_reasons: ["Missing connection"],
             },
-            blocked_reasons: ["Missing connection", "Shipment execution remains disabled."],
+            blocked_reasons: [
+              "Missing connection",
+              "Shipment execution remains disabled.",
+            ],
             issues: [],
             steps: [
               {
@@ -1412,7 +1709,8 @@ describe("delivery admin settings page state", () => {
               future_execution_flag: {
                 name: "DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED",
                 status: "future_inert_not_read",
-                description: "Future inert flag name; not read by this preview.",
+                description:
+                  "Future inert flag name; not read by this preview.",
               },
               reasons: [
                 {
@@ -1569,7 +1867,9 @@ describe("delivery admin settings page state", () => {
                 requirement: "not_required",
                 write_plan_status: "disabled",
                 rollback_status: "disabled",
-                blocked_actions: ["compensation_not_projected_until_execution_plan_ready"],
+                blocked_actions: [
+                  "compensation_not_projected_until_execution_plan_ready",
+                ],
               },
               manual_intervention_projection: {
                 status: "not_required",
@@ -1663,7 +1963,10 @@ describe("delivery admin settings page state", () => {
                   order: 1,
                   status: "blocked_in_preview",
                   readiness_posture: "blocked_in_preview",
-                  block_reasons: ["EXECUTION_PREVIEW_ONLY", "EXECUTION_PLAN_NOT_READY"],
+                  block_reasons: [
+                    "EXECUTION_PREVIEW_ONLY",
+                    "EXECUTION_PLAN_NOT_READY",
+                  ],
                   disabled_live_actions: ["provider_create_shipment_call"],
                   linked_preview_artifacts: [
                     "preflight_eligibility",
@@ -1678,7 +1981,10 @@ describe("delivery admin settings page state", () => {
                   readiness_posture: "blocked_in_preview",
                   block_reasons: ["Adapter disabled."],
                   disabled_live_actions: ["adapter_invocation"],
-                  linked_preview_artifacts: ["provider_dispatch_preview", "execution_identity"],
+                  linked_preview_artifacts: [
+                    "provider_dispatch_preview",
+                    "execution_identity",
+                  ],
                 },
                 {
                   code: "shipment_result_normalization",
@@ -1712,7 +2018,10 @@ describe("delivery admin settings page state", () => {
                   order: 5,
                   status: "blocked_in_preview",
                   readiness_posture: "blocked_in_preview",
-                  block_reasons: ["execution_plan_not_ready", "Retry scheduling remains disabled."],
+                  block_reasons: [
+                    "execution_plan_not_ready",
+                    "Retry scheduling remains disabled.",
+                  ],
                   disabled_live_actions: ["retry_scheduling"],
                   linked_preview_artifacts: [
                     "failure_handling_preview",
@@ -1759,11 +2068,11 @@ describe("delivery admin settings page state", () => {
         deferred_mode_count: 1,
         unconfigured_mode_count: 0,
       },
-    }
+    };
 
-    const state = deriveExecutionPlanObservabilityRenderState(preview)
+    const state = deriveExecutionPlanObservabilityRenderState(preview);
 
-    expect(state.headerText).toBe("deliveryhub · deliveryhub_deliveryhub")
+    expect(state.headerText).toBe("deliveryhub · deliveryhub_deliveryhub");
     expect(state.summaryCards.map((card) => [card.key, card.value])).toEqual([
       ["mode_count", "2"],
       ["ready_mode_count", "1"],
@@ -1771,7 +2080,7 @@ describe("delivery admin settings page state", () => {
       ["projected_mode_count", "1"],
       ["deferred_mode_count", "1"],
       ["unconfigured_mode_count", "0"],
-    ])
+    ]);
     expect(state.modePreviews).toEqual([
       {
         key: "warehouse_to_pickup_point",
@@ -1802,7 +2111,7 @@ describe("delivery admin settings page state", () => {
             },
           },
           null,
-          2
+          2,
         ),
         persistenceAuditText: JSON.stringify(
           {
@@ -1826,13 +2135,15 @@ describe("delivery admin settings page state", () => {
               connection_id: "conn_a",
               mode_code: "warehouse_to_pickup_point",
               execution_reference: "dhprev_1234567890abcdef",
-              idempotency_key_preview: "deliveryhub:preview:create_shipment:identity_789",
+              idempotency_key_preview:
+                "deliveryhub:preview:create_shipment:identity_789",
               initial_status: "planned",
             },
             idempotency_reservation: {
               ready: true,
               dedupe_scope: "deliveryhub:create_shipment",
-              reservation_key_preview: "deliveryhub:preview:create_shipment:identity_789",
+              reservation_key_preview:
+                "deliveryhub:preview:create_shipment:identity_789",
               matched_fields: [
                 {
                   field: "execution_fingerprint",
@@ -1871,16 +2182,18 @@ describe("delivery admin settings page state", () => {
             ],
           },
           null,
-          2
+          2,
         ),
         preflightEligibilityText:
           "mode=preview_only · decision=eligible_when_enabled · real_execution_enabled=no · reasons=EXECUTION_PREVIEW_ONLY, FUTURE_EXECUTION_FLAG_INERT, LIVE_EXECUTION_DISABLED",
         preflightPrerequisitesText:
           "operator_approval: required_future_work; provider_execution_adapter_readiness: required_future_work",
-        blockedLiveActionsText: "provider_create_shipment_call, checkout_cutover",
+        blockedLiveActionsText:
+          "provider_create_shipment_call, checkout_cutover",
         providerDispatchText:
           "mode=preview_only · decision=ready_for_future_dispatch · provider=deliveryhub · adapter=create_shipment:warehouse_to_pickup_point · identity=dhprev_1234567890abcdef · idempotency=deliveryhub:preview:create_shipment:identity_789 · origin=fulfillment_location · destination=pickup_point",
-        blockedDispatchActionsText: "adapter_invocation, provider_network_call, checkout_cutover",
+        blockedDispatchActionsText:
+          "adapter_invocation, provider_network_call, checkout_cutover",
         shipmentResultText:
           "mode=preview_only · decision=projected_for_future_execution · status=projected_for_future_execution · target=deliveryhub_shipment_result · provider_target=create_shipment_response · identity=dhprev_1234567890abcdef · tracking=yes · label=yes",
         blockedMaterializationActionsText:
@@ -1907,7 +2220,8 @@ describe("delivery admin settings page state", () => {
               "preflight_eligibility, execution_identity, persistence_audit_preview",
             blockReasonsText:
               "EXECUTION_PREVIEW_ONLY; FUTURE_EXECUTION_FLAG_INERT; LIVE_EXECUTION_DISABLED",
-            disabledActionsText: "provider_create_shipment_call, checkout_cutover",
+            disabledActionsText:
+              "provider_create_shipment_call, checkout_cutover",
           },
           {
             key: "warehouse_to_pickup_point-provider_dispatch",
@@ -1915,9 +2229,12 @@ describe("delivery admin settings page state", () => {
             order: "2",
             status: "projected_for_future_execution",
             readiness: "ready_when_enabled",
-            linkedArtifactsText: "provider_dispatch_preview, execution_identity",
-            blockReasonsText: "Adapter disabled.; Network disabled.; Checkout disabled.",
-            disabledActionsText: "adapter_invocation, provider_network_call, checkout_cutover",
+            linkedArtifactsText:
+              "provider_dispatch_preview, execution_identity",
+            blockReasonsText:
+              "Adapter disabled.; Network disabled.; Checkout disabled.",
+            disabledActionsText:
+              "adapter_invocation, provider_network_call, checkout_cutover",
           },
           {
             key: "warehouse_to_pickup_point-shipment_result_normalization",
@@ -1929,7 +2246,8 @@ describe("delivery admin settings page state", () => {
               "shipment_result_preview, provider_dispatch_preview, execution_identity",
             blockReasonsText:
               "Provider response fetch disabled.; Label persistence disabled.; Checkout cutover disabled.",
-            disabledActionsText: "provider_response_fetch, label_persistence, checkout_cutover",
+            disabledActionsText:
+              "provider_response_fetch, label_persistence, checkout_cutover",
           },
           {
             key: "warehouse_to_pickup_point-fulfillment_application",
@@ -1939,7 +2257,8 @@ describe("delivery admin settings page state", () => {
             readiness: "ready_when_enabled",
             linkedArtifactsText:
               "fulfillment_application_preview, shipment_result_preview, persistence_audit_preview, execution_identity",
-            blockReasonsText: "Order mutation disabled.; Event persistence disabled.",
+            blockReasonsText:
+              "Order mutation disabled.; Event persistence disabled.",
             disabledActionsText: "order_mutation, event_persistence",
           },
           {
@@ -1971,11 +2290,13 @@ describe("delivery admin settings page state", () => {
         rolloutStatus: "deferred",
         supportingConnectionsText: "—",
         readinessText: "blocked · blocked reasons: 1",
-        blockedReasonsText: "Missing connection; Shipment execution remains disabled.",
+        blockedReasonsText:
+          "Missing connection; Shipment execution remains disabled.",
         issueBadges: [],
         stepReadinessText: "0/2",
         executionPlanText: "Execution plan remains blocked",
-        executionIdentityText: "Deterministic execution identity preview unavailable.",
+        executionIdentityText:
+          "Deterministic execution identity preview unavailable.",
         outboundRequestText: "Redacted outbound payload preview unavailable.",
         persistenceAuditText: JSON.stringify(
           {
@@ -2019,7 +2340,7 @@ describe("delivery admin settings page state", () => {
             ],
           },
           null,
-          2
+          2,
         ),
         preflightEligibilityText:
           "mode=preview_only · decision=not_ready · real_execution_enabled=no · reasons=EXECUTION_PREVIEW_ONLY, EXECUTION_PLAN_NOT_READY",
@@ -2038,7 +2359,8 @@ describe("delivery admin settings page state", () => {
           "mode=preview_only · status=blocked_in_preview · readiness=blocked_in_preview",
         lifecyclePhaseSequenceText:
           "preflight_eligibility → provider_dispatch → shipment_result_normalization → fulfillment_application → failure_handling",
-        lifecycleIdentityText: "identity=— · idempotency=— · plan=— · execution=—",
+        lifecycleIdentityText:
+          "identity=— · idempotency=— · plan=— · execution=—",
         lifecycleDisabledActionsText:
           "preview_only, orchestration_scheduling_disabled, shipment_execution_disabled, provider_calls_disabled, persistence_writes_disabled, retry_scheduling_disabled, compensation_writes_disabled, order_mutation_disabled, fulfillment_mutation_disabled, checkout_cutover_disabled",
         lifecyclePhaseRows: [
@@ -2050,7 +2372,8 @@ describe("delivery admin settings page state", () => {
             readiness: "blocked_in_preview",
             linkedArtifactsText:
               "preflight_eligibility, execution_identity, persistence_audit_preview",
-            blockReasonsText: "EXECUTION_PREVIEW_ONLY; EXECUTION_PLAN_NOT_READY",
+            blockReasonsText:
+              "EXECUTION_PREVIEW_ONLY; EXECUTION_PLAN_NOT_READY",
             disabledActionsText: "provider_create_shipment_call",
           },
           {
@@ -2059,7 +2382,8 @@ describe("delivery admin settings page state", () => {
             order: "2",
             status: "blocked_in_preview",
             readiness: "blocked_in_preview",
-            linkedArtifactsText: "provider_dispatch_preview, execution_identity",
+            linkedArtifactsText:
+              "provider_dispatch_preview, execution_identity",
             blockReasonsText: "Adapter disabled.",
             disabledActionsText: "adapter_invocation",
           },
@@ -2093,7 +2417,8 @@ describe("delivery admin settings page state", () => {
             readiness: "blocked_in_preview",
             linkedArtifactsText:
               "failure_handling_preview, provider_dispatch_preview, shipment_result_preview, fulfillment_application_preview, execution_identity",
-            blockReasonsText: "execution_plan_not_ready; Retry scheduling remains disabled.",
+            blockReasonsText:
+              "execution_plan_not_ready; Retry scheduling remains disabled.",
             disabledActionsText: "retry_scheduling",
           },
         ],
@@ -2106,7 +2431,7 @@ describe("delivery admin settings page state", () => {
         blockedFailureActionsText: "retry_scheduling",
         shipmentExecutionText: "Shipment execution remains disabled.",
       },
-    ])
+    ]);
 
     expect(state.modePreviews[0]).toMatchObject({
       failureHandlingText:
@@ -2116,7 +2441,7 @@ describe("delivery admin settings page state", () => {
       compensationPostureText:
         "requirement=required_when_enabled · writes=disabled · rollback=disabled · manual_markers=projected_provider_failure_triage",
       blockedFailureActionsText: "retry_scheduling, compensation_write",
-    })
+    });
     expect(state.modePreviews[1]).toMatchObject({
       failureHandlingText:
         "mode=preview_only · decision=no_live_failure_path · status=not_applicable_in_preview · identity=— · manual=not_required",
@@ -2125,7 +2450,7 @@ describe("delivery admin settings page state", () => {
       compensationPostureText:
         "requirement=not_required · writes=disabled · rollback=disabled · manual_markers=preview_only_no_live_failure_path",
       blockedFailureActionsText: "retry_scheduling",
-    })
+    });
 
     expect(state.modePreviews[0]).toMatchObject({
       failureHandlingText:
@@ -2135,7 +2460,7 @@ describe("delivery admin settings page state", () => {
       compensationPostureText:
         "requirement=required_when_enabled · writes=disabled · rollback=disabled · manual_markers=projected_provider_failure_triage",
       blockedFailureActionsText: "retry_scheduling, compensation_write",
-    })
+    });
     expect(state.modePreviews[1]).toMatchObject({
       failureHandlingText:
         "mode=preview_only · decision=no_live_failure_path · status=not_applicable_in_preview · identity=— · manual=not_required",
@@ -2144,32 +2469,36 @@ describe("delivery admin settings page state", () => {
       compensationPostureText:
         "requirement=not_required · writes=disabled · rollback=disabled · manual_markers=preview_only_no_live_failure_path",
       blockedFailureActionsText: "retry_scheduling",
-    })
+    });
 
-    const renderedState = JSON.stringify(state)
-    expect(renderedState).not.toContain("must-not-leak")
-  })
+    const renderedState = JSON.stringify(state);
+    expect(renderedState).not.toContain("must-not-leak");
+  });
 
   it("builds shipment operations endpoint URLs and request bodies from trimmed execution references", () => {
     expect(buildShipmentOperationsSnapshotUrl(" exec/ref 1 ")).toBe(
-      "/admin/delivery/shipments/exec%2Fref%201/operations"
-    )
+      "/admin/delivery/shipments/exec%2Fref%201/operations",
+    );
     expect(buildShipmentOperationsRefreshStatusUrl(" exec/ref 1 ")).toBe(
-      "/admin/delivery/shipments/exec%2Fref%201/operations/refresh-status"
-    )
+      "/admin/delivery/shipments/exec%2Fref%201/operations/refresh-status",
+    );
     expect(buildShipmentOperationsCancelUrl(" exec/ref 1 ")).toBe(
-      "/admin/delivery/shipments/exec%2Fref%201/operations/cancel"
-    )
+      "/admin/delivery/shipments/exec%2Fref%201/operations/cancel",
+    );
     expect(buildShipmentOperationsRetryUrl(" exec/ref 1 ")).toBe(
-      "/admin/delivery/shipments/exec%2Fref%201/operations/retry"
-    )
-    expect(buildShipmentOperationsRefreshStatusRequestBody(" corr_1 ")).toEqual({ correlation_id: "corr_1" })
-    expect(buildShipmentOperationsCancelRequestBody(" cancel_corr_1 ")).toEqual({ correlation_id: "cancel_corr_1" })
-    expect(buildShipmentOperationsRefreshStatusRequestBody("   ")).toEqual({})
+      "/admin/delivery/shipments/exec%2Fref%201/operations/retry",
+    );
+    expect(buildShipmentOperationsRefreshStatusRequestBody(" corr_1 ")).toEqual(
+      { correlation_id: "corr_1" },
+    );
+    expect(buildShipmentOperationsCancelRequestBody(" cancel_corr_1 ")).toEqual(
+      { correlation_id: "cancel_corr_1" },
+    );
+    expect(buildShipmentOperationsRefreshStatusRequestBody("   ")).toEqual({});
     expect(() => buildShipmentOperationsSnapshotUrl("   ")).toThrow(
-      "execution_reference is required to load shipment operations"
-    )
-  })
+      "execution_reference is required to load shipment operations",
+    );
+  });
 
   it("derives accepted shipment operations display model and guarded refresh availability without leaking raw fields", () => {
     const snapshot: DeliveryHubShipmentOperationsSnapshot = {
@@ -2235,7 +2564,8 @@ describe("delivery admin settings page state", () => {
         },
         last_result: {
           status: "not_requested",
-          safe_message: "Manual shipment cancellation has not been requested in this snapshot.",
+          safe_message:
+            "Manual shipment cancellation has not been requested in this snapshot.",
           redacted: true,
         },
       },
@@ -2261,7 +2591,8 @@ describe("delivery admin settings page state", () => {
         },
         last_result: {
           status: "not_requested",
-          safe_message: "Manual shipment retry has not been requested in this snapshot.",
+          safe_message:
+            "Manual shipment retry has not been requested in this snapshot.",
           redacted: true,
         },
       },
@@ -2317,19 +2648,19 @@ describe("delivery admin settings page state", () => {
         raw_provider_identifier_included: false,
         raw_execution_secret_included: false,
       },
-    }
+    };
 
     const state = deriveShipmentOperationsRenderState({
       form: { execution_reference: " execution-secret-that-stays-input-only " },
       snapshot,
-    })
+    });
 
-    expect(state.lookupReady).toBe(true)
-    expect(state.canRefreshStatus).toBe(true)
-    expect(state.refreshButtonText).toBe("Refresh status")
-    expect(state.canCancelShipment).toBe(true)
-    expect(state.cancelButtonText).toBe("Cancel shipment")
-    expect(state.statusBadgeText).toBe("accepted shipment")
+    expect(state.lookupReady).toBe(true);
+    expect(state.canRefreshStatus).toBe(true);
+    expect(state.refreshButtonText).toBe("Refresh status");
+    expect(state.canCancelShipment).toBe(true);
+    expect(state.cancelButtonText).toBe("Cancel shipment");
+    expect(state.statusBadgeText).toBe("accepted shipment");
     expect(state.summaryCards.map((card) => [card.key, card.value])).toEqual([
       ["lifecycle", "accepted_shipment"],
       ["accepted", "yes"],
@@ -2339,7 +2670,7 @@ describe("delivery admin settings page state", () => {
       ["refresh", "yes"],
       ["cancel", "yes"],
       ["retry", "no"],
-    ])
+    ]);
     expect(state.statusRefreshRows.map((row) => [row.key, row.value])).toEqual(
       expect.arrayContaining([
         ["refresh_available", "yes"],
@@ -2347,40 +2678,59 @@ describe("delivery admin settings page state", () => {
         ["provider_status", "ready_to_ship"],
         ["status_category", "in_transit"],
         ["safe_message", "Status refreshed safely"],
-      ])
-    )
+      ]),
+    );
     expect(state.ledgerRows.map((row) => [row.key, row.value])).toEqual(
       expect.arrayContaining([
         ["transition_count", "6"],
         ["audit_event_count", "4"],
         ["idempotency_key_preview", "idem***42"],
-      ])
-    )
+      ]),
+    );
     expect(state.cancelRows).toEqual(
       expect.arrayContaining([
         { key: "cancel_available", label: "Available", value: "yes" },
-        { key: "status_neutral", label: "Neutral status gate", value: "in_transit" },
+        {
+          key: "status_neutral",
+          label: "Neutral status gate",
+          value: "in_transit",
+        },
         {
           key: "last_result",
           label: "Last result",
-          value: "Manual shipment cancellation has not been requested in this snapshot.",
+          value:
+            "Manual shipment cancellation has not been requested in this snapshot.",
         },
-      ])
-    )
+      ]),
+    );
     expect(state.actionBadges).toEqual([
-      { key: "refresh_status", label: "refresh_status: available", available: true },
+      {
+        key: "refresh_status",
+        label: "refresh_status: available",
+        available: true,
+      },
       { key: "cancel", label: "cancel: available", available: true },
       { key: "retry", label: "retry: blocked", available: false },
-      { key: "webhooks", label: "webhooks: not_materialized", available: false },
-      { key: "scheduler", label: "scheduler: not_materialized", available: false },
-    ])
+      {
+        key: "webhooks",
+        label: "webhooks: not_materialized",
+        available: false,
+      },
+      {
+        key: "scheduler",
+        label: "scheduler: not_materialized",
+        available: false,
+      },
+    ]);
 
-    const renderedState = JSON.stringify(state)
-    expect(renderedState).not.toContain("execution-secret-that-stays-input-only")
-    expect(renderedState).not.toContain("raw-provider-id")
-    expect(renderedState).not.toContain("auth-token")
-    expect(renderedState).not.toContain("quote-secret")
-  })
+    const renderedState = JSON.stringify(state);
+    expect(renderedState).not.toContain(
+      "execution-secret-that-stays-input-only",
+    );
+    expect(renderedState).not.toContain("raw-provider-id");
+    expect(renderedState).not.toContain("auth-token");
+    expect(renderedState).not.toContain("quote-secret");
+  });
 
   it("keeps shipment status refresh blocked when backend action posture is unavailable", () => {
     const snapshot: DeliveryHubShipmentOperationsSnapshot = {
@@ -2408,7 +2758,8 @@ describe("delivery admin settings page state", () => {
         refresh: {
           available: false,
           blocked_reason_code: "accepted_shipment_required",
-          blocked_reason: "Status refresh is available only for accepted shipment lifecycle snapshots.",
+          blocked_reason:
+            "Status refresh is available only for accepted shipment lifecycle snapshots.",
           last_outcome: "failed",
           status_refreshed_at: null,
         },
@@ -2418,7 +2769,8 @@ describe("delivery admin settings page state", () => {
           version: 1,
           available: false,
           blocked_reason_code: "accepted_lifecycle_required",
-          blocked_reason: "Shipment cancellation is allowed only for accepted shipment lifecycle snapshots.",
+          blocked_reason:
+            "Shipment cancellation is allowed only for accepted shipment lifecycle snapshots.",
           lifecycle_classification: "non_accepted_shipment",
           accepted: false,
           provider_code: "yandex",
@@ -2431,7 +2783,8 @@ describe("delivery admin settings page state", () => {
         },
         last_result: {
           status: "not_requested",
-          safe_message: "Manual shipment cancellation has not been requested in this snapshot.",
+          safe_message:
+            "Manual shipment cancellation has not been requested in this snapshot.",
           redacted: true,
         },
       },
@@ -2457,7 +2810,8 @@ describe("delivery admin settings page state", () => {
         },
         last_result: {
           status: "not_requested",
-          safe_message: "Manual shipment retry has not been requested in this snapshot.",
+          safe_message:
+            "Manual shipment retry has not been requested in this snapshot.",
           redacted: true,
         },
       },
@@ -2513,37 +2867,38 @@ describe("delivery admin settings page state", () => {
         raw_provider_identifier_included: false,
         raw_execution_secret_included: false,
       },
-    }
+    };
 
     const state = deriveShipmentOperationsRenderState({
       form: { execution_reference: "exec_blocked" },
       snapshot,
-    })
+    });
 
-    expect(state.canRefreshStatus).toBe(false)
-    expect(state.refreshButtonText).toBe("Refresh status blocked")
-    expect(state.canCancelShipment).toBe(false)
-    expect(state.cancelButtonText).toBe("Cancel blocked")
-    expect(state.statusBadgeText).toBe("blocked: provider_failed")
-    expect(state.canRetryShipment).toBe(false)
-    expect(state.retryButtonText).toBe("Retry blocked")
+    expect(state.canRefreshStatus).toBe(false);
+    expect(state.refreshButtonText).toBe("Refresh status blocked");
+    expect(state.canCancelShipment).toBe(false);
+    expect(state.cancelButtonText).toBe("Cancel blocked");
+    expect(state.statusBadgeText).toBe("blocked: provider_failed");
+    expect(state.canRetryShipment).toBe(false);
+    expect(state.retryButtonText).toBe("Retry blocked");
     expect(state.detailRows).toEqual(
       expect.arrayContaining([
         {
           key: "blocked_reason",
           label: "Blocked reason",
-          value: "Status refresh is available only for accepted shipment lifecycle snapshots.",
+          value:
+            "Status refresh is available only for accepted shipment lifecycle snapshots.",
         },
-      ])
-    )
-  })
+      ]),
+    );
+  });
 
   it("derives empty shipment operations state before lookup", () => {
     expect(
       deriveShipmentOperationsRenderState({
         form: { execution_reference: "   " },
         snapshot: null,
-      })
+      }),
     ).toEqual({
       headerText: "No shipment operations snapshot loaded",
       hasSnapshot: false,
@@ -2565,8 +2920,8 @@ describe("delivery admin settings page state", () => {
       contextRows: [],
       emptyText:
         "Paste an execution_reference from the controlled fulfillment result or execution ledger, then load the safe operator snapshot.",
-    })
-  })
+    });
+  });
 
   it("derives manual sync safe-default execute guard state before any result snapshot exists", () => {
     expect(
@@ -2574,11 +2929,11 @@ describe("delivery admin settings page state", () => {
         executeGuard: " wrong ",
         serviceZoneId: "serzo_123",
         shippingProfileId: "sp_123",
-      })
+      }),
     ).toEqual({
       guardConfirmed: false,
       canExecute: false,
-    })
+    });
 
     expect(
       deriveShippingOptionManualSyncRenderState({
@@ -2586,7 +2941,7 @@ describe("delivery admin settings page state", () => {
         executeGuard: " wrong ",
         serviceZoneId: "serzo_123",
         shippingProfileId: "sp_123",
-      })
+      }),
     ).toEqual({
       headerText: "No manual sync run yet",
       guardConfirmed: false,
@@ -2600,8 +2955,8 @@ describe("delivery admin settings page state", () => {
         "This is expected for default dry-run mode or for execute requests that never passed confirmation into backend write mode.",
       noResultText:
         "Run the default dry-run to materialize a truthful manual sync result snapshot before considering execute mode.",
-    })
-  })
+    });
+  });
 
   it("derives manual sync result summaries and execute capability from admin contract payload without leaking raw details", () => {
     const result: DeliveryHubShippingOptionManualSyncResponse = {
@@ -2690,18 +3045,18 @@ describe("delivery admin settings page state", () => {
           executed_operations: [{ id: "op_1" }, { id: "op_2" }],
         },
       },
-    }
+    };
 
     const state = deriveShippingOptionManualSyncRenderState({
       result,
       executeGuard: DELIVERY_HUB_MANUAL_SYNC_EXECUTE_GUARD,
       serviceZoneId: "serzo_123",
       shippingProfileId: "sp_123",
-    })
+    });
 
-    expect(state.headerText).toBe("yandex · prov_yandex")
-    expect(state.guardConfirmed).toBe(true)
-    expect(state.canExecute).toBe(true)
+    expect(state.headerText).toBe("yandex · prov_yandex");
+    expect(state.guardConfirmed).toBe(true);
+    expect(state.canExecute).toBe(true);
     expect(state.modeFields).toEqual([
       { label: "Requested mode", value: "execute" },
       { label: "Effective mode", value: "execute" },
@@ -2709,21 +3064,27 @@ describe("delivery admin settings page state", () => {
       { label: "Execute requested", value: "yes" },
       { label: "Execute confirmed", value: "yes" },
       { label: "Execute guard", value: DELIVERY_HUB_MANUAL_SYNC_EXECUTE_GUARD },
-    ])
-    expect(state.desiredPlanSummaryCards.map((card) => [card.key, card.value])).toEqual([
+    ]);
+    expect(
+      state.desiredPlanSummaryCards.map((card) => [card.key, card.value]),
+    ).toEqual([
       ["desired_option_count", "2"],
       ["deferred_option_count", "1"],
       ["deferred_issue_count", "3"],
       ["connection_plan_count", "2"],
-    ])
-    expect(state.reconciliationSummaryCards.map((card) => [card.key, card.value])).toEqual([
+    ]);
+    expect(
+      state.reconciliationSummaryCards.map((card) => [card.key, card.value]),
+    ).toEqual([
       ["create_candidate_count", "1"],
       ["update_candidate_count", "2"],
       ["unchanged_count", "3"],
       ["orphaned_managed_option_count", "4"],
       ["ignored_foreign_option_count", "5"],
-    ])
-    expect(state.operationPlanSummaryCards.map((card) => [card.key, card.value])).toEqual([
+    ]);
+    expect(
+      state.operationPlanSummaryCards.map((card) => [card.key, card.value]),
+    ).toEqual([
       ["create_operation_count", "1"],
       ["update_operation_count", "2"],
       ["archive_operation_count", "3"],
@@ -2731,7 +3092,7 @@ describe("delivery admin settings page state", () => {
       ["mutation_operation_count", "5"],
       ["ignored_foreign_option_count", "6"],
       ["managed_option_count", "7"],
-    ])
+    ]);
     expect(state.executionReport).toEqual({
       outcome: "partial_failure",
       outcomeToneIsSuccess: false,
@@ -2757,11 +3118,11 @@ describe("delivery admin settings page state", () => {
         ][index] as string,
         value,
       })),
-    })
+    });
 
-    const renderedState = JSON.stringify(state)
-    expect(renderedState).not.toContain("raw-create-secret")
-  })
+    const renderedState = JSON.stringify(state);
+    expect(renderedState).not.toContain("raw-create-secret");
+  });
 
   it("shows encryption disabled warning if any relevant connection or admin error reports it", () => {
     const baseConnection: DeliveryConnection = {
@@ -2781,7 +3142,7 @@ describe("delivery admin settings page state", () => {
       metadata: {},
       created_at: "2026-04-20T10:00:00.000Z",
       updated_at: "2026-04-21T10:00:00.000Z",
-    }
+    };
 
     expect(
       getObservedEncryptionDisabled({
@@ -2789,8 +3150,8 @@ describe("delivery admin settings page state", () => {
         activeConnection: null,
         formError: null,
         testConnectionError: null,
-      })
-    ).toBe(true)
+      }),
+    ).toBe(true);
 
     expect(
       getObservedEncryptionDisabled({
@@ -2798,8 +3159,8 @@ describe("delivery admin settings page state", () => {
         activeConnection: baseConnection,
         formError: { code: "DELIVERY_HUB_ENCRYPTION_DISABLED" },
         testConnectionError: null,
-      })
-    ).toBe(true)
+      }),
+    ).toBe(true);
 
     expect(
       getObservedEncryptionDisabled({
@@ -2807,8 +3168,8 @@ describe("delivery admin settings page state", () => {
         activeConnection: null,
         formError: null,
         testConnectionError: { code: "DELIVERY_HUB_ENCRYPTION_DISABLED" },
-      })
-    ).toBe(true)
+      }),
+    ).toBe(true);
 
     expect(
       getObservedEncryptionDisabled({
@@ -2816,9 +3177,9 @@ describe("delivery admin settings page state", () => {
         activeConnection: null,
         formError: null,
         testConnectionError: null,
-      })
-    ).toBe(false)
-  })
+      }),
+    ).toBe(false);
+  });
 
   it("filters event logs by active connection while keeping unscoped list when nothing is selected", () => {
     const logs: DeliveryEventLog[] = [
@@ -2858,9 +3219,126 @@ describe("delivery admin settings page state", () => {
         error_code: null,
         created_at: "2026-04-21T12:00:00.000Z",
       },
-    ]
+    ];
 
-    expect(getFilteredEventLogs(logs, null).map((log) => log.id)).toEqual(["log_1", "log_2", "log_3"])
-    expect(getFilteredEventLogs(logs, "conn_b").map((log) => log.id)).toEqual(["log_2"])
-  })
-})
+    expect(getFilteredEventLogs(logs, null).map((log) => log.id)).toEqual([
+      "log_1",
+      "log_2",
+      "log_3",
+    ]);
+    expect(getFilteredEventLogs(logs, "conn_b").map((log) => log.id)).toEqual([
+      "log_2",
+    ]);
+  });
+
+  it("blocks Test connection until a connection has been persisted", () => {
+    const unsaved = getTestConnectionCapability({ activeConnectionId: null });
+
+    expect(unsaved.canTest).toBe(false);
+    expect(unsaved.errorMessage).toContain("Сохраните подключение");
+    expect(unsaved.helperText).toContain("sealed token");
+
+    const saved = getTestConnectionCapability({
+      activeConnectionId: "conn_saved",
+    });
+
+    expect(saved.canTest).toBe(true);
+    expect(saved.errorMessage).toBeNull();
+  });
+
+  it("blocks Test quote until local required fields are present", () => {
+    const missing = getTestQuoteCapability({
+      connection_id: "",
+      mode_code: "warehouse_to_pickup_point",
+      destination_point_id: "",
+      warehouse_id: "",
+      item_quantity: "1",
+      item_weight_grams: "500",
+      item_price: "0",
+    });
+
+    expect(missing.canTest).toBe(false);
+    expect(missing.blockingReasons).toEqual([
+      "сохранённое Yandex-подключение",
+      "destination PVZ id из поиска ПВЗ",
+      "склад с provider_warehouse_id/platform_station_id",
+    ]);
+    expect(missing.errorMessage).toContain("сохранённое Yandex-подключение");
+
+    const futureFrom = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const futureTo = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const readyWarehouse = getTestQuoteCapability({
+      connection_id: "conn_saved",
+      mode_code: "warehouse_to_pickup_point",
+      destination_point_id: "pvz_1",
+      warehouse_id: "wh_1",
+      interval_from: futureFrom,
+      interval_to: futureTo,
+      item_quantity: "1",
+      item_weight_grams: "500",
+      item_price: "0",
+    });
+
+    expect(readyWarehouse.canTest).toBe(true);
+    expect(readyWarehouse.blockingReasons).toEqual([]);
+  });
+
+  it("uses mode-specific Test quote blockers", () => {
+    expect(
+      getTestQuoteCapability({
+        connection_id: "conn_saved",
+        mode_code: "dropoff_point_to_pickup_point",
+        destination_point_id: "pvz_1",
+        origin_point_id: "",
+        item_quantity: "1",
+        item_weight_grams: "500",
+      }).blockingReasons,
+    ).toEqual(["origin dropoff point id с available_for_dropoff=true"]);
+
+    expect(
+      getTestQuoteCapability({
+        connection_id: "conn_saved",
+        mode_code: "dropoff_point_to_pickup_point",
+        destination_point_id: "pvz_1",
+        origin_point_id: "dropoff_1",
+        item_quantity: "1",
+        item_weight_grams: "500",
+      }).canTest,
+    ).toBe(true);
+  });
+
+  it("builds safe pickup point lookup query and labels for operator picker", () => {
+    expect(
+      buildPickupPointLookupQuery({
+        connection_id: " conn_1 ",
+        city: " Moscow ",
+        country_code: " ru ",
+        geo_id: "213",
+        pickup_point_id: " e1139f6d-e34f-47a9-a55f-31f032a861a6 ",
+        operator_id: "market_l4g",
+        station_type: "pickup_point",
+        available_for_dropoff: "",
+        is_yandex_branded: "true",
+        is_not_branded_partner_station: "",
+        limit: "20",
+      }),
+    ).toBe("connection_id=conn_1&city=Moscow&country_code=RU&geo_id=213&pickup_point_id=e1139f6d-e34f-47a9-a55f-31f032a861a6&operator_id=market_l4g&station_type=pickup_point&is_yandex_branded=true&limit=20");
+
+    expect(
+      getPickupPointOptionLabel({
+        id: "pvz_1",
+        code: "code_1",
+        operator_id: "market_l4g",
+        network_label: "Яндекс Маркет",
+        station_type: "pickup_point",
+        is_yandex_branded: true,
+        is_market_partner: true,
+        name: "PVZ 1",
+        address: "Tverskaya 1",
+        city: "Moscow",
+        available_for_dropoff: true,
+        coordinates: { lat: 55.75, lng: 37.61 },
+      }),
+    ).toBe("pvz_1 · code=code_1 · operator=market_l4g · сеть=Яндекс Маркет · type=pickup_point · Яндекс-бренд · Moscow · можно как origin dropoff · PVZ 1");
+  });
+});

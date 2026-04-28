@@ -1,14 +1,22 @@
-import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { HandTruck } from "@medusajs/icons"
-import { Button, Container, Heading, Input, Label, Switch, Text } from "@medusajs/ui"
-import { useEffect, useMemo, useState } from "react"
+import { defineRouteConfig } from "@medusajs/admin-sdk";
+import { HandTruck } from "@medusajs/icons";
+import {
+  Button,
+  Container,
+  Heading,
+  Input,
+  Label,
+  Switch,
+  Text,
+} from "@medusajs/ui";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   DELIVERY_HUB_MANUAL_SYNC_EXECUTE_GUARD,
   buildDeliveryHubShippingOptionManualSyncDryRunRequest,
   buildDeliveryHubShippingOptionManualSyncExecuteRequest,
   type DeliveryHubShippingOptionManualSyncErrorMode,
   type DeliveryHubShippingOptionManualSyncMode,
-} from "./manual-sync"
+} from "./manual-sync";
 import {
   buildShipmentOperationsCancelRequestBody,
   buildShipmentOperationsCancelUrl,
@@ -16,9 +24,14 @@ import {
   buildShipmentOperationsRefreshStatusUrl,
   buildShipmentOperationsRetryUrl,
   buildShipmentOperationsSnapshotUrl,
+  buildPickupPointLookupQuery,
+  buildPickupWindowLookupQuery,
+  buildYandexSandboxPickupPointLookupForm,
   capabilityLabels,
   connectionToForm,
   defaultConnectionForm,
+  defaultPickupPointLookupForm,
+  defaultPickupWindowLookupForm,
   defaultShipmentOperationsForm,
   defaultWarehouseForm,
   deriveExecutionPlanObservabilityRenderState,
@@ -27,12 +40,21 @@ import {
   deriveShippingOptionManualSyncRenderState,
   deriveShippingOptionPreviewRenderState,
   formatTimestamp,
+  getDeliveryHubApiErrorSafeLines,
   getDiagnosticsSummaryText,
+  getFieldRequirementText,
   getFilteredEventLogs,
   getObservedEncryptionDisabled,
+  getPickupPointOptionLabel,
+  getPickupWindowOptionLabel,
+  getProviderCodeOperatorHint,
   getQuoteInputEchoLines,
   getQuoteModeHint,
+  getRequiredBadgeClass,
+  getRequiredBadgeText,
   getShippingOptionSyncCapability,
+  getTestConnectionCapability,
+  getTestQuoteCapability,
   getWarehouseOptionLabel,
   getYandexConnections,
   getYandexWarehouses,
@@ -43,6 +65,8 @@ import {
   plannerStatusToneClass,
   statusToneClass,
   warehouseToForm,
+  yandexApiBaseUrlOptions,
+  YANDEX_VERIFIED_SANDBOX_PVZ,
   type ApiErrorPayload,
   type DeliveryConfig,
   type DeliveryConnection,
@@ -52,6 +76,10 @@ import {
   type DeliveryHubTestQuoteInputEcho,
   type DeliveryHubExecutionPlanObservabilityReadModel,
   type DeliveryHubFulfillmentBridgeReadinessPreview,
+  type DeliveryHubPickupPointLookupForm,
+  type DeliveryHubPickupPointLookupResponse,
+  type DeliveryHubPickupWindowLookupForm,
+  type DeliveryHubPickupWindowLookupResponse,
   type DeliveryHubShipmentOperationsCancelResponse,
   type DeliveryHubShipmentOperationsForm,
   type DeliveryHubShipmentOperationsRefreshResponse,
@@ -63,54 +91,54 @@ import {
   type DeliveryProviderDefinition,
   type DeliveryWarehouse,
   type DeliveryWarehouseForm,
-} from "./page-state"
+} from "./page-state";
 
 type DeliveryTestConnectionResult = {
-  ok: boolean
-  provider_code: string
-  diagnostics: Record<string, unknown>
-  diagnostics_summary?: DeliveryHubDiagnosticsSummary
-}
+  ok: boolean;
+  provider_code: string;
+  diagnostics: Record<string, unknown>;
+  diagnostics_summary?: DeliveryHubDiagnosticsSummary;
+};
 
 type DeliveryQuote = {
-  carrier_code: string
-  carrier_label: string
-  mode_code: string
-  quote_key: string
-  amount: number
-  currency_code: string
-  delivery_eta_min: number | null
-  delivery_eta_max: number | null
-  pickup_point_required: boolean
-  pickup_point_ids: string[]
-  pickup_points_embedded: unknown[]
-  pickup_window_required: boolean
-  pickup_window_options: unknown[]
-  raw_reference: Record<string, unknown>
-}
+  carrier_code: string;
+  carrier_label: string;
+  mode_code: string;
+  quote_key: string;
+  amount: number;
+  currency_code: string;
+  delivery_eta_min: number | null;
+  delivery_eta_max: number | null;
+  pickup_point_required: boolean;
+  pickup_point_ids: string[];
+  pickup_points_embedded: unknown[];
+  pickup_window_required: boolean;
+  pickup_window_options: unknown[];
+  raw_reference: Record<string, unknown>;
+};
 
 type DeliveryTestQuoteResponse = {
-  ok: boolean
-  connection: DeliveryConnection
-  quotes: DeliveryQuote[]
-  correlation_id: string
-  input_echo: DeliveryHubTestQuoteInputEcho
-  diagnostics_summary: DeliveryHubDiagnosticsSummary
-}
+  ok: boolean;
+  connection: DeliveryConnection;
+  quotes: DeliveryQuote[];
+  correlation_id: string;
+  input_echo: DeliveryHubTestQuoteInputEcho;
+  diagnostics_summary: DeliveryHubDiagnosticsSummary;
+};
 
 type DeliveryTestQuoteForm = {
-  connection_id: string
-  mode_code: "warehouse_to_pickup_point" | "dropoff_point_to_pickup_point"
-  destination_point_id: string
-  origin_point_id: string
-  warehouse_id: string
-  currency_code: string
-  interval_from: string
-  interval_to: string
-  item_quantity: string
-  item_weight_grams: string
-  item_price: string
-}
+  connection_id: string;
+  mode_code: "warehouse_to_pickup_point" | "dropoff_point_to_pickup_point";
+  destination_point_id: string;
+  origin_point_id: string;
+  warehouse_id: string;
+  currency_code: string;
+  interval_from: string;
+  interval_to: string;
+  item_quantity: string;
+  item_weight_grams: string;
+  item_price: string;
+};
 
 const defaultTestQuoteForm: DeliveryTestQuoteForm = {
   connection_id: "",
@@ -124,30 +152,58 @@ const defaultTestQuoteForm: DeliveryTestQuoteForm = {
   item_quantity: "1",
   item_weight_grams: "500",
   item_price: "0",
-}
+};
+
+const RequirementBadge = ({ required }: { required: boolean }) => (
+  <span
+    className={`ml-2 rounded-full border px-2 py-0.5 text-[11px] ${getRequiredBadgeClass(
+      required,
+    )}`}
+  >
+    {getRequiredBadgeText(required)}
+  </span>
+);
+
+const FieldLabel = ({
+  htmlFor,
+  children,
+  required,
+}: {
+  htmlFor?: string;
+  children: ReactNode;
+  required: boolean;
+}) => (
+  <Label htmlFor={htmlFor}>
+    {children}
+    <RequirementBadge required={required} />
+  </Label>
+);
 
 const getApiError = async (response: Response): Promise<ApiErrorPayload> => {
-  let payload: unknown = null
+  let payload: unknown = null;
 
   try {
-    payload = await response.json()
+    payload = await response.json();
   } catch {
-    payload = null
+    payload = null;
   }
 
   const structured = payload as {
-    error?: { code?: string; message?: string; details?: unknown }
-  } | null
+    error?: { code?: string; message?: string; details?: unknown };
+  } | null;
 
   return {
     status: response.status,
     code: structured?.error?.code || `HTTP_${response.status}`,
     message: structured?.error?.message || `HTTP ${response.status}`,
     details: structured?.error?.details ?? null,
-  }
-}
+  };
+};
 
-const requestJson = async <T,>(input: RequestInfo | URL, init?: RequestInit): Promise<T> => {
+const requestJson = async <T,>(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<T> => {
   const response = await fetch(input, {
     credentials: "include",
     ...init,
@@ -155,88 +211,134 @@ const requestJson = async <T,>(input: RequestInfo | URL, init?: RequestInit): Pr
       "content-type": "application/json",
       ...(init?.headers || {}),
     },
-  })
+  });
 
   if (!response.ok) {
-    throw await getApiError(response)
+    throw await getApiError(response);
   }
 
-  return (await response.json()) as T
-}
+  return (await response.json()) as T;
+};
 
 const DeliverySettingsPage = () => {
-  const [providers, setProviders] = useState<DeliveryProviderDefinition[]>([])
-  const [connections, setConnections] = useState<DeliveryConnection[]>([])
-  const [warehouses, setWarehouses] = useState<DeliveryWarehouse[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
-  const [isSavingWarehouse, setIsSavingWarehouse] = useState(false)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null)
-  const [activeWarehouseId, setActiveWarehouseId] = useState<string | null>(null)
-  const [connectionForm, setConnectionForm] = useState<DeliveryConnectionForm>(defaultConnectionForm)
-  const [warehouseForm, setWarehouseForm] = useState<DeliveryWarehouseForm>(defaultWarehouseForm)
-  const [formNotice, setFormNotice] = useState<string | null>(null)
-  const [warehouseFormNotice, setWarehouseFormNotice] = useState<string | null>(null)
-  const [pageError, setPageError] = useState<ApiErrorPayload | null>(null)
-  const [formError, setFormError] = useState<ApiErrorPayload | null>(null)
-  const [warehouseFormError, setWarehouseFormError] = useState<ApiErrorPayload | null>(null)
+  const [providers, setProviders] = useState<DeliveryProviderDefinition[]>([]);
+  const [connections, setConnections] = useState<DeliveryConnection[]>([]);
+  const [warehouses, setWarehouses] = useState<DeliveryWarehouse[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSavingWarehouse, setIsSavingWarehouse] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(
+    null,
+  );
+  const [activeWarehouseId, setActiveWarehouseId] = useState<string | null>(
+    null,
+  );
+  const [connectionForm, setConnectionForm] = useState<DeliveryConnectionForm>(
+    defaultConnectionForm,
+  );
+  const [warehouseForm, setWarehouseForm] =
+    useState<DeliveryWarehouseForm>(defaultWarehouseForm);
+  const [formNotice, setFormNotice] = useState<string | null>(null);
+  const [warehouseFormNotice, setWarehouseFormNotice] = useState<string | null>(
+    null,
+  );
+  const [pageError, setPageError] = useState<ApiErrorPayload | null>(null);
+  const [formError, setFormError] = useState<ApiErrorPayload | null>(null);
+  const [warehouseFormError, setWarehouseFormError] =
+    useState<ApiErrorPayload | null>(null);
   const [testConnectionResult, setTestConnectionResult] =
-    useState<DeliveryTestConnectionResult | null>(null)
-  const [testConnectionError, setTestConnectionError] = useState<ApiErrorPayload | null>(null)
-  const [isTestingConnection, setIsTestingConnection] = useState(false)
-  const [includePickupPoints, setIncludePickupPoints] = useState(true)
-  const [testQuoteForm, setTestQuoteForm] = useState<DeliveryTestQuoteForm>(defaultTestQuoteForm)
-  const [testQuoteResult, setTestQuoteResult] = useState<DeliveryTestQuoteResponse | null>(null)
-  const [testQuoteError, setTestQuoteError] = useState<ApiErrorPayload | null>(null)
-  const [isTestingQuote, setIsTestingQuote] = useState(false)
-  const [eventLogs, setEventLogs] = useState<DeliveryEventLog[]>([])
+    useState<DeliveryTestConnectionResult | null>(null);
+  const [testConnectionError, setTestConnectionError] =
+    useState<ApiErrorPayload | null>(null);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [includePickupPoints, setIncludePickupPoints] = useState(true);
+  const [pickupPointLookupForm, setPickupPointLookupForm] =
+    useState<DeliveryHubPickupPointLookupForm>(defaultPickupPointLookupForm);
+  const [pickupPointLookupResult, setPickupPointLookupResult] =
+    useState<DeliveryHubPickupPointLookupResponse | null>(null);
+  const [pickupPointLookupError, setPickupPointLookupError] =
+    useState<ApiErrorPayload | null>(null);
+  const [isLoadingPickupPoints, setIsLoadingPickupPoints] = useState(false);
+  const [pickupWindowLookupForm, setPickupWindowLookupForm] =
+    useState<DeliveryHubPickupWindowLookupForm>(defaultPickupWindowLookupForm);
+  const [pickupWindowLookupResult, setPickupWindowLookupResult] =
+    useState<DeliveryHubPickupWindowLookupResponse | null>(null);
+  const [pickupWindowLookupError, setPickupWindowLookupError] =
+    useState<ApiErrorPayload | null>(null);
+  const [isLoadingPickupWindows, setIsLoadingPickupWindows] = useState(false);
+  const [testQuoteForm, setTestQuoteForm] =
+    useState<DeliveryTestQuoteForm>(defaultTestQuoteForm);
+  const [testQuoteResult, setTestQuoteResult] =
+    useState<DeliveryTestQuoteResponse | null>(null);
+  const [testQuoteError, setTestQuoteError] = useState<ApiErrorPayload | null>(
+    null,
+  );
+  const [isTestingQuote, setIsTestingQuote] = useState(false);
+  const [eventLogs, setEventLogs] = useState<DeliveryEventLog[]>([]);
   const [shippingOptionPreview, setShippingOptionPreview] =
-    useState<DeliveryHubShippingOptionPreview | null>(null)
+    useState<DeliveryHubShippingOptionPreview | null>(null);
   const [fulfillmentBridgePreview, setFulfillmentBridgePreview] =
-    useState<DeliveryHubFulfillmentBridgeReadinessPreview | null>(null)
+    useState<DeliveryHubFulfillmentBridgeReadinessPreview | null>(null);
   const [executionPlanPreview, setExecutionPlanPreview] =
-    useState<DeliveryHubExecutionPlanObservabilityReadModel | null>(null)
+    useState<DeliveryHubExecutionPlanObservabilityReadModel | null>(null);
   const [shippingOptionSyncResult, setShippingOptionSyncResult] =
-    useState<DeliveryHubShippingOptionManualSyncResponse | null>(null)
-  const [shippingOptionSyncError, setShippingOptionSyncError] = useState<ApiErrorPayload | null>(null)
-  const [isRunningShippingOptionSync, setIsRunningShippingOptionSync] = useState(false)
+    useState<DeliveryHubShippingOptionManualSyncResponse | null>(null);
+  const [shippingOptionSyncError, setShippingOptionSyncError] =
+    useState<ApiErrorPayload | null>(null);
+  const [isRunningShippingOptionSync, setIsRunningShippingOptionSync] =
+    useState(false);
   const [shippingOptionSyncErrorMode, setShippingOptionSyncErrorMode] =
-    useState<DeliveryHubShippingOptionManualSyncErrorMode>("abort")
-  const [shippingOptionSyncExecuteGuard, setShippingOptionSyncExecuteGuard] = useState("")
-  const [shippingOptionSyncServiceZoneId, setShippingOptionSyncServiceZoneId] = useState("")
-  const [shippingOptionSyncShippingProfileId, setShippingOptionSyncShippingProfileId] = useState("")
+    useState<DeliveryHubShippingOptionManualSyncErrorMode>("abort");
+  const [shippingOptionSyncExecuteGuard, setShippingOptionSyncExecuteGuard] =
+    useState("");
+  const [shippingOptionSyncServiceZoneId, setShippingOptionSyncServiceZoneId] =
+    useState("");
+  const [
+    shippingOptionSyncShippingProfileId,
+    setShippingOptionSyncShippingProfileId,
+  ] = useState("");
   const [shipmentOperationsForm, setShipmentOperationsForm] =
-    useState<DeliveryHubShipmentOperationsForm>(defaultShipmentOperationsForm)
+    useState<DeliveryHubShipmentOperationsForm>(defaultShipmentOperationsForm);
   const [shipmentOperationsSnapshot, setShipmentOperationsSnapshot] =
-    useState<DeliveryHubShipmentOperationsSnapshot | null>(null)
-  const [shipmentOperationsError, setShipmentOperationsError] = useState<ApiErrorPayload | null>(null)
-  const [shipmentOperationsNotice, setShipmentOperationsNotice] = useState<string | null>(null)
-  const [isLoadingShipmentOperations, setIsLoadingShipmentOperations] = useState(false)
-  const [isRefreshingShipmentStatus, setIsRefreshingShipmentStatus] = useState(false)
-  const [isCancellingShipment, setIsCancellingShipment] = useState(false)
-  const [isRetryingShipment, setIsRetryingShipment] = useState(false)
+    useState<DeliveryHubShipmentOperationsSnapshot | null>(null);
+  const [shipmentOperationsError, setShipmentOperationsError] =
+    useState<ApiErrorPayload | null>(null);
+  const [shipmentOperationsNotice, setShipmentOperationsNotice] = useState<
+    string | null
+  >(null);
+  const [isLoadingShipmentOperations, setIsLoadingShipmentOperations] =
+    useState(false);
+  const [isRefreshingShipmentStatus, setIsRefreshingShipmentStatus] =
+    useState(false);
+  const [isCancellingShipment, setIsCancellingShipment] = useState(false);
+  const [isRetryingShipment, setIsRetryingShipment] = useState(false);
 
   const activeConnection = useMemo(() => {
     if (!activeConnectionId) {
-      return null
+      return null;
     }
 
-    return connections.find((connection) => connection.id === activeConnectionId) || null
-  }, [activeConnectionId, connections])
+    return (
+      connections.find((connection) => connection.id === activeConnectionId) ||
+      null
+    );
+  }, [activeConnectionId, connections]);
 
   const activeWarehouse = useMemo(() => {
     if (!activeWarehouseId) {
-      return null
+      return null;
     }
 
-    return warehouses.find((warehouse) => warehouse.id === activeWarehouseId) || null
-  }, [activeWarehouseId, warehouses])
+    return (
+      warehouses.find((warehouse) => warehouse.id === activeWarehouseId) || null
+    );
+  }, [activeWarehouseId, warehouses]);
 
   const yandexProvider = useMemo(
     () => providers.find((provider) => provider.code === "yandex") || null,
-    [providers]
-  )
+    [providers],
+  );
 
   const observedEncryptionDisabled = useMemo(() => {
     return getObservedEncryptionDisabled({
@@ -244,36 +346,54 @@ const DeliverySettingsPage = () => {
       activeConnection,
       formError,
       testConnectionError,
-    })
-  }, [activeConnection, connections, formError, testConnectionError])
+    });
+  }, [activeConnection, connections, formError, testConnectionError]);
 
-  const yandexConnections = useMemo(() => getYandexConnections(connections), [connections])
+  const yandexConnections = useMemo(
+    () => getYandexConnections(connections),
+    [connections],
+  );
 
-  const yandexWarehouses = useMemo(() => getYandexWarehouses(warehouses), [warehouses])
+  const yandexWarehouses = useMemo(
+    () => getYandexWarehouses(warehouses),
+    [warehouses],
+  );
 
   const filteredEventLogs = useMemo(() => {
-    return getFilteredEventLogs(eventLogs, activeConnectionId)
-  }, [activeConnectionId, eventLogs])
+    return getFilteredEventLogs(eventLogs, activeConnectionId);
+  }, [activeConnectionId, eventLogs]);
 
   const shippingOptionSyncCapability = useMemo(() => {
     return getShippingOptionSyncCapability({
       executeGuard: shippingOptionSyncExecuteGuard,
       serviceZoneId: shippingOptionSyncServiceZoneId,
       shippingProfileId: shippingOptionSyncShippingProfileId,
-    })
+    });
   }, [
     shippingOptionSyncExecuteGuard,
     shippingOptionSyncServiceZoneId,
     shippingOptionSyncShippingProfileId,
-  ])
+  ]);
 
-  const shippingOptionSyncExecuteGuardConfirmed = shippingOptionSyncCapability.guardConfirmed
-  const canExecuteShippingOptionSync = shippingOptionSyncCapability.canExecute
+  const testConnectionCapability = useMemo(
+    () =>
+      getTestConnectionCapability({ activeConnectionId, isLoading, isSaving }),
+    [activeConnectionId, isLoading, isSaving],
+  );
+
+  const testQuoteCapability = useMemo(
+    () => getTestQuoteCapability(testQuoteForm),
+    [testQuoteForm],
+  );
+
+  const shippingOptionSyncExecuteGuardConfirmed =
+    shippingOptionSyncCapability.guardConfirmed;
+  const canExecuteShippingOptionSync = shippingOptionSyncCapability.canExecute;
 
   const previewRenderState = useMemo(
     () => deriveShippingOptionPreviewRenderState(shippingOptionPreview),
-    [shippingOptionPreview]
-  )
+    [shippingOptionPreview],
+  );
 
   const manualSyncRenderState = useMemo(
     () =>
@@ -288,18 +408,18 @@ const DeliverySettingsPage = () => {
       shippingOptionSyncResult,
       shippingOptionSyncServiceZoneId,
       shippingOptionSyncShippingProfileId,
-    ]
-  )
+    ],
+  );
 
   const fulfillmentBridgeRenderState = useMemo(
     () => deriveFulfillmentBridgePreviewRenderState(fulfillmentBridgePreview),
-    [fulfillmentBridgePreview]
-  )
+    [fulfillmentBridgePreview],
+  );
 
   const executionPlanRenderState = useMemo(
     () => deriveExecutionPlanObservabilityRenderState(executionPlanPreview),
-    [executionPlanPreview]
-  )
+    [executionPlanPreview],
+  );
 
   const shipmentOperationsRenderState = useMemo(
     () =>
@@ -307,14 +427,14 @@ const DeliverySettingsPage = () => {
         form: shipmentOperationsForm,
         snapshot: shipmentOperationsSnapshot,
       }),
-    [shipmentOperationsForm, shipmentOperationsSnapshot]
-  )
+    [shipmentOperationsForm, shipmentOperationsSnapshot],
+  );
 
   const loadData = async (silent = false) => {
     if (silent) {
-      setIsRefreshing(true)
+      setIsRefreshing(true);
     } else {
-      setIsLoading(true)
+      setIsLoading(true);
     }
 
     try {
@@ -327,176 +447,261 @@ const DeliverySettingsPage = () => {
         fulfillmentBridgePayload,
         executionPlanPayload,
       ] = await Promise.all([
-        requestJson<{ providers: DeliveryProviderDefinition[] }>("/admin/delivery/providers", {
-          method: "GET",
-        }),
-        requestJson<{ connections: DeliveryConnection[] }>("/admin/delivery/connections", {
-          method: "GET",
-        }),
-        requestJson<{ warehouses: DeliveryWarehouse[] }>("/admin/delivery/warehouses", {
-          method: "GET",
-        }),
-        requestJson<{ logs: DeliveryEventLog[] }>("/admin/delivery/logs?provider_code=yandex&limit=20", {
-          method: "GET",
-        }),
+        requestJson<{ providers: DeliveryProviderDefinition[] }>(
+          "/admin/delivery/providers",
+          {
+            method: "GET",
+          },
+        ),
+        requestJson<{ connections: DeliveryConnection[] }>(
+          "/admin/delivery/connections",
+          {
+            method: "GET",
+          },
+        ),
+        requestJson<{ warehouses: DeliveryWarehouse[] }>(
+          "/admin/delivery/warehouses",
+          {
+            method: "GET",
+          },
+        ),
+        requestJson<{ logs: DeliveryEventLog[] }>(
+          "/admin/delivery/logs?provider_code=yandex&limit=20",
+          {
+            method: "GET",
+          },
+        ),
         requestJson<{ preview: DeliveryHubShippingOptionPreview }>(
           "/admin/delivery/shipping-options/preview",
           {
             method: "GET",
-          }
+          },
         ),
         requestJson<{ preview: DeliveryHubFulfillmentBridgeReadinessPreview }>(
           "/admin/delivery/fulfillment-bridge/preview",
           {
             method: "GET",
-          }
+          },
         ),
-        requestJson<{ preview: DeliveryHubExecutionPlanObservabilityReadModel }>(
-          "/admin/delivery/execution-plan/preview",
-          {
-            method: "GET",
-          }
-        ),
-      ])
+        requestJson<{
+          preview: DeliveryHubExecutionPlanObservabilityReadModel;
+        }>("/admin/delivery/execution-plan/preview", {
+          method: "GET",
+        }),
+      ]);
 
-      setProviders(providersPayload.providers || [])
-      setConnections(connectionsPayload.connections || [])
-      setWarehouses(warehousesPayload.warehouses || [])
-      setEventLogs(logsPayload.logs || [])
-      setShippingOptionPreview(previewPayload.preview || null)
-      setFulfillmentBridgePreview(fulfillmentBridgePayload.preview || null)
-      setExecutionPlanPreview(executionPlanPayload.preview || null)
-      setPageError(null)
+      setProviders(providersPayload.providers || []);
+      setConnections(connectionsPayload.connections || []);
+      setWarehouses(warehousesPayload.warehouses || []);
+      setEventLogs(logsPayload.logs || []);
+      setShippingOptionPreview(previewPayload.preview || null);
+      setFulfillmentBridgePreview(fulfillmentBridgePayload.preview || null);
+      setExecutionPlanPreview(executionPlanPayload.preview || null);
+      setPageError(null);
 
-      const nextConnections = connectionsPayload.connections || []
+      const nextConnections = connectionsPayload.connections || [];
 
-      if (activeConnectionId && !nextConnections.some((connection) => connection.id === activeConnectionId)) {
-        setActiveConnectionId(null)
+      if (
+        activeConnectionId &&
+        !nextConnections.some(
+          (connection) => connection.id === activeConnectionId,
+        )
+      ) {
+        setActiveConnectionId(null);
       }
 
-      const nextWarehouses = warehousesPayload.warehouses || []
+      const nextWarehouses = warehousesPayload.warehouses || [];
 
-      if (activeWarehouseId && !nextWarehouses.some((warehouse) => warehouse.id === activeWarehouseId)) {
-        setActiveWarehouseId(null)
+      if (
+        activeWarehouseId &&
+        !nextWarehouses.some((warehouse) => warehouse.id === activeWarehouseId)
+      ) {
+        setActiveWarehouseId(null);
       }
+
+      const defaultYandexConnectionId =
+        nextConnections.find(
+          (connection) => connection.provider_code === "yandex",
+        )?.id || "";
 
       setTestQuoteForm((current) => {
-        if (current.connection_id && nextConnections.some((connection) => connection.id === current.connection_id)) {
-          return current
+        if (
+          current.connection_id &&
+          nextConnections.some(
+            (connection) => connection.id === current.connection_id,
+          )
+        ) {
+          return current;
         }
 
         return {
           ...current,
-          connection_id: nextConnections.find((connection) => connection.provider_code === "yandex")?.id || "",
-        }
-      })
+          connection_id: defaultYandexConnectionId,
+        };
+      });
+
+      setPickupPointLookupForm((current) => ({
+        ...current,
+        connection_id: current.connection_id || defaultYandexConnectionId,
+      }));
+
+      setPickupWindowLookupForm((current) => ({
+        ...current,
+        connection_id: current.connection_id || defaultYandexConnectionId,
+        warehouse_id:
+          current.warehouse_id ||
+          nextWarehouses.find(
+            (warehouse) =>
+              warehouse.provider_code === "yandex" && warehouse.enabled,
+          )?.id ||
+          "",
+      }));
     } catch (error) {
-      setPageError(error as ApiErrorPayload)
+      setPageError(error as ApiErrorPayload);
     } finally {
       if (silent) {
-        setIsRefreshing(false)
+        setIsRefreshing(false);
       } else {
-        setIsLoading(false)
+        setIsLoading(false);
       }
     }
-  }
+  };
 
   useEffect(() => {
-    void loadData()
-  }, [])
+    void loadData();
+  }, []);
 
   useEffect(() => {
     if (activeConnection) {
-      setConnectionForm(connectionToForm(activeConnection))
+      setConnectionForm(connectionToForm(activeConnection));
       setTestQuoteForm((current) => ({
         ...current,
         connection_id: activeConnection.id,
-      }))
-      return
+      }));
+      setPickupPointLookupForm((current) => ({
+        ...current,
+        connection_id: activeConnection.id,
+      }));
+      setPickupWindowLookupForm((current) => ({
+        ...current,
+        connection_id: activeConnection.id,
+      }));
+      return;
     }
 
-    setConnectionForm(defaultConnectionForm)
-  }, [activeConnection])
+    setConnectionForm(defaultConnectionForm);
+  }, [activeConnection]);
 
   useEffect(() => {
     if (activeWarehouse) {
-      setWarehouseForm(warehouseToForm(activeWarehouse))
+      setWarehouseForm(warehouseToForm(activeWarehouse));
       setTestQuoteForm((current) => {
         if (current.warehouse_id === activeWarehouse.id) {
-          return current
+          return current;
         }
+
+        setPickupWindowLookupForm((lookup) => ({
+          ...lookup,
+          warehouse_id: lookup.warehouse_id || activeWarehouse.id,
+        }));
 
         return {
           ...current,
           warehouse_id: current.warehouse_id || activeWarehouse.id,
-        }
-      })
-      return
+        };
+      });
+      return;
     }
 
-    setWarehouseForm(defaultWarehouseForm)
-  }, [activeWarehouse])
+    setWarehouseForm(defaultWarehouseForm);
+  }, [activeWarehouse]);
 
   const handleFormField = <K extends keyof DeliveryConnectionForm>(
     key: K,
-    value: DeliveryConnectionForm[K]
+    value: DeliveryConnectionForm[K],
   ) => {
     setConnectionForm((current) => ({
       ...current,
       [key]: value,
-    }))
-  }
+    }));
+  };
 
   const handleQuoteField = <K extends keyof DeliveryTestQuoteForm>(
     key: K,
-    value: DeliveryTestQuoteForm[K]
+    value: DeliveryTestQuoteForm[K],
   ) => {
     setTestQuoteForm((current) => ({
       ...current,
       [key]: value,
-    }))
-  }
+    }));
+  };
+
+  const handlePickupPointLookupField = <
+    K extends keyof DeliveryHubPickupPointLookupForm,
+  >(
+    key: K,
+    value: DeliveryHubPickupPointLookupForm[K],
+  ) => {
+    setPickupPointLookupForm((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  };
+
+  const handlePickupWindowLookupField = <
+    K extends keyof DeliveryHubPickupWindowLookupForm,
+  >(
+    key: K,
+    value: DeliveryHubPickupWindowLookupForm[K],
+  ) => {
+    setPickupWindowLookupForm((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  };
 
   const handleWarehouseField = <K extends keyof DeliveryWarehouseForm>(
     key: K,
-    value: DeliveryWarehouseForm[K]
+    value: DeliveryWarehouseForm[K],
   ) => {
     setWarehouseForm((current) => ({
       ...current,
       [key]: value,
-    }))
-  }
+    }));
+  };
 
-  const handleShipmentOperationsField = <K extends keyof DeliveryHubShipmentOperationsForm>(
+  const handleShipmentOperationsField = <
+    K extends keyof DeliveryHubShipmentOperationsForm,
+  >(
     key: K,
-    value: DeliveryHubShipmentOperationsForm[K]
+    value: DeliveryHubShipmentOperationsForm[K],
   ) => {
     setShipmentOperationsForm((current) => ({
       ...current,
       [key]: value,
-    }))
-  }
+    }));
+  };
 
   const startCreate = () => {
-    setActiveConnectionId(null)
-    setConnectionForm(defaultConnectionForm)
-    setFormError(null)
-    setFormNotice(null)
-    setTestConnectionError(null)
-    setTestConnectionResult(null)
-  }
+    setActiveConnectionId(null);
+    setConnectionForm(defaultConnectionForm);
+    setFormError(null);
+    setFormNotice(null);
+    setTestConnectionError(null);
+    setTestConnectionResult(null);
+  };
 
   const startCreateWarehouse = () => {
-    setActiveWarehouseId(null)
-    setWarehouseForm(defaultWarehouseForm)
-    setWarehouseFormError(null)
-    setWarehouseFormNotice(null)
-  }
+    setActiveWarehouseId(null);
+    setWarehouseForm(defaultWarehouseForm);
+    setWarehouseFormError(null);
+    setWarehouseFormNotice(null);
+  };
 
   const handleSave = async () => {
-    setIsSaving(true)
-    setFormError(null)
-    setFormNotice(null)
+    setIsSaving(true);
+    setFormError(null);
+    setFormNotice(null);
 
     try {
       const payload = {
@@ -513,7 +718,7 @@ const DeliverySettingsPage = () => {
               },
             }
           : {}),
-      }
+      };
 
       const result = activeConnectionId
         ? await requestJson<{ connection: DeliveryConnection }>(
@@ -521,28 +726,35 @@ const DeliverySettingsPage = () => {
             {
               method: "PUT",
               body: JSON.stringify(payload),
-            }
+            },
           )
-        : await requestJson<{ connection: DeliveryConnection }>("/admin/delivery/connections", {
-            method: "POST",
-            body: JSON.stringify(payload),
-          })
+        : await requestJson<{ connection: DeliveryConnection }>(
+            "/admin/delivery/connections",
+            {
+              method: "POST",
+              body: JSON.stringify(payload),
+            },
+          );
 
-      setActiveConnectionId(result.connection.id)
-      setConnectionForm(connectionToForm(result.connection))
-      setFormNotice(activeConnectionId ? "Yandex connection updated" : "Yandex connection created")
-      await loadData(true)
+      setActiveConnectionId(result.connection.id);
+      setConnectionForm(connectionToForm(result.connection));
+      setFormNotice(
+        activeConnectionId
+          ? "Yandex connection updated"
+          : "Yandex connection created",
+      );
+      await loadData(true);
     } catch (error) {
-      setFormError(error as ApiErrorPayload)
+      setFormError(error as ApiErrorPayload);
     } finally {
-      setIsSaving(false)
+      setIsSaving(false);
     }
-  }
+  };
 
   const handleSaveWarehouse = async () => {
-    setIsSavingWarehouse(true)
-    setWarehouseFormError(null)
-    setWarehouseFormNotice(null)
+    setIsSavingWarehouse(true);
+    setWarehouseFormError(null);
+    setWarehouseFormNotice(null);
 
     try {
       const payload = {
@@ -554,8 +766,9 @@ const DeliverySettingsPage = () => {
         contact_name: warehouseForm.contact_name.trim() || undefined,
         contact_phone: warehouseForm.contact_phone.trim() || undefined,
         provider_code: warehouseForm.provider_code.trim() || undefined,
-        provider_warehouse_id: warehouseForm.provider_warehouse_id.trim() || undefined,
-      }
+        provider_warehouse_id:
+          warehouseForm.provider_warehouse_id.trim() || undefined,
+      };
 
       const result = activeWarehouseId
         ? await requestJson<{ warehouse: DeliveryWarehouse }>(
@@ -563,114 +776,245 @@ const DeliverySettingsPage = () => {
             {
               method: "PUT",
               body: JSON.stringify(payload),
-            }
+            },
           )
-        : await requestJson<{ warehouse: DeliveryWarehouse }>("/admin/delivery/warehouses", {
-            method: "POST",
-            body: JSON.stringify(payload),
-          })
+        : await requestJson<{ warehouse: DeliveryWarehouse }>(
+            "/admin/delivery/warehouses",
+            {
+              method: "POST",
+              body: JSON.stringify(payload),
+            },
+          );
 
-      setActiveWarehouseId(result.warehouse.id)
-      setWarehouseForm(warehouseToForm(result.warehouse))
-      setWarehouseFormNotice(activeWarehouseId ? "Warehouse updated" : "Warehouse created")
-      await loadData(true)
+      setActiveWarehouseId(result.warehouse.id);
+      setWarehouseForm(warehouseToForm(result.warehouse));
+      setWarehouseFormNotice(
+        activeWarehouseId ? "Warehouse updated" : "Warehouse created",
+      );
+      await loadData(true);
     } catch (error) {
-      setWarehouseFormError(error as ApiErrorPayload)
+      setWarehouseFormError(error as ApiErrorPayload);
     } finally {
-      setIsSavingWarehouse(false)
+      setIsSavingWarehouse(false);
     }
-  }
+  };
 
   const handleTestConnection = async () => {
     if (!activeConnectionId) {
       setTestConnectionError({
         status: 400,
         code: "DELIVERY_HUB_CONNECTION_REQUIRED",
-        message: "Save the connection before running Test connection",
+        message: "Save the connection before running Проверить подключение",
         details: null,
-      })
-      setTestConnectionResult(null)
-      return
+      });
+      setTestConnectionResult(null);
+      return;
     }
 
-    setIsTestingConnection(true)
-    setTestConnectionError(null)
-    setTestConnectionResult(null)
+    setIsTestingConnection(true);
+    setTestConnectionError(null);
+    setTestConnectionResult(null);
 
     try {
-      const payload = await requestJson<{ ok: boolean; result: DeliveryTestConnectionResult }>(
-        `/admin/delivery/connections/${activeConnectionId}/test`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            include_pickup_points: includePickupPoints,
-          }),
-        }
-      )
+      const payload = await requestJson<{
+        ok: boolean;
+        result: DeliveryTestConnectionResult;
+      }>(`/admin/delivery/connections/${activeConnectionId}/test`, {
+        method: "POST",
+        body: JSON.stringify({
+          include_pickup_points: includePickupPoints,
+        }),
+      });
 
-      setTestConnectionResult(payload.result)
-      await loadData(true)
+      setTestConnectionResult(payload.result);
+      await loadData(true);
     } catch (error) {
-      setTestConnectionError(error as ApiErrorPayload)
-      await loadData(true)
+      setTestConnectionError(error as ApiErrorPayload);
+      await loadData(true);
     } finally {
-      setIsTestingConnection(false)
+      setIsTestingConnection(false);
     }
-  }
+  };
+
+  const handleLoadPickupPoints = async () => {
+    if (!pickupPointLookupForm.connection_id.trim()) {
+      setPickupPointLookupError({
+        status: 400,
+        code: "DELIVERY_HUB_CONNECTION_REQUIRED",
+        message: "Выберите сохранённое подключение перед загрузкой ПВЗ.",
+        details: null,
+      });
+      setPickupPointLookupResult(null);
+      return;
+    }
+
+    setIsLoadingPickupPoints(true);
+    setPickupPointLookupError(null);
+    setPickupPointLookupResult(null);
+
+    try {
+      const payload = await requestJson<DeliveryHubPickupPointLookupResponse>(
+        `/admin/delivery/pickup-points?${buildPickupPointLookupQuery(pickupPointLookupForm)}`,
+        { method: "GET" },
+      );
+
+      setPickupPointLookupResult(payload);
+    } catch (error) {
+      setPickupPointLookupError(error as ApiErrorPayload);
+    } finally {
+      setIsLoadingPickupPoints(false);
+    }
+  };
+
+  const handleUsePickupPointAsDestination = (pointId: string) => {
+    handleQuoteField("destination_point_id", pointId);
+    setPickupWindowLookupForm((current) => ({
+      ...current,
+      destination_point_id: pointId,
+    }));
+  };
+
+  const handleUseYandexSandboxPickupPoint = () => {
+    handleUsePickupPointAsDestination(YANDEX_VERIFIED_SANDBOX_PVZ.id);
+    setPickupPointLookupForm((current) =>
+      buildYandexSandboxPickupPointLookupForm(current),
+    );
+  };
+
+  const handleUsePickupPointAsOrigin = (pointId: string) => {
+    handleQuoteField("origin_point_id", pointId);
+  };
+
+  const handleLoadPickupWindows = async () => {
+    if (
+      !pickupWindowLookupForm.connection_id.trim() ||
+      !pickupWindowLookupForm.warehouse_id.trim() ||
+      !pickupWindowLookupForm.destination_point_id.trim()
+    ) {
+      setPickupWindowLookupError({
+        status: 400,
+        code: "DELIVERY_HUB_PICKUP_WINDOWS_INPUT_REQUIRED",
+        message:
+          "Выберите сохранённое подключение, склад и destination PVZ id перед загрузкой pickup windows.",
+        details: null,
+      });
+      setPickupWindowLookupResult(null);
+      return;
+    }
+
+    setIsLoadingPickupWindows(true);
+    setPickupWindowLookupError(null);
+    setPickupWindowLookupResult(null);
+
+    try {
+      const payload = await requestJson<DeliveryHubPickupWindowLookupResponse>(
+        `/admin/delivery/pickup-windows?${buildPickupWindowLookupQuery(pickupWindowLookupForm)}`,
+        { method: "GET" },
+      );
+
+      setPickupWindowLookupResult(payload);
+    } catch (error) {
+      setPickupWindowLookupError(error as ApiErrorPayload);
+    } finally {
+      setIsLoadingPickupWindows(false);
+    }
+  };
+
+  const handleUsePickupWindowInterval = (
+    window: DeliveryHubPickupWindowLookupResponse["windows"][number],
+  ) => {
+    setTestQuoteForm((current) => ({
+      ...current,
+      mode_code: "warehouse_to_pickup_point",
+      connection_id:
+        pickupWindowLookupForm.connection_id || current.connection_id,
+      warehouse_id: pickupWindowLookupForm.warehouse_id || current.warehouse_id,
+      destination_point_id:
+        pickupWindowLookupForm.destination_point_id ||
+        current.destination_point_id,
+      interval_from: window.interval_utc.from,
+      interval_to: window.interval_utc.to,
+    }));
+  };
 
   const handleTestQuote = async () => {
-    setIsTestingQuote(true)
-    setTestQuoteError(null)
-    setTestQuoteResult(null)
+    if (!testQuoteCapability.canTest) {
+      setTestQuoteError({
+        status: 400,
+        code: "DELIVERY_HUB_TEST_QUOTE_INPUT_REQUIRED",
+        message:
+          testQuoteCapability.errorMessage ||
+          "Заполните обязательные поля перед Test quote.",
+        details: {
+          blocking_reasons: testQuoteCapability.blockingReasons,
+        },
+      });
+      setTestQuoteResult(null);
+      return;
+    }
+
+    setIsTestingQuote(true);
+    setTestQuoteError(null);
+    setTestQuoteResult(null);
 
     try {
       const items = {
-        quantity: testQuoteForm.item_quantity ? Number(testQuoteForm.item_quantity) : undefined,
+        quantity: testQuoteForm.item_quantity
+          ? Number(testQuoteForm.item_quantity)
+          : undefined,
         weight_grams: testQuoteForm.item_weight_grams
           ? Number(testQuoteForm.item_weight_grams)
           : undefined,
-        price: testQuoteForm.item_price ? Number(testQuoteForm.item_price) : undefined,
-      }
+        price: testQuoteForm.item_price
+          ? Number(testQuoteForm.item_price)
+          : undefined,
+      };
 
-      const payload = await requestJson<DeliveryTestQuoteResponse>("/admin/delivery/test-quote", {
-        method: "POST",
-        body: JSON.stringify({
-          connection_id: testQuoteForm.connection_id,
-          mode_code: testQuoteForm.mode_code,
-          destination_point_id: testQuoteForm.destination_point_id.trim(),
-          currency_code: testQuoteForm.currency_code.trim().toUpperCase() || undefined,
-          warehouse_id:
-            testQuoteForm.mode_code === "warehouse_to_pickup_point"
-              ? testQuoteForm.warehouse_id.trim()
-              : undefined,
-          origin_point_id:
-            testQuoteForm.mode_code === "dropoff_point_to_pickup_point"
-              ? testQuoteForm.origin_point_id.trim()
-              : undefined,
-          interval_utc:
-            testQuoteForm.mode_code === "warehouse_to_pickup_point" &&
-            testQuoteForm.interval_from.trim() &&
-            testQuoteForm.interval_to.trim()
-              ? {
-                  from: testQuoteForm.interval_from.trim(),
-                  to: testQuoteForm.interval_to.trim(),
-                }
-              : undefined,
-          items: [items],
-        }),
-      })
+      const payload = await requestJson<DeliveryTestQuoteResponse>(
+        "/admin/delivery/test-quote",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            connection_id: testQuoteForm.connection_id,
+            mode_code: testQuoteForm.mode_code,
+            destination_point_id: testQuoteForm.destination_point_id.trim(),
+            currency_code:
+              testQuoteForm.currency_code.trim().toUpperCase() || undefined,
+            warehouse_id:
+              testQuoteForm.mode_code === "warehouse_to_pickup_point"
+                ? testQuoteForm.warehouse_id.trim()
+                : undefined,
+            origin_point_id:
+              testQuoteForm.mode_code === "dropoff_point_to_pickup_point"
+                ? testQuoteForm.origin_point_id.trim()
+                : undefined,
+            interval_utc:
+              testQuoteForm.mode_code === "warehouse_to_pickup_point" &&
+              testQuoteForm.interval_from.trim() &&
+              testQuoteForm.interval_to.trim()
+                ? {
+                    from: testQuoteForm.interval_from.trim(),
+                    to: testQuoteForm.interval_to.trim(),
+                  }
+                : undefined,
+            items: [items],
+          }),
+        },
+      );
 
-      setTestQuoteResult(payload)
+      setTestQuoteResult(payload);
     } catch (error) {
-      setTestQuoteError(error as ApiErrorPayload)
+      setTestQuoteError(error as ApiErrorPayload);
     } finally {
-      setIsTestingQuote(false)
+      setIsTestingQuote(false);
     }
-  }
+  };
 
-  const handleShippingOptionSync = async (mode: DeliveryHubShippingOptionManualSyncMode) => {
-    setIsRunningShippingOptionSync(true)
-    setShippingOptionSyncError(null)
+  const handleShippingOptionSync = async (
+    mode: DeliveryHubShippingOptionManualSyncMode,
+  ) => {
+    setIsRunningShippingOptionSync(true);
+    setShippingOptionSyncError(null);
 
     try {
       const payload =
@@ -683,23 +1027,23 @@ const DeliverySettingsPage = () => {
             })
           : buildDeliveryHubShippingOptionManualSyncDryRunRequest({
               on_error: shippingOptionSyncErrorMode,
-            })
+            });
 
-      const result = await requestJson<{ ok: boolean; sync: DeliveryHubShippingOptionManualSyncResponse }>(
-        "/admin/delivery/shipping-options/sync",
-        {
-          method: "POST",
-          body: JSON.stringify(payload),
-        }
-      )
+      const result = await requestJson<{
+        ok: boolean;
+        sync: DeliveryHubShippingOptionManualSyncResponse;
+      }>("/admin/delivery/shipping-options/sync", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
 
-      setShippingOptionSyncResult(result.sync)
+      setShippingOptionSyncResult(result.sync);
 
       if (mode === "execute") {
-        setShippingOptionSyncExecuteGuard("")
+        setShippingOptionSyncExecuteGuard("");
       }
 
-      await loadData(true)
+      await loadData(true);
     } catch (error) {
       if (error instanceof Error) {
         setShippingOptionSyncError({
@@ -707,30 +1051,32 @@ const DeliverySettingsPage = () => {
           code: "DELIVERY_HUB_MANUAL_SYNC_UI_ERROR",
           message: error.message,
           details: null,
-        })
+        });
       } else {
-        setShippingOptionSyncError(error as ApiErrorPayload)
+        setShippingOptionSyncError(error as ApiErrorPayload);
       }
     } finally {
-      setIsRunningShippingOptionSync(false)
+      setIsRunningShippingOptionSync(false);
     }
-  }
+  };
 
   const handleLoadShipmentOperations = async () => {
-    setIsLoadingShipmentOperations(true)
-    setShipmentOperationsError(null)
-    setShipmentOperationsNotice(null)
+    setIsLoadingShipmentOperations(true);
+    setShipmentOperationsError(null);
+    setShipmentOperationsNotice(null);
 
     try {
       const payload = await requestJson<DeliveryHubShipmentOperationsResponse>(
-        buildShipmentOperationsSnapshotUrl(shipmentOperationsForm.execution_reference),
+        buildShipmentOperationsSnapshotUrl(
+          shipmentOperationsForm.execution_reference,
+        ),
         {
           method: "GET",
-        }
-      )
+        },
+      );
 
-      setShipmentOperationsSnapshot(payload.operations)
-      setShipmentOperationsNotice("Shipment operations snapshot loaded")
+      setShipmentOperationsSnapshot(payload.operations);
+      setShipmentOperationsNotice("Shipment operations snapshot loaded");
     } catch (error) {
       if (error instanceof Error) {
         setShipmentOperationsError({
@@ -738,32 +1084,39 @@ const DeliverySettingsPage = () => {
           code: "DELIVERY_HUB_SHIPMENT_OPERATIONS_UI_ERROR",
           message: error.message,
           details: null,
-        })
+        });
       } else {
-        setShipmentOperationsError(error as ApiErrorPayload)
+        setShipmentOperationsError(error as ApiErrorPayload);
       }
-      setShipmentOperationsSnapshot(null)
+      setShipmentOperationsSnapshot(null);
     } finally {
-      setIsLoadingShipmentOperations(false)
+      setIsLoadingShipmentOperations(false);
     }
-  }
+  };
 
   const handleRefreshShipmentStatus = async () => {
-    setIsRefreshingShipmentStatus(true)
-    setShipmentOperationsError(null)
-    setShipmentOperationsNotice(null)
+    setIsRefreshingShipmentStatus(true);
+    setShipmentOperationsError(null);
+    setShipmentOperationsNotice(null);
 
     try {
-      const payload = await requestJson<DeliveryHubShipmentOperationsRefreshResponse>(
-        buildShipmentOperationsRefreshStatusUrl(shipmentOperationsForm.execution_reference),
-        {
-          method: "POST",
-          body: JSON.stringify(buildShipmentOperationsRefreshStatusRequestBody()),
-        }
-      )
+      const payload =
+        await requestJson<DeliveryHubShipmentOperationsRefreshResponse>(
+          buildShipmentOperationsRefreshStatusUrl(
+            shipmentOperationsForm.execution_reference,
+          ),
+          {
+            method: "POST",
+            body: JSON.stringify(
+              buildShipmentOperationsRefreshStatusRequestBody(),
+            ),
+          },
+        );
 
-      setShipmentOperationsSnapshot(payload.operations)
-      setShipmentOperationsNotice(`Status refresh returned ${String(payload.refresh?.status ?? "result")}`)
+      setShipmentOperationsSnapshot(payload.operations);
+      setShipmentOperationsNotice(
+        `Status refresh returned ${String(payload.refresh?.status ?? "result")}`,
+      );
     } catch (error) {
       if (error instanceof Error) {
         setShipmentOperationsError({
@@ -771,31 +1124,36 @@ const DeliverySettingsPage = () => {
           code: "DELIVERY_HUB_SHIPMENT_STATUS_REFRESH_UI_ERROR",
           message: error.message,
           details: null,
-        })
+        });
       } else {
-        setShipmentOperationsError(error as ApiErrorPayload)
+        setShipmentOperationsError(error as ApiErrorPayload);
       }
     } finally {
-      setIsRefreshingShipmentStatus(false)
+      setIsRefreshingShipmentStatus(false);
     }
-  }
+  };
 
   const handleCancelShipment = async () => {
-    setIsCancellingShipment(true)
-    setShipmentOperationsError(null)
-    setShipmentOperationsNotice(null)
+    setIsCancellingShipment(true);
+    setShipmentOperationsError(null);
+    setShipmentOperationsNotice(null);
 
     try {
-      const payload = await requestJson<DeliveryHubShipmentOperationsCancelResponse>(
-        buildShipmentOperationsCancelUrl(shipmentOperationsForm.execution_reference),
-        {
-          method: "POST",
-          body: JSON.stringify(buildShipmentOperationsCancelRequestBody()),
-        }
-      )
+      const payload =
+        await requestJson<DeliveryHubShipmentOperationsCancelResponse>(
+          buildShipmentOperationsCancelUrl(
+            shipmentOperationsForm.execution_reference,
+          ),
+          {
+            method: "POST",
+            body: JSON.stringify(buildShipmentOperationsCancelRequestBody()),
+          },
+        );
 
-      setShipmentOperationsSnapshot(payload.operations)
-      setShipmentOperationsNotice(`Cancel returned ${String(payload.cancel?.status ?? "result")}`)
+      setShipmentOperationsSnapshot(payload.operations);
+      setShipmentOperationsNotice(
+        `Cancel returned ${String(payload.cancel?.status ?? "result")}`,
+      );
     } catch (error) {
       if (error instanceof Error) {
         setShipmentOperationsError({
@@ -803,31 +1161,36 @@ const DeliverySettingsPage = () => {
           code: "DELIVERY_HUB_SHIPMENT_CANCEL_UI_ERROR",
           message: error.message,
           details: null,
-        })
+        });
       } else {
-        setShipmentOperationsError(error as ApiErrorPayload)
+        setShipmentOperationsError(error as ApiErrorPayload);
       }
     } finally {
-      setIsCancellingShipment(false)
+      setIsCancellingShipment(false);
     }
-  }
+  };
 
   const handleRetryShipment = async () => {
-    setIsRetryingShipment(true)
-    setShipmentOperationsError(null)
-    setShipmentOperationsNotice(null)
+    setIsRetryingShipment(true);
+    setShipmentOperationsError(null);
+    setShipmentOperationsNotice(null);
 
     try {
-      const payload = await requestJson<DeliveryHubShipmentOperationsRetryResponse>(
-        buildShipmentOperationsRetryUrl(shipmentOperationsForm.execution_reference),
-        {
-          method: "POST",
-          body: JSON.stringify({}),
-        }
-      )
+      const payload =
+        await requestJson<DeliveryHubShipmentOperationsRetryResponse>(
+          buildShipmentOperationsRetryUrl(
+            shipmentOperationsForm.execution_reference,
+          ),
+          {
+            method: "POST",
+            body: JSON.stringify({}),
+          },
+        );
 
-      setShipmentOperationsSnapshot(payload.operations)
-      setShipmentOperationsNotice(`Retry returned ${String(payload.retry?.status ?? "result")}`)
+      setShipmentOperationsSnapshot(payload.operations);
+      setShipmentOperationsNotice(
+        `Retry returned ${String(payload.retry?.status ?? "result")}`,
+      );
     } catch (error) {
       if (error instanceof Error) {
         setShipmentOperationsError({
@@ -835,25 +1198,31 @@ const DeliverySettingsPage = () => {
           code: "DELIVERY_HUB_SHIPMENT_RETRY_UI_ERROR",
           message: error.message,
           details: null,
-        })
+        });
       } else {
-        setShipmentOperationsError(error as ApiErrorPayload)
+        setShipmentOperationsError(error as ApiErrorPayload);
       }
     } finally {
-      setIsRetryingShipment(false)
+      setIsRetryingShipment(false);
     }
-  }
+  };
 
   return (
     <Container className="divide-y p-0">
       <div className="flex items-center justify-between gap-4 px-6 py-4">
         <div>
-          <Heading level="h1">Delivery</Heading>
+          <Heading level="h1">Доставка</Heading>
           <Text className="text-ui-fg-subtle mt-2">
-            Admin control plane for Delivery Hub tranche-1. Live dispatch remains gated and disabled by default.
+            Панель ручного тестирования Delivery Hub. Боевые shipment-операции
+            остаются закрытыми и по умолчанию выключены.
           </Text>
         </div>
-        <Button type="button" variant="secondary" onClick={() => void loadData(true)} isLoading={isRefreshing}>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => void loadData(true)}
+          isLoading={isRefreshing}
+        >
           Refresh
         </Button>
       </div>
@@ -861,7 +1230,9 @@ const DeliverySettingsPage = () => {
       <div className="grid gap-6 px-6 py-4">
         {pageError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-            <Text className="text-ui-fg-error font-medium">{pageError.message}</Text>
+            <Text className="text-ui-fg-error font-medium">
+              {pageError.message}
+            </Text>
             <Text className="text-ui-fg-subtle mt-1">
               {pageError.code} · HTTP {pageError.status}
             </Text>
@@ -870,17 +1241,23 @@ const DeliverySettingsPage = () => {
 
         {observedEncryptionDisabled ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-            <Text className="font-medium text-amber-800">Credentials encryption is disabled on backend</Text>
+            <Text className="font-medium text-amber-800">
+              Credentials encryption is disabled on backend
+            </Text>
             <Text className="mt-1 text-sm text-amber-700">
-              Token fields stay write-only, but backend cannot seal new credentials until the encryption key is configured.
+              Token fields stay write-only, but backend cannot seal new
+              credentials until the encryption key is configured.
             </Text>
           </div>
         ) : null}
 
-        <div className="rounded-lg border p-4">
-          <Heading level="h2">Providers</Heading>
+        <details className="rounded-lg border p-4">
+          <summary className="cursor-pointer text-base font-medium">
+            Расширенная диагностика: провайдеры и capabilities
+          </summary>
           <Text className="text-ui-fg-subtle mt-2">
-            Available Delivery Hub adapters and their supported diagnostics/capabilities.
+            Технический список Delivery Hub adapters и поддерживаемых
+            diagnostics/capabilities. Для базового тестирования он не нужен.
           </Text>
 
           <div className="mt-4 grid gap-4">
@@ -890,7 +1267,9 @@ const DeliverySettingsPage = () => {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <Text className="font-medium">{provider.label}</Text>
-                      <Text className="text-ui-fg-subtle text-sm">code: {provider.code}</Text>
+                      <Text className="text-ui-fg-subtle text-sm">
+                        code: {provider.code}
+                      </Text>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {provider.supported_mode_codes.map((modeCode) => (
@@ -917,28 +1296,32 @@ const DeliverySettingsPage = () => {
                 </div>
               ))
             ) : (
-              <Text className="text-ui-fg-subtle">No providers returned by backend.</Text>
+              <Text className="text-ui-fg-subtle">
+                No providers returned by backend.
+              </Text>
             )}
           </div>
-        </div>
+        </details>
 
         <div className="rounded-lg border p-4">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <Heading level="h2">Connections</Heading>
+              <Heading level="h2">1. Подключение Яндекс Доставки</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Existing Delivery Hub connections with truthful status and credentials state.
+                Создайте или выберите сохранённое подключение. Токен вводится
+                только при создании или ротации; пустое поле при редактировании
+                означает «оставить сохранённый sealed token».
               </Text>
             </div>
             <Button type="button" variant="secondary" onClick={startCreate}>
-              New Yandex connection
+              Новое подключение Yandex
             </Button>
           </div>
 
           <div className="mt-4 grid gap-3">
             {yandexConnections.length ? (
               yandexConnections.map((connection) => {
-                const isActive = connection.id === activeConnectionId
+                const isActive = connection.id === activeConnectionId;
 
                 return (
                   <button
@@ -946,24 +1329,29 @@ const DeliverySettingsPage = () => {
                     type="button"
                     onClick={() => setActiveConnectionId(connection.id)}
                     className={`rounded-md border p-4 text-left transition-colors ${
-                      isActive ? "border-ui-border-interactive bg-ui-bg-subtle" : "hover:bg-ui-bg-subtle"
+                      isActive
+                        ? "border-ui-border-interactive bg-ui-bg-subtle"
+                        : "hover:bg-ui-bg-subtle"
                     }`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <Text className="font-medium">{connection.name}</Text>
                         <Text className="text-ui-fg-subtle text-sm">
-                          {connection.provider_code} · {connection.mode} · {connection.country_code}
+                          {connection.provider_code} · {connection.mode} ·{" "}
+                          {connection.country_code}
                         </Text>
                       </div>
 
                       <div className="flex flex-wrap gap-2">
-                        <span className={`rounded-full border px-2 py-1 text-xs ${statusToneClass(connection.status)}`}>
+                        <span
+                          className={`rounded-full border px-2 py-1 text-xs ${statusToneClass(connection.status)}`}
+                        >
                           status: {connection.status}
                         </span>
                         <span
                           className={`rounded-full border px-2 py-1 text-xs ${statusToneClass(
-                            connection.credentials_state
+                            connection.credentials_state,
                           )}`}
                         >
                           credentials: {connection.credentials_state}
@@ -975,31 +1363,52 @@ const DeliverySettingsPage = () => {
                     </div>
 
                     <div className="mt-3 grid gap-1 text-sm text-ui-fg-subtle">
-                      <Text>Credentials present: {connection.credentials_present ? "yes" : "no"}</Text>
                       <Text>
-                        Fingerprint: {connection.credentials_fingerprint || "—"} · validated:{" "}
-                        {formatTimestamp(connection.credentials_last_validated_at)}
+                        Credentials present:{" "}
+                        {connection.credentials_present ? "yes" : "no"}
                       </Text>
-                      <Text>Last credential error: {connection.credentials_last_error_code || "—"}</Text>
-                      <Text>Updated: {formatTimestamp(connection.updated_at)}</Text>
+                      <Text>
+                        Fingerprint: {connection.credentials_fingerprint || "—"}{" "}
+                        · validated:{" "}
+                        {formatTimestamp(
+                          connection.credentials_last_validated_at,
+                        )}
+                      </Text>
+                      <Text>
+                        Last credential error:{" "}
+                        {connection.credentials_last_error_code || "—"}
+                      </Text>
+                      <Text>
+                        Updated: {formatTimestamp(connection.updated_at)}
+                      </Text>
                     </div>
                   </button>
-                )
+                );
               })
             ) : (
-              <Text className="text-ui-fg-subtle">No Yandex connections configured yet.</Text>
+              <Text className="text-ui-fg-subtle">
+                Подключений Yandex пока нет.
+              </Text>
             )}
           </div>
 
           <div className="mt-6 rounded-md border p-4">
-            <Heading level="h3">{activeConnectionId ? "Edit selected connection" : "Create Yandex connection"}</Heading>
+            <Heading level="h3">
+              {activeConnectionId
+                ? "Редактировать выбранное подключение"
+                : "Создать подключение Yandex"}
+            </Heading>
             <Text className="text-ui-fg-subtle mt-1 text-sm">
-              Token remains write-only in admin UI. Existing sealed credentials never round-trip back to operators.
+              Токен остаётся write-only: после сохранения он не показывается
+              оператору. При редактировании оставьте поле пустым, чтобы
+              сохранить текущий sealed token.
             </Text>
 
             {formError ? (
               <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
-                <Text className="text-ui-fg-error font-medium">{formError.message}</Text>
+                <Text className="text-ui-fg-error font-medium">
+                  {formError.message}
+                </Text>
                 <Text className="text-ui-fg-subtle mt-1">
                   {formError.code} · HTTP {formError.status}
                 </Text>
@@ -1014,31 +1423,40 @@ const DeliverySettingsPage = () => {
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
-                <Label htmlFor="connection-name">Name</Label>
+                <Label htmlFor="connection-name">Название</Label>
                 <Input
                   id="connection-name"
                   value={connectionForm.name}
-                  onChange={(event) => handleFormField("name", event.target.value)}
+                  onChange={(event) =>
+                    handleFormField("name", event.target.value)
+                  }
                   placeholder="Yandex test"
                 />
               </div>
 
               <div>
-                <Label htmlFor="connection-country">Country code</Label>
+                <Label htmlFor="connection-country">Код страны</Label>
                 <Input
                   id="connection-country"
                   value={connectionForm.country_code}
-                  onChange={(event) => handleFormField("country_code", event.target.value)}
+                  onChange={(event) =>
+                    handleFormField("country_code", event.target.value)
+                  }
                   placeholder="RU"
                 />
               </div>
 
               <div>
-                <Label htmlFor="connection-mode">Mode</Label>
+                <Label htmlFor="connection-mode">Режим</Label>
                 <select
                   id="connection-mode"
                   value={connectionForm.mode}
-                  onChange={(event) => handleFormField("mode", event.target.value as DeliveryConnectionForm["mode"])}
+                  onChange={(event) =>
+                    handleFormField(
+                      "mode",
+                      event.target.value as DeliveryConnectionForm["mode"],
+                    )
+                  }
                   className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active h-10 w-full rounded-md px-3 outline-none"
                 >
                   <option value="test">test</option>
@@ -1046,31 +1464,19 @@ const DeliverySettingsPage = () => {
                 </select>
               </div>
 
-              <div>
-                <Label htmlFor="connection-label-format">Label format</Label>
-                <select
-                  id="connection-label-format"
-                  value={connectionForm.label_format}
-                  onChange={(event) => handleFormField("label_format", event.target.value)}
-                  className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active h-10 w-full rounded-md px-3 outline-none"
-                >
-                  {labelFormatOptions.map((option) => (
-                    <option key={option || "default"} value={option}>
-                      {option || "Default provider format"}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               <div className="md:col-span-2">
-                <Label htmlFor="connection-default-warehouse">Default warehouse</Label>
+                <Label htmlFor="connection-default-warehouse">
+                  Склад по умолчанию
+                </Label>
                 <select
                   id="connection-default-warehouse"
                   value={connectionForm.default_warehouse_id}
-                  onChange={(event) => handleFormField("default_warehouse_id", event.target.value)}
+                  onChange={(event) =>
+                    handleFormField("default_warehouse_id", event.target.value)
+                  }
                   className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active h-10 w-full rounded-md px-3 outline-none"
                 >
-                  <option value="">No default warehouse</option>
+                  <option value="">Без склада по умолчанию</option>
                   {yandexWarehouses.map((warehouse) => (
                     <option key={warehouse.id} value={warehouse.id}>
                       {getWarehouseOptionLabel(warehouse)}
@@ -1080,70 +1486,191 @@ const DeliverySettingsPage = () => {
               </div>
 
               <div className="md:col-span-2">
-                <Label htmlFor="connection-token">Write-only token</Label>
+                <FieldLabel
+                  htmlFor="connection-token"
+                  required={!activeConnection?.credentials_present}
+                >
+                  Write-only токен
+                </FieldLabel>
                 <Input
                   id="connection-token"
                   type="password"
                   value={connectionForm.token}
-                  onChange={(event) => handleFormField("token", event.target.value)}
-                  placeholder={activeConnectionId ? "Leave empty to keep existing sealed token" : "Paste Yandex token"}
+                  onChange={(event) =>
+                    handleFormField("token", event.target.value)
+                  }
+                  placeholder={
+                    activeConnectionId
+                      ? "Оставьте пустым, чтобы сохранить текущий sealed token"
+                      : "Вставьте Yandex token"
+                  }
                 />
+                <Text className="text-ui-fg-subtle mt-2 text-sm">
+                  {getFieldRequirementText({
+                    field: "token",
+                    hasSavedToken: !!activeConnection?.credentials_present,
+                  })}
+                </Text>
               </div>
+
+              <details className="md:col-span-2 rounded-md border p-4">
+                <summary className="cursor-pointer text-sm font-medium">
+                  Расширенные настройки подключения
+                </summary>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div>
+                    <FieldLabel htmlFor="connection-label-format" required={false}>
+                      Формат label
+                    </FieldLabel>
+                    <select
+                      id="connection-label-format"
+                      value={connectionForm.label_format}
+                      onChange={(event) =>
+                        handleFormField("label_format", event.target.value)
+                      }
+                      className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active mt-1 h-10 w-full rounded-md px-3 outline-none"
+                    >
+                      {labelFormatOptions.map((option) => (
+                        <option key={option || "default"} value={option}>
+                          {option || "Формат провайдера по умолчанию"}
+                        </option>
+                      ))}
+                    </select>
+                    <Text className="text-ui-fg-subtle mt-2 text-sm">
+                      {getFieldRequirementText({ field: "label_format" })}
+                    </Text>
+                  </div>
+
+                  <div>
+                    <FieldLabel htmlFor="connection-api-base-url" required={false}>
+                      Yandex API host
+                    </FieldLabel>
+                    <select
+                      id="connection-api-base-url"
+                      value={connectionForm.api_base_url}
+                      onChange={(event) =>
+                        handleFormField("api_base_url", event.target.value)
+                      }
+                      className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active mt-1 h-10 w-full rounded-md px-3 outline-none"
+                    >
+                      {yandexApiBaseUrlOptions.map((option) => (
+                        <option key={option.value || "auto"} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <Text className="text-ui-fg-subtle mt-2 text-sm">
+                      {getFieldRequirementText({ field: "api_host" })}
+                    </Text>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-md border p-4 md:col-span-2">
+                    <div>
+                      <Text className="font-medium">
+                        Auto confirm <RequirementBadge required={false} />
+                      </Text>
+                      <Text className="text-ui-fg-subtle text-sm">
+                        {getFieldRequirementText({ field: "auto_confirm" })}
+                      </Text>
+                    </div>
+                    <Switch
+                      checked={connectionForm.auto_confirm}
+                      onCheckedChange={(checked) =>
+                        handleFormField("auto_confirm", checked)
+                      }
+                    />
+                  </div>
+                </div>
+              </details>
 
               <div className="flex items-center justify-between rounded-md border p-4">
                 <div>
-                  <Text className="font-medium">Enabled</Text>
-                  <Text className="text-ui-fg-subtle text-sm">Connection can participate in diagnostics and planner state.</Text>
+                  <Text className="font-medium">Включено</Text>
+                  <Text className="text-ui-fg-subtle text-sm">
+                    Подключение участвует в диагностике и planner state.
+                  </Text>
                 </div>
                 <Switch
                   checked={connectionForm.enabled}
-                  onCheckedChange={(checked) => handleFormField("enabled", checked)}
+                  onCheckedChange={(checked) =>
+                    handleFormField("enabled", checked)
+                  }
                 />
               </div>
 
-              <div className="flex items-center justify-between rounded-md border p-4">
-                <div>
-                  <Text className="font-medium">Auto confirm</Text>
-                  <Text className="text-ui-fg-subtle text-sm">Persist auto_confirm inside delivery config when enabled.</Text>
-                </div>
-                <Switch
-                  checked={connectionForm.auto_confirm}
-                  onCheckedChange={(checked) => handleFormField("auto_confirm", checked)}
-                />
-              </div>
             </div>
 
             <div className="mt-6 flex flex-wrap gap-3">
-              <Button type="button" onClick={() => void handleSave()} isLoading={isSaving} disabled={isLoading}>
-                {activeConnectionId ? "Save connection" : "Create connection"}
-              </Button>
-              <Button type="button" variant="secondary" onClick={startCreate} disabled={isSaving}>
-                Reset form
+              <Button
+                type="button"
+                onClick={() => void handleSave()}
+                isLoading={isSaving}
+                disabled={isLoading}
+              >
+                {activeConnectionId
+                  ? "Сохранить подключение"
+                  : "Создать подключение"}
               </Button>
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => void handleTestConnection()}
-                isLoading={isTestingConnection}
-                disabled={isLoading}
+                onClick={startCreate}
+                disabled={isSaving}
               >
-                Test connection
+                Сбросить форму
               </Button>
             </div>
+            <Text className="text-ui-fg-subtle mt-2 text-sm">
+              {testConnectionCapability.helperText}
+            </Text>
 
-            <div className="mt-4 flex items-center justify-between rounded-md border p-4">
-              <div>
-                <Text className="font-medium">Include pickup points during connection test</Text>
-                <Text className="text-ui-fg-subtle text-sm">
-                  Keeps test surface operator-controlled while staying no-write on backend.
-                </Text>
-              </div>
-              <Switch checked={includePickupPoints} onCheckedChange={setIncludePickupPoints} />
+          </div>
+        </div>
+
+        <div className="rounded-lg border p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Heading level="h2">2. Проверить подключение</Heading>
+              <Text className="text-ui-fg-subtle mt-2">
+                Безопасный read-only вызов к Yandex. Используется сохранённый
+                sealed token; секреты и raw provider body не показываются.
+              </Text>
             </div>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void handleTestConnection()}
+              isLoading={isTestingConnection}
+              disabled={!testConnectionCapability.canTest || isTestingConnection}
+            >
+              Проверить подключение
+            </Button>
+          </div>
+          <Text className="text-ui-fg-subtle mt-2 text-sm">
+            {testConnectionCapability.helperText}
+          </Text>
 
-            {testConnectionError ? (
+          <div className="mt-4 flex items-center justify-between rounded-md border p-4">
+            <div>
+              <Text className="font-medium">
+                Дополнительно загрузить количество ПВЗ
+              </Text>
+              <Text className="text-ui-fg-subtle text-sm">
+                Необязательно: включает safe lookup ПВЗ в результат проверки,
+                без shipment create/cancel/status/retry.
+              </Text>
+            </div>
+            <Switch
+              checked={includePickupPoints}
+              onCheckedChange={setIncludePickupPoints}
+            />
+          </div>
+
+          {testConnectionError ? (
               <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
-                <Text className="text-ui-fg-error font-medium">{testConnectionError.message}</Text>
+                <Text className="text-ui-fg-error font-medium">
+                  {testConnectionError.message}
+                </Text>
                 <Text className="text-ui-fg-subtle mt-1">
                   {testConnectionError.code} · HTTP {testConnectionError.status}
                 </Text>
@@ -1154,41 +1681,56 @@ const DeliverySettingsPage = () => {
               <div className="mt-4 rounded-md border p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <Heading level="h3">Connection diagnostics</Heading>
-                    <Text className="text-ui-fg-subtle mt-1 text-sm">Provider-level response snapshot from the latest admin test call.</Text>
+                    <Heading level="h3">Диагностика подключения</Heading>
+                    <Text className="text-ui-fg-subtle mt-1 text-sm">
+                      Provider-level response snapshot from the latest admin
+                      test call.
+                    </Text>
                   </div>
-                  <span className={`rounded-full border px-2 py-1 text-xs ${logSuccessToneClass(testConnectionResult.ok)}`}>
+                  <span
+                    className={`rounded-full border px-2 py-1 text-xs ${logSuccessToneClass(testConnectionResult.ok)}`}
+                  >
                     {testConnectionResult.ok ? "ready" : "failed"}
                   </span>
                 </div>
                 <Text className="text-ui-fg-subtle mt-3 text-sm">
-                  {getDiagnosticsSummaryText(testConnectionResult.diagnostics_summary)}
+                  {getDiagnosticsSummaryText(
+                    testConnectionResult.diagnostics_summary,
+                  )}
                 </Text>
                 <pre className="mt-3 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
                   {JSON.stringify(testConnectionResult.diagnostics, null, 2)}
                 </pre>
               </div>
-            ) : null}
-          </div>
+          ) : null}
         </div>
 
-        <div className="rounded-lg border p-4">
-          <div className="flex items-center justify-between gap-4">
+        <details className="rounded-lg border p-4">
+          <summary className="cursor-pointer text-base font-medium">
+            Расширенные настройки: склады/source platform_station_id
+          </summary>
+          <div className="mt-4 flex items-center justify-between gap-4">
             <div>
-              <Heading level="h2">Warehouses</Heading>
+              <Heading level="h2">Склады Delivery Hub</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Delivery origin records used by Yandex quote diagnostics and default config mapping.
+                Source records для warehouse_to_pickup_point. Поле
+                provider_warehouse_id должно содержать Yandex platform_station_id;
+                backend отправляет его как source.platform_station.platform_id.
               </Text>
             </div>
-            <Button type="button" variant="secondary" onClick={startCreateWarehouse}>
-              New warehouse
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={startCreateWarehouse}
+            >
+              Новый склад
             </Button>
           </div>
 
           <div className="mt-4 grid gap-3">
             {yandexWarehouses.length ? (
               yandexWarehouses.map((warehouse) => {
-                const isActive = warehouse.id === activeWarehouseId
+                const isActive = warehouse.id === activeWarehouseId;
 
                 return (
                   <button
@@ -1196,32 +1738,44 @@ const DeliverySettingsPage = () => {
                     type="button"
                     onClick={() => setActiveWarehouseId(warehouse.id)}
                     className={`rounded-md border p-4 text-left transition-colors ${
-                      isActive ? "border-ui-border-interactive bg-ui-bg-subtle" : "hover:bg-ui-bg-subtle"
+                      isActive
+                        ? "border-ui-border-interactive bg-ui-bg-subtle"
+                        : "hover:bg-ui-bg-subtle"
                     }`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <Text className="font-medium">{warehouse.name}</Text>
-                        <Text className="text-ui-fg-subtle text-sm">{getWarehouseOptionLabel(warehouse)}</Text>
+                        <Text className="text-ui-fg-subtle text-sm">
+                          {getWarehouseOptionLabel(warehouse)}
+                        </Text>
                       </div>
                       <span className="rounded-full border border-ui-border-base px-2 py-1 text-xs">
                         {warehouse.enabled ? "enabled" : "disabled"}
                       </span>
                     </div>
                   </button>
-                )
+                );
               })
             ) : (
-              <Text className="text-ui-fg-subtle">No Yandex warehouses configured yet.</Text>
+              <Text className="text-ui-fg-subtle">
+                No Yandex warehouses configured yet.
+              </Text>
             )}
           </div>
 
           <div className="mt-6 rounded-md border p-4">
-            <Heading level="h3">{activeWarehouseId ? "Edit selected warehouse" : "Create warehouse"}</Heading>
+            <Heading level="h3">
+              {activeWarehouseId
+                ? "Редактировать выбранный склад"
+                : "Создать склад"}
+            </Heading>
 
             {warehouseFormError ? (
               <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
-                <Text className="text-ui-fg-error font-medium">{warehouseFormError.message}</Text>
+                <Text className="text-ui-fg-error font-medium">
+                  {warehouseFormError.message}
+                </Text>
                 <Text className="text-ui-fg-subtle mt-1">
                   {warehouseFormError.code} · HTTP {warehouseFormError.status}
                 </Text>
@@ -1230,91 +1784,135 @@ const DeliverySettingsPage = () => {
 
             {warehouseFormNotice ? (
               <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4">
-                <Text className="font-medium text-green-800">{warehouseFormNotice}</Text>
+                <Text className="font-medium text-green-800">
+                  {warehouseFormNotice}
+                </Text>
               </div>
             ) : null}
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
-                <Label htmlFor="warehouse-name">Name</Label>
+                <FieldLabel htmlFor="warehouse-name" required={true}>
+                  Название склада
+                </FieldLabel>
                 <Input
                   id="warehouse-name"
                   value={warehouseForm.name}
-                  onChange={(event) => handleWarehouseField("name", event.target.value)}
+                  onChange={(event) =>
+                    handleWarehouseField("name", event.target.value)
+                  }
                 />
               </div>
 
               <div>
-                <Label htmlFor="warehouse-country">Country code</Label>
+                <FieldLabel htmlFor="warehouse-country" required={true}>
+                  Код страны
+                </FieldLabel>
                 <Input
                   id="warehouse-country"
                   value={warehouseForm.country_code}
-                  onChange={(event) => handleWarehouseField("country_code", event.target.value)}
+                  onChange={(event) =>
+                    handleWarehouseField("country_code", event.target.value)
+                  }
                 />
               </div>
 
               <div>
-                <Label htmlFor="warehouse-city">City</Label>
+                <FieldLabel htmlFor="warehouse-city" required={false}>
+                  Город
+                </FieldLabel>
                 <Input
                   id="warehouse-city"
                   value={warehouseForm.city}
-                  onChange={(event) => handleWarehouseField("city", event.target.value)}
+                  onChange={(event) =>
+                    handleWarehouseField("city", event.target.value)
+                  }
                 />
               </div>
 
               <div>
-                <Label htmlFor="warehouse-address">Address</Label>
+                <FieldLabel htmlFor="warehouse-address" required={false}>
+                  Адрес
+                </FieldLabel>
                 <Input
                   id="warehouse-address"
                   value={warehouseForm.address_line_1}
-                  onChange={(event) => handleWarehouseField("address_line_1", event.target.value)}
+                  onChange={(event) =>
+                    handleWarehouseField("address_line_1", event.target.value)
+                  }
                 />
               </div>
 
               <div>
-                <Label htmlFor="warehouse-contact-name">Contact name</Label>
+                <FieldLabel htmlFor="warehouse-contact-name" required={false}>
+                  Контактное лицо
+                </FieldLabel>
                 <Input
                   id="warehouse-contact-name"
                   value={warehouseForm.contact_name}
-                  onChange={(event) => handleWarehouseField("contact_name", event.target.value)}
+                  onChange={(event) =>
+                    handleWarehouseField("contact_name", event.target.value)
+                  }
                 />
               </div>
 
               <div>
-                <Label htmlFor="warehouse-contact-phone">Contact phone</Label>
+                <FieldLabel htmlFor="warehouse-contact-phone" required={false}>
+                  Контактный телефон
+                </FieldLabel>
                 <Input
                   id="warehouse-contact-phone"
                   value={warehouseForm.contact_phone}
-                  onChange={(event) => handleWarehouseField("contact_phone", event.target.value)}
+                  onChange={(event) =>
+                    handleWarehouseField("contact_phone", event.target.value)
+                  }
                 />
               </div>
 
               <div>
-                <Label htmlFor="warehouse-provider-code">Provider code</Label>
+                <FieldLabel htmlFor="warehouse-provider-code" required={false}>
+                  Provider code
+                </FieldLabel>
                 <Input
                   id="warehouse-provider-code"
                   value={warehouseForm.provider_code}
-                  onChange={(event) => handleWarehouseField("provider_code", event.target.value)}
+                  onChange={(event) =>
+                    handleWarehouseField("provider_code", event.target.value)
+                  }
                 />
               </div>
 
               <div>
-                <Label htmlFor="warehouse-provider-id">Provider warehouse id</Label>
+                <FieldLabel htmlFor="warehouse-provider-id" required={true}>
+                  Provider warehouse id / platform_station_id
+                </FieldLabel>
                 <Input
                   id="warehouse-provider-id"
                   value={warehouseForm.provider_warehouse_id}
-                  onChange={(event) => handleWarehouseField("provider_warehouse_id", event.target.value)}
+                  onChange={(event) =>
+                    handleWarehouseField(
+                      "provider_warehouse_id",
+                      event.target.value,
+                    )
+                  }
                 />
+                <Text className="text-ui-fg-subtle mt-2 text-sm">
+                  {getFieldRequirementText({ field: "warehouse" })}
+                </Text>
               </div>
 
               <div className="md:col-span-2 flex items-center justify-between rounded-md border p-4">
                 <div>
-                  <Text className="font-medium">Enabled</Text>
-                  <Text className="text-ui-fg-subtle text-sm">Only enabled warehouses are offered in warehouse-to-pickup-point quote diagnostics.</Text>
+                  <Text className="font-medium">Включено</Text>
+                  <Text className="text-ui-fg-subtle text-sm">
+                    Только включённые склады доступны в расчёте склад → ПВЗ.
+                  </Text>
                 </div>
                 <Switch
                   checked={warehouseForm.enabled}
-                  onCheckedChange={(checked) => handleWarehouseField("enabled", checked)}
+                  onCheckedChange={(checked) =>
+                    handleWarehouseField("enabled", checked)
+                  }
                 />
               </div>
             </div>
@@ -1326,24 +1924,292 @@ const DeliverySettingsPage = () => {
                 isLoading={isSavingWarehouse}
                 disabled={isLoading}
               >
-                {activeWarehouseId ? "Save warehouse" : "Create warehouse"}
+                {activeWarehouseId ? "Сохранить склад" : "Создать склад"}
               </Button>
-              <Button type="button" variant="secondary" onClick={startCreateWarehouse} disabled={isSavingWarehouse}>
-                Reset form
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={startCreateWarehouse}
+                disabled={isSavingWarehouse}
+              >
+                Сбросить форму
               </Button>
             </div>
           </div>
+        </details>
+
+        <div className="rounded-lg border p-4">
+          <Heading level="h2">3. Найти ПВЗ</Heading>
+          <Text className="text-ui-fg-subtle mt-2">
+            Безопасный поиск Yandex pickup points. По документации Yandex для
+            тестов используйте geo_id и operator_ids: по умолчанию выбран
+            Moscow geo_id=213, operator=market_l4g и только Яндекс-бренд. Найденный id
+            используйте как destination PVZ id.
+          </Text>
+          <Text className="text-ui-fg-subtle mt-2 text-sm">
+            {getFieldRequirementText({ field: "five_post" })}
+          </Text>
+
+          {pickupPointLookupError ? (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+              <Text className="text-ui-fg-error font-medium">
+                {pickupPointLookupError.message}
+              </Text>
+              <Text className="text-ui-fg-subtle mt-1">
+                {pickupPointLookupError.code} · HTTP {pickupPointLookupError.status}
+              </Text>
+            </div>
+          ) : null}
+
+          <div className="mt-4 grid gap-4 md:grid-cols-4">
+            <div className="md:col-span-2">
+              <FieldLabel htmlFor="pickup-point-connection" required={true}>
+                Подключение
+              </FieldLabel>
+              <select
+                id="pickup-point-connection"
+                value={pickupPointLookupForm.connection_id}
+                onChange={(event) =>
+                  handlePickupPointLookupField("connection_id", event.target.value)
+                }
+                className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active mt-1 h-10 w-full rounded-md px-3 outline-none"
+              >
+                <option value="">Выберите подключение</option>
+                {yandexConnections.map((connection) => (
+                  <option key={connection.id} value={connection.id}>
+                    {connection.name} · {connection.mode} · {connection.status}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <FieldLabel htmlFor="pickup-point-geo-id" required={false}>
+                geo_id
+              </FieldLabel>
+              <Input
+                id="pickup-point-geo-id"
+                value={pickupPointLookupForm.geo_id}
+                onChange={(event) =>
+                  handlePickupPointLookupField("geo_id", event.target.value)
+                }
+                placeholder="213"
+              />
+              <Text className="text-ui-fg-subtle mt-1 text-xs">
+                213 — Москва в тестовом сценарии.
+              </Text>
+            </div>
+            <div>
+              <FieldLabel htmlFor="pickup-point-operator" required={false}>
+                Сеть ПВЗ
+              </FieldLabel>
+              <select
+                id="pickup-point-operator"
+                value={pickupPointLookupForm.operator_id}
+                onChange={(event) =>
+                  handlePickupPointLookupField(
+                    "operator_id",
+                    event.target.value as DeliveryHubPickupPointLookupForm["operator_id"],
+                  )
+                }
+                className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active mt-1 h-10 w-full rounded-md px-3 outline-none"
+              >
+                <option value="market_l4g">Яндекс Маркет / партнёры</option>
+                <option value="5post">5 Post</option>
+                <option value="">Все сети из каталога Yandex</option>
+              </select>
+            </div>
+            <div>
+              <FieldLabel htmlFor="pickup-point-brand" required={false}>
+                Яндекс-бренд
+              </FieldLabel>
+              <select
+                id="pickup-point-brand"
+                value={pickupPointLookupForm.is_yandex_branded}
+                onChange={(event) =>
+                  handlePickupPointLookupField(
+                    "is_yandex_branded",
+                    event.target.value as DeliveryHubPickupPointLookupForm["is_yandex_branded"],
+                  )
+                }
+                className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active mt-1 h-10 w-full rounded-md px-3 outline-none"
+              >
+                <option value="true">Только Яндекс-бренд</option>
+                <option value="false">Не Яндекс-бренд</option>
+                <option value="">Не фильтровать</option>
+              </select>
+            </div>
+            <div>
+              <FieldLabel htmlFor="pickup-point-type" required={false}>
+                Тип станции
+              </FieldLabel>
+              <select
+                id="pickup-point-type"
+                value={pickupPointLookupForm.station_type}
+                onChange={(event) =>
+                  handlePickupPointLookupField(
+                    "station_type",
+                    event.target.value as DeliveryHubPickupPointLookupForm["station_type"],
+                  )
+                }
+                className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active mt-1 h-10 w-full rounded-md px-3 outline-none"
+              >
+                <option value="pickup_point">ПВЗ</option>
+                <option value="terminal">Постамат/terminal</option>
+                <option value="warehouse">Склад/warehouse</option>
+                <option value="">Все типы</option>
+              </select>
+            </div>
+            <div>
+              <FieldLabel htmlFor="pickup-point-id" required={false}>
+                Точный id ПВЗ
+              </FieldLabel>
+              <Input
+                id="pickup-point-id"
+                value={pickupPointLookupForm.pickup_point_id}
+                onChange={(event) =>
+                  handlePickupPointLookupField("pickup_point_id", event.target.value)
+                }
+                placeholder="e1139f6d-e34f-47a9-a55f-31f032a861a6"
+              />
+            </div>
+            <div>
+              <FieldLabel htmlFor="pickup-point-dropoff" required={false}>
+                Origin dropoff
+              </FieldLabel>
+              <select
+                id="pickup-point-dropoff"
+                value={pickupPointLookupForm.available_for_dropoff}
+                onChange={(event) =>
+                  handlePickupPointLookupField(
+                    "available_for_dropoff",
+                    event.target.value as DeliveryHubPickupPointLookupForm["available_for_dropoff"],
+                  )
+                }
+                className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active mt-1 h-10 w-full rounded-md px-3 outline-none"
+              >
+                <option value="">Не фильтровать</option>
+                <option value="true">Только available_for_dropoff=true</option>
+                <option value="false">Только false</option>
+              </select>
+            </div>
+            <div>
+              <FieldLabel htmlFor="pickup-point-country" required={false}>
+                Страна
+              </FieldLabel>
+              <Input
+                id="pickup-point-country"
+                value={pickupPointLookupForm.country_code}
+                onChange={(event) =>
+                  handlePickupPointLookupField("country_code", event.target.value)
+                }
+                placeholder="RU"
+              />
+            </div>
+            <div>
+              <FieldLabel htmlFor="pickup-point-limit" required={false}>
+                Лимит
+              </FieldLabel>
+              <Input
+                id="pickup-point-limit"
+                value={pickupPointLookupForm.limit}
+                onChange={(event) =>
+                  handlePickupPointLookupField("limit", event.target.value)
+                }
+                placeholder="20"
+              />
+            </div>
+          </div>
+
+            <div className="mt-6 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={() => void handleLoadPickupPoints()}
+                isLoading={isLoadingPickupPoints}
+                disabled={isLoading || isLoadingPickupPoints}
+              >
+                Найти ПВЗ
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleUseYandexSandboxPickupPoint}
+                disabled={isLoading || isLoadingPickupPoints}
+              >
+                Использовать тестовый PVZ Яндекса
+              </Button>
+            </div>
+            <Text className="text-ui-fg-subtle mt-2 text-xs">
+              Проверенный sandbox PVZ: {YANDEX_VERIFIED_SANDBOX_PVZ.id} · {YANDEX_VERIFIED_SANDBOX_PVZ.label}. Кнопка сразу подставит его в Test quote и exact lookup filter.
+            </Text>
+
+            {pickupPointLookupResult ? (
+            <div className="mt-6 grid gap-3">
+              <Text className="text-ui-fg-subtle text-sm">
+                Найдено {pickupPointLookupResult.returned_count} из {pickupPointLookupResult.total_available}; correlation={pickupPointLookupResult.correlation_id}
+              </Text>
+              {pickupPointLookupResult.points.map((point) => (
+                <div key={point.id} className="rounded-md border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <Text className="font-medium">{point.name}</Text>
+                      <Text className="text-ui-fg-subtle text-sm">
+                        {getPickupPointOptionLabel(point)}
+                      </Text>
+                      <Text className="text-ui-fg-subtle mt-1 text-sm">
+                        Провайдер: Yandex · Сеть ПВЗ: {point.network_label || point.operator_id || "не указана"}
+                      </Text>
+                      {point.id === YANDEX_VERIFIED_SANDBOX_PVZ.id ? (
+                        <Text className="text-ui-fg-interactive mt-1 text-sm">
+                          Verified sandbox PVZ для тестового склада Yandex.
+                        </Text>
+                      ) : null}
+                      <Text className="text-ui-fg-subtle mt-1 text-sm">
+                        {point.address || "Адрес не указан"}
+                      </Text>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => handleUsePickupPointAsDestination(point.id)}
+                      >
+                        Использовать как destination
+                      </Button>
+                      {point.available_for_dropoff ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => handleUsePickupPointAsOrigin(point.id)}
+                        >
+                          Использовать как origin dropoff
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
+
+        <details className="rounded-lg border p-4">
+          <summary className="cursor-pointer text-base font-medium">
+            Техническая диагностика: shipping options, fulfillment bridge, execution plan, shipment operations
+          </summary>
+          <div className="mt-4 grid gap-6">
 
         <div className="rounded-lg border p-4">
           <div className="flex items-center justify-between gap-4">
             <div>
               <Heading level="h2">Shipping option preview</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Admin-only read preview for desired and reconciled deliveryhub shipping-option state. No sync or write side-effects.
+                Admin-only read preview for desired and reconciled deliveryhub
+                shipping-option state. No sync or write side-effects.
               </Text>
             </div>
-            <Text className="text-ui-fg-subtle text-sm">{previewRenderState.headerText}</Text>
+            <Text className="text-ui-fg-subtle text-sm">
+              {previewRenderState.headerText}
+            </Text>
           </div>
 
           {shippingOptionPreview ? (
@@ -1351,7 +2217,9 @@ const DeliverySettingsPage = () => {
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                 {previewRenderState.summaryCards.map((card) => (
                   <div key={card.key} className="rounded-md border p-3">
-                    <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
+                    <Text className="text-ui-fg-subtle text-xs">
+                      {card.label}
+                    </Text>
                     <Text className="mt-2 font-medium">{card.value}</Text>
                   </div>
                 ))}
@@ -1361,7 +2229,8 @@ const DeliverySettingsPage = () => {
                 <div className="rounded-md border p-4">
                   <Heading level="h3">Desired projected options</Heading>
                   <Text className="text-ui-fg-subtle mt-1 text-sm">
-                    Canonical deliveryhub options that planner currently considers rollout-ready.
+                    Canonical deliveryhub options that planner currently
+                    considers rollout-ready.
                   </Text>
                   <div className="mt-4 grid gap-3">
                     {previewRenderState.desiredOptions.length ? (
@@ -1369,20 +2238,27 @@ const DeliverySettingsPage = () => {
                         <div key={option.key} className="rounded-md border p-3">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
-                              <Text className="font-medium">{option.modeCode}</Text>
-                              <Text className="text-ui-fg-subtle text-sm">{option.id}</Text>
+                              <Text className="font-medium">
+                                {option.modeCode}
+                              </Text>
+                              <Text className="text-ui-fg-subtle text-sm">
+                                {option.id}
+                              </Text>
                             </div>
                             <span className="rounded-full border border-green-200 bg-green-50 px-2 py-1 text-xs text-green-700">
                               projected
                             </span>
                           </div>
                           <Text className="text-ui-fg-subtle mt-3 text-sm">
-                            Supporting connections: {option.supportingConnectionsText}
+                            Supporting connections:{" "}
+                            {option.supportingConnectionsText}
                           </Text>
                         </div>
                       ))
                     ) : (
-                      <Text className="text-ui-fg-subtle">{previewRenderState.desiredEmptyText}</Text>
+                      <Text className="text-ui-fg-subtle">
+                        {previewRenderState.desiredEmptyText}
+                      </Text>
                     )}
                   </div>
                 </div>
@@ -1390,7 +2266,8 @@ const DeliverySettingsPage = () => {
                 <div className="rounded-md border p-4">
                   <Heading level="h3">Deferred rollout state</Heading>
                   <Text className="text-ui-fg-subtle mt-1 text-sm">
-                    Deferred options and truthful planner issues blocking deliveryhub shipping-option rollout.
+                    Deferred options and truthful planner issues blocking
+                    deliveryhub shipping-option rollout.
                   </Text>
                   <div className="mt-4 grid gap-3">
                     {previewRenderState.deferredOptions.length ? (
@@ -1398,8 +2275,12 @@ const DeliverySettingsPage = () => {
                         <div key={option.key} className="rounded-md border p-3">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
-                              <Text className="font-medium">{option.modeCode}</Text>
-                              <Text className="text-ui-fg-subtle text-sm">{option.id}</Text>
+                              <Text className="font-medium">
+                                {option.modeCode}
+                              </Text>
+                              <Text className="text-ui-fg-subtle text-sm">
+                                {option.id}
+                              </Text>
                             </div>
                             <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-700">
                               deferred
@@ -1407,17 +2288,28 @@ const DeliverySettingsPage = () => {
                           </div>
                           <div className="mt-3 grid gap-2">
                             {option.issues.map((issue) => (
-                              <div key={issue.key} className="rounded-md border border-amber-200 bg-amber-50 p-3">
-                                <Text className="font-medium text-amber-800">{issue.code}</Text>
-                                <Text className="mt-1 text-sm text-amber-700">{issue.message}</Text>
-                                <Text className="mt-2 text-xs text-amber-700">{issue.connectionText}</Text>
+                              <div
+                                key={issue.key}
+                                className="rounded-md border border-amber-200 bg-amber-50 p-3"
+                              >
+                                <Text className="font-medium text-amber-800">
+                                  {issue.code}
+                                </Text>
+                                <Text className="mt-1 text-sm text-amber-700">
+                                  {issue.message}
+                                </Text>
+                                <Text className="mt-2 text-xs text-amber-700">
+                                  {issue.connectionText}
+                                </Text>
                               </div>
                             ))}
                           </div>
                         </div>
                       ))
                     ) : (
-                      <Text className="text-ui-fg-subtle">{previewRenderState.deferredEmptyText}</Text>
+                      <Text className="text-ui-fg-subtle">
+                        {previewRenderState.deferredEmptyText}
+                      </Text>
                     )}
                   </div>
                 </div>
@@ -1426,64 +2318,103 @@ const DeliverySettingsPage = () => {
               <div className="rounded-md border p-4">
                 <Heading level="h3">Reconciliation buckets</Heading>
                 <Text className="text-ui-fg-subtle mt-1 text-sm">
-                  Summary over create, update, unchanged, orphaned managed and ignored foreign shipping options. Preview remains read-only.
+                  Summary over create, update, unchanged, orphaned managed and
+                  ignored foreign shipping options. Preview remains read-only.
                 </Text>
                 <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                   <div className="rounded-md border p-3">
-                    <Text className="text-ui-fg-subtle text-xs">create_candidates</Text>
-                    <Text className="mt-2 font-medium">{previewRenderState.reconciliationCounts.createCandidates}</Text>
+                    <Text className="text-ui-fg-subtle text-xs">
+                      create_candidates
+                    </Text>
+                    <Text className="mt-2 font-medium">
+                      {previewRenderState.reconciliationCounts.createCandidates}
+                    </Text>
                   </div>
                   <div className="rounded-md border p-3">
-                    <Text className="text-ui-fg-subtle text-xs">update_candidates</Text>
-                    <Text className="mt-2 font-medium">{previewRenderState.reconciliationCounts.updateCandidates}</Text>
+                    <Text className="text-ui-fg-subtle text-xs">
+                      update_candidates
+                    </Text>
+                    <Text className="mt-2 font-medium">
+                      {previewRenderState.reconciliationCounts.updateCandidates}
+                    </Text>
                   </div>
                   <div className="rounded-md border p-3">
                     <Text className="text-ui-fg-subtle text-xs">unchanged</Text>
-                    <Text className="mt-2 font-medium">{previewRenderState.reconciliationCounts.unchanged}</Text>
+                    <Text className="mt-2 font-medium">
+                      {previewRenderState.reconciliationCounts.unchanged}
+                    </Text>
                   </div>
                   <div className="rounded-md border p-3">
-                    <Text className="text-ui-fg-subtle text-xs">orphaned_managed_options</Text>
-                    <Text className="mt-2 font-medium">{previewRenderState.reconciliationCounts.orphanedManaged}</Text>
+                    <Text className="text-ui-fg-subtle text-xs">
+                      orphaned_managed_options
+                    </Text>
+                    <Text className="mt-2 font-medium">
+                      {previewRenderState.reconciliationCounts.orphanedManaged}
+                    </Text>
                   </div>
                   <div className="rounded-md border p-3">
-                    <Text className="text-ui-fg-subtle text-xs">ignored_foreign_options</Text>
-                    <Text className="mt-2 font-medium">{previewRenderState.reconciliationCounts.ignoredForeign}</Text>
+                    <Text className="text-ui-fg-subtle text-xs">
+                      ignored_foreign_options
+                    </Text>
+                    <Text className="mt-2 font-medium">
+                      {previewRenderState.reconciliationCounts.ignoredForeign}
+                    </Text>
                   </div>
                 </div>
 
                 <div className="mt-4 grid gap-3">
                   <details className="rounded-md border p-3">
                     <summary className="cursor-pointer text-sm font-medium">
-                      Create candidates ({previewRenderState.createCandidates.length})
+                      Create candidates (
+                      {previewRenderState.createCandidates.length})
                     </summary>
                     <div className="mt-3 grid gap-2">
                       {previewRenderState.createCandidates.length ? (
                         previewRenderState.createCandidates.map((candidate) => (
-                          <div key={candidate.key} className="rounded-md border p-3">
-                            <Text className="font-medium">{candidate.title}</Text>
-                            <Text className="text-ui-fg-subtle mt-1 text-sm">{candidate.subtitle}</Text>
+                          <div
+                            key={candidate.key}
+                            className="rounded-md border p-3"
+                          >
+                            <Text className="font-medium">
+                              {candidate.title}
+                            </Text>
+                            <Text className="text-ui-fg-subtle mt-1 text-sm">
+                              {candidate.subtitle}
+                            </Text>
                           </div>
                         ))
                       ) : (
-                        <Text className="text-ui-fg-subtle text-sm">No create candidates.</Text>
+                        <Text className="text-ui-fg-subtle text-sm">
+                          No create candidates.
+                        </Text>
                       )}
                     </div>
                   </details>
 
                   <details className="rounded-md border p-3">
                     <summary className="cursor-pointer text-sm font-medium">
-                      Update candidates ({previewRenderState.updateCandidates.length})
+                      Update candidates (
+                      {previewRenderState.updateCandidates.length})
                     </summary>
                     <div className="mt-3 grid gap-2">
                       {previewRenderState.updateCandidates.length ? (
                         previewRenderState.updateCandidates.map((candidate) => (
-                          <div key={candidate.key} className="rounded-md border p-3">
-                            <Text className="font-medium">{candidate.title}</Text>
-                            <Text className="text-ui-fg-subtle mt-1 text-sm">{candidate.subtitle}</Text>
+                          <div
+                            key={candidate.key}
+                            className="rounded-md border p-3"
+                          >
+                            <Text className="font-medium">
+                              {candidate.title}
+                            </Text>
+                            <Text className="text-ui-fg-subtle mt-1 text-sm">
+                              {candidate.subtitle}
+                            </Text>
                           </div>
                         ))
                       ) : (
-                        <Text className="text-ui-fg-subtle text-sm">No update candidates.</Text>
+                        <Text className="text-ui-fg-subtle text-sm">
+                          No update candidates.
+                        </Text>
                       )}
                     </div>
                   </details>
@@ -1495,49 +2426,76 @@ const DeliverySettingsPage = () => {
                     <div className="mt-3 grid gap-2">
                       {previewRenderState.unchangedEntries.length ? (
                         previewRenderState.unchangedEntries.map((entry) => (
-                          <div key={entry.key} className="rounded-md border p-3">
+                          <div
+                            key={entry.key}
+                            className="rounded-md border p-3"
+                          >
                             <Text className="font-medium">{entry.title}</Text>
-                            <Text className="text-ui-fg-subtle mt-1 text-sm">{entry.subtitle}</Text>
+                            <Text className="text-ui-fg-subtle mt-1 text-sm">
+                              {entry.subtitle}
+                            </Text>
                           </div>
                         ))
                       ) : (
-                        <Text className="text-ui-fg-subtle text-sm">No unchanged managed options.</Text>
+                        <Text className="text-ui-fg-subtle text-sm">
+                          No unchanged managed options.
+                        </Text>
                       )}
                     </div>
                   </details>
 
                   <details className="rounded-md border p-3">
                     <summary className="cursor-pointer text-sm font-medium">
-                      Orphaned managed ({previewRenderState.orphanedManagedEntries.length})
+                      Orphaned managed (
+                      {previewRenderState.orphanedManagedEntries.length})
                     </summary>
                     <div className="mt-3 grid gap-2">
                       {previewRenderState.orphanedManagedEntries.length ? (
-                        previewRenderState.orphanedManagedEntries.map((entry) => (
-                          <div key={entry.key} className="rounded-md border p-3">
-                            <Text className="font-medium">{entry.title}</Text>
-                            <Text className="text-ui-fg-subtle mt-1 text-sm">{entry.subtitle}</Text>
-                          </div>
-                        ))
+                        previewRenderState.orphanedManagedEntries.map(
+                          (entry) => (
+                            <div
+                              key={entry.key}
+                              className="rounded-md border p-3"
+                            >
+                              <Text className="font-medium">{entry.title}</Text>
+                              <Text className="text-ui-fg-subtle mt-1 text-sm">
+                                {entry.subtitle}
+                              </Text>
+                            </div>
+                          ),
+                        )
                       ) : (
-                        <Text className="text-ui-fg-subtle text-sm">No orphaned managed options.</Text>
+                        <Text className="text-ui-fg-subtle text-sm">
+                          No orphaned managed options.
+                        </Text>
                       )}
                     </div>
                   </details>
 
                   <details className="rounded-md border p-3">
                     <summary className="cursor-pointer text-sm font-medium">
-                      Ignored foreign ({previewRenderState.ignoredForeignEntries.length})
+                      Ignored foreign (
+                      {previewRenderState.ignoredForeignEntries.length})
                     </summary>
                     <div className="mt-3 grid gap-2">
                       {previewRenderState.ignoredForeignEntries.length ? (
-                        previewRenderState.ignoredForeignEntries.map((entry) => (
-                          <div key={entry.key} className="rounded-md border p-3">
-                            <Text className="font-medium">{entry.title}</Text>
-                            <Text className="text-ui-fg-subtle mt-1 text-sm">{entry.subtitle}</Text>
-                          </div>
-                        ))
+                        previewRenderState.ignoredForeignEntries.map(
+                          (entry) => (
+                            <div
+                              key={entry.key}
+                              className="rounded-md border p-3"
+                            >
+                              <Text className="font-medium">{entry.title}</Text>
+                              <Text className="text-ui-fg-subtle mt-1 text-sm">
+                                {entry.subtitle}
+                              </Text>
+                            </div>
+                          ),
+                        )
                       ) : (
-                        <Text className="text-ui-fg-subtle text-sm">No ignored foreign options.</Text>
+                        <Text className="text-ui-fg-subtle text-sm">
+                          No ignored foreign options.
+                        </Text>
                       )}
                     </div>
                   </details>
@@ -1547,7 +2505,8 @@ const DeliverySettingsPage = () => {
               <div className="rounded-md border p-4">
                 <Heading level="h3">Per-connection planner state</Heading>
                 <Text className="text-ui-fg-subtle mt-1 text-sm">
-                  Read-only planner status for each configured delivery connection.
+                  Read-only planner status for each configured delivery
+                  connection.
                 </Text>
                 <div className="mt-4 grid gap-3">
                   {previewRenderState.connectionPlans.length ? (
@@ -1555,10 +2514,16 @@ const DeliverySettingsPage = () => {
                       <div key={plan.key} className="rounded-md border p-3">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
-                            <Text className="font-medium">{plan.connectionId}</Text>
-                            <Text className="text-ui-fg-subtle text-sm">provider: {plan.providerCode}</Text>
+                            <Text className="font-medium">
+                              {plan.connectionId}
+                            </Text>
+                            <Text className="text-ui-fg-subtle text-sm">
+                              provider: {plan.providerCode}
+                            </Text>
                           </div>
-                          <span className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(plan.status)}`}>
+                          <span
+                            className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(plan.status)}`}
+                          >
                             {plan.status}
                           </span>
                         </div>
@@ -1568,9 +2533,16 @@ const DeliverySettingsPage = () => {
                         {plan.issues.length ? (
                           <div className="mt-3 grid gap-2">
                             {plan.issues.map((issue) => (
-                              <div key={issue.key} className="rounded-md border bg-ui-bg-subtle p-3">
-                                <Text className="font-medium">{issue.code}</Text>
-                                <Text className="text-ui-fg-subtle mt-1 text-sm">{issue.message}</Text>
+                              <div
+                                key={issue.key}
+                                className="rounded-md border bg-ui-bg-subtle p-3"
+                              >
+                                <Text className="font-medium">
+                                  {issue.code}
+                                </Text>
+                                <Text className="text-ui-fg-subtle mt-1 text-sm">
+                                  {issue.message}
+                                </Text>
                               </div>
                             ))}
                           </div>
@@ -1578,13 +2550,17 @@ const DeliverySettingsPage = () => {
                       </div>
                     ))
                   ) : (
-                    <Text className="text-ui-fg-subtle">{previewRenderState.connectionPlansEmptyText}</Text>
+                    <Text className="text-ui-fg-subtle">
+                      {previewRenderState.connectionPlansEmptyText}
+                    </Text>
                   )}
                 </div>
               </div>
             </div>
           ) : (
-            <Text className="text-ui-fg-subtle mt-4">No shipping-option preview returned by backend.</Text>
+            <Text className="text-ui-fg-subtle mt-4">
+              No shipping-option preview returned by backend.
+            </Text>
           )}
         </div>
 
@@ -1593,10 +2569,14 @@ const DeliverySettingsPage = () => {
             <div>
               <Heading level="h2">Fulfillment bridge readiness preview</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Read-only backend/admin preview for deliveryhub fulfillment bridge payload assembly. No shipment execution, checkout cutover or state mutation occurs.
+                Read-only backend/admin preview for deliveryhub fulfillment
+                bridge payload assembly. No shipment execution, checkout cutover
+                or state mutation occurs.
               </Text>
             </div>
-            <Text className="text-ui-fg-subtle text-sm">{fulfillmentBridgeRenderState.headerText}</Text>
+            <Text className="text-ui-fg-subtle text-sm">
+              {fulfillmentBridgeRenderState.headerText}
+            </Text>
           </div>
 
           {fulfillmentBridgePreview ? (
@@ -1604,7 +2584,9 @@ const DeliverySettingsPage = () => {
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                 {fulfillmentBridgeRenderState.summaryCards.map((card) => (
                   <div key={card.key} className="rounded-md border p-3">
-                    <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
+                    <Text className="text-ui-fg-subtle text-xs">
+                      {card.label}
+                    </Text>
                     <Text className="mt-2 font-medium">{card.value}</Text>
                   </div>
                 ))}
@@ -1617,14 +2599,19 @@ const DeliverySettingsPage = () => {
                       <div>
                         <Text className="font-medium">{mode.modeCode}</Text>
                         <Text className="text-ui-fg-subtle mt-1 text-sm">
-                          supporting connections: {mode.supportingConnectionsText}
+                          supporting connections:{" "}
+                          {mode.supportingConnectionsText}
                         </Text>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <span className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(mode.rolloutStatus)}`}>
+                        <span
+                          className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(mode.rolloutStatus)}`}
+                        >
                           rollout: {mode.rolloutStatus}
                         </span>
-                        <span className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(mode.status === "ready" ? "projected" : "deferred")}`}>
+                        <span
+                          className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(mode.status === "ready" ? "projected" : "deferred")}`}
+                        >
                           bridge: {mode.status}
                         </span>
                       </div>
@@ -1632,12 +2619,20 @@ const DeliverySettingsPage = () => {
 
                     <div className="mt-4 grid gap-3 md:grid-cols-3">
                       <div className="rounded-md border p-3">
-                        <Text className="text-ui-fg-subtle text-xs">Validated steps</Text>
-                        <Text className="mt-2 font-medium">{mode.stepReadinessText}</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Validated steps
+                        </Text>
+                        <Text className="mt-2 font-medium">
+                          {mode.stepReadinessText}
+                        </Text>
                       </div>
                       <div className="rounded-md border p-3 md:col-span-2">
-                        <Text className="text-ui-fg-subtle text-xs">Shipment execution</Text>
-                        <Text className="mt-2 text-sm">{mode.shipmentExecutionText}</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Shipment execution
+                        </Text>
+                        <Text className="mt-2 text-sm">
+                          {mode.shipmentExecutionText}
+                        </Text>
                       </div>
                     </div>
 
@@ -1656,8 +2651,12 @@ const DeliverySettingsPage = () => {
 
                     {mode.errorText ? (
                       <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3">
-                        <Text className="font-medium text-red-700">Preview error</Text>
-                        <Text className="mt-1 text-sm text-red-700">{mode.errorText}</Text>
+                        <Text className="font-medium text-red-700">
+                          Preview error
+                        </Text>
+                        <Text className="mt-1 text-sm text-red-700">
+                          {mode.errorText}
+                        </Text>
                       </div>
                     ) : null}
                   </div>
@@ -1665,7 +2664,9 @@ const DeliverySettingsPage = () => {
               </div>
             </div>
           ) : (
-            <Text className="text-ui-fg-subtle mt-4">{fulfillmentBridgeRenderState.emptyText}</Text>
+            <Text className="text-ui-fg-subtle mt-4">
+              {fulfillmentBridgeRenderState.emptyText}
+            </Text>
           )}
         </div>
 
@@ -1674,10 +2675,14 @@ const DeliverySettingsPage = () => {
             <div>
               <Heading level="h2">Execution-plan observability preview</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Admin-only diagnostic preview for exact redacted shipment planning state. No network calls, shipment execution or checkout cutover occurs.
+                Admin-only diagnostic preview for exact redacted shipment
+                planning state. No network calls, shipment execution or checkout
+                cutover occurs.
               </Text>
             </div>
-            <Text className="text-ui-fg-subtle text-sm">{executionPlanRenderState.headerText}</Text>
+            <Text className="text-ui-fg-subtle text-sm">
+              {executionPlanRenderState.headerText}
+            </Text>
           </div>
 
           {executionPlanPreview ? (
@@ -1685,7 +2690,9 @@ const DeliverySettingsPage = () => {
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                 {executionPlanRenderState.summaryCards.map((card) => (
                   <div key={card.key} className="rounded-md border p-3">
-                    <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
+                    <Text className="text-ui-fg-subtle text-xs">
+                      {card.label}
+                    </Text>
                     <Text className="mt-2 font-medium">{card.value}</Text>
                   </div>
                 ))}
@@ -1698,16 +2705,19 @@ const DeliverySettingsPage = () => {
                       <div>
                         <Text className="font-medium">{mode.modeCode}</Text>
                         <Text className="text-ui-fg-subtle mt-1 text-sm">
-                          supporting connections: {mode.supportingConnectionsText}
+                          supporting connections:{" "}
+                          {mode.supportingConnectionsText}
                         </Text>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <span className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(mode.rolloutStatus)}`}>
+                        <span
+                          className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(mode.rolloutStatus)}`}
+                        >
                           rollout: {mode.rolloutStatus}
                         </span>
                         <span
                           className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(
-                            mode.status === "ready" ? "projected" : "deferred"
+                            mode.status === "ready" ? "projected" : "deferred",
                           )}`}
                         >
                           preview: {mode.status}
@@ -1717,59 +2727,103 @@ const DeliverySettingsPage = () => {
 
                     <div className="mt-4 grid gap-3 xl:grid-cols-2">
                       <div className="rounded-md border p-3">
-                        <Text className="text-ui-fg-subtle text-xs">Readiness verdict</Text>
-                        <Text className="mt-2 text-sm">{mode.readinessText}</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Readiness verdict
+                        </Text>
+                        <Text className="mt-2 text-sm">
+                          {mode.readinessText}
+                        </Text>
                       </div>
                       <div className="rounded-md border p-3">
-                        <Text className="text-ui-fg-subtle text-xs">Validated steps</Text>
-                        <Text className="mt-2 font-medium">{mode.stepReadinessText}</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Validated steps
+                        </Text>
+                        <Text className="mt-2 font-medium">
+                          {mode.stepReadinessText}
+                        </Text>
                       </div>
                       <div className="rounded-md border p-3 xl:col-span-2">
-                        <Text className="text-ui-fg-subtle text-xs">Blocked reasons</Text>
-                        <Text className="mt-2 text-sm">{mode.blockedReasonsText}</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Blocked reasons
+                        </Text>
+                        <Text className="mt-2 text-sm">
+                          {mode.blockedReasonsText}
+                        </Text>
                       </div>
                       <div className="rounded-md border p-3">
-                        <Text className="text-ui-fg-subtle text-xs">Execution plan</Text>
-                        <Text className="mt-2 text-sm">{mode.executionPlanText}</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Execution plan
+                        </Text>
+                        <Text className="mt-2 text-sm">
+                          {mode.executionPlanText}
+                        </Text>
                       </div>
                       <div className="rounded-md border p-3">
-                        <Text className="text-ui-fg-subtle text-xs">Shipment execution</Text>
-                        <Text className="mt-2 text-sm">{mode.shipmentExecutionText}</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Shipment execution
+                        </Text>
+                        <Text className="mt-2 text-sm">
+                          {mode.shipmentExecutionText}
+                        </Text>
                       </div>
                       <div className="rounded-md border p-3 xl:col-span-2">
-                        <Text className="text-ui-fg-subtle text-xs">Execution gate / preflight eligibility</Text>
-                        <Text className="mt-2 text-sm">{mode.preflightEligibilityText}</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Execution gate / preflight eligibility
+                        </Text>
+                        <Text className="mt-2 text-sm">
+                          {mode.preflightEligibilityText}
+                        </Text>
                         <Text className="text-ui-fg-subtle mt-2 text-xs">
-                          Future prerequisites: {mode.preflightPrerequisitesText}
+                          Future prerequisites:{" "}
+                          {mode.preflightPrerequisitesText}
                         </Text>
                         <Text className="text-ui-fg-subtle mt-1 text-xs">
                           Blocked live actions: {mode.blockedLiveActionsText}
                         </Text>
                       </div>
                       <div className="rounded-md border p-3 xl:col-span-2">
-                        <Text className="text-ui-fg-subtle text-xs">Provider dispatch command preview</Text>
-                        <Text className="mt-2 text-sm">{mode.providerDispatchText}</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Provider dispatch command preview
+                        </Text>
+                        <Text className="mt-2 text-sm">
+                          {mode.providerDispatchText}
+                        </Text>
                         <Text className="text-ui-fg-subtle mt-2 text-xs">
-                          Blocked dispatch actions: {mode.blockedDispatchActionsText}
+                          Blocked dispatch actions:{" "}
+                          {mode.blockedDispatchActionsText}
                         </Text>
                       </div>
                       <div className="rounded-md border p-3 xl:col-span-2">
-                        <Text className="text-ui-fg-subtle text-xs">Normalized shipment result preview</Text>
-                        <Text className="mt-2 text-sm">{mode.shipmentResultText}</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Normalized shipment result preview
+                        </Text>
+                        <Text className="mt-2 text-sm">
+                          {mode.shipmentResultText}
+                        </Text>
                         <Text className="text-ui-fg-subtle mt-2 text-xs">
-                          Blocked materialization actions: {mode.blockedMaterializationActionsText}
+                          Blocked materialization actions:{" "}
+                          {mode.blockedMaterializationActionsText}
                         </Text>
                       </div>
                       <div className="rounded-md border p-3 xl:col-span-2">
-                        <Text className="text-ui-fg-subtle text-xs">Fulfillment application mutation preview</Text>
-                        <Text className="mt-2 text-sm">{mode.applicationPreviewText}</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Fulfillment application mutation preview
+                        </Text>
+                        <Text className="mt-2 text-sm">
+                          {mode.applicationPreviewText}
+                        </Text>
                         <Text className="text-ui-fg-subtle mt-2 text-xs">
-                          Blocked application actions: {mode.blockedApplicationActionsText}
+                          Blocked application actions:{" "}
+                          {mode.blockedApplicationActionsText}
                         </Text>
                       </div>
                       <div className="rounded-md border p-3 xl:col-span-2">
-                        <Text className="text-ui-fg-subtle text-xs">Execution lifecycle timeline preview</Text>
-                        <Text className="mt-2 text-sm">{mode.lifecycleStatusText}</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Execution lifecycle timeline preview
+                        </Text>
+                        <Text className="mt-2 text-sm">
+                          {mode.lifecycleStatusText}
+                        </Text>
                         <Text className="text-ui-fg-subtle mt-2 text-xs">
                           Phase sequence: {mode.lifecyclePhaseSequenceText}
                         </Text>
@@ -1777,7 +2831,8 @@ const DeliverySettingsPage = () => {
                           Identity correlation: {mode.lifecycleIdentityText}
                         </Text>
                         <Text className="text-ui-fg-subtle mt-1 text-xs">
-                          Disabled live confirmations: {mode.lifecycleDisabledActionsText}
+                          Disabled live confirmations:{" "}
+                          {mode.lifecycleDisabledActionsText}
                         </Text>
                         <div className="mt-3 overflow-auto rounded-md border">
                           <table className="min-w-full divide-y text-left text-xs">
@@ -1785,23 +2840,47 @@ const DeliverySettingsPage = () => {
                               <tr>
                                 <th className="px-3 py-2 font-medium">#</th>
                                 <th className="px-3 py-2 font-medium">Phase</th>
-                                <th className="px-3 py-2 font-medium">Status</th>
-                                <th className="px-3 py-2 font-medium">Readiness</th>
-                                <th className="px-3 py-2 font-medium">Linked previews</th>
-                                <th className="px-3 py-2 font-medium">Block reasons</th>
-                                <th className="px-3 py-2 font-medium">Disabled actions</th>
+                                <th className="px-3 py-2 font-medium">
+                                  Status
+                                </th>
+                                <th className="px-3 py-2 font-medium">
+                                  Readiness
+                                </th>
+                                <th className="px-3 py-2 font-medium">
+                                  Linked previews
+                                </th>
+                                <th className="px-3 py-2 font-medium">
+                                  Block reasons
+                                </th>
+                                <th className="px-3 py-2 font-medium">
+                                  Disabled actions
+                                </th>
                               </tr>
                             </thead>
                             <tbody className="divide-y">
                               {mode.lifecyclePhaseRows.map((phase) => (
                                 <tr key={phase.key}>
-                                  <td className="px-3 py-2 align-top">{phase.order}</td>
-                                  <td className="px-3 py-2 align-top">{phase.code}</td>
-                                  <td className="px-3 py-2 align-top">{phase.status}</td>
-                                  <td className="px-3 py-2 align-top">{phase.readiness}</td>
-                                  <td className="px-3 py-2 align-top">{phase.linkedArtifactsText}</td>
-                                  <td className="px-3 py-2 align-top">{phase.blockReasonsText}</td>
-                                  <td className="px-3 py-2 align-top">{phase.disabledActionsText}</td>
+                                  <td className="px-3 py-2 align-top">
+                                    {phase.order}
+                                  </td>
+                                  <td className="px-3 py-2 align-top">
+                                    {phase.code}
+                                  </td>
+                                  <td className="px-3 py-2 align-top">
+                                    {phase.status}
+                                  </td>
+                                  <td className="px-3 py-2 align-top">
+                                    {phase.readiness}
+                                  </td>
+                                  <td className="px-3 py-2 align-top">
+                                    {phase.linkedArtifactsText}
+                                  </td>
+                                  <td className="px-3 py-2 align-top">
+                                    {phase.blockReasonsText}
+                                  </td>
+                                  <td className="px-3 py-2 align-top">
+                                    {phase.disabledActionsText}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -1809,8 +2888,12 @@ const DeliverySettingsPage = () => {
                         </div>
                       </div>
                       <div className="rounded-md border p-3 xl:col-span-2">
-                        <Text className="text-ui-fg-subtle text-xs">Failure handling and compensation preview</Text>
-                        <Text className="mt-2 text-sm">{mode.failureHandlingText}</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Failure handling and compensation preview
+                        </Text>
+                        <Text className="mt-2 text-sm">
+                          {mode.failureHandlingText}
+                        </Text>
                         <Text className="text-ui-fg-subtle mt-2 text-xs">
                           Retry posture: {mode.retryPostureText}
                         </Text>
@@ -1818,17 +2901,22 @@ const DeliverySettingsPage = () => {
                           Compensation posture: {mode.compensationPostureText}
                         </Text>
                         <Text className="text-ui-fg-subtle mt-1 text-xs">
-                          Blocked failure actions: {mode.blockedFailureActionsText}
+                          Blocked failure actions:{" "}
+                          {mode.blockedFailureActionsText}
                         </Text>
                       </div>
                       <div className="rounded-md border p-3 xl:col-span-2">
-                        <Text className="text-ui-fg-subtle text-xs">Deterministic execution identity</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Deterministic execution identity
+                        </Text>
                         <pre className="mt-2 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
                           {mode.executionIdentityText}
                         </pre>
                       </div>
                       <div className="rounded-md border p-3 xl:col-span-2">
-                        <Text className="text-ui-fg-subtle text-xs">Persistence and audit preview</Text>
+                        <Text className="text-ui-fg-subtle text-xs">
+                          Persistence and audit preview
+                        </Text>
                         <pre className="mt-2 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
                           {mode.persistenceAuditText}
                         </pre>
@@ -1861,7 +2949,9 @@ const DeliverySettingsPage = () => {
               </div>
             </div>
           ) : (
-            <Text className="text-ui-fg-subtle mt-4">{executionPlanRenderState.emptyText}</Text>
+            <Text className="text-ui-fg-subtle mt-4">
+              {executionPlanRenderState.emptyText}
+            </Text>
           )}
         </div>
 
@@ -1870,24 +2960,44 @@ const DeliverySettingsPage = () => {
             <div>
               <Heading level="h2">Shipment operations lookup</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Single-reference operator lookup for accepted shipment lifecycle, status refresh posture and guarded manual cancel/status refresh. Manual retry v1 follows backend readiness-only policy and returns blocked diagnostics when live redispatch is not materialized.
+                Single-reference operator lookup for accepted shipment
+                lifecycle, status refresh posture and guarded manual
+                cancel/status refresh. Manual retry v1 follows backend
+                readiness-only policy and returns blocked diagnostics when live
+                redispatch is not materialized.
               </Text>
             </div>
-            <Text className="text-ui-fg-subtle text-sm">{shipmentOperationsRenderState.headerText}</Text>
+            <Text className="text-ui-fg-subtle text-sm">
+              {shipmentOperationsRenderState.headerText}
+            </Text>
           </div>
 
           <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
             <div>
-              <Label htmlFor="shipment-operations-execution-reference">Execution reference</Label>
+              <Label htmlFor="shipment-operations-execution-reference">
+                Execution reference
+              </Label>
               <Input
                 id="shipment-operations-execution-reference"
                 value={shipmentOperationsForm.execution_reference}
-                onChange={(event) => handleShipmentOperationsField("execution_reference", event.target.value)}
-                disabled={isLoadingShipmentOperations || isRefreshingShipmentStatus || isCancellingShipment || isRetryingShipment}
+                onChange={(event) =>
+                  handleShipmentOperationsField(
+                    "execution_reference",
+                    event.target.value,
+                  )
+                }
+                disabled={
+                  isLoadingShipmentOperations ||
+                  isRefreshingShipmentStatus ||
+                  isCancellingShipment ||
+                  isRetryingShipment
+                }
                 placeholder="Paste execution_reference from controlled fulfillment result or execution ledger"
               />
               <Text className="text-ui-fg-subtle mt-2 text-sm">
-                The backend response returns only masked/safe references and boolean presence markers, never raw provider ids, auth tokens, quote keys or execution secrets.
+                The backend response returns only masked/safe references and
+                boolean presence markers, never raw provider ids, auth tokens,
+                quote keys or execution secrets.
               </Text>
             </div>
             <div className="flex items-end gap-3">
@@ -1954,9 +3064,12 @@ const DeliverySettingsPage = () => {
 
           {shipmentOperationsError ? (
             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
-              <Text className="text-ui-fg-error font-medium">{shipmentOperationsError.message}</Text>
+              <Text className="text-ui-fg-error font-medium">
+                {shipmentOperationsError.message}
+              </Text>
               <Text className="text-ui-fg-subtle mt-1">
-                {shipmentOperationsError.code} · HTTP {shipmentOperationsError.status}
+                {shipmentOperationsError.code} · HTTP{" "}
+                {shipmentOperationsError.status}
               </Text>
               {shipmentOperationsError.details ? (
                 <pre className="mt-3 overflow-auto rounded-md border bg-white p-3 text-xs">
@@ -1968,21 +3081,25 @@ const DeliverySettingsPage = () => {
 
           {shipmentOperationsNotice ? (
             <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4">
-              <Text className="font-medium text-green-800">{shipmentOperationsNotice}</Text>
+              <Text className="font-medium text-green-800">
+                {shipmentOperationsNotice}
+              </Text>
             </div>
           ) : null}
 
           {shipmentOperationsSnapshot ? (
             <div className="mt-6 grid gap-6">
               <div className="flex flex-wrap gap-2">
-                <span className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(shipmentOperationsRenderState.refreshStatusTone)}`}>
+                <span
+                  className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(shipmentOperationsRenderState.refreshStatusTone)}`}
+                >
                   {shipmentOperationsRenderState.statusBadgeText}
                 </span>
                 {shipmentOperationsRenderState.actionBadges.map((badge) => (
                   <span
                     key={badge.key}
                     className={`rounded-full border px-2 py-1 text-xs ${plannerStatusToneClass(
-                      badge.available ? "projected" : "deferred"
+                      badge.available ? "projected" : "deferred",
                     )}`}
                   >
                     {badge.label}
@@ -1993,7 +3110,9 @@ const DeliverySettingsPage = () => {
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                 {shipmentOperationsRenderState.summaryCards.map((card) => (
                   <div key={card.key} className="rounded-md border p-3">
-                    <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
+                    <Text className="text-ui-fg-subtle text-xs">
+                      {card.label}
+                    </Text>
                     <Text className="mt-2 font-medium">{card.value}</Text>
                   </div>
                 ))}
@@ -2015,22 +3134,28 @@ const DeliverySettingsPage = () => {
                 <div className="rounded-md border p-4">
                   <Heading level="h3">Status refresh outcome</Heading>
                   <Text className="text-ui-fg-subtle mt-1 text-sm">
-                    Refresh is backend-guarded by accepted shipment, active sealed Yandex connection and stored backend-only provider shipment reference.
+                    Refresh is backend-guarded by accepted shipment, active
+                    sealed Yandex connection and stored backend-only provider
+                    shipment reference.
                   </Text>
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    {shipmentOperationsRenderState.statusRefreshRows.map((row) => (
-                      <div key={row.key}>
-                        <Label>{row.label}</Label>
-                        <Input readOnly value={row.value} />
-                      </div>
-                    ))}
+                    {shipmentOperationsRenderState.statusRefreshRows.map(
+                      (row) => (
+                        <div key={row.key}>
+                          <Label>{row.label}</Label>
+                          <Input readOnly value={row.value} />
+                        </div>
+                      ),
+                    )}
                   </div>
                 </div>
 
                 <div className="rounded-md border p-4">
                   <Heading level="h3">Cancel readiness and result</Heading>
                   <Text className="text-ui-fg-subtle mt-1 text-sm">
-                    Cancel is an explicit backend/admin-only action guarded by accepted lifecycle, safe status posture, Yandex connection readiness and backend-only provider reference.
+                    Cancel is an explicit backend/admin-only action guarded by
+                    accepted lifecycle, safe status posture, Yandex connection
+                    readiness and backend-only provider reference.
                   </Text>
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     {shipmentOperationsRenderState.cancelRows.map((row) => (
@@ -2070,7 +3195,9 @@ const DeliverySettingsPage = () => {
               </div>
             </div>
           ) : (
-            <Text className="text-ui-fg-subtle mt-6">{shipmentOperationsRenderState.emptyText}</Text>
+            <Text className="text-ui-fg-subtle mt-6">
+              {shipmentOperationsRenderState.emptyText}
+            </Text>
           )}
         </div>
 
@@ -2079,24 +3206,33 @@ const DeliverySettingsPage = () => {
             <div>
               <Heading level="h2">Shipping option manual sync</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Admin-only operator control surface for explicit manual sync against deliveryhub shipping options. Dry-run is the default safe path.
+                Admin-only operator control surface for explicit manual sync
+                against deliveryhub shipping options. Dry-run is the default
+                safe path.
               </Text>
             </div>
-            <Text className="text-ui-fg-subtle text-sm">{manualSyncRenderState.headerText}</Text>
+            <Text className="text-ui-fg-subtle text-sm">
+              {manualSyncRenderState.headerText}
+            </Text>
           </div>
 
           <div className="mt-4 rounded-lg border border-ui-border-base bg-ui-bg-subtle p-4">
             <Text className="font-medium">Safe-by-default guardrails</Text>
             <Text className="text-ui-fg-subtle mt-2 text-sm">
-              Dry-run never writes shipping options. Execute remains manual-only and requires the exact backend guard string plus explicit Medusa create context ids.
+              Dry-run never writes shipping options. Execute remains manual-only
+              and requires the exact backend guard string plus explicit Medusa
+              create context ids.
             </Text>
           </div>
 
           {shippingOptionSyncError ? (
             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
-              <Text className="text-ui-fg-error font-medium">{shippingOptionSyncError.message}</Text>
+              <Text className="text-ui-fg-error font-medium">
+                {shippingOptionSyncError.message}
+              </Text>
               <Text className="text-ui-fg-subtle mt-1">
-                {shippingOptionSyncError.code} · HTTP {shippingOptionSyncError.status}
+                {shippingOptionSyncError.code} · HTTP{" "}
+                {shippingOptionSyncError.status}
               </Text>
               {shippingOptionSyncError.details ? (
                 <pre className="mt-3 overflow-auto rounded-md border bg-white p-3 text-xs">
@@ -2110,17 +3246,22 @@ const DeliverySettingsPage = () => {
             <div className="rounded-md border p-4">
               <Heading level="h3">Dry-run</Heading>
               <Text className="text-ui-fg-subtle mt-1 text-sm">
-                Primary action. Calls the admin route in safe mode and returns desired plan, reconciliation and operation summaries without applying Medusa mutations.
+                Primary action. Calls the admin route in safe mode and returns
+                desired plan, reconciliation and operation summaries without
+                applying Medusa mutations.
               </Text>
 
               <div className="mt-4">
-                <Label htmlFor="shipping-option-sync-error-mode">Execute error mode</Label>
+                <Label htmlFor="shipping-option-sync-error-mode">
+                  Execute error mode
+                </Label>
                 <select
                   id="shipping-option-sync-error-mode"
                   value={shippingOptionSyncErrorMode}
                   onChange={(event) =>
                     setShippingOptionSyncErrorMode(
-                      event.target.value as DeliveryHubShippingOptionManualSyncErrorMode
+                      event.target
+                        .value as DeliveryHubShippingOptionManualSyncErrorMode,
                     )
                   }
                   disabled={isLoading || isRunningShippingOptionSync}
@@ -2130,7 +3271,8 @@ const DeliverySettingsPage = () => {
                   <option value="continue">continue</option>
                 </select>
                 <Text className="text-ui-fg-subtle mt-2 text-sm">
-                  Used only if execute mode is explicitly confirmed. Dry-run remains non-mutating regardless of this selection.
+                  Used only if execute mode is explicitly confirmed. Dry-run
+                  remains non-mutating regardless of this selection.
                 </Text>
               </div>
 
@@ -2149,12 +3291,16 @@ const DeliverySettingsPage = () => {
             <div className="rounded-md border p-4">
               <Heading level="h3">Execute with explicit confirmation</Heading>
               <Text className="text-ui-fg-subtle mt-1 text-sm">
-                Secondary admin-only write path. Nothing executes unless the confirmation string matches exactly and both Medusa ids are filled in.
+                Secondary admin-only write path. Nothing executes unless the
+                confirmation string matches exactly and both Medusa ids are
+                filled in.
               </Text>
 
               <div className="mt-4 grid gap-4">
                 <div>
-                  <Label htmlFor="shipping-option-sync-guard-expected">Expected guard string</Label>
+                  <Label htmlFor="shipping-option-sync-guard-expected">
+                    Expected guard string
+                  </Label>
                   <Input
                     id="shipping-option-sync-guard-expected"
                     readOnly
@@ -2163,40 +3309,57 @@ const DeliverySettingsPage = () => {
                 </div>
 
                 <div>
-                  <Label htmlFor="shipping-option-sync-guard-input">Type exact guard string to unlock execute</Label>
+                  <Label htmlFor="shipping-option-sync-guard-input">
+                    Type exact guard string to unlock execute
+                  </Label>
                   <Input
                     id="shipping-option-sync-guard-input"
                     value={shippingOptionSyncExecuteGuard}
-                    onChange={(event) => setShippingOptionSyncExecuteGuard(event.target.value)}
+                    onChange={(event) =>
+                      setShippingOptionSyncExecuteGuard(event.target.value)
+                    }
                     disabled={isLoading || isRunningShippingOptionSync}
                     placeholder="deliveryhub:execute_shipping_option_sync"
                   />
                   <Text className="mt-2 text-sm">
                     {manualSyncRenderState.guardConfirmed ? (
-                      <span className="text-green-700">Guard confirmed. Execute button can be enabled once Medusa ids are provided.</span>
+                      <span className="text-green-700">
+                        Guard confirmed. Execute button can be enabled once
+                        Medusa ids are provided.
+                      </span>
                     ) : (
-                      <span className="text-ui-fg-subtle">Guard not confirmed. Execute remains blocked.</span>
+                      <span className="text-ui-fg-subtle">
+                        Guard not confirmed. Execute remains blocked.
+                      </span>
                     )}
                   </Text>
                 </div>
 
                 <div>
-                  <Label htmlFor="shipping-option-sync-service-zone">Medusa service zone id</Label>
+                  <Label htmlFor="shipping-option-sync-service-zone">
+                    Medusa service zone id
+                  </Label>
                   <Input
                     id="shipping-option-sync-service-zone"
                     value={shippingOptionSyncServiceZoneId}
-                    onChange={(event) => setShippingOptionSyncServiceZoneId(event.target.value)}
+                    onChange={(event) =>
+                      setShippingOptionSyncServiceZoneId(event.target.value)
+                    }
                     disabled={isLoading || isRunningShippingOptionSync}
                     placeholder="serzo_..."
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="shipping-option-sync-shipping-profile">Medusa shipping profile id</Label>
+                  <Label htmlFor="shipping-option-sync-shipping-profile">
+                    Medusa shipping profile id
+                  </Label>
                   <Input
                     id="shipping-option-sync-shipping-profile"
                     value={shippingOptionSyncShippingProfileId}
-                    onChange={(event) => setShippingOptionSyncShippingProfileId(event.target.value)}
+                    onChange={(event) =>
+                      setShippingOptionSyncShippingProfileId(event.target.value)
+                    }
                     disabled={isLoading || isRunningShippingOptionSync}
                     placeholder="sp_..."
                   />
@@ -2235,36 +3398,48 @@ const DeliverySettingsPage = () => {
                 <div className="rounded-md border p-4">
                   <Heading level="h3">Desired plan summary</Heading>
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    {manualSyncRenderState.desiredPlanSummaryCards.map((card) => (
-                      <div key={card.key} className="rounded-md border p-3">
-                        <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
-                        <Text className="mt-2 font-medium">{card.value}</Text>
-                      </div>
-                    ))}
+                    {manualSyncRenderState.desiredPlanSummaryCards.map(
+                      (card) => (
+                        <div key={card.key} className="rounded-md border p-3">
+                          <Text className="text-ui-fg-subtle text-xs">
+                            {card.label}
+                          </Text>
+                          <Text className="mt-2 font-medium">{card.value}</Text>
+                        </div>
+                      ),
+                    )}
                   </div>
                 </div>
 
                 <div className="rounded-md border p-4">
                   <Heading level="h3">Reconciliation summary</Heading>
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    {manualSyncRenderState.reconciliationSummaryCards.map((card) => (
-                      <div key={card.key} className="rounded-md border p-3">
-                        <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
-                        <Text className="mt-2 font-medium">{card.value}</Text>
-                      </div>
-                    ))}
+                    {manualSyncRenderState.reconciliationSummaryCards.map(
+                      (card) => (
+                        <div key={card.key} className="rounded-md border p-3">
+                          <Text className="text-ui-fg-subtle text-xs">
+                            {card.label}
+                          </Text>
+                          <Text className="mt-2 font-medium">{card.value}</Text>
+                        </div>
+                      ),
+                    )}
                   </div>
                 </div>
 
                 <div className="rounded-md border p-4">
                   <Heading level="h3">Operation plan summary</Heading>
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    {manualSyncRenderState.operationPlanSummaryCards.map((card) => (
-                      <div key={card.key} className="rounded-md border p-3">
-                        <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
-                        <Text className="mt-2 font-medium">{card.value}</Text>
-                      </div>
-                    ))}
+                    {manualSyncRenderState.operationPlanSummaryCards.map(
+                      (card) => (
+                        <div key={card.key} className="rounded-md border p-3">
+                          <Text className="text-ui-fg-subtle text-xs">
+                            {card.label}
+                          </Text>
+                          <Text className="mt-2 font-medium">{card.value}</Text>
+                        </div>
+                      ),
+                    )}
                   </div>
                 </div>
               </div>
@@ -2275,12 +3450,14 @@ const DeliverySettingsPage = () => {
                     <div>
                       <Heading level="h3">Execution report</Heading>
                       <Text className="text-ui-fg-subtle mt-1 text-sm">
-                        Returned only for explicit execute runs that passed the confirmation guard and backend validation.
+                        Returned only for explicit execute runs that passed the
+                        confirmation guard and backend validation.
                       </Text>
                     </div>
                     <span
                       className={`rounded-full border px-2 py-1 text-xs ${logSuccessToneClass(
-                        manualSyncRenderState.executionReport.outcomeToneIsSuccess
+                        manualSyncRenderState.executionReport
+                          .outcomeToneIsSuccess,
                       )}`}
                     >
                       {manualSyncRenderState.executionReport.outcome}
@@ -2290,79 +3467,135 @@ const DeliverySettingsPage = () => {
                   <div className="mt-4 grid gap-4 md:grid-cols-3">
                     <div>
                       <Label>Aborted</Label>
-                      <Input readOnly value={manualSyncRenderState.executionReport.aborted} />
+                      <Input
+                        readOnly
+                        value={manualSyncRenderState.executionReport.aborted}
+                      />
                     </div>
                     <div>
                       <Label>Error mode</Label>
-                      <Input readOnly value={manualSyncRenderState.executionReport.errorMode} />
+                      <Input
+                        readOnly
+                        value={manualSyncRenderState.executionReport.errorMode}
+                      />
                     </div>
                     <div>
                       <Label>Executed operations</Label>
-                      <Input readOnly value={manualSyncRenderState.executionReport.executedOperationCount} />
+                      <Input
+                        readOnly
+                        value={
+                          manualSyncRenderState.executionReport
+                            .executedOperationCount
+                        }
+                      />
                     </div>
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {manualSyncRenderState.executionReport.summaryCards.map((card) => (
-                      <div key={card.key} className="rounded-md border p-3">
-                        <Text className="text-ui-fg-subtle text-xs">{card.label}</Text>
-                        <Text className="mt-2 font-medium">{card.value}</Text>
-                      </div>
-                    ))}
+                    {manualSyncRenderState.executionReport.summaryCards.map(
+                      (card) => (
+                        <div key={card.key} className="rounded-md border p-3">
+                          <Text className="text-ui-fg-subtle text-xs">
+                            {card.label}
+                          </Text>
+                          <Text className="mt-2 font-medium">{card.value}</Text>
+                        </div>
+                      ),
+                    )}
                   </div>
                 </div>
               ) : (
                 <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
-                  <Text className="font-medium text-amber-800">No execution report returned</Text>
-                  <Text className="mt-1 text-sm text-amber-700">{manualSyncRenderState.noExecutionReportText}</Text>
+                  <Text className="font-medium text-amber-800">
+                    No execution report returned
+                  </Text>
+                  <Text className="mt-1 text-sm text-amber-700">
+                    {manualSyncRenderState.noExecutionReportText}
+                  </Text>
                 </div>
               )}
 
               <div className="grid gap-3">
                 <details className="rounded-md border p-3">
-                  <summary className="cursor-pointer text-sm font-medium">Desired plan details</summary>
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Desired plan details
+                  </summary>
                   <pre className="mt-3 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
-                    {JSON.stringify(shippingOptionSyncResult.desired_plan, null, 2)}
+                    {JSON.stringify(
+                      shippingOptionSyncResult.desired_plan,
+                      null,
+                      2,
+                    )}
                   </pre>
                 </details>
 
                 <details className="rounded-md border p-3">
-                  <summary className="cursor-pointer text-sm font-medium">Reconciliation details</summary>
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Reconciliation details
+                  </summary>
                   <pre className="mt-3 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
-                    {JSON.stringify(shippingOptionSyncResult.reconciliation, null, 2)}
+                    {JSON.stringify(
+                      shippingOptionSyncResult.reconciliation,
+                      null,
+                      2,
+                    )}
                   </pre>
                 </details>
 
                 <details className="rounded-md border p-3">
-                  <summary className="cursor-pointer text-sm font-medium">Operation plan details</summary>
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Operation plan details
+                  </summary>
                   <pre className="mt-3 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
-                    {JSON.stringify(shippingOptionSyncResult.operation_plan, null, 2)}
+                    {JSON.stringify(
+                      shippingOptionSyncResult.operation_plan,
+                      null,
+                      2,
+                    )}
                   </pre>
                 </details>
 
                 <details className="rounded-md border p-3">
-                  <summary className="cursor-pointer text-sm font-medium">Execution report details</summary>
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Execution report details
+                  </summary>
                   <pre className="mt-3 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
-                    {JSON.stringify(shippingOptionSyncResult.execution.report, null, 2)}
+                    {JSON.stringify(
+                      shippingOptionSyncResult.execution.report,
+                      null,
+                      2,
+                    )}
                   </pre>
                 </details>
               </div>
             </div>
           ) : (
-            <Text className="text-ui-fg-subtle mt-6">{manualSyncRenderState.noResultText}</Text>
+            <Text className="text-ui-fg-subtle mt-6">
+              {manualSyncRenderState.noResultText}
+            </Text>
           )}
         </div>
- 
-        <div className="rounded-lg border p-4">
+
+          </div>
+        </details>
+
+        <details className="rounded-lg border p-4">
+          <summary className="cursor-pointer text-base font-medium">
+            Техническая диагностика: журнал событий
+          </summary>
+          <div className="mt-4">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <Heading level="h2">Event logs</Heading>
+              <Heading level="h2">Журнал диагностики</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Read-only recent Delivery Hub diagnostic events. Payloads stay sanitized and filtered to Yandex.
+                Последние read-only события Delivery Hub. Payloads sanitized и
+                отфильтрованы по Yandex.
               </Text>
             </div>
             <Text className="text-ui-fg-subtle text-sm">
-              {activeConnectionId ? `Filtered by connection ${activeConnectionId}` : "Showing all Yandex connections"}
+              {activeConnectionId
+                ? `Filtered by connection ${activeConnectionId}`
+                : "Показаны все Yandex connections"}
             </Text>
           </div>
 
@@ -2378,7 +3611,9 @@ const DeliverySettingsPage = () => {
                       </Text>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <span className={`rounded-full border px-2 py-1 text-xs ${logSuccessToneClass(log.success)}`}>
+                      <span
+                        className={`rounded-full border px-2 py-1 text-xs ${logSuccessToneClass(log.success)}`}
+                      >
                         {log.success ? "success" : "failure"}
                       </span>
                       <span className="rounded-full border border-ui-border-base px-2 py-1 text-xs">
@@ -2409,37 +3644,80 @@ const DeliverySettingsPage = () => {
                 </div>
               ))
             ) : (
-              <Text className="text-ui-fg-subtle">No delivery-hub event logs found for the current filter.</Text>
+              <Text className="text-ui-fg-subtle">
+                Для текущего фильтра событий delivery-hub не найдено.
+              </Text>
             )}
           </div>
-        </div>
+          </div>
+        </details>
 
         <div className="rounded-lg border p-4">
-          <Heading level="h2">Test quote</Heading>
+          <Heading level="h2">4. Проверить стоимость доставки</Heading>
           <Text className="text-ui-fg-subtle mt-2">
-            Minimal diagnostic form for Yandex supported modes in tranche-1. Secret credentials and provider tokens are never echoed.
+            Диагностический расчёт тарифа для поддерживаемых режимов Yandex.
+            Shipment не создаётся, токены и raw provider body не выводятся.
           </Text>
           <div className="mt-3 rounded-md border bg-ui-bg-subtle p-3">
-            <Text className="text-ui-fg-subtle text-sm">{getQuoteModeHint(testQuoteForm.mode_code)}</Text>
+            <Text className="text-ui-fg-subtle text-sm">
+              {getQuoteModeHint(testQuoteForm.mode_code)}
+            </Text>
+            <Text className="text-ui-fg-subtle mt-2 text-sm">
+              {testQuoteCapability.helperText}
+            </Text>
           </div>
 
           {testQuoteError ? (
             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
-              <Text className="text-ui-fg-error font-medium">{testQuoteError.message}</Text>
-              <Text className="text-ui-fg-subtle mt-1">{testQuoteError.code}</Text>
+              <Text className="text-ui-fg-error font-medium">
+                {testQuoteError.message}
+              </Text>
+              <Text className="text-ui-fg-subtle mt-1">
+                {testQuoteError.code} · HTTP {testQuoteError.status}
+              </Text>
+              {getProviderCodeOperatorHint(
+                getDeliveryHubApiErrorSafeLines(testQuoteError)
+                  .find((line) => line.startsWith("provider_code="))
+                  ?.replace("provider_code=", ""),
+              ) ? (
+                <Text className="text-ui-fg-subtle mt-2 text-sm">
+                  {getProviderCodeOperatorHint(
+                    getDeliveryHubApiErrorSafeLines(testQuoteError)
+                      .find((line) => line.startsWith("provider_code="))
+                      ?.replace("provider_code=", ""),
+                  )}
+                </Text>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {getDeliveryHubApiErrorSafeLines(testQuoteError).map((line) => (
+                  <span
+                    key={line}
+                    className="rounded-full border border-red-200 bg-ui-bg-base px-2 py-1 text-xs text-ui-fg-subtle"
+                  >
+                    {line}
+                  </span>
+                ))}
+              </div>
             </div>
           ) : null}
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <div>
-              <Label htmlFor="quote-connection">Connection</Label>
+              <FieldLabel htmlFor="quote-connection" required={true}>
+                Подключение
+              </FieldLabel>
+              <Text className="text-ui-fg-subtle mb-1 text-xs">
+                {getFieldRequirementText({ field: "connection" })}
+              </Text>
               <select
                 id="quote-connection"
                 value={testQuoteForm.connection_id}
-                onChange={(event) => handleQuoteField("connection_id", event.target.value)}
+                onChange={(event) =>
+                  handleQuoteField("connection_id", event.target.value)
+                }
                 className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active h-10 w-full rounded-md px-3 outline-none"
               >
-                <option value="">Select connection</option>
+                <option value="">Выберите подключение</option>
                 {yandexConnections.map((connection) => (
                   <option key={connection.id} value={connection.id}>
                     {connection.name} · {connection.mode} · {connection.status}
@@ -2449,129 +3727,342 @@ const DeliverySettingsPage = () => {
             </div>
 
             <div>
-              <Label htmlFor="quote-mode">Mode code</Label>
+              <FieldLabel htmlFor="quote-mode" required={true}>
+                Сценарий расчёта
+              </FieldLabel>
               <select
                 id="quote-mode"
                 value={testQuoteForm.mode_code}
                 onChange={(event) =>
                   handleQuoteField(
                     "mode_code",
-                    event.target.value as DeliveryTestQuoteForm["mode_code"]
+                    event.target.value as DeliveryTestQuoteForm["mode_code"],
                   )
                 }
                 className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active h-10 w-full rounded-md px-3 outline-none"
               >
-                <option value="warehouse_to_pickup_point">warehouse_to_pickup_point</option>
-                <option value="dropoff_point_to_pickup_point">dropoff_point_to_pickup_point</option>
+                <option value="warehouse_to_pickup_point">
+                  Склад → ПВЗ (warehouse_to_pickup_point)
+                </option>
+                <option value="dropoff_point_to_pickup_point">
+                  Dropoff ПВЗ → ПВЗ (dropoff_point_to_pickup_point)
+                </option>
               </select>
             </div>
 
             <div>
-              <Label htmlFor="quote-destination-point">Destination point id</Label>
-              <Text className="text-ui-fg-subtle mb-1 text-xs">Yandex pickup point identifier for the recipient side.</Text>
+              <FieldLabel htmlFor="quote-destination-point" required={true}>
+                Destination PVZ/platform station id
+              </FieldLabel>
+              <Text className="text-ui-fg-subtle mb-1 text-xs">
+                {getFieldRequirementText({ field: "destination_point" })}
+              </Text>
               <Input
                 id="quote-destination-point"
                 value={testQuoteForm.destination_point_id}
-                onChange={(event) => handleQuoteField("destination_point_id", event.target.value)}
+                onChange={(event) =>
+                  handleQuoteField("destination_point_id", event.target.value)
+                }
               />
             </div>
 
             <div>
-              <Label htmlFor="quote-currency">Currency</Label>
+              <FieldLabel htmlFor="quote-currency" required={false}>
+                Валюта
+              </FieldLabel>
+              <Text className="text-ui-fg-subtle mb-1 text-xs">
+                {getFieldRequirementText({ field: "currency" })}
+              </Text>
               <Input
                 id="quote-currency"
                 value={testQuoteForm.currency_code}
-                onChange={(event) => handleQuoteField("currency_code", event.target.value)}
+                onChange={(event) =>
+                  handleQuoteField("currency_code", event.target.value)
+                }
               />
             </div>
 
             {testQuoteForm.mode_code === "warehouse_to_pickup_point" ? (
               <>
                 <div>
-                  <Label htmlFor="quote-warehouse-id">Warehouse</Label>
-                  <Text className="text-ui-fg-subtle mb-1 text-xs">Required for warehouse_to_pickup_point; backend sends only mapped provider warehouse reference.</Text>
+                  <FieldLabel htmlFor="quote-warehouse-id" required={true}>
+                    Склад/source
+                  </FieldLabel>
+                  <Text className="text-ui-fg-subtle mb-1 text-xs">
+                    {getFieldRequirementText({ field: "warehouse" })}
+                  </Text>
                   <select
                     id="quote-warehouse-id"
                     value={testQuoteForm.warehouse_id}
-                    onChange={(event) => handleQuoteField("warehouse_id", event.target.value)}
+                    onChange={(event) =>
+                      handleQuoteField("warehouse_id", event.target.value)
+                    }
                     className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active h-10 w-full rounded-md px-3 outline-none"
                   >
-                    <option value="">Select warehouse</option>
-                    {yandexWarehouses.filter((warehouse) => warehouse.enabled).map((warehouse) => (
-                      <option key={warehouse.id} value={warehouse.id}>
-                        {getWarehouseOptionLabel(warehouse)}
-                      </option>
-                    ))}
+                    <option value="">Выберите склад</option>
+                    {yandexWarehouses
+                      .filter((warehouse) => warehouse.enabled)
+                      .map((warehouse) => (
+                        <option key={warehouse.id} value={warehouse.id}>
+                          {getWarehouseOptionLabel(warehouse)}
+                        </option>
+                      ))}
                   </select>
                 </div>
-                <div>
-                  <Label htmlFor="quote-interval-from">Interval from (UTC ISO)</Label>
-                  <Input
-                    id="quote-interval-from"
-                    placeholder="2026-04-21T09:00:00.000Z"
-                    value={testQuoteForm.interval_from}
-                    onChange={(event) => handleQuoteField("interval_from", event.target.value)}
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <Label htmlFor="quote-interval-to">Interval to (UTC ISO)</Label>
-                  <Input
-                    id="quote-interval-to"
-                    placeholder="2026-04-21T18:00:00.000Z"
-                    value={testQuoteForm.interval_to}
-                    onChange={(event) => handleQuoteField("interval_to", event.target.value)}
-                  />
-                </div>
+                <details className="md:col-span-2 rounded-md border p-4">
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Необязательный interval_utc для pickup diagnostics
+                  </summary>
+                  <Text className="text-ui-fg-subtle mt-2 text-sm">
+                    {getFieldRequirementText({ field: "interval" })}
+                  </Text>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <div>
+                      <FieldLabel htmlFor="quote-interval-from" required={false}>
+                        Interval from (UTC ISO)
+                      </FieldLabel>
+                      <Input
+                        id="quote-interval-from"
+                        placeholder="Опционально из pickup windows lookup"
+                        value={testQuoteForm.interval_from}
+                        onChange={(event) =>
+                          handleQuoteField("interval_from", event.target.value)
+                        }
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel htmlFor="quote-interval-to" required={false}>
+                        Interval to (UTC ISO)
+                      </FieldLabel>
+                      <Input
+                        id="quote-interval-to"
+                        placeholder="Опционально из pickup windows lookup"
+                        value={testQuoteForm.interval_to}
+                        onChange={(event) =>
+                          handleQuoteField("interval_to", event.target.value)
+                        }
+                      />
+                    </div>
+                  </div>
+                </details>
               </>
             ) : (
               <div className="md:col-span-2">
-                <Label htmlFor="quote-origin-point">Origin dropoff point id</Label>
-                <Text className="text-ui-fg-subtle mb-1 text-xs">Required for dropoff_point_to_pickup_point; should be a Yandex dropoff-capable pickup point id.</Text>
+                <FieldLabel htmlFor="quote-origin-point" required={true}>
+                  Origin dropoff point id
+                </FieldLabel>
+                <Text className="text-ui-fg-subtle mb-1 text-xs">
+                  {getFieldRequirementText({ field: "origin_dropoff_point" })}
+                </Text>
                 <Input
                   id="quote-origin-point"
                   value={testQuoteForm.origin_point_id}
-                  onChange={(event) => handleQuoteField("origin_point_id", event.target.value)}
+                  onChange={(event) =>
+                    handleQuoteField("origin_point_id", event.target.value)
+                  }
                 />
               </div>
             )}
 
             <div>
-              <Label htmlFor="quote-item-quantity">Item quantity</Label>
+              <FieldLabel htmlFor="quote-item-quantity" required={true}>
+                Количество товара
+              </FieldLabel>
+              <Text className="text-ui-fg-subtle mb-1 text-xs">
+                {getFieldRequirementText({ field: "item_quantity" })}
+              </Text>
               <Input
                 id="quote-item-quantity"
                 type="number"
                 min="1"
                 value={testQuoteForm.item_quantity}
-                onChange={(event) => handleQuoteField("item_quantity", event.target.value)}
+                onChange={(event) =>
+                  handleQuoteField("item_quantity", event.target.value)
+                }
               />
             </div>
 
             <div>
-              <Label htmlFor="quote-item-weight">Weight grams</Label>
+              <FieldLabel htmlFor="quote-item-weight" required={true}>
+                Вес, граммы
+              </FieldLabel>
+              <Text className="text-ui-fg-subtle mb-1 text-xs">
+                {getFieldRequirementText({ field: "item_weight" })}
+              </Text>
               <Input
                 id="quote-item-weight"
                 type="number"
                 min="0"
                 value={testQuoteForm.item_weight_grams}
-                onChange={(event) => handleQuoteField("item_weight_grams", event.target.value)}
+                onChange={(event) =>
+                  handleQuoteField("item_weight_grams", event.target.value)
+                }
               />
             </div>
 
             <div className="md:col-span-2">
-              <Label htmlFor="quote-item-price">Declared price</Label>
+              <FieldLabel htmlFor="quote-item-price" required={false}>
+                Объявленная цена
+              </FieldLabel>
+              <Text className="text-ui-fg-subtle mb-1 text-xs">
+                {getFieldRequirementText({ field: "item_price" })}
+              </Text>
               <Input
                 id="quote-item-price"
                 type="number"
                 min="0"
                 value={testQuoteForm.item_price}
-                onChange={(event) => handleQuoteField("item_price", event.target.value)}
+                onChange={(event) =>
+                  handleQuoteField("item_price", event.target.value)
+                }
               />
             </div>
           </div>
 
+          <details className="mt-4 rounded-md border p-4">
+            <summary className="cursor-pointer text-sm font-medium">
+              Диагностика pickup windows (не блокирует Test quote)
+            </summary>
+            <Text className="text-ui-fg-subtle mt-2 text-sm">
+              Необязательный read-only вызов /offers/info. Нужен только если
+              Yandex попросит interval_utc или нужно вручную выбрать pickup
+              interval. Для /offers/create quote можно не запускать.
+            </Text>
+
+            {pickupWindowLookupError ? (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+                <Text className="text-ui-fg-error font-medium">
+                  {pickupWindowLookupError.message}
+                </Text>
+                <Text className="text-ui-fg-subtle mt-1">
+                  {pickupWindowLookupError.code} · HTTP {pickupWindowLookupError.status}
+                </Text>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {getDeliveryHubApiErrorSafeLines(pickupWindowLookupError).map((line) => (
+                    <span
+                      key={line}
+                      className="rounded-full border border-red-200 bg-ui-bg-base px-2 py-1 text-xs text-ui-fg-subtle"
+                    >
+                      {line}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-4 grid gap-4 md:grid-cols-4">
+              <div>
+                <FieldLabel htmlFor="pickup-window-connection" required={true}>
+                  Подключение
+                </FieldLabel>
+                <select
+                  id="pickup-window-connection"
+                  value={pickupWindowLookupForm.connection_id}
+                  onChange={(event) =>
+                    handlePickupWindowLookupField("connection_id", event.target.value)
+                  }
+                  className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active mt-1 h-10 w-full rounded-md px-3 outline-none"
+                >
+                  <option value="">Выберите подключение</option>
+                  {yandexConnections.map((connection) => (
+                    <option key={connection.id} value={connection.id}>
+                      {connection.name} · {connection.mode} · {connection.status}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <FieldLabel htmlFor="pickup-window-warehouse" required={true}>
+                  Склад/source
+                </FieldLabel>
+                <select
+                  id="pickup-window-warehouse"
+                  value={pickupWindowLookupForm.warehouse_id}
+                  onChange={(event) =>
+                    handlePickupWindowLookupField("warehouse_id", event.target.value)
+                  }
+                  className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active mt-1 h-10 w-full rounded-md px-3 outline-none"
+                >
+                  <option value="">Выберите склад</option>
+                  {yandexWarehouses
+                    .filter((warehouse) => warehouse.enabled)
+                    .map((warehouse) => (
+                      <option key={warehouse.id} value={warehouse.id}>
+                        {getWarehouseOptionLabel(warehouse)}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div>
+                <FieldLabel htmlFor="pickup-window-destination" required={true}>
+                  Destination PVZ id
+                </FieldLabel>
+                <Input
+                  id="pickup-window-destination"
+                  value={pickupWindowLookupForm.destination_point_id}
+                  onChange={(event) =>
+                    handlePickupWindowLookupField("destination_point_id", event.target.value)
+                  }
+                />
+              </div>
+              <div>
+                <FieldLabel htmlFor="pickup-window-limit" required={false}>
+                  Лимит
+                </FieldLabel>
+                <Input
+                  id="pickup-window-limit"
+                  value={pickupWindowLookupForm.limit}
+                  onChange={(event) =>
+                    handlePickupWindowLookupField("limit", event.target.value)
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void handleLoadPickupWindows()}
+                isLoading={isLoadingPickupWindows}
+                disabled={isLoading || isLoadingPickupWindows}
+              >
+                Загрузить pickup windows
+              </Button>
+            </div>
+
+            {pickupWindowLookupResult ? (
+              <div className="mt-4 grid gap-3">
+                <Text className="text-ui-fg-subtle text-sm">
+                  Найдено {pickupWindowLookupResult.returned_count} из {pickupWindowLookupResult.total_available}; correlation={pickupWindowLookupResult.correlation_id}
+                </Text>
+                {pickupWindowLookupResult.windows.map((window) => (
+                  <div key={`${window.interval_utc.from}-${window.interval_utc.to}`} className="rounded-md border p-3">
+                    <Text className="font-medium">{getPickupWindowOptionLabel(window)}</Text>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="mt-3"
+                      onClick={() => handleUsePickupWindowInterval(window)}
+                    >
+                      Использовать interval в Test quote
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </details>
+
           <div className="mt-6">
-            <Button type="button" onClick={handleTestQuote} isLoading={isTestingQuote} disabled={isLoading}>
-              Test quote
+            <Button
+              type="button"
+              onClick={handleTestQuote}
+              isLoading={isTestingQuote}
+              disabled={
+                isLoading || isTestingQuote || !testQuoteCapability.canTest
+              }
+            >
+              Проверить стоимость
             </Button>
           </div>
 
@@ -2584,66 +4075,92 @@ const DeliverySettingsPage = () => {
                 </div>
                 <div>
                   <Label>Quotes count</Label>
-                  <Input readOnly value={String(testQuoteResult.quotes.length)} />
+                  <Input
+                    readOnly
+                    value={String(testQuoteResult.quotes.length)}
+                  />
                 </div>
               </div>
 
               <div className="rounded-md border bg-ui-bg-subtle p-4">
-                <Text className="font-medium">Readiness summary</Text>
+                <Text className="font-medium">Сводка диагностики</Text>
                 <Text className="text-ui-fg-subtle mt-1 text-sm">
-                  {getDiagnosticsSummaryText(testQuoteResult.diagnostics_summary)}
+                  {getDiagnosticsSummaryText(
+                    testQuoteResult.diagnostics_summary,
+                  )}
                 </Text>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {getQuoteInputEchoLines(testQuoteResult.input_echo).map((line) => (
-                    <span key={line} className="rounded-full border bg-ui-bg-base px-2 py-1 text-xs text-ui-fg-subtle">
-                      {line}
-                    </span>
-                  ))}
+                  {getQuoteInputEchoLines(testQuoteResult.input_echo).map(
+                    (line) => (
+                      <span
+                        key={line}
+                        className="rounded-full border bg-ui-bg-base px-2 py-1 text-xs text-ui-fg-subtle"
+                      >
+                        {line}
+                      </span>
+                    ),
+                  )}
                 </div>
               </div>
 
               <div className="grid gap-3">
-                {testQuoteResult.quotes.length ? testQuoteResult.quotes.map((quote) => (
-                  <div key={quote.quote_key} className="rounded-md border p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <Text className="font-medium">{quote.carrier_label}</Text>
-                        <Text className="text-ui-fg-subtle text-sm">
-                          {quote.mode_code} · {quote.quote_key}
+                {testQuoteResult.quotes.length ? (
+                  testQuoteResult.quotes.map((quote) => (
+                    <div
+                      key={quote.quote_key}
+                      className="rounded-md border p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <Text className="font-medium">
+                            {quote.carrier_label}
+                          </Text>
+                          <Text className="text-ui-fg-subtle text-sm">
+                            {quote.mode_code} · {quote.quote_key}
+                          </Text>
+                        </div>
+                        <div className="text-right">
+                          <Text className="font-medium">
+                            {quote.amount} {quote.currency_code}
+                          </Text>
+                          <Text className="text-ui-fg-subtle text-sm">
+                            ETA {quote.delivery_eta_min ?? "?"}–
+                            {quote.delivery_eta_max ?? "?"}
+                          </Text>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 grid gap-1 text-sm text-ui-fg-subtle">
+                        <Text>
+                          Pickup point required:{" "}
+                          {quote.pickup_point_required ? "yes" : "no"}
+                        </Text>
+                        <Text>
+                          Pickup window required: {quote.pickup_window_required ? "yes" : "no"} (для /offers/create quote ожидается no)
+                        </Text>
+                        <Text>
+                          Pickup point ids:{" "}
+                          {quote.pickup_point_ids.length
+                            ? quote.pickup_point_ids.join(", ")
+                            : "—"}
                         </Text>
                       </div>
-                      <div className="text-right">
-                        <Text className="font-medium">
-                          {quote.amount} {quote.currency_code}
-                        </Text>
-                        <Text className="text-ui-fg-subtle text-sm">
-                          ETA {quote.delivery_eta_min ?? "?"}–{quote.delivery_eta_max ?? "?"}
-                        </Text>
-                      </div>
-                    </div>
 
-                    <div className="mt-3 grid gap-1 text-sm text-ui-fg-subtle">
-                      <Text>
-                        Pickup point required: {quote.pickup_point_required ? "yes" : "no"}
-                      </Text>
-                      <Text>
-                        Pickup window required: {quote.pickup_window_required ? "yes" : "no"}
-                      </Text>
-                      <Text>
-                        Pickup point ids: {quote.pickup_point_ids.length ? quote.pickup_point_ids.join(", ") : "—"}
-                      </Text>
+                      <details className="mt-3">
+                        <summary className="cursor-pointer text-sm text-ui-fg-subtle">
+                          Техническая диагностика: redacted provider reference
+                        </summary>
+                        <pre className="mt-2 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
+                          {JSON.stringify(quote.raw_reference, null, 2)}
+                        </pre>
+                      </details>
                     </div>
-
-                    <details className="mt-3">
-                      <summary className="cursor-pointer text-sm text-ui-fg-subtle">Redacted provider reference</summary>
-                      <pre className="mt-2 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
-                        {JSON.stringify(quote.raw_reference, null, 2)}
-                      </pre>
-                    </details>
-                  </div>
-                )) : (
+                  ))
+                ) : (
                   <div className="rounded-md border p-4">
-                    <Text className="text-ui-fg-subtle">No quotes returned for this diagnostic request.</Text>
+                    <Text className="text-ui-fg-subtle">
+                      Для этого диагностического запроса quote не вернулся.
+                    </Text>
                   </div>
                 )}
               </div>
@@ -2652,12 +4169,12 @@ const DeliverySettingsPage = () => {
         </div>
       </div>
     </Container>
-  )
-}
+  );
+};
 
 export const config = defineRouteConfig({
   label: "Delivery",
   icon: HandTruck,
-})
+});
 
-export default DeliverySettingsPage
+export default DeliverySettingsPage;

@@ -112,6 +112,11 @@ export async function POST(
         ok: true,
         cart_id: existingCart.id,
         selection,
+        diagnostics: {
+          correlation_id: validatedBody.correlation_id ?? null,
+          checkout_source_of_truth: "unchanged",
+          contour: "delivery_hub_storefront_preview",
+        },
       })
     )
   } catch (error) {
@@ -142,6 +147,11 @@ export async function DELETE(
         ok: true,
         cart_id: existingCart.id,
         selection: null,
+        diagnostics: {
+          correlation_id: null,
+          checkout_source_of_truth: "unchanged",
+          contour: "delivery_hub_storefront_preview",
+        },
       })
     )
   } catch (error) {

@@ -3,9 +3,11 @@ import { z } from "@medusajs/framework/zod"
 import {
   DeliveryHubIntervalUtcSchema,
   DeliveryHubQuoteItemsSchema,
+  DeliveryHubStoreQuotesBodySchema,
   DeliveryHubStoreQuotesQuerySchema,
 } from "../../../../modules/delivery-hub"
 import {
+  createStoreDeliveryValidationError,
   getStoreDeliveryHubService,
   handleStoreDeliveryHubError,
   parseStoreDeliveryInterval,
@@ -14,8 +16,10 @@ import {
 } from "../shared"
 
 export const StoreDeliveryQuotesQuerySchema = DeliveryHubStoreQuotesQuerySchema
+export const StoreDeliveryQuotesBodySchema = DeliveryHubStoreQuotesBodySchema
 
 type StoreDeliveryQuotesQuery = z.infer<typeof StoreDeliveryQuotesQuerySchema>
+type StoreDeliveryQuotesBody = z.infer<typeof StoreDeliveryQuotesBodySchema>
 
 export async function GET(
   req: MedusaRequest<unknown, StoreDeliveryQuotesQuery>,
@@ -48,4 +52,40 @@ export async function GET(
   } catch (error) {
     handleStoreDeliveryHubError(res, error)
   }
+}
+
+export async function POST(
+  req: MedusaRequest<StoreDeliveryQuotesBody>,
+  res: MedusaResponse
+) {
+  try {
+    const service = getStoreDeliveryHubService(req)
+    const validatedBody = StoreDeliveryQuotesBodySchema.parse(
+      req.validatedBody ?? req.body ?? failMissingValidatedBody()
+    )
+
+    const result = sanitizeStoreDeliveryQuotesResponse(
+      await service.listStoreQuotes({
+        connection_id: validatedBody.connection_id,
+        mode_code: validatedBody.mode_code,
+        currency_code: validatedBody.currency_code,
+        destination_point_id: validatedBody.destination_point_id,
+        origin_point_id: validatedBody.origin_point_id,
+        warehouse_id: validatedBody.warehouse_id,
+        interval_utc: validatedBody.interval_utc ?? undefined,
+        items: validatedBody.items,
+      })
+    )
+
+    res.status(200).json(result)
+  } catch (error) {
+    handleStoreDeliveryHubError(res, error)
+  }
+}
+
+function failMissingValidatedBody(): never {
+  throw createStoreDeliveryValidationError(
+    "Store delivery quote request body was not validated",
+    "body"
+  )
 }

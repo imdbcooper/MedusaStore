@@ -8,6 +8,7 @@ import {
   getDeliveryHubPgConnection,
   isDeliveryHubError,
 } from "../../../modules/delivery-hub"
+import { normalizeYandexDeliveryApiBaseUrl } from "../../../modules/delivery-hub/adapters/yandex/base-url"
 import { normalizeDeliveryHubShippingOptionData } from "../../../modules/delivery-hub/shipping-option-contract"
 import {
   redactRecord,
@@ -38,6 +39,14 @@ const AdminDeliveryConnectionConfigSchema = z
     label_format: z.string().optional(),
     default_warehouse_id: z.string().nullable().optional(),
     default_warehouse: AdminDeliveryWarehouseSchema.optional(),
+    api_base_url: z
+      .enum([
+        "https://b2b-authproxy.taxi.yandex.net/api/b2b/platform",
+        "https://b2b.taxi.tst.yandex.net/api/b2b/platform",
+        "https://b2b.taxi.yandex.net/b2b/cargo/integration/v2",
+        "https://b2b.taxi.tst.yandex.net/b2b/cargo/integration/v2",
+      ])
+      .optional(),
   })
   .strict()
 
@@ -110,6 +119,71 @@ const AdminDeliveryProviderSchema = z
     label: z.string(),
     capabilities: z.array(z.string()),
     supported_mode_codes: z.array(z.string()),
+  })
+  .strict()
+
+const AdminDeliveryPickupPointLookupPointSchema = z
+  .object({
+    id: z.string(),
+    code: z.string().nullable(),
+    operator_id: z.string().nullable(),
+    network_label: z.string().nullable(),
+    station_type: z.string().nullable(),
+    is_yandex_branded: z.boolean().nullable(),
+    is_market_partner: z.boolean().nullable(),
+    name: z.string(),
+    address: z.string(),
+    city: z.string().nullable(),
+    available_for_dropoff: z.boolean(),
+    coordinates: z
+      .object({
+        lat: z.number().nullable(),
+        lng: z.number().nullable(),
+      })
+      .strict(),
+  })
+  .strict()
+
+const AdminDeliveryPickupPointLookupResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    connection: AdminDeliveryConnectionSchema,
+    points: z.array(AdminDeliveryPickupPointLookupPointSchema),
+    limit: z.number().int().min(1).max(50),
+    total_available: z.number().int().min(0),
+    returned_count: z.number().int().min(0),
+    truncated: z.boolean(),
+    correlation_id: z.string(),
+  })
+  .strict()
+
+const AdminDeliveryPickupWindowLookupWindowSchema = z
+  .object({
+    date: z.string(),
+    time_from: z.string().nullable(),
+    time_to: z.string().nullable(),
+    interval_utc: z
+      .object({
+        from: z.string(),
+        to: z.string(),
+      })
+      .strict(),
+    label: z.string(),
+  })
+  .strict()
+
+const AdminDeliveryPickupWindowLookupResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    connection: AdminDeliveryConnectionSchema,
+    warehouse_id: z.string(),
+    destination_point_id: z.string().nullable(),
+    windows: z.array(AdminDeliveryPickupWindowLookupWindowSchema),
+    limit: z.number().int().min(1).max(50),
+    total_available: z.number().int().min(0),
+    returned_count: z.number().int().min(0),
+    truncated: z.boolean(),
+    correlation_id: z.string(),
   })
   .strict()
 
@@ -976,6 +1050,83 @@ const AdminDeliveryExecutionPlanObservabilityIssueSchema = z
   })
   .strict()
 
+const AdminDeliveryExecutionLedgerRepositoryAssemblyActivationPrerequisiteSchema = z.enum([
+  "real_repository_implementation",
+  "migration_or_table_creation",
+  "transaction_runner",
+  "explicit_runtime_wiring",
+  "operational_runbook",
+  "safety_review",
+])
+
+const AdminDeliveryExecutionLedgerRepositoryAssemblySummarySchema = z
+  .object({
+    version: z.number().int().min(1),
+    mode: z.literal("assembly_plan_only"),
+    repository_status: z.enum([
+      "not_configured",
+      "inert_scaffold_available",
+      "pg_repository_implementation_available",
+    ]),
+    table_name: z.string(),
+    persistence_readiness_contour: z
+      .object({
+        stages: z.array(
+          z.enum([
+            "artifact_defined",
+            "manual_application_external",
+            "snapshot_verification_available",
+            "activation_blocked",
+          ])
+        ),
+        current_stage: z.literal("activation_blocked"),
+        review_preparation_available_now: z.array(
+          z.enum([
+            "descriptor_bundle_defined",
+            "migration_artifact_reviewable",
+            "snapshot_schema_verifier_available",
+            "snapshot_schema_check_plan_available",
+          ])
+        ),
+        external_manual_application_remaining: z.array(
+          z.enum([
+            "manual_migration_review",
+            "manual_table_creation_or_migration_execution",
+            "manual_schema_snapshot_capture",
+          ])
+        ),
+        activation_blocked_until: z.array(
+          AdminDeliveryExecutionLedgerRepositoryAssemblyActivationPrerequisiteSchema
+        ),
+      })
+      .strict(),
+    missing_activation_prerequisites: z.array(
+      AdminDeliveryExecutionLedgerRepositoryAssemblyActivationPrerequisiteSchema
+    ),
+    disabled_confirmations: z
+      .object({
+        query_execution: z.literal(false),
+        transaction_execution: z.literal(false),
+        transaction_open: z.literal(false),
+        transaction_commit: z.literal(false),
+        transaction_rollback: z.literal(false),
+        production_writes: z.literal(false),
+        runtime_wiring: z.literal(false),
+        live_execution: z.literal(false),
+        provider_dispatch: z.literal(false),
+        shipment_creation: z.literal(false),
+        label_or_document_generation: z.literal(false),
+        order_or_fulfillment_mutation: z.literal(false),
+        retry_scheduling: z.literal(false),
+        compensation_or_rollback_writes: z.literal(false),
+        checkout_or_storefront_cutover: z.literal(false),
+        connection_factory_invocation: z.literal(false),
+        migration_or_table_creation: z.literal(false),
+      })
+      .strict(),
+  })
+  .strict()
+
 const AdminDeliveryExecutionPlanObservabilityReadinessVerdictSchema = z
   .object({
     status: z.enum(["ready", "blocked"]),
@@ -1025,6 +1176,7 @@ const AdminDeliveryExecutionPlanObservabilityModePreviewSchema = z
     readiness_verdict: AdminDeliveryExecutionPlanObservabilityReadinessVerdictSchema,
     blocked_reasons: z.array(z.string()),
     issues: z.array(AdminDeliveryExecutionPlanObservabilityIssueSchema),
+    repository_assembly_summary: AdminDeliveryExecutionLedgerRepositoryAssemblySummarySchema,
     steps: z.array(AdminDeliveryExecutionPlanObservabilityStepSchema),
     execution_plan: AdminDeliveryExecutionPlanObservabilityExecutionPlanSchema.nullable(),
     execution_identity: AdminDeliveryExecutionIdentityPreviewSchema.nullable(),
@@ -1556,7 +1708,17 @@ export function getRouteParam(req: AuthenticatedMedusaRequest, key: string) {
 }
 
 export function sanitizeAdminDeliveryConnection(connection: unknown) {
-  return AdminDeliveryConnectionSchema.parse(connection)
+  const root = asRecord(connection)
+  const config = asRecord(root.config)
+  const normalizedApiBaseUrl = normalizeYandexDeliveryApiBaseUrl(config.api_base_url)
+
+  return AdminDeliveryConnectionSchema.parse({
+    ...root,
+    config: {
+      ...config,
+      ...(normalizedApiBaseUrl ? { api_base_url: normalizedApiBaseUrl } : {}),
+    },
+  })
 }
 
 export function sanitizeAdminDeliveryWarehouse(warehouse: unknown) {
@@ -1576,6 +1738,28 @@ export function sanitizeAdminDeliveryTestQuoteResponse(result: unknown) {
 
 export function sanitizeAdminDeliveryProvider(provider: unknown) {
   return AdminDeliveryProviderSchema.parse(provider)
+}
+
+export function sanitizeAdminDeliveryPickupPointLookupResponse(result: unknown) {
+  const root = asRecord(result)
+
+  return AdminDeliveryPickupPointLookupResponseSchema.parse({
+    ...root,
+    points: asArray(root.points).map((point) =>
+      AdminDeliveryPickupPointLookupPointSchema.parse(sanitizeAdminStructuredPayload(point))
+    ),
+  })
+}
+
+export function sanitizeAdminDeliveryPickupWindowLookupResponse(result: unknown) {
+  const root = asRecord(result)
+
+  return AdminDeliveryPickupWindowLookupResponseSchema.parse({
+    ...root,
+    windows: asArray(root.windows).map((window) =>
+      AdminDeliveryPickupWindowLookupWindowSchema.parse(sanitizeAdminStructuredPayload(window))
+    ),
+  })
 }
 
 export function sanitizeAdminDeliveryConnectionTestResult(result: unknown) {
@@ -2214,6 +2398,9 @@ function sanitizeAdminDeliveryExecutionPlanObservabilityModePreview(preview: unk
       root.preflight_eligibility
     ),
     provider_dispatch_preview: sanitizeAdminDeliveryProviderDispatchPreview(root.provider_dispatch_preview),
+    repository_assembly_summary: sanitizeAdminDeliveryExecutionLedgerRepositoryAssemblySummary(
+      root.repository_assembly_summary
+    ),
     shipment_result_preview: sanitizeAdminDeliveryShipmentResultPreview(root.shipment_result_preview),
     failure_handling_preview: sanitizeAdminDeliveryFailureHandlingPreview(
       root.failure_handling_preview
@@ -2231,6 +2418,50 @@ function sanitizeAdminDeliveryExecutionPlanObservabilityModePreview(preview: unk
             reason: sanitizeAdminString(asRecord(root.shipment_execution).reason),
           })
         : root.shipment_execution,
+  })
+}
+
+function sanitizeAdminDeliveryExecutionLedgerRepositoryAssemblySummary(value: unknown) {
+  const root = asRecord(value)
+  const persistenceReadinessContour = asRecord(root.persistence_readiness_contour)
+  const disabledConfirmations = asRecord(root.disabled_confirmations)
+
+  return AdminDeliveryExecutionLedgerRepositoryAssemblySummarySchema.parse({
+    version: root.version,
+    mode: root.mode,
+    repository_status: root.repository_status,
+    table_name: sanitizeAdminString(root.table_name),
+    persistence_readiness_contour: {
+      stages: asArray(persistenceReadinessContour.stages),
+      current_stage: persistenceReadinessContour.current_stage,
+      review_preparation_available_now: asArray(
+        persistenceReadinessContour.review_preparation_available_now
+      ),
+      external_manual_application_remaining: asArray(
+        persistenceReadinessContour.external_manual_application_remaining
+      ),
+      activation_blocked_until: asArray(persistenceReadinessContour.activation_blocked_until),
+    },
+    missing_activation_prerequisites: asArray(root.missing_activation_prerequisites),
+    disabled_confirmations: {
+      query_execution: disabledConfirmations.query_execution,
+      transaction_execution: disabledConfirmations.transaction_execution,
+      transaction_open: disabledConfirmations.transaction_open,
+      transaction_commit: disabledConfirmations.transaction_commit,
+      transaction_rollback: disabledConfirmations.transaction_rollback,
+      production_writes: disabledConfirmations.production_writes,
+      runtime_wiring: disabledConfirmations.runtime_wiring,
+      live_execution: disabledConfirmations.live_execution,
+      provider_dispatch: disabledConfirmations.provider_dispatch,
+      shipment_creation: disabledConfirmations.shipment_creation,
+      label_or_document_generation: disabledConfirmations.label_or_document_generation,
+      order_or_fulfillment_mutation: disabledConfirmations.order_or_fulfillment_mutation,
+      retry_scheduling: disabledConfirmations.retry_scheduling,
+      compensation_or_rollback_writes: disabledConfirmations.compensation_or_rollback_writes,
+      checkout_or_storefront_cutover: disabledConfirmations.checkout_or_storefront_cutover,
+      connection_factory_invocation: disabledConfirmations.connection_factory_invocation,
+      migration_or_table_creation: disabledConfirmations.migration_or_table_creation,
+    },
   })
 }
 

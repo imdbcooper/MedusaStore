@@ -93,10 +93,19 @@ const StoreDeliveryQuoteSchema = z
   })
   .strict()
 
+const StoreDeliverySmokeDiagnosticsSchema = z
+  .object({
+    correlation_id: z.string().nullable(),
+    checkout_source_of_truth: z.literal("unchanged"),
+    contour: z.literal("delivery_hub_storefront_preview"),
+  })
+  .strict()
+
 const StoreDeliveryQuotesResponseSchema = z
   .object({
     ok: z.literal(true),
     quotes: z.array(StoreDeliveryQuoteSchema),
+    diagnostics: StoreDeliverySmokeDiagnosticsSchema.optional(),
   })
   .strict()
 
@@ -104,6 +113,11 @@ const StoreDeliveryPickupPointSchema = z
   .object({
     provider_point_id: z.string(),
     provider_point_code: z.string().nullable(),
+    provider_operator_id: z.string().nullable(),
+    network_label: z.string().nullable(),
+    is_yandex_branded: z.boolean().nullable(),
+    is_market_partner: z.boolean().nullable(),
+    station_type: z.string().nullable(),
     name: z.string(),
     address: z.string(),
     city: z.string().nullable(),
@@ -173,6 +187,11 @@ const StoreDeliverySelectionPickupPointSchema = z
   .object({
     provider_point_id: z.string(),
     provider_point_code: z.string().nullable(),
+    provider_operator_id: z.string().nullable().optional(),
+    network_label: z.string().nullable().optional(),
+    is_yandex_branded: z.boolean().nullable().optional(),
+    is_market_partner: z.boolean().nullable().optional(),
+    station_type: z.string().nullable().optional(),
     name: z.string(),
     address: z.string(),
     city: z.string().nullable(),
@@ -223,6 +242,7 @@ const StoreDeliverySelectionResponseSchema = z
     ok: z.literal(true),
     cart_id: z.string(),
     selection: StoreDeliverySelectionSchema.nullable(),
+    diagnostics: StoreDeliverySmokeDiagnosticsSchema.optional(),
   })
   .strict()
 
@@ -388,7 +408,7 @@ function parseStoreDeliveryJsonQuery(rawValue: string, field: string) {
   }
 }
 
-function createStoreDeliveryValidationError(message: string, field: string) {
+export function createStoreDeliveryValidationError(message: string, field: string) {
   return new DeliveryHubError({
     code: "DELIVERY_HUB_VALIDATION_ERROR",
     message,

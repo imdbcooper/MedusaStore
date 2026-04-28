@@ -9,6 +9,8 @@ import { AdminCreateDeliveryConnectionSchema } from "./admin/delivery/connection
 import { AdminUpdateDeliveryConnectionSchema } from "./admin/delivery/connections/[id]/route"
 import { AdminDeliveryConnectionTestSchema } from "./admin/delivery/connections/[id]/test/route"
 import { AdminDeliveryEventLogsQuerySchema } from "./admin/delivery/logs/route"
+import { AdminDeliveryPickupPointsQuerySchema } from "./admin/delivery/pickup-points/route"
+import { AdminDeliveryPickupWindowsQuerySchema } from "./admin/delivery/pickup-windows/route"
 import { AdminDeliveryShippingOptionManualSyncSchema } from "./admin/delivery/shipping-options/sync/route"
 import { AdminDeliveryTestQuoteSchema } from "./admin/delivery/test-quote/route"
 import { AdminCreateDeliveryWarehouseSchema } from "./admin/delivery/warehouses/route"
@@ -24,7 +26,10 @@ import { StoreCustomerMarketingPreferencesSchema } from "./store/customers/me/ma
 import { StoreDeliveryCatalogQuerySchema } from "./store/delivery/catalog/route"
 import { StoreDeliveryPickupPointsQuerySchema } from "./store/delivery/pickup-points/route"
 import { StoreDeliveryPickupWindowsQuerySchema } from "./store/delivery/pickup-windows/route"
-import { StoreDeliveryQuotesQuerySchema } from "./store/delivery/quotes/route"
+import {
+  StoreDeliveryQuotesBodySchema,
+  StoreDeliveryQuotesQuerySchema,
+} from "./store/delivery/quotes/route"
 import { StoreDeliverySelectionReadinessQuerySchema } from "./store/delivery/readiness/route"
 import { StoreDeliverySettingsQuerySchema } from "./store/delivery/settings/route"
 import {
@@ -112,6 +117,28 @@ export default defineMiddlewares({
       middlewares: [
         adminAuth,
         validateAndTransformQuery(AdminDeliveryEventLogsQuerySchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/admin/delivery/pickup-points",
+      methods: ["GET"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformQuery(AdminDeliveryPickupPointsQuerySchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/admin/delivery/pickup-windows",
+      methods: ["GET"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformQuery(AdminDeliveryPickupWindowsQuerySchema, {
           defaults: [],
           isList: false,
         }),
@@ -237,6 +264,11 @@ export default defineMiddlewares({
           isList: false,
         }),
       ],
+    },
+    {
+      matcher: "/store/delivery/quotes",
+      methods: ["POST"],
+      middlewares: [validateAndTransformBody(StoreDeliveryQuotesBodySchema)],
     },
     {
       matcher: "/store/delivery/pickup-points",
