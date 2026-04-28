@@ -141,7 +141,7 @@ export function buildDeliveryHubCutoverApprovalArtifact(
     rollback_acknowledgement: {
       required: true,
       statement:
-        "Operator must confirm rollback/fallback keeps existing ApiShip/Medusa checkout source-of-truth available before any future executable cutover implementation.",
+        "Operator must confirm rollback/no-fallback keeps Delivery Hub checkout fail-closed when readiness is blocked and does not rely on ApiShip fallback before any future executable production enablement.",
     },
     commit_controls: {
       can_commit_shipping_method: false,

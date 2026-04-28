@@ -188,13 +188,13 @@ export function buildDeliveryHubCutoverPreconditions(
     }),
     buildPrecondition({
       code: "rollback_plan_ready",
-      label: "Rollback/fallback plan readiness",
+      label: "Rollback/no-fallback plan readiness",
       status: "ready",
       ready: true,
-      detail: "Cutover plan keeps ApiShip/Medusa checkout source-of-truth available for rollback/fallback.",
+      detail: "Cutover plan keeps Delivery Hub checkout fail-closed when readiness is blocked and does not require ApiShip fallback.",
       evidence: [
         {
-          label: "Docs/delivery_hub_checkout_cutover_plan.md documents default-off/preflight-only posture",
+          label: "Docs/current_work.md documents default-off/no-fallback fail-closed posture",
           status: "ready",
         },
       ],

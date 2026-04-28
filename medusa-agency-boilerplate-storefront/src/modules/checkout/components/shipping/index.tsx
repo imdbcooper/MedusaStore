@@ -803,7 +803,7 @@ const Shipping: React.FC<ShippingProps> = ({
       setDeliveryHubSelectionCutInState({
         status: "blocked",
         message:
-          "Delivery Hub checkout commit is blocked fail-safe. Keep or choose an existing ApiShip/Medusa shipping method.",
+          "Delivery Hub checkout is fail-closed: quote/selection readiness is blocked, so no fallback shipping method is selected automatically. Retry after Delivery Hub is ready or ask an operator to resolve delivery setup.",
       })
       return
     }
@@ -820,7 +820,7 @@ const Shipping: React.FC<ShippingProps> = ({
       setDeliveryHubSelectionCutInState({
         status: "error",
         message:
-          "Delivery Hub checkout commit failed safely. Existing ApiShip/Medusa shipping selection remains available; choose a legacy method or retry after refreshing the candidate.",
+          "Delivery Hub checkout commit failed safely. No fallback shipping method is selected automatically; retry after refreshing the candidate or ask an operator to resolve Delivery Hub readiness.",
       })
       return
     }
@@ -854,8 +854,24 @@ const Shipping: React.FC<ShippingProps> = ({
   }
 
   const visibleShippingMethods = shippingMethods
+  const isDeliveryHubShippingMethodId = (id: string | null | undefined) =>
+    Boolean(
+      id?.startsWith("deliveryhub:") ||
+        shippingMethods.some((option) => {
+          if (option.id !== id) {
+            return false
+          }
+
+          const optionData = option.data as Record<string, unknown> | null | undefined
+          return (
+            option.provider_id === "deliveryhub_deliveryhub" ||
+            optionData?.provider_code === "deliveryhub"
+          )
+        })
+    )
   const isSelectionCommitted = shippingMethodId
-    ? cartShippingMethod?.shipping_option_id === shippingMethodId
+    ? cartShippingMethod?.shipping_option_id === shippingMethodId &&
+      isDeliveryHubShippingMethodId(shippingMethodId)
     : false
 
   const deliveryHubRehearsalActionability =
@@ -1603,7 +1619,7 @@ const Shipping: React.FC<ShippingProps> = ({
                         Delivery Hub Preview/Shadow UI
                       </Text>
                       <Text className="text-ui-fg-muted txt-small">
-                        Operator/dev validation surface. It calls neutral Delivery Hub store endpoints and can save neutral metadata. The Delivery Hub shipping-method commit path remains default-off and can call setShippingMethod() only when the explicit cutover flag is true and a ready candidate maps to an available Medusa shipping option; legacy ApiShip/Medusa delivery selection above remains available for fallback/rollback.
+                        Operator/dev validation surface. It calls neutral Delivery Hub store endpoints and can save neutral metadata. The active checkout path is Delivery Hub only: shipping-method commit can call setShippingMethod() only when the explicit cutover flag is true and a ready Delivery Hub candidate maps to an available Medusa shipping option; otherwise checkout delivery fails closed with retry/operator action and no automatic ApiShip or legacy fallback.
                       </Text>
                       <div
                         className="grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"

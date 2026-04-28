@@ -127,11 +127,9 @@ function buildCart() {
       ? [
           {
             id: "shipmeth_delivery_hub_preview_smoke",
-            name: mockCommittedShippingOptionId === candidateShippingOptionId
-              ? "Delivery Hub Pickup Candidate"
-              : "ApiShip/Medusa fallback shipping",
+            name: "Delivery Hub Pickup Candidate",
             shipping_option_id: mockCommittedShippingOptionId,
-            amount: mockCommittedShippingOptionId === candidateShippingOptionId ? 749 : 390,
+            amount: 749,
           },
         ]
       : [],
@@ -250,15 +248,6 @@ async function startMockBackend() {
       if (req.method === "GET" && pathname === "/store/shipping-options") {
         sendJson(res, 200, {
           shipping_options: [
-            {
-              id: "apiship_medusa_smoke_option",
-              name: "ApiShip/Medusa fallback shipping",
-              provider_id: "apiship",
-              price_type: "flat",
-              amount: 390,
-              data: { contour: "existing_apiship_medusa" },
-              provider: { is_enabled: true },
-            },
             {
               id: candidateShippingOptionId,
               name: "Delivery Hub Pickup Candidate",
@@ -677,11 +666,11 @@ function buildCutoverPreconditionsResponse() {
       },
       {
         code: "rollback_plan_ready",
-        label: "Rollback plan ready",
+        label: "Rollback/no-fallback plan ready",
         status: "ready",
         ready: true,
-        detail: "Rollback remains flag-off/source-of-truth unchanged.",
-        evidence: [{ label: "checkout cutover plan documents rollback", status: "ready" }],
+        detail: "Rollback remains flag-off and fail-closed without requiring ApiShip fallback.",
+        evidence: [{ label: "no-fallback browser smoke documents rollback", status: "ready" }],
       },
       {
         code: "admin_yandex_quote_baseline_recorded",
@@ -1040,6 +1029,7 @@ async function runDisabledCheck(baseUrl, label = "disabled feature-flag check") 
   await waitFor(sessionId, "Boolean(document.querySelector('[data-testid=\"delivery-options-container\"]'))", "checkout delivery options")
   const disabledState = await evaluate(sessionId, `(() => {
     const text = document.body.innerText
+    const optionText = document.querySelector('[data-testid="delivery-options-container"]')?.innerText || ''
     const absentTestIds = [
       'delivery-hub-preview-shadow-block',
       'delivery-hub-cutover-gate-status',
@@ -1057,7 +1047,8 @@ async function runDisabledCheck(baseUrl, label = "disabled feature-flag check") 
       text,
       absentTestIds,
       hiddenCutoverTestIds,
-      existingShippingVisible: text.includes('ApiShip/Medusa fallback shipping'),
+      deliveryHubShippingVisible: optionText.includes('Delivery Hub Pickup Candidate'),
+      legacyFallbackVisible: optionText.includes('ApiShip/Medusa fallback shipping'),
       deliveryHubPreviewTextVisible: text.includes('Delivery Hub Preview/Shadow UI'),
       cutoverArtifactTextVisible: text.includes('delivery_hub_checkout_cutover_decision') || text.includes('Decision artifact only / no approval execution'),
       commitStatusTextVisible: Boolean(document.querySelector('[data-testid="delivery-hub-checkout-commit-guard"]')) || Boolean(document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')),
@@ -1068,16 +1059,19 @@ async function runDisabledCheck(baseUrl, label = "disabled feature-flag check") 
   if (disabledState.absentTestIds.length !== expectedAbsentCount) {
     fail("Delivery Hub preview/cutover artifact blocks are visible while NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=false.")
   }
-  if (!disabledState.existingShippingVisible) {
-    fail("Existing ApiShip/Medusa checkout contour was not visible in disabled smoke.")
+  if (!disabledState.deliveryHubShippingVisible) {
+    fail("Delivery Hub checkout option was not visible in disabled no-fallback smoke.")
+  }
+  if (disabledState.legacyFallbackVisible) {
+    fail("Legacy fallback shipping text was visible in disabled no-fallback smoke.")
   }
   if (disabledState.deliveryHubPreviewTextVisible || disabledState.cutoverArtifactTextVisible || disabledState.hiddenCutoverTestIds.length > 0) {
-    fail(`Delivery Hub preview/cutover source-of-truth text was visible in disabled fallback contour: preview=${disabledState.deliveryHubPreviewTextVisible} artifact=${disabledState.cutoverArtifactTextVisible} cutover=${disabledState.hiddenCutoverTestIds.join(',')}`)
+    fail(`Delivery Hub preview/cutover source-of-truth text was visible in disabled no-fallback contour: preview=${disabledState.deliveryHubPreviewTextVisible} artifact=${disabledState.cutoverArtifactTextVisible} cutover=${disabledState.hiddenCutoverTestIds.join(',')}`)
   }
   assertNoUnsafeNeedles(disabledState.text, label)
   assertNoShipmentLifecycleActions(disabledState.text, label)
   assertNoDeliveryHubCommitRequests(label)
-  log(`${label} passed: Delivery Hub blocks are hidden, commit is not attempted, and existing shipping contour remains visible.`)
+  log(`${label} passed: Delivery Hub blocks are hidden, commit is not attempted, and no legacy fallback contour is visible.`)
 }
 
 async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label = "enabled browser smoke" } = {}) {
@@ -1099,10 +1093,12 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
 
   const initial = await evaluate(sessionId, `(() => {
     const text = document.body.innerText
+    const optionText = document.querySelector('[data-testid="delivery-options-container"]')?.innerText || ''
     return {
       text,
       previewVisible: Boolean(document.querySelector('[data-testid="delivery-hub-preview-shadow-block"]')),
-      existingShippingVisible: text.includes('ApiShip/Medusa fallback shipping'),
+      deliveryHubShippingVisible: optionText.includes('Delivery Hub Pickup Candidate'),
+      legacyFallbackVisible: optionText.includes('ApiShip/Medusa fallback shipping'),
       guardrails: document.querySelector('[data-testid="delivery-hub-preview-guardrails"]')?.innerText || '',
       cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
       cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.innerText || '',
@@ -1114,8 +1110,9 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
   })()`)
 
   if (!initial.previewVisible) fail("Delivery Hub preview block did not render when enabled.")
-  if (!initial.existingShippingVisible) fail("Existing ApiShip/Medusa checkout contour is missing; preview must stay adjacent.")
-  if (!initial.guardrails.includes("checkout source-of-truth unchanged")) fail("Source-of-truth guardrail is missing.")
+  if (!initial.deliveryHubShippingVisible) fail("Delivery Hub checkout option is missing in no-fallback smoke.")
+  if (initial.legacyFallbackVisible) fail("Legacy fallback checkout contour is visible in no-fallback smoke.")
+  if (!initial.text.includes("no automatic ApiShip or legacy fallback")) fail("No-fallback guardrail is missing.")
   if (!expectedCutoverEnabled && !initial.guardrails.includes("default-off") && !initial.cutoverGate.includes("default-off")) fail("Default-off checkout cutover guardrail is missing.")
   assertCutoverGate(initial.cutoverGate, expectedCutoverEnabled)
   assertCutoverPreconditions(initial.cutoverPreconditions)
@@ -1150,13 +1147,15 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
 
   const afterSave = await evaluate(sessionId, `(() => {
     const text = document.body.innerText
+    const optionText = document.querySelector('[data-testid="delivery-options-container"]')?.innerText || ''
     return {
       text,
       selectionStatus: document.querySelector('[data-testid="delivery-hub-preview-selection-status"]')?.innerText || '',
       operationStatus: document.querySelector('[data-testid="delivery-hub-preview-operation-status"]')?.innerText || '',
       selectionCorrelation: document.querySelector('[data-testid="delivery-hub-preview-selection-correlation-id"]')?.innerText || '',
       sourceOfTruth: document.querySelector('[data-testid="delivery-hub-preview-source-of-truth-status"]')?.innerText || '',
-      existingShippingVisible: text.includes('ApiShip/Medusa fallback shipping'),
+      deliveryHubShippingVisible: optionText.includes('Delivery Hub Pickup Candidate'),
+      legacyFallbackVisible: optionText.includes('ApiShip/Medusa fallback shipping'),
       cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
       cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.innerText || '',
       cutoverCandidate: document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')?.innerText || '',
@@ -1169,7 +1168,8 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
 
   if (!afterSave.selectionStatus.includes("saved")) fail("Mocked selection save did not surface saved metadata status.")
   if (!afterSave.sourceOfTruth.includes("checkout source-of-truth unchanged")) fail("Source-of-truth status changed after save.")
-  if (!afterSave.existingShippingVisible) fail("Existing ApiShip/Medusa checkout contour disappeared after save.")
+  if (!afterSave.deliveryHubShippingVisible) fail("Delivery Hub checkout option disappeared after save.")
+  if (afterSave.legacyFallbackVisible) fail("Legacy fallback checkout contour appeared after save.")
   assertCutoverGate(afterSave.cutoverGate, expectedCutoverEnabled)
   assertCutoverPreconditions(afterSave.cutoverPreconditions)
   assertCutoverCandidate(afterSave.cutoverCandidate, "ready_for_review", { expectedCutoverEnabled })
@@ -1218,15 +1218,18 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
 
   const afterClear = await evaluate(sessionId, `(() => {
     const text = document.body.innerText
+    const optionText = document.querySelector('[data-testid="delivery-options-container"]')?.innerText || ''
     return {
       text,
       sourceOfTruth: document.querySelector('[data-testid="delivery-hub-preview-source-of-truth-status"]')?.innerText || '',
-      existingShippingVisible: text.includes('ApiShip/Medusa fallback shipping'),
+      deliveryHubShippingVisible: optionText.includes('Delivery Hub Pickup Candidate'),
+      legacyFallbackVisible: optionText.includes('ApiShip/Medusa fallback shipping'),
     }
   })()`)
 
   if (!afterClear.sourceOfTruth.includes("checkout source-of-truth unchanged")) fail("Source-of-truth status changed after clear.")
-  if (!afterClear.existingShippingVisible) fail("Existing ApiShip/Medusa checkout contour disappeared after clear.")
+  if (!afterClear.deliveryHubShippingVisible) fail("Delivery Hub checkout option disappeared after clear.")
+  if (afterClear.legacyFallbackVisible) fail("Legacy fallback checkout contour appeared after clear.")
   assertNoUnsafeNeedles(afterClear.text, "after mocked selection clear")
 
   if (expectedCutoverEnabled) {
@@ -1252,11 +1255,11 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
     }
   }
 
-  log(`${label} passed: quote/save/clear used mocked Store API responses and checkout contour stayed adjacent.`)
+  log(`${label} passed: quote/save/clear used mocked Store API responses and no legacy fallback contour was visible.`)
 }
 
 async function runRollbackDrillSequence(mockBackendUrl) {
-  log("Starting rollback/fallback drill: flags off baseline -> preview on/cutover off -> preview on/cutover true -> flags off rollback.")
+  log("Starting rollback/no-fallback drill: flags off baseline -> preview on/cutover off -> preview on/cutover true -> flags off rollback.")
 
   mockSelection = buildSelectionFromBody({})
   let storefront = await startStorefront({ enabled: false, mockBackendUrl })
@@ -1282,7 +1285,7 @@ async function runRollbackDrillSequence(mockBackendUrl) {
   await storefront.stop()
   nextProcess = null
 
-  log("Delivery Hub rollback/fallback drill passed: flag-off runs hide/disable Delivery Hub commit artifacts, flag-on commits only the mapped mock Medusa shipping option, and rollback flag-off returns to no commit requests.")
+  log("Delivery Hub rollback/no-fallback drill passed: flag-off runs hide/disable Delivery Hub commit artifacts, flag-on commits only the mapped mock Medusa shipping option, rollback flag-off returns to no commit requests, and no legacy fallback contour is required.")
 }
 
 async function runCutoverSmokeSequence(mockBackendUrl) {
@@ -1485,7 +1488,6 @@ function assertNoShipmentLifecycleActions(text, label) {
     "refresh status",
     "retry shipment",
     "retry execution",
-    "shipment lifecycle",
     "shipment create",
     "shipment cancel",
     "shipment status",

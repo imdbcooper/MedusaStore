@@ -1015,7 +1015,7 @@ test("buildDeliveryHubCheckoutCutoverGateStatus is default-off and only enables 
   assert.equal(disabled.canCommitShippingMethod, false)
   assert.equal(disabled.status_label.includes("default-off"), true)
   assert.equal(
-    disabled.detail_label.includes("existing checkout shipping stays source-of-truth"),
+    disabled.detail_label.includes("no ApiShip/legacy fallback is selected automatically"),
     true
   )
   assert.equal(enabled.enabled, true)
@@ -1451,6 +1451,27 @@ test("buildDeliveryHubCutoverApprovalArtifactPreviewModel fails safe and keeps c
     model.hint_messages.some((message) => message.includes("no approval execution")),
     true
   )
+})
+
+
+test("buildDeliveryHubCheckoutCutoverGateStatus uses no-fallback fail-closed copy", () => {
+  const disabled = buildDeliveryHubCheckoutCutoverGateStatus({ enabled: false })
+  assert.equal(disabled.canCommitShippingMethod, false)
+  assert.equal(disabled.status_label.includes("fail-closed"), true)
+  assert.equal(
+    [...disabled.blocker_labels, ...disabled.hint_messages, disabled.detail_label].some((message) =>
+      message.includes("No ApiShip") || message.includes("no ApiShip")
+    ),
+    true
+  )
+
+  const blocked = buildDeliveryHubCheckoutCutoverGateStatus({
+    enabled: true,
+    candidate: null,
+    available_shipping_options: [],
+  })
+  assert.equal(blocked.canCommitShippingMethod, false)
+  assert.equal(blocked.detail_label.includes("No ApiShip/legacy fallback"), true)
 })
 
 
@@ -11043,7 +11064,8 @@ test("delivery hub selection cut-in wires only neutral save/clear helpers and ke
   assert.equal(shippingSource.includes("canCommitShippingMethod"), true)
   assert.equal(shippingSource.includes("handleDeliveryHubCheckoutCutoverCommit"), true)
   assert.equal(shippingSource.includes("delivery-hub-checkout-commit-guard"), true)
-  assert.equal(shippingSource.includes("Delivery Hub checkout commit is blocked fail-safe"), true)
+  assert.equal(shippingSource.includes("Delivery Hub checkout is fail-closed"), true)
+  assert.equal(shippingSource.includes("no fallback shipping method is selected automatically"), true)
   assert.equal(shippingSource.includes("setShippingMethod"), true)
   assert.equal(/handleDeliveryHubNeutralPreviewSelection[\s\S]*setShippingMethod/.test(shippingSource), false)
   assert.equal(/saveDeliveryHubSelection\s*\(/.test(utilSource), false)
@@ -11109,10 +11131,11 @@ test("delivery hub preview shadow UI exposes stable manual validation hooks and 
 
   assert.equal(
     shippingSource.includes(
-      "Operator/dev validation surface. It calls neutral Delivery Hub store endpoints and can save neutral metadata. The Delivery Hub shipping-method commit path remains default-off"
+      "Operator/dev validation surface. It calls neutral Delivery Hub store endpoints and can save neutral metadata. The active checkout path is Delivery Hub only"
     ),
     true
   )
+  assert.equal(shippingSource.includes("no automatic ApiShip or legacy fallback"), true)
   assert.equal(
     shippingSource.includes(
       "Diagnostics are shopper-safe only: quote/selection status, count, price, ETA and safe correlation id; no raw provider body, token, auth header, ciphertext or publishable key value is displayed."

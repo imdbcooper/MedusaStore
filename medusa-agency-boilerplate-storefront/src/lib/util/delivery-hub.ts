@@ -4003,7 +4003,7 @@ export function buildDeliveryHubCheckoutCutoverGateStatus(input: {
     },
     {
       code: "rollback_plan",
-      label: "Rollback/fallback plan preserves existing ApiShip/Medusa checkout source-of-truth when the cutover flag is off",
+      label: "Rollback/no-fallback plan preserves fail-closed Delivery Hub checkout posture when the cutover flag is off or readiness is blocked",
       status: "required",
     },
     {
@@ -4017,18 +4017,19 @@ export function buildDeliveryHubCheckoutCutoverGateStatus(input: {
     return {
       enabled: false,
       mode: "disabled",
-      status_label: "Delivery Hub checkout cutover gate is default-off",
+      status_label: "Delivery Hub checkout cutover gate is default-off and fail-closed",
       detail_label:
-        "NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED is not explicitly true, so Delivery Hub remains preview/neutral-selection metadata only and existing checkout shipping stays source-of-truth.",
+        "NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED is not explicitly true, so no Delivery Hub shipping-method commit is attempted and no ApiShip/legacy fallback is selected automatically.",
       canCommitShippingMethod: false,
       required_readiness_evidence: requiredReadinessEvidence,
       blocker_labels: [
         "Cutover flag is disabled by default.",
         "No Delivery Hub shipping-method commit is attempted while the flag is off.",
+        "No ApiShip or legacy fallback shipping method is selected automatically.",
       ],
       hint_messages: [
-        "Flag-off rollback returns to the existing ApiShip/Medusa shipping selection behavior.",
-        "Use the existing ApiShip/Medusa shipping selection as the checkout source-of-truth.",
+        "Flag-off rollback verifies Delivery Hub artifacts disappear and checkout delivery remains fail-closed instead of falling back.",
+        "Resolve Delivery Hub readiness or ask an operator to retry after delivery setup is restored.",
       ],
     }
   }
@@ -4045,7 +4046,7 @@ export function buildDeliveryHubCheckoutCutoverGateStatus(input: {
       blocker_labels: [],
       hint_messages: [
         "Commit is still default-off and available only for this explicit flag-on runtime.",
-        "Turning the flag off removes this commit path and preserves the legacy manual shipping selection fallback.",
+        "Turning the flag off removes this commit path and leaves checkout delivery fail-closed until Delivery Hub readiness is restored.",
       ],
     }
   }
@@ -4055,13 +4056,13 @@ export function buildDeliveryHubCheckoutCutoverGateStatus(input: {
     mode: "blocked",
     status_label: "Delivery Hub checkout cutover flag is enabled but commit is fail-closed",
     detail_label:
-      "The flag is explicit true, but the candidate is missing, not ready, invalid, or does not map to an available Medusa shipping option. Existing checkout shipping remains available.",
+      "The flag is explicit true, but the candidate is missing, not ready, invalid, or does not map to an available Medusa shipping option. No ApiShip/legacy fallback is selected automatically.",
     canCommitShippingMethod: false,
     required_readiness_evidence: requiredReadinessEvidence,
     blocker_labels: candidateGuard.reason_codes.map((reason) => reason.replace(/_/g, " ")),
     hint_messages: [
       "No automatic fallback mutation is attempted from a bad Delivery Hub candidate.",
-      "Keep or choose an existing ApiShip/Medusa shipping method while the Delivery Hub candidate is blocked.",
+      "Retry after Delivery Hub readiness is restored or ask an operator to resolve the blocked candidate.",
     ],
   }
 }
@@ -4297,7 +4298,7 @@ export function buildDeliveryHubCommitEligibilityModel(input: {
       "Saved neutral selection exists, but storefront commit cannot proceed until readiness and the current Delivery Hub shipping-option path align.",
     action_label:
       matchedOption === null
-        ? "Keep using the currently committed shipping method until a matching Delivery Hub shipping option is available on this cart."
+        ? "Delivery Hub checkout is fail-closed until a matching Delivery Hub shipping option is available on this cart."
         : "Refresh the Delivery Hub selection and checkout context before retrying the commit handoff.",
     shipping_option_id: matchedOption?.id ?? null,
     shipping_option_label: matchedOption?.name ?? null,
@@ -4323,7 +4324,7 @@ export function buildDeliveryHubCommitEligibilityModel(input: {
         ? "NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED must be explicit true before this Delivery Hub commit handoff can run."
         : null,
       reasonCodes.includes("missing_cutover_candidate")
-        ? "Cutover candidate evidence is unavailable; fail closed to existing checkout shipping."
+        ? "Cutover candidate evidence is unavailable; fail closed without selecting an ApiShip or legacy fallback."
         : null,
       reasonCodes.includes("cutover_candidate_not_ready")
         ? "Cutover candidate must be ready_for_review, selection-present and guardrail-clean before commit."
