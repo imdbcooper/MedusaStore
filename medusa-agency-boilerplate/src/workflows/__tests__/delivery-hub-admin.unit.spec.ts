@@ -10,6 +10,8 @@ import * as deliveryFulfillmentBridgePreviewRoute from "../../api/admin/delivery
 import * as deliveryShippingOptionsPreviewRoute from "../../api/admin/delivery/shipping-options/preview/route"
 import * as deliveryShippingOptionsSyncRoute from "../../api/admin/delivery/shipping-options/sync/route"
 import * as deliveryShared from "../../api/admin/delivery/shared"
+import * as deliveryPickupPointsRoute from "../../api/admin/delivery/pickup-points/route"
+import * as deliveryPickupWindowsRoute from "../../api/admin/delivery/pickup-windows/route"
 import * as deliveryTestQuoteRoute from "../../api/admin/delivery/test-quote/route"
 import * as deliveryWarehousesRoute from "../../api/admin/delivery/warehouses/route"
 import * as deliveryWarehouseRoute from "../../api/admin/delivery/warehouses/[id]/route"
@@ -123,6 +125,9 @@ describe("Delivery Hub admin routes", () => {
       provider_code: "yandex",
       name: "Yandex test",
       mode: "test",
+      config: {
+        api_base_url: "https://b2b.taxi.tst.yandex.net/b2b/cargo/integration/v2",
+      },
       credentials: {
         token: "token-value",
       },
@@ -275,6 +280,56 @@ describe("Delivery Hub admin routes", () => {
     })
   })
 
+  it("normalizes legacy Yandex base URL in admin connection response", async () => {
+    const connection = {
+      id: "conn_1",
+      provider_code: "yandex",
+      name: "Yandex updated",
+      status: "active",
+      mode: "test",
+      enabled: true,
+      country_code: "RU",
+      credentials_state: "sealed",
+      credentials_fingerprint: "fingerprint",
+      credentials_last_validated_at: null,
+      credentials_last_error_code: null,
+      credentials_present: true,
+      config: {
+        api_base_url: "https://b2b.taxi.tst.yandex.net/b2b/cargo/integration/v2",
+      },
+      metadata: {},
+      created_at: "2026-04-20T00:00:00.000Z",
+      updated_at: "2026-04-21T00:00:00.000Z",
+    }
+
+    jest
+      .spyOn(DeliveryHubService.prototype, "updateConnection")
+      .mockResolvedValue(connection as any)
+
+    const res = createMockResponse()
+
+    await deliveryConnectionRoute.PUT(
+      createMockRequest({
+        url: "/admin/delivery/connections/conn_1",
+        validatedBody: {
+          name: "Yandex updated",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      connection: {
+        ...connection,
+        config: {
+          api_base_url: "https://b2b.taxi.tst.yandex.net/api/b2b/platform",
+        },
+      },
+    })
+  })
+
   it("rejects polluted admin connection update responses before they cross the boundary", async () => {
     jest.spyOn(DeliveryHubService.prototype, "updateConnection").mockResolvedValue({
       id: "conn_1",
@@ -416,6 +471,293 @@ describe("Delivery Hub admin routes", () => {
     })
   })
 
+
+  it("returns sanitized admin pickup point lookup payload without provider raw body", async () => {
+    jest.spyOn(DeliveryHubService.prototype, "listAdminPickupPoints").mockResolvedValue({
+      ok: true,
+      connection: {
+        id: "conn_1",
+        provider_code: "yandex",
+        name: "Yandex test",
+        status: "active",
+        mode: "test",
+        enabled: true,
+        country_code: "RU",
+        credentials_state: "sealed",
+        credentials_fingerprint: "fingerprint",
+        credentials_last_validated_at: null,
+        credentials_last_error_code: null,
+        credentials_present: true,
+        config: {},
+        metadata: {},
+        created_at: "2026-04-20T00:00:00.000Z",
+        updated_at: "2026-04-20T00:00:00.000Z",
+      },
+      points: [
+        {
+          id: "pvz_1",
+          code: "code_1",
+          operator_id: "market_l4g",
+          network_label: "Яндекс Маркет",
+          station_type: "pickup_point",
+          is_yandex_branded: true,
+          is_market_partner: true,
+          name: "PVZ 1",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          available_for_dropoff: true,
+          coordinates: {
+            lat: 55.75,
+            lng: 37.61,
+          },
+        },
+      ],
+      limit: 20,
+      total_available: 1079,
+      returned_count: 1,
+      truncated: true,
+      correlation_id: "corr-pickup-lookup",
+    } as any)
+
+    const res = createMockResponse()
+
+    await deliveryPickupPointsRoute.GET(
+      createMockRequest({
+        url: "/admin/delivery/pickup-points?connection_id=conn_1&limit=20",
+        validatedQuery: {
+          connection_id: "conn_1",
+          limit: 20,
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      ok: true,
+      returned_count: 1,
+      total_available: 1079,
+      points: [
+        {
+          id: "pvz_1",
+          code: "code_1",
+          operator_id: "market_l4g",
+          network_label: "Яндекс Маркет",
+          station_type: "pickup_point",
+          is_yandex_branded: true,
+          is_market_partner: true,
+          name: "PVZ 1",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          available_for_dropoff: true,
+          coordinates: {
+            lat: 55.75,
+            lng: 37.61,
+          },
+        },
+      ],
+    }))
+  })
+
+  it("rejects admin pickup point lookup payloads with raw provider fragments", async () => {
+    jest.spyOn(DeliveryHubService.prototype, "listAdminPickupPoints").mockResolvedValue({
+      ok: true,
+      connection: {
+        id: "conn_1",
+        provider_code: "yandex",
+        name: "Yandex test",
+        status: "active",
+        mode: "test",
+        enabled: true,
+        country_code: "RU",
+        credentials_state: "sealed",
+        credentials_fingerprint: "fingerprint",
+        credentials_last_validated_at: null,
+        credentials_last_error_code: null,
+        credentials_present: true,
+        config: {},
+        metadata: {},
+        created_at: "2026-04-20T00:00:00.000Z",
+        updated_at: "2026-04-20T00:00:00.000Z",
+      },
+      points: [
+        {
+          id: "pvz_1",
+          code: null,
+          operator_id: null,
+          network_label: null,
+          station_type: null,
+          is_yandex_branded: null,
+          is_market_partner: null,
+          name: "PVZ 1",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          available_for_dropoff: false,
+          coordinates: { lat: null, lng: null },
+          raw_response: { token: "secret" },
+        },
+      ],
+      limit: 20,
+      total_available: 1,
+      returned_count: 1,
+      truncated: false,
+      correlation_id: "corr-pickup-lookup",
+    } as any)
+
+    const res = createMockResponse()
+
+    await deliveryPickupPointsRoute.GET(
+      createMockRequest({
+        url: "/admin/delivery/pickup-points?connection_id=conn_1",
+        validatedQuery: {
+          connection_id: "conn_1",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(res.status).toHaveBeenCalledWith(500)
+    const payload = (res.json as jest.Mock).mock.calls[0][0] as any
+    expect(payload.error.code).toBe("DELIVERY_HUB_UNEXPECTED_ERROR")
+    expect(payload.error.message).toContain("raw_response")
+  })
+
+  it("returns sanitized admin pickup windows lookup payload", async () => {
+    jest.spyOn(DeliveryHubService.prototype, "listAdminPickupWindows").mockResolvedValue({
+      ok: true,
+      connection: {
+        id: "conn_1",
+        provider_code: "yandex",
+        name: "Yandex test",
+        status: "active",
+        mode: "test",
+        enabled: true,
+        country_code: "RU",
+        credentials_state: "sealed",
+        credentials_fingerprint: "fingerprint",
+        credentials_last_validated_at: null,
+        credentials_last_error_code: null,
+        credentials_present: true,
+        config: {},
+        metadata: {},
+        created_at: "2026-04-20T00:00:00.000Z",
+        updated_at: "2026-04-20T00:00:00.000Z",
+      },
+      warehouse_id: "wh_1",
+      destination_point_id: "pvz_1",
+      windows: [
+        {
+          date: "2026-04-28",
+          time_from: "10:00",
+          time_to: "14:00",
+          interval_utc: {
+            from: "2026-04-28T07:00:00.000Z",
+            to: "2026-04-28T11:00:00.000Z",
+          },
+          label: "2026-04-28 10:00-14:00",
+        },
+      ],
+      limit: 20,
+      total_available: 1,
+      returned_count: 1,
+      truncated: false,
+      correlation_id: "corr-pickup-windows",
+    } as any)
+
+    const res = createMockResponse()
+
+    await deliveryPickupWindowsRoute.GET(
+      createMockRequest({
+        url: "/admin/delivery/pickup-windows?connection_id=conn_1&warehouse_id=wh_1&destination_point_id=pvz_1",
+        validatedQuery: {
+          connection_id: "conn_1",
+          warehouse_id: "wh_1",
+          destination_point_id: "pvz_1",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      ok: true,
+      returned_count: 1,
+      windows: [
+        {
+          date: "2026-04-28",
+          time_from: "10:00",
+          time_to: "14:00",
+          interval_utc: {
+            from: "2026-04-28T07:00:00.000Z",
+            to: "2026-04-28T11:00:00.000Z",
+          },
+          label: "2026-04-28 10:00-14:00",
+        },
+      ],
+    }))
+  })
+
+  it("rejects admin pickup windows lookup payloads with raw provider fragments", async () => {
+    jest.spyOn(DeliveryHubService.prototype, "listAdminPickupWindows").mockResolvedValue({
+      ok: true,
+      connection: {
+        id: "conn_1",
+        provider_code: "yandex",
+        name: "Yandex test",
+        status: "active",
+        mode: "test",
+        enabled: true,
+        country_code: "RU",
+        credentials_state: "sealed",
+        credentials_fingerprint: "fingerprint",
+        credentials_last_validated_at: null,
+        credentials_last_error_code: null,
+        credentials_present: true,
+        config: {},
+        metadata: {},
+        created_at: "2026-04-20T00:00:00.000Z",
+        updated_at: "2026-04-20T00:00:00.000Z",
+      },
+      warehouse_id: "wh_1",
+      destination_point_id: "pvz_1",
+      windows: [
+        {
+          date: "2026-04-28",
+          time_from: "10:00",
+          time_to: "14:00",
+          interval_utc: {
+            from: "2026-04-28T07:00:00.000Z",
+            to: "2026-04-28T11:00:00.000Z",
+          },
+          label: "2026-04-28 10:00-14:00",
+          raw_response: { token: "secret" },
+        },
+      ],
+      limit: 20,
+      total_available: 1,
+      returned_count: 1,
+      truncated: false,
+      correlation_id: "corr-pickup-windows",
+    } as any)
+
+    const res = createMockResponse()
+
+    await deliveryPickupWindowsRoute.GET(
+      createMockRequest({
+        url: "/admin/delivery/pickup-windows?connection_id=conn_1&warehouse_id=wh_1",
+        validatedQuery: {
+          connection_id: "conn_1",
+          warehouse_id: "wh_1",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(res.status).toHaveBeenCalledWith(500)
+    const payload = (res.json as jest.Mock).mock.calls[0][0] as any
+    expect(payload.error.code).toBe("DELIVERY_HUB_UNEXPECTED_ERROR")
+    expect(payload.error.message).toContain("raw_response")
+  })
 
   it("redacts secret-like quote raw references and preserves structured quote diagnostics", async () => {
     jest.spyOn(DeliveryHubService.prototype, "testQuote").mockResolvedValue({
@@ -1731,6 +2073,65 @@ describe("Delivery Hub admin routes", () => {
                 extra: true,
               },
             ],
+            repository_assembly_summary: {
+              version: 1,
+              mode: "assembly_plan_only",
+              repository_status: "pg_repository_implementation_available",
+              table_name: "deliveryhub_execution_ledger",
+              persistence_readiness_contour: {
+                stages: [
+                  "artifact_defined",
+                  "manual_application_external",
+                  "snapshot_verification_available",
+                  "activation_blocked",
+                ],
+                current_stage: "activation_blocked",
+                review_preparation_available_now: [
+                  "descriptor_bundle_defined",
+                  "migration_artifact_reviewable",
+                  "snapshot_schema_verifier_available",
+                  "snapshot_schema_check_plan_available",
+                ],
+                external_manual_application_remaining: [
+                  "manual_migration_review",
+                  "manual_table_creation_or_migration_execution",
+                  "manual_schema_snapshot_capture",
+                ],
+                activation_blocked_until: [
+                  "migration_or_table_creation",
+                  "transaction_runner",
+                  "explicit_runtime_wiring",
+                  "operational_runbook",
+                  "safety_review",
+                ],
+              },
+              missing_activation_prerequisites: [
+                "migration_or_table_creation",
+                "transaction_runner",
+                "explicit_runtime_wiring",
+                "operational_runbook",
+                "safety_review",
+              ],
+              disabled_confirmations: {
+                query_execution: false,
+                transaction_execution: false,
+                transaction_open: false,
+                transaction_commit: false,
+                transaction_rollback: false,
+                production_writes: false,
+                runtime_wiring: false,
+                live_execution: false,
+                provider_dispatch: false,
+                shipment_creation: false,
+                label_or_document_generation: false,
+                order_or_fulfillment_mutation: false,
+                retry_scheduling: false,
+                compensation_or_rollback_writes: false,
+                checkout_or_storefront_cutover: false,
+                connection_factory_invocation: false,
+                migration_or_table_creation: false,
+              },
+            },
             steps: [
               {
                 key: "provider_execution_plan",
@@ -2315,6 +2716,65 @@ describe("Delivery Hub admin routes", () => {
           field_path: "fulfillment_data.internal_secret",
         },
       ],
+      repository_assembly_summary: {
+        version: 1,
+        mode: "assembly_plan_only",
+        repository_status: "pg_repository_implementation_available",
+        table_name: "deliveryhub_execution_ledger",
+        persistence_readiness_contour: {
+          stages: [
+            "artifact_defined",
+            "manual_application_external",
+            "snapshot_verification_available",
+            "activation_blocked",
+          ],
+          current_stage: "activation_blocked",
+          review_preparation_available_now: [
+            "descriptor_bundle_defined",
+            "migration_artifact_reviewable",
+            "snapshot_schema_verifier_available",
+            "snapshot_schema_check_plan_available",
+          ],
+          external_manual_application_remaining: [
+            "manual_migration_review",
+            "manual_table_creation_or_migration_execution",
+            "manual_schema_snapshot_capture",
+          ],
+          activation_blocked_until: [
+            "migration_or_table_creation",
+            "transaction_runner",
+            "explicit_runtime_wiring",
+            "operational_runbook",
+            "safety_review",
+          ],
+        },
+        missing_activation_prerequisites: [
+          "migration_or_table_creation",
+          "transaction_runner",
+          "explicit_runtime_wiring",
+          "operational_runbook",
+          "safety_review",
+        ],
+        disabled_confirmations: {
+          query_execution: false,
+          transaction_execution: false,
+          transaction_open: false,
+          transaction_commit: false,
+          transaction_rollback: false,
+          production_writes: false,
+          runtime_wiring: false,
+          live_execution: false,
+          provider_dispatch: false,
+          shipment_creation: false,
+          label_or_document_generation: false,
+          order_or_fulfillment_mutation: false,
+          retry_scheduling: false,
+          compensation_or_rollback_writes: false,
+          checkout_or_storefront_cutover: false,
+          connection_factory_invocation: false,
+          migration_or_table_creation: false,
+        },
+      },
       steps: [
         {
           key: "provider_execution_plan",
@@ -2867,6 +3327,65 @@ describe("Delivery Hub admin routes", () => {
             },
             blocked_reasons: ["Shipment execution remains intentionally disabled"],
             issues: [],
+            repository_assembly_summary: {
+              version: 1,
+              mode: "assembly_plan_only",
+              repository_status: "pg_repository_implementation_available",
+              table_name: "deliveryhub_execution_ledger",
+              persistence_readiness_contour: {
+                stages: [
+                  "artifact_defined",
+                  "manual_application_external",
+                  "snapshot_verification_available",
+                  "activation_blocked",
+                ],
+                current_stage: "activation_blocked",
+                review_preparation_available_now: [
+                  "descriptor_bundle_defined",
+                  "migration_artifact_reviewable",
+                  "snapshot_schema_verifier_available",
+                  "snapshot_schema_check_plan_available",
+                ],
+                external_manual_application_remaining: [
+                  "manual_migration_review",
+                  "manual_table_creation_or_migration_execution",
+                  "manual_schema_snapshot_capture",
+                ],
+                activation_blocked_until: [
+                  "migration_or_table_creation",
+                  "transaction_runner",
+                  "explicit_runtime_wiring",
+                  "operational_runbook",
+                  "safety_review",
+                ],
+              },
+              missing_activation_prerequisites: [
+                "migration_or_table_creation",
+                "transaction_runner",
+                "explicit_runtime_wiring",
+                "operational_runbook",
+                "safety_review",
+              ],
+              disabled_confirmations: {
+                query_execution: false,
+                transaction_execution: false,
+                transaction_open: false,
+                transaction_commit: false,
+                transaction_rollback: false,
+                production_writes: false,
+                runtime_wiring: false,
+                live_execution: false,
+                provider_dispatch: false,
+                shipment_creation: false,
+                label_or_document_generation: false,
+                order_or_fulfillment_mutation: false,
+                retry_scheduling: false,
+                compensation_or_rollback_writes: false,
+                checkout_or_storefront_cutover: false,
+                connection_factory_invocation: false,
+                migration_or_table_creation: false,
+              },
+            },
             steps: [
               {
                 key: "preflight_eligibility",
@@ -3678,6 +4197,25 @@ describe("Delivery Hub admin routes", () => {
       },
       quotes: [],
       correlation_id: "corr-test-quote",
+      input_echo: {
+        connection_id: "conn_1",
+        mode_code: "warehouse_to_pickup_point",
+        destination_point_id: "pvz_1",
+        origin_point_id: null,
+        warehouse_id: "wh_1",
+        interval_utc: null,
+        currency_code: "RUB",
+        item_count: 0,
+      },
+      diagnostics_summary: {
+        status: "ok",
+        provider_status: null,
+        error_category: null,
+        message: null,
+        correlation_id: "corr-test-quote",
+        checked_at: "2026-04-21T10:00:00.000Z",
+        redacted: true,
+      },
     } as any)
 
     const res = createMockResponse()
@@ -3699,6 +4237,47 @@ describe("Delivery Hub admin routes", () => {
     const payload = (res.json as jest.Mock).mock.calls[0][0] as any
     expect(payload.error.code).toBe("DELIVERY_HUB_UNEXPECTED_ERROR")
     expect(payload.error.message).toContain("credentials")
+  })
+
+  it("returns controlled admin validation payload for missing required test quote fields", async () => {
+    jest.spyOn(DeliveryHubService.prototype, "testQuote").mockRejectedValue(
+      new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: 'Field "connection_id" is required',
+        status: 400,
+        details: {
+          field: "connection_id",
+          token: "secret-token-123",
+        },
+      })
+    )
+
+    const res = createMockResponse()
+
+    await deliveryTestQuoteRoute.POST(
+      createMockRequest({
+        url: "/admin/delivery/test-quote",
+        validatedBody: {
+          connection_id: "",
+          mode_code: "warehouse_to_pickup_point",
+          destination_point_id: "",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(res.status).toHaveBeenCalledWith(400)
+    expect(res.json).toHaveBeenCalledWith({
+      ok: false,
+      error: {
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: 'Field "connection_id" is required',
+        details: {
+          field: "connection_id",
+          token: "***",
+        },
+      },
+    })
   })
 
   it("returns controlled admin error payload for missing connection test entity", async () => {
@@ -3740,6 +4319,20 @@ describe("Delivery Hub admin routes", () => {
         },
       },
     })
+  })
+
+  it("wires admin auth middleware and query validation for pickup point lookup route", () => {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs")
+    const { resolve } = require("node:path") as typeof import("node:path")
+    const middlewaresSource = readFileSync(
+      resolve(process.cwd(), "src/api/middlewares.ts"),
+      "utf8"
+    )
+
+    expect(middlewaresSource).toContain('matcher: "/admin/delivery/pickup-points"')
+    expect(middlewaresSource).toContain("validateAndTransformQuery(AdminDeliveryPickupPointsQuerySchema")
+    expect(middlewaresSource).toContain('matcher: "/admin/delivery/pickup-windows"')
+    expect(middlewaresSource).toContain("validateAndTransformQuery(AdminDeliveryPickupWindowsQuerySchema")
   })
 
   it("wires admin auth middleware for shipping-option preview route", () => {

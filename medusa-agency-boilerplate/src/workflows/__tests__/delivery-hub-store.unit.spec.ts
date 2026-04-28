@@ -192,6 +192,11 @@ describe("Delivery Hub store routes", () => {
         {
           provider_point_id: "pvz_1",
           provider_point_code: "code_1",
+          provider_operator_id: null,
+          network_label: null,
+          is_yandex_branded: null,
+          is_market_partner: null,
+          station_type: null,
           name: "PVZ 1",
           address: "Tverskaya 1",
           city: "Moscow",
@@ -354,6 +359,11 @@ describe("Delivery Hub store routes", () => {
           pickup_window_required: false,
         },
       ],
+      diagnostics: {
+        correlation_id: "corr_quote_1",
+        checkout_source_of_truth: "unchanged",
+        contour: "delivery_hub_storefront_preview",
+      },
     }
 
     const quoteSpy = jest
@@ -406,6 +416,145 @@ describe("Delivery Hub store routes", () => {
     })
     expect(res.status).toHaveBeenCalledWith(200)
     expect(res.json).toHaveBeenCalledWith(result)
+  })
+
+  it("accepts neutral JSON body quote smoke without checkout cutover", async () => {
+    const result = {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "yandex",
+          carrier_label: "Yandex Delivery",
+          mode_code: "dropoff_point_to_pickup_point",
+          quote_reference: {
+            id: "dhsel_22222222222222222222222222222222",
+            version: 1,
+          },
+          amount: 181.9,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_point_ids: ["pvz_2"],
+          pickup_window_required: false,
+        },
+      ],
+      diagnostics: {
+        correlation_id: "corr_quote_post_1",
+        checkout_source_of_truth: "unchanged",
+        contour: "delivery_hub_storefront_preview",
+      },
+    }
+
+    const quoteSpy = jest
+      .spyOn(DeliveryHubService.prototype, "listStoreQuotes")
+      .mockResolvedValue(result as any)
+
+    const res = createMockResponse()
+
+    await deliveryQuotesRoute.POST(
+      createMockRequest({
+        validatedBody: {
+          connection_id: "conn_1",
+          mode_code: "dropoff_point_to_pickup_point",
+          origin_point_id: "dropoff_1",
+          destination_point_id: "pvz_2",
+          currency_code: "RUB",
+          items: [
+            {
+              quantity: 1,
+              weight_grams: 500,
+              price: 2000,
+            },
+          ],
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(quoteSpy).toHaveBeenCalledWith({
+      connection_id: "conn_1",
+      mode_code: "dropoff_point_to_pickup_point",
+      currency_code: "RUB",
+      destination_point_id: "pvz_2",
+      origin_point_id: "dropoff_1",
+      warehouse_id: undefined,
+      interval_utc: undefined,
+      items: [
+        {
+          quantity: 1,
+          weight_grams: 500,
+          price: 2000,
+        },
+      ],
+    })
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith(result)
+    const payload = (res.json as jest.Mock).mock.calls[0][0] as any
+    expect(JSON.stringify(payload)).not.toMatch(
+      /token|authorization|raw_reference|ciphertext|provider_offer_id/i
+    )
+    expect(payload.diagnostics.checkout_source_of_truth).toBe("unchanged")
+  })
+
+  it("fails closed when store quote POST middleware did not provide a validated JSON body", async () => {
+    const quoteSpy = jest.spyOn(DeliveryHubService.prototype, "listStoreQuotes")
+    const res = createMockResponse()
+
+    await deliveryQuotesRoute.POST(
+      createMockRequest({}) as any,
+      res as any
+    )
+
+    expect(quoteSpy).not.toHaveBeenCalled()
+    expect(res.status).toHaveBeenCalledWith(400)
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({
+          code: "DELIVERY_HUB_VALIDATION_ERROR",
+          message: "Store delivery quote request body was not validated",
+          details: expect.objectContaining({
+            field: "body",
+          }),
+        }),
+      })
+    )
+    expect(JSON.stringify((res.json as jest.Mock).mock.calls[0][0])).not.toMatch(
+      /token|authorization|ciphertext|provider_offer_id/i
+    )
+  })
+
+  it("validates raw JSON body fallback for store quote POST without accepting provider DTOs", async () => {
+    const quoteSpy = jest.spyOn(DeliveryHubService.prototype, "listStoreQuotes")
+    const res = createMockResponse()
+
+    await deliveryQuotesRoute.POST(
+      createMockRequest({
+        body: {
+          connection_id: "conn_1",
+          mode_code: "dropoff_point_to_pickup_point",
+          origin_point_id: "dropoff_1",
+          destination_point_id: "pvz_2",
+          currency_code: "RUB",
+          items: [
+            {
+              quantity: 1,
+              weight_grams: 500,
+              price: 2000,
+            },
+          ],
+          provider_offer_id: "raw-provider-fragment",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(quoteSpy).not.toHaveBeenCalled()
+    expect(res.status).toHaveBeenCalledWith(400)
+    const payload = (res.json as jest.Mock).mock.calls[0][0] as any
+    expect(payload.error.code).toBe("DELIVERY_HUB_VALIDATION_ERROR")
+    expect(JSON.stringify(payload.error.details)).toContain("provider_offer_id")
   })
 
   it("rejects quote payloads that try to expose internal quote fragments", async () => {
@@ -820,7 +969,17 @@ describe("Delivery Hub store routes", () => {
       ok: true,
       cart_id: "cart_1",
       selection,
+      diagnostics: {
+        correlation_id: "corr_store_1",
+        checkout_source_of_truth: "unchanged",
+        contour: "delivery_hub_storefront_preview",
+      },
     })
+    const payload = (res.json as jest.Mock).mock.calls[0][0] as any
+    expect(JSON.stringify(payload)).not.toMatch(
+      /backend_execution_reference|token|authorization|raw_reference|ciphertext|provider_offer_id/i
+    )
+    expect(payload.diagnostics.checkout_source_of_truth).toBe("unchanged")
   })
 
   it("rejects selection POST payloads that try to expose provider-specific fragments", async () => {
@@ -953,6 +1112,11 @@ describe("Delivery Hub store routes", () => {
       ok: true,
       cart_id: "cart_1",
       selection: null,
+      diagnostics: {
+        correlation_id: null,
+        checkout_source_of_truth: "unchanged",
+        contour: "delivery_hub_storefront_preview",
+      },
     })
   })
 
@@ -1211,6 +1375,12 @@ describe("Delivery Hub store routes", () => {
         },
       },
     })
+  })
+
+  it("keeps legacy ApiShip store route contour untouched", () => {
+    expect(deliveryQuotesRoute).toHaveProperty("GET")
+    expect(deliveryQuotesRoute).toHaveProperty("POST")
+    expect(deliverySelectionRoute).toHaveProperty("POST")
   })
 
   it("returns controlled 400 for malformed items JSON", async () => {

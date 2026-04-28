@@ -1171,7 +1171,41 @@ describe("Delivery Hub cart selection contract", () => {
       ok: true,
       cart_id: "cart_1",
       selection,
+      diagnostics: {
+        correlation_id: "corr_store_1",
+        checkout_source_of_truth: "unchanged",
+        contour: "delivery_hub_storefront_preview",
+      },
     })
+  })
+
+  it("does not mutate checkout source-of-truth fields while persisting smoke selection", async () => {
+    const persistedMetadata = buildDeliveryHubCartSelectionMetadata(
+      {
+        shipping_option_id: "legacy_checkout_shipping_option",
+        fulfillment_provider_id: "legacy_fulfillment_provider",
+        shipping_methods: [
+          {
+            id: "ship_legacy",
+            shipping_option_id: "legacy_checkout_shipping_option",
+          },
+        ],
+      },
+      createSelectionBody()
+    ) as Record<string, any>
+
+    expect(persistedMetadata.shipping_option_id).toBe("legacy_checkout_shipping_option")
+    expect(persistedMetadata.fulfillment_provider_id).toBe("legacy_fulfillment_provider")
+    expect(persistedMetadata.shipping_methods).toEqual([
+      {
+        id: "ship_legacy",
+        shipping_option_id: "legacy_checkout_shipping_option",
+      },
+    ])
+    expect(persistedMetadata[DELIVERY_HUB_CART_METADATA_NAMESPACE].selection).toBeDefined()
+    expect(JSON.stringify(readDeliveryHubCartSelection(persistedMetadata))).not.toMatch(
+      /backend_execution_reference|token|authorization|raw_reference|ciphertext|provider_offer_id/i
+    )
   })
 })
 

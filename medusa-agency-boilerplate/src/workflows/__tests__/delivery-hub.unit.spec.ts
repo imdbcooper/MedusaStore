@@ -343,6 +343,46 @@ describe("Delivery Hub service", () => {
     })
   })
 
+  it("keeps sealed credentials when updating an existing connection without a token", async () => {
+    process.env.DELIVERY_HUB_ENCRYPTION_KEY = Buffer.alloc(32, 13).toString("base64")
+
+    const envelope = encryptDeliveryHubCredentials({ token: "existing-token" })
+    const fingerprint = createCredentialsFingerprint({ token: "existing-token" })
+    const connection = createConnectionRecord({
+      credentials_envelope: envelope,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      credentials_fingerprint: fingerprint,
+      credentials_last_validated_at: "2026-04-21T00:00:00.000Z",
+      credentials_last_error_code: null,
+    })
+    const pg = createMockPg([connection])
+    const service = new DeliveryHubService(pg as any)
+
+    const updated = await service.updateConnection(connection.id, {
+      name: "Yandex renamed",
+      mode: "test",
+      enabled: true,
+      country_code: "RU",
+      config: {
+        auto_confirm: true,
+      },
+    })
+
+    expect(updated).toMatchObject({
+      id: connection.id,
+      name: "Yandex renamed",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      credentials_fingerprint: fingerprint,
+      credentials_present: true,
+    })
+
+    const upsertCall = pg.calls.find((call) => call.sql.includes("insert into delivery_connections"))
+    expect(upsertCall?.params[7]).toBe(JSON.stringify(envelope))
+    expect(upsertCall?.params[8]).toBe(DELIVERY_HUB_CREDENTIALS_STATE.sealed)
+    expect(upsertCall?.params[9]).toBe(fingerprint)
+    expect(upsertCall?.params[10]).toBe("2026-04-21T00:00:00.000Z")
+  })
+
   it("lists event logs with filters and keeps summaries sanitized", async () => {
     const connection = createConnectionRecord()
     const pg = createMockPg([connection], [
@@ -596,6 +636,11 @@ describe("Delivery Hub service", () => {
       {
         provider_point_id: "pvz_1",
         provider_point_code: "code_1",
+        provider_operator_id: "market_l4g",
+        network_label: "Яндекс Маркет",
+        is_yandex_branded: true,
+        is_market_partner: true,
+        station_type: "pickup_point",
         name: "PVZ 1",
         address: "Tverskaya 1",
         city: "Moscow",
@@ -627,6 +672,89 @@ describe("Delivery Hub service", () => {
       {
         city: "Moscow",
         country_code: "RU",
+      }
+    )
+  })
+
+  it("lists admin pickup points as capped sanitized operator sample", async () => {
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+    })
+    const pg = createMockPg([connection])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+    const pickupSpy = jest.spyOn(adapter, "listPickupPoints").mockResolvedValue([
+      {
+        provider_point_id: "pvz_1",
+        provider_point_code: "code_1",
+        provider_operator_id: "market_l4g",
+        network_label: "Яндекс Маркет",
+        is_yandex_branded: true,
+        is_market_partner: true,
+        station_type: "pickup_point",
+        name: "PVZ 1",
+        address: "Tverskaya 1",
+        city: "Moscow",
+        region: "Moscow",
+        postal_code: "101000",
+        lat: 55.75,
+        lng: 37.61,
+        is_origin_dropoff_allowed: true,
+        is_destination_pickup_allowed: true,
+        payment_methods: ["card"],
+        metadata: {
+          available_for_dropoff: true,
+          raw_provider_fragment: "must-not-cross-admin-lookup",
+        },
+      },
+    ])
+
+    const result = await service.listAdminPickupPoints({
+      connection_id: connection.id,
+      city: "Moscow",
+      limit: 20,
+    })
+
+    expect(result).toEqual(expect.objectContaining({
+      ok: true,
+      limit: 20,
+      total_available: 1,
+      returned_count: 1,
+      truncated: false,
+      points: [
+        {
+          id: "pvz_1",
+          code: "code_1",
+          operator_id: "market_l4g",
+          network_label: "Яндекс Маркет",
+          station_type: "pickup_point",
+          is_yandex_branded: true,
+          is_market_partner: true,
+          name: "PVZ 1",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          available_for_dropoff: true,
+          coordinates: {
+            lat: 55.75,
+            lng: 37.61,
+          },
+        },
+      ],
+    }))
+    expect(pickupSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ connection }),
+      {
+        city: "Moscow",
+        country_code: "RU",
+        geo_id: null,
+        pickup_point_ids: null,
+        operator_ids: null,
+        station_type: null,
+        available_for_dropoff: null,
+        is_yandex_branded: null,
+        is_not_branded_partner_station: null,
       }
     )
   })

@@ -23,14 +23,18 @@ describe("Yandex create-shipment dispatch port executable layer", () => {
       correlation_id: "corr_dispatch_wh_123456",
       request_payload: {
         source: {
-          warehouse_id: "yandex_warehouse_77",
+          platform_station: {
+            platform_id: "yandex_warehouse_77",
+          },
           interval_utc: {
             from: "2026-04-23T07:00:00.000Z",
             to: "2026-04-23T11:00:00.000Z",
           },
         },
         destination: {
-          pickup_point_id: "pvz_destination_77",
+          platform_station: {
+            platform_id: "pvz_destination_77",
+          },
         },
         recipient: {
           full_name: "Ivan Petrov",
@@ -105,10 +109,14 @@ describe("Yandex create-shipment dispatch port executable layer", () => {
         correlation_id: "corr_dispatch_dropoff_654321",
         request_payload: expect.objectContaining({
           source: {
-            pickup_point_id: "dropoff_origin_42",
+            platform_station: {
+              platform_id: "dropoff_origin_42",
+            },
           },
           destination: {
-            pickup_point_id: "pvz_destination_42",
+            platform_station: {
+              platform_id: "pvz_destination_42",
+            },
           },
           recipient: {
             full_name: "Maria Ivanova",
