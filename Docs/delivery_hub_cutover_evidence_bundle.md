@@ -45,7 +45,7 @@ npm run evidence:delivery-hub-staging-dry-run:check
 npm run evidence:delivery-hub-staging-dry-run
 ```
 
-That command writes to `.delivery-hub-cutover-evidence/staging-dry-run/`, records operator assertions for `smoke:delivery-hub-cutover:browser`, `smoke:delivery-hub-rollback:browser`, staging flag state, sanitized manual staging note, sanitized rollback verification note, and hard guardrails. It is local-only, does not read `.env` files, does not capture raw provider/Yandex request or response bodies, and does not enable production.
+That command writes to `.delivery-hub-cutover-evidence/staging-dry-run/`, records operator assertions for `smoke:delivery-hub-cutover:browser`, `smoke:delivery-hub-rollback:browser`, staging flag state, sanitized manual staging note, sanitized rollback verification note, and hard guardrails. It rejects quoted JSON-style secret/key/token/ciphertext/auth fields in notes and check self-test samples. It is local-only, does not read `.env` files, does not capture raw provider/Yandex request or response bodies, and does not enable production.
 
 Check-only mode:
 

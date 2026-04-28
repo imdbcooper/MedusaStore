@@ -28,12 +28,49 @@ const requiredFiles = [
   "medusa-agency-boilerplate-storefront/.env.local.example",
 ]
 
+const fieldValuePrefix = String.raw`(?:^|[\s{,;|` + "`" + String.raw`])`
+const fieldValueSeparator = String.raw`["']?\s*[:=]\s*["']?`
+const fieldValueTail = String.raw`[^\s` + "`" + String.raw`|,}\]]+`
+
+function quotedFieldValuePattern(fieldNames) {
+  return new RegExp(`${fieldValuePrefix}["']?(?:${fieldNames.join("|")})${fieldValueSeparator}${fieldValueTail}`, "i")
+}
+
 const forbiddenOutputPatterns = [
-  { label: "authorization-header-value", pattern: /authorization\s*[:=]\s*\S+/i },
+  {
+    label: "authorization-header-value",
+    pattern: quotedFieldValuePattern([
+      "authorization",
+      "auth",
+      "auth_header",
+      "auth_headers",
+      "authHeader",
+      "authHeaders",
+      "x-api-key",
+      "x_api_key",
+    ]),
+  },
   { label: "bearer-token-value", pattern: /bearer\s+[a-z0-9._~+/=-]{8,}/i },
-  { label: "token-field-value", pattern: /\b(token|access_token|refresh_token|api_token|id_token)\s*[:=]\s*[^\s`|,]+/i },
-  { label: "secret-field-value", pattern: /\b(secret|client_secret|password|passwd|pwd|api_key|apikey)\s*[:=]\s*[^\s`|,]+/i },
-  { label: "ciphertext-field-value", pattern: /\bciphertext\s*[:=]\s*[^\s`|,]+/i },
+  {
+    label: "token-field-value",
+    pattern: quotedFieldValuePattern(["token", "access_token", "refresh_token", "id_token", "api_token"]),
+  },
+  {
+    label: "password-field-value",
+    pattern: quotedFieldValuePattern(["password", "passwd", "pwd"]),
+  },
+  {
+    label: "secret-field-value",
+    pattern: quotedFieldValuePattern(["secret", "client_secret", "api_secret"]),
+  },
+  {
+    label: "key-field-value",
+    pattern: quotedFieldValuePattern(["api_key", "apikey", "api-key", "secret_key", "publishable_key", "private_key", "key"]),
+  },
+  {
+    label: "ciphertext-field-value",
+    pattern: quotedFieldValuePattern(["ciphertext", "encrypted_credentials", "credential", "credentials"]),
+  },
   { label: "publishable-key-value", pattern: /\b(pk_live|pk_test|pk_[a-z0-9_]{10,})\b/i },
   { label: "secret-key-value", pattern: /\b(sk_live|sk_test|sk_[a-z0-9_]{10,})\b/i },
   { label: "jwt-like-value", pattern: /\beyJ[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\b/i },
@@ -55,6 +92,19 @@ const unsafeNotePatterns = [
   { label: "long-base64-like-value", pattern: /\b[A-Za-z0-9+/]{80,}={0,2}\b/ },
   { label: "long-hex-like-value", pattern: /\b[a-f0-9]{48,}\b/i },
   { label: "request-response-body", pattern: /\b(request_body|response_body|request body|response body|raw body|payload dump)\b/i },
+]
+
+const sanitizerSelfCheckSamples = [
+  { label: "quoted-json-token", value: '{"token": "dummy-token-value"}', expectedSafe: false },
+  { label: "quoted-json-password", value: '{"password": "dummy-password-value"}', expectedSafe: false },
+  { label: "quoted-json-api-key", value: '{"api_key": "dummy-api-key-value"}', expectedSafe: false },
+  { label: "quoted-json-ciphertext", value: '{"ciphertext": "dummy-ciphertext-value"}', expectedSafe: false },
+  { label: "quoted-json-authorization", value: '{"Authorization": "Bearer dummy-token-value"}', expectedSafe: false },
+  { label: "legacy-token", value: "token=dummy-token-value", expectedSafe: false },
+  { label: "legacy-password", value: "password=dummy-password-value", expectedSafe: false },
+  { label: "legacy-api-key", value: "api_key=dummy-api-key-value", expectedSafe: false },
+  { label: "legacy-ciphertext", value: "ciphertext=dummy-ciphertext-value", expectedSafe: false },
+  { label: "safe-note", value: "Controlled staging cart/order dry run passed with sanitized summaries only.", expectedSafe: true },
 ]
 
 function parseArgs(argv) {
@@ -403,8 +453,45 @@ function assertInsideWorkspace(filePath) {
   }
 }
 
+function runSanitizerSelfCheck() {
+  const sampleResults = sanitizerSelfCheckSamples.map((sample) => {
+    try {
+      sanitizeNote(`sanitizer self-check ${sample.label}`, sample.value)
+      return {
+        label: sample.label,
+        expected_safe: sample.expectedSafe,
+        actual_safe: true,
+        ok: sample.expectedSafe === true,
+        findings: [],
+      }
+    } catch (error) {
+      const findings = String(error.message || "")
+        .split("guardrail(s): ")[1]
+        ?.split(", ")
+        .filter(Boolean) || []
+
+      return {
+        label: sample.label,
+        expected_safe: sample.expectedSafe,
+        actual_safe: false,
+        ok: sample.expectedSafe === false,
+        findings,
+      }
+    }
+  })
+
+  return {
+    ok: sampleResults.every((sample) => sample.ok),
+    samples_total: sampleResults.length,
+    unsafe_samples_rejected: sampleResults.filter((sample) => sample.expected_safe === false && sample.actual_safe === false).length,
+    safe_samples_accepted: sampleResults.filter((sample) => sample.expected_safe === true && sample.actual_safe === true).length,
+    sample_results: sampleResults,
+  }
+}
+
 function buildCheckSummary(options) {
   const inputCheck = checkRequiredInputs()
+  const sanitizerSelfCheck = runSanitizerSelfCheck()
   const bundle = buildBundle(options)
   const markdown = renderMarkdown(bundle)
   const json = `${JSON.stringify(bundle, null, 2)}\n`
@@ -417,8 +504,10 @@ function buildCheckSummary(options) {
     artifact_type: ARTIFACT_TYPE,
     check_mode: true,
     generated_at: bundle.generated_at,
-    ok: inputCheck.ok && findings.length === 0,
+    ok: inputCheck.ok && sanitizerSelfCheck.ok && findings.length === 0,
     required_inputs_ok: inputCheck.ok,
+    sanitizer_self_check_ok: sanitizerSelfCheck.ok,
+    sanitizer_self_check: sanitizerSelfCheck,
     missing_files: inputCheck.missing_files,
     missing_package_scripts: inputCheck.missing_package_scripts,
     unsafe_output_findings: findings,
