@@ -62,6 +62,7 @@ type DeliveryHubStorefrontNeutralSmokeRunResult = {
     stage: "input" | "quote" | "selection" | "unexpected"
     code: string | null
     message: string
+    type?: string | null
   } | null
 }
 
@@ -500,11 +501,16 @@ function getFirstQuote(body: unknown): Record<string, unknown> | null {
 }
 
 function extractSafeError(body: unknown, fallbackMessage: string) {
-  const error = asRecord(asRecord(body).error)
+  const root = asRecord(body)
+  const error = asRecord(root.error)
+  const code = safeString(error.code ?? root.code)
+  const type = safeString(error.type ?? root.type)
+  const message = safeString(error.message ?? root.message) ?? fallbackMessage
 
   return {
-    code: safeString(error.code),
-    message: safeString(error.message) ?? fallbackMessage,
+    code: code ?? type,
+    type,
+    message,
   }
 }
 

@@ -214,6 +214,51 @@ describe("Delivery Hub storefront-neutral smoke harness", () => {
     expect(summary.safety.shipment_create_cancel_status_retry_performed).toBe(false)
     expect(summary.safety.api_ship_or_legacy_provider_touched).toBe(false)
   })
+  it("surfaces top-level Medusa store middleware 400 safely", async () => {
+    global.fetch = jest.fn(async (url: URL | RequestInfo) => {
+      const href = String(url)
+
+      if (href.endsWith("/store/delivery/quotes")) {
+        return buildJsonResponse(400, {
+          type: "not_allowed",
+          message: "Publishable API key required in the request header: x-publishable-api-key. You can manage your keys in settings in the dashboard.",
+        })
+      }
+
+      throw new Error(`Unexpected URL: ${href}`)
+    }) as unknown as typeof fetch
+
+    const result = await runDeliveryHubStorefrontNeutralSmoke(
+      parseDeliveryHubStorefrontNeutralSmokeArgs([
+        "--connection-id=conn_1",
+        "--cart-id=cart_1",
+        "--mode=dropoff_point_to_pickup_point",
+        "--origin-point-id=origin_1",
+        "--destination-point-id=pvz_1",
+      ])
+    )
+    const summary = buildDeliveryHubStorefrontNeutralSmokeSafeSummary(result)
+
+    expect(result.status).toBe("failed_quote_request")
+    expect(result.quote_http_status).toBe(400)
+    expect(result.error).toEqual(expect.objectContaining({
+      stage: "quote",
+      code: "not_allowed",
+      type: "not_allowed",
+      message: expect.stringContaining("Publishable API key required"),
+    }))
+    expect(summary.error).toEqual({
+      stage: "quote",
+      code: "not_allowed",
+      message: expect.stringContaining("Publishable API key required"),
+    })
+    const summaryJson = JSON.stringify(summary)
+    expect(summaryJson).not.toContain("Bearer ")
+    expect(summaryJson).not.toContain("authorization:")
+    expect(summaryJson).not.toContain("ciphertext=")
+    expect(summaryJson).not.toMatch(/raw_reference|quote_key|provider_offer_id/i)
+    expect(summary.safety.request_headers_printed).toBe(false)
+  })
 })
 
 function buildQuoteResponse() {
