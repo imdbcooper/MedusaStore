@@ -1,4 +1,12 @@
 import type { ExecArgs } from "@medusajs/framework/types"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import {
+  createApiKeysWorkflow,
+  linkSalesChannelsToApiKeyWorkflow,
+} from "@medusajs/medusa/core-flows"
+import { getDeliveryHubPgConnection } from "../modules/delivery-hub/storage/pg"
+import { listDeliveryConnectionsReadOnly } from "../modules/delivery-hub/storage/connections-repository"
+import { listDeliveryWarehousesReadOnly } from "../modules/delivery-hub/storage/warehouses-repository"
 
 const DELIVERY_HUB_STOREFRONT_NEUTRAL_SMOKE_VERSION = 1
 const DEFAULT_BACKEND_URL = "http://localhost:9000"
@@ -10,6 +18,9 @@ const DEFAULT_ITEMS = [
     price: 2000,
   },
 ]
+const DEFAULT_PUBLISHABLE_KEY_TITLE = "Webshop"
+const LOCAL_SMOKE_PUBLISHABLE_KEY_TITLE = "Local Delivery Hub Store Smoke"
+const DEFAULT_SALES_CHANNEL_NAME = "Default Sales Channel"
 
 const QUOTE_ENDPOINT = "/store/delivery/quotes"
 const SELECTION_ENDPOINT = "/store/delivery/selection"
@@ -30,6 +41,9 @@ type DeliveryHubStorefrontNeutralSmokeItems = Array<{
 type DeliveryHubStorefrontNeutralSmokeArgs = {
   backend_url: string
   publishable_api_key: string | null
+  auto_discover_publishable_key: boolean
+  auto_create_publishable_key: boolean
+  auto_discover_inputs: boolean
   connection_id: string | null
   cart_id: string | null
   mode_code: DeliveryHubStorefrontNeutralSmokeModeCode | null
@@ -43,9 +57,39 @@ type DeliveryHubStorefrontNeutralSmokeArgs = {
   pickup_point_city: string | null
 }
 
+type DeliveryHubStorefrontNeutralSmokeKeyDiscovery = {
+  attempted: boolean
+  source:
+    | "input_env_or_arg"
+    | "existing_publishable_key"
+    | "created_local_publishable_key"
+    | "not_requested"
+    | "not_found"
+    | "failed"
+  found: boolean
+  created: boolean
+  publishable_key_provided: boolean
+  publishable_key_value_printed: false
+  linked_sales_channel: boolean | null
+  existing_publishable_key_count: number | null
+  selected_key_title: string | null
+  error_code: string | null
+  error_message: string | null
+}
+
+type DeliveryHubStorefrontNeutralSmokeInputDiscovery = {
+  attempted: boolean
+  connection_source: "input_env_or_arg" | "active_yandex_connection" | "not_found" | "not_requested"
+  warehouse_source: "input_env_or_arg" | "connection_default_warehouse" | "enabled_yandex_warehouse" | "not_found" | "not_required" | "not_requested"
+  resolved_connection_id: string | null
+  resolved_warehouse_id: string | null
+}
+
 type DeliveryHubStorefrontNeutralSmokeRunResult = {
   generated_at: string
   input: DeliveryHubStorefrontNeutralSmokeArgs
+  key_discovery: DeliveryHubStorefrontNeutralSmokeKeyDiscovery
+  input_discovery: DeliveryHubStorefrontNeutralSmokeInputDiscovery
   quote_http_status: number | null
   quote_body: unknown
   selection_http_status: number | null
@@ -68,14 +112,18 @@ type DeliveryHubStorefrontNeutralSmokeRunResult = {
 
 type StringMap = Record<string, string>
 
-export default async function deliveryHubStorefrontNeutralSmoke({ args }: ExecArgs) {
+export default async function deliveryHubStorefrontNeutralSmoke({ args, container }: ExecArgs) {
   const parsedArgs = parseDeliveryHubStorefrontNeutralSmokeArgs(args, process.env)
-  const missingFields = listMissingDeliveryHubStorefrontNeutralSmokeFields(parsedArgs)
+  const resolution = await resolveDeliveryHubStorefrontNeutralSmokeInputs(parsedArgs, container)
+  const resolvedArgs = resolution.input
+  const missingFields = listMissingDeliveryHubStorefrontNeutralSmokeFields(resolvedArgs)
 
   if (missingFields.length > 0) {
     const blockedResult: DeliveryHubStorefrontNeutralSmokeRunResult = {
       generated_at: new Date().toISOString(),
-      input: parsedArgs,
+      input: resolvedArgs,
+      key_discovery: resolution.key_discovery,
+      input_discovery: resolution.input_discovery,
       quote_http_status: null,
       quote_body: null,
       selection_http_status: null,
@@ -94,7 +142,11 @@ export default async function deliveryHubStorefrontNeutralSmoke({ args }: ExecAr
     return
   }
 
-  const result = await runDeliveryHubStorefrontNeutralSmoke(parsedArgs)
+  const result = await runDeliveryHubStorefrontNeutralSmoke(
+    resolvedArgs,
+    resolution.key_discovery,
+    resolution.input_discovery
+  )
 
   console.log(JSON.stringify(buildDeliveryHubStorefrontNeutralSmokeSafeSummary(result), null, 2))
   process.exitCode = result.status === "success" ? 0 : 1
@@ -117,6 +169,18 @@ export function parseDeliveryHubStorefrontNeutralSmokeArgs(
     publishable_api_key: normalizeNullableText(
       readArgOrEnv(parsed, env, "publishable-api-key", "MEDUSA_PUBLISHABLE_KEY") ??
         readArgOrEnv(parsed, env, "publishable-key", "DELIVERY_HUB_STORE_SMOKE_PUBLISHABLE_KEY")
+    ),
+    auto_discover_publishable_key: readBoolean(
+      readArgOrEnv(parsed, env, "auto-discover-publishable-key", "DELIVERY_HUB_STORE_SMOKE_AUTO_DISCOVER_PUBLISHABLE_KEY"),
+      true
+    ),
+    auto_create_publishable_key: readBoolean(
+      readArgOrEnv(parsed, env, "auto-create-publishable-key", "DELIVERY_HUB_STORE_SMOKE_AUTO_CREATE_PUBLISHABLE_KEY"),
+      true
+    ),
+    auto_discover_inputs: readBoolean(
+      readArgOrEnv(parsed, env, "auto-discover-inputs", "DELIVERY_HUB_STORE_SMOKE_AUTO_DISCOVER_INPUTS"),
+      true
     ),
     connection_id: normalizeNullableText(
       readArgOrEnv(parsed, env, "connection-id", "DELIVERY_HUB_STORE_SMOKE_CONNECTION_ID")
@@ -193,7 +257,9 @@ export function listMissingDeliveryHubStorefrontNeutralSmokeFields(
 }
 
 export async function runDeliveryHubStorefrontNeutralSmoke(
-  input: DeliveryHubStorefrontNeutralSmokeArgs
+  input: DeliveryHubStorefrontNeutralSmokeArgs,
+  keyDiscovery: DeliveryHubStorefrontNeutralSmokeKeyDiscovery = buildProvidedKeyDiscovery(input.publishable_api_key),
+  inputDiscovery: DeliveryHubStorefrontNeutralSmokeInputDiscovery = buildDefaultInputDiscovery(input)
 ): Promise<DeliveryHubStorefrontNeutralSmokeRunResult> {
   const generatedAt = new Date().toISOString()
 
@@ -205,6 +271,8 @@ export async function runDeliveryHubStorefrontNeutralSmoke(
       return {
         generated_at: generatedAt,
         input,
+        key_discovery: keyDiscovery,
+        input_discovery: inputDiscovery,
         quote_http_status: quoteResponse.http_status,
         quote_body: quoteResponse.body,
         selection_http_status: null,
@@ -224,6 +292,8 @@ export async function runDeliveryHubStorefrontNeutralSmoke(
       return {
         generated_at: generatedAt,
         input,
+        key_discovery: keyDiscovery,
+        input_discovery: inputDiscovery,
         quote_http_status: quoteResponse.http_status,
         quote_body: quoteResponse.body,
         selection_http_status: null,
@@ -248,6 +318,8 @@ export async function runDeliveryHubStorefrontNeutralSmoke(
       return {
         generated_at: generatedAt,
         input,
+        key_discovery: keyDiscovery,
+        input_discovery: inputDiscovery,
         quote_http_status: quoteResponse.http_status,
         quote_body: quoteResponse.body,
         selection_http_status: selectionResponse.http_status,
@@ -264,6 +336,8 @@ export async function runDeliveryHubStorefrontNeutralSmoke(
     return {
       generated_at: generatedAt,
       input,
+      key_discovery: keyDiscovery,
+      input_discovery: inputDiscovery,
       quote_http_status: quoteResponse.http_status,
       quote_body: quoteResponse.body,
       selection_http_status: selectionResponse.http_status,
@@ -276,6 +350,8 @@ export async function runDeliveryHubStorefrontNeutralSmoke(
     return {
       generated_at: generatedAt,
       input,
+      key_discovery: keyDiscovery,
+      input_discovery: inputDiscovery,
       quote_http_status: null,
       quote_body: null,
       selection_http_status: null,
@@ -329,8 +405,10 @@ export function buildDeliveryHubStorefrontNeutralSmokeSafeSummary(
       warehouse_id: safeString(result.input.warehouse_id),
       currency_code: safeString(result.input.currency_code),
       items_count: result.input.items.length,
-      publishable_key_provided: Boolean(result.input.publishable_api_key),
+      publishable_key_provided: result.key_discovery.publishable_key_provided,
     },
+    publishable_key: result.key_discovery,
+    discovery: result.input_discovery,
     status: result.status,
     quote: {
       http_status: result.quote_http_status,
@@ -380,6 +458,7 @@ export function buildDeliveryHubStorefrontNeutralSmokeSafeSummary(
       safe_summary_only: true,
       raw_provider_body_printed: false,
       credential_values_printed: false,
+      publishable_key_value_printed: false,
       request_headers_printed: false,
       ciphertext_printed: false,
       checkout_cutover_performed: false,
@@ -387,6 +466,371 @@ export function buildDeliveryHubStorefrontNeutralSmokeSafeSummary(
       api_ship_or_legacy_provider_touched: false,
     },
   }
+}
+
+export async function resolveDeliveryHubStorefrontNeutralSmokeInputs(
+  input: DeliveryHubStorefrontNeutralSmokeArgs,
+  container: ExecArgs["container"] | undefined
+): Promise<{
+  input: DeliveryHubStorefrontNeutralSmokeArgs
+  key_discovery: DeliveryHubStorefrontNeutralSmokeKeyDiscovery
+  input_discovery: DeliveryHubStorefrontNeutralSmokeInputDiscovery
+}> {
+  const keyDiscovery = await resolvePublishableKey(input, container)
+  const inputWithKey = {
+    ...input,
+    publishable_api_key: input.publishable_api_key ?? keyDiscovery.value,
+  }
+  const inputDiscovery = await resolveOptionalSmokeInputs(inputWithKey, container)
+  const resolvedInput = {
+    ...inputWithKey,
+    connection_id: inputWithKey.connection_id ?? inputDiscovery.resolved_connection_id,
+    warehouse_id: inputWithKey.warehouse_id ?? inputDiscovery.resolved_warehouse_id,
+  }
+
+  return {
+    input: resolvedInput,
+    key_discovery: omitPublishableKeyValue({
+      ...keyDiscovery,
+      publishable_key_provided: Boolean(resolvedInput.publishable_api_key),
+    }),
+    input_discovery: inputDiscovery,
+  }
+}
+
+async function resolvePublishableKey(
+  input: DeliveryHubStorefrontNeutralSmokeArgs,
+  container: ExecArgs["container"] | undefined
+): Promise<DeliveryHubStorefrontNeutralSmokeKeyDiscovery & { value: string | null }> {
+  if (input.publishable_api_key) {
+    return {
+      ...buildProvidedKeyDiscovery(input.publishable_api_key),
+      value: input.publishable_api_key,
+    }
+  }
+
+  if (!input.auto_discover_publishable_key || !container) {
+    return {
+      ...buildMissingKeyDiscovery(input.auto_discover_publishable_key ? "not_found" : "not_requested"),
+      attempted: input.auto_discover_publishable_key,
+      value: null,
+    }
+  }
+
+  try {
+    const query = container.resolve(ContainerRegistrationKeys.QUERY)
+    const { data } = await query.graph({
+      entity: "api_key",
+      fields: ["id", "title", "token", "revoked_at"],
+      filters: {
+        type: "publishable",
+      },
+    })
+    const publishableKeys = (((data as unknown[]) ?? []) as Array<{
+      id?: string | null
+      title?: string | null
+      token?: string | null
+      revoked_at?: string | null
+    }>).filter((candidate) => !candidate.revoked_at)
+    const selected = selectPublishableKey(publishableKeys)
+
+    if (selected?.id && selected.token) {
+      await linkPublishableKeyToDefaultSalesChannel(container, selected.id)
+      return {
+        attempted: true,
+        source: "existing_publishable_key",
+        found: true,
+        created: false,
+        publishable_key_provided: true,
+        publishable_key_value_printed: false,
+        linked_sales_channel: true,
+        existing_publishable_key_count: publishableKeys.length,
+        selected_key_title: safeString(selected.title),
+        error_code: null,
+        error_message: null,
+        value: selected.token,
+      }
+    }
+
+    if (!input.auto_create_publishable_key) {
+      return {
+        ...buildMissingKeyDiscovery("not_found"),
+        attempted: true,
+        existing_publishable_key_count: publishableKeys.length,
+        value: null,
+      }
+    }
+
+    const workflow = createApiKeysWorkflow(container)
+    const workflowRun = typeof (workflow as any)?.run === "function"
+      ? (workflow as any).run.bind(workflow)
+      : null
+    const createWorkflowResult = workflowRun
+      ? await workflowRun({
+        input: {
+          api_keys: [
+            {
+              title: LOCAL_SMOKE_PUBLISHABLE_KEY_TITLE,
+              type: "publishable",
+              created_by: "local-delivery-hub-store-smoke",
+            },
+          ],
+        },
+      })
+      : null
+    const [createdApiKey] = Array.isArray((createWorkflowResult as any)?.result)
+      ? (createWorkflowResult as any).result
+      : Array.isArray(createWorkflowResult)
+        ? createWorkflowResult as any[]
+        : []
+    const created = createdApiKey as { id?: string | null; token?: string | null; title?: string | null } | undefined
+
+    if (!created?.id || !created.token) {
+      const reread = await query.graph({
+        entity: "api_key",
+        fields: ["id", "title", "token", "revoked_at"],
+        filters: {
+          type: "publishable",
+        },
+      })
+      const rereadKeys = ((((reread as any)?.data as unknown[]) ?? []) as Array<{
+        id?: string | null
+        title?: string | null
+        token?: string | null
+        revoked_at?: string | null
+      }>).filter((candidate) => !candidate.revoked_at)
+      const rereadSelected = selectPublishableKey(rereadKeys)
+
+      if (rereadSelected?.id && rereadSelected.token) {
+        await linkPublishableKeyToDefaultSalesChannel(container, rereadSelected.id)
+        return {
+          attempted: true,
+          source: "created_local_publishable_key",
+          found: true,
+          created: true,
+          publishable_key_provided: true,
+          publishable_key_value_printed: false,
+          linked_sales_channel: true,
+          existing_publishable_key_count: publishableKeys.length,
+          selected_key_title: safeString(rereadSelected.title) ?? LOCAL_SMOKE_PUBLISHABLE_KEY_TITLE,
+          error_code: null,
+          error_message: null,
+          value: rereadSelected.token,
+        }
+      }
+
+      return {
+        attempted: true,
+        source: "failed",
+        found: false,
+        created: false,
+        publishable_key_provided: false,
+        publishable_key_value_printed: false,
+        linked_sales_channel: false,
+        existing_publishable_key_count: publishableKeys.length,
+        selected_key_title: null,
+        error_code: "publishable_key_create_failed",
+        error_message: "Publishable API key was not available after local create workflow",
+        value: null,
+      }
+    }
+
+    await linkPublishableKeyToDefaultSalesChannel(container, created.id)
+    return {
+      attempted: true,
+      source: "created_local_publishable_key",
+      found: true,
+      created: true,
+      publishable_key_provided: true,
+      publishable_key_value_printed: false,
+      linked_sales_channel: true,
+      existing_publishable_key_count: publishableKeys.length,
+      selected_key_title: safeString(created.title) ?? LOCAL_SMOKE_PUBLISHABLE_KEY_TITLE,
+      error_code: null,
+      error_message: null,
+      value: created.token,
+    }
+  } catch (error) {
+    return {
+      attempted: true,
+      source: "failed",
+      found: false,
+      created: false,
+      publishable_key_provided: false,
+      publishable_key_value_printed: false,
+      linked_sales_channel: false,
+      existing_publishable_key_count: null,
+      selected_key_title: null,
+      error_code: "publishable_key_discovery_failed",
+      error_message: sanitizeText(error instanceof Error ? error.message : String(error)),
+      value: null,
+    }
+  }
+}
+
+async function linkPublishableKeyToDefaultSalesChannel(container: ExecArgs["container"], apiKeyId: string) {
+  const query = container.resolve(ContainerRegistrationKeys.QUERY)
+  const { data } = await query.graph({
+    entity: "sales_channel",
+    fields: ["id", "name"],
+  })
+  const salesChannels = (((data as unknown[]) ?? []) as Array<{ id?: string | null; name?: string | null }>)
+  const defaultSalesChannel = salesChannels.find((channel) => channel.name === DEFAULT_SALES_CHANNEL_NAME) ?? salesChannels[0]
+
+  if (!defaultSalesChannel?.id) {
+    return false
+  }
+
+  try {
+    await linkSalesChannelsToApiKeyWorkflow(container).run({
+      input: {
+        id: apiKeyId,
+        add: [defaultSalesChannel.id],
+      },
+    })
+  } catch (_error) {
+    // Existing local keys can already be linked. Store smoke only needs a safe presence-backed key.
+  }
+
+  return true
+}
+
+async function resolveOptionalSmokeInputs(
+  input: DeliveryHubStorefrontNeutralSmokeArgs,
+  container: ExecArgs["container"] | undefined
+): Promise<DeliveryHubStorefrontNeutralSmokeInputDiscovery> {
+  const base = buildDefaultInputDiscovery(input)
+
+  if (!input.auto_discover_inputs || !container) {
+    return {
+      ...base,
+      attempted: input.auto_discover_inputs,
+      connection_source: input.connection_id ? "input_env_or_arg" : input.auto_discover_inputs ? "not_found" : "not_requested",
+      warehouse_source: input.mode_code !== "warehouse_to_pickup_point"
+        ? "not_required"
+        : input.warehouse_id
+          ? "input_env_or_arg"
+          : input.auto_discover_inputs
+            ? "not_found"
+            : "not_requested",
+    }
+  }
+
+  try {
+    const pg = getDeliveryHubPgConnection(container)
+    const [connections, warehouses] = await Promise.all([
+      listDeliveryConnectionsReadOnly(pg),
+      listDeliveryWarehousesReadOnly(pg),
+    ])
+    const selectedConnection = input.connection_id
+      ? null
+      : connections.find((connection) =>
+        connection.provider_code === "yandex" &&
+        connection.enabled &&
+        connection.status === "active" &&
+        connection.credentials_state === "sealed"
+      ) ?? null
+    const resolvedConnectionId = input.connection_id ?? selectedConnection?.id ?? null
+    const configuredDefaultWarehouseId = safeString(selectedConnection?.config?.default_warehouse_id)
+    const defaultWarehouse = configuredDefaultWarehouseId
+      ? warehouses.find((warehouse) => warehouse.id === configuredDefaultWarehouseId) ?? null
+      : null
+    const enabledYandexWarehouse = warehouses.find((warehouse) =>
+      warehouse.enabled &&
+      warehouse.provider_code === "yandex" &&
+      !!warehouse.provider_warehouse_id
+    ) ?? null
+    const resolvedWarehouseId = input.warehouse_id ?? defaultWarehouse?.id ?? enabledYandexWarehouse?.id ?? null
+
+    return {
+      attempted: true,
+      connection_source: input.connection_id
+        ? "input_env_or_arg"
+        : selectedConnection
+          ? "active_yandex_connection"
+          : "not_found",
+      warehouse_source: input.mode_code !== "warehouse_to_pickup_point"
+        ? "not_required"
+        : input.warehouse_id
+          ? "input_env_or_arg"
+          : defaultWarehouse
+            ? "connection_default_warehouse"
+            : enabledYandexWarehouse
+              ? "enabled_yandex_warehouse"
+              : "not_found",
+      resolved_connection_id: resolvedConnectionId,
+      resolved_warehouse_id: input.mode_code === "warehouse_to_pickup_point" ? resolvedWarehouseId : input.warehouse_id,
+    }
+  } catch (_error) {
+    return {
+      ...base,
+      attempted: true,
+      connection_source: input.connection_id ? "input_env_or_arg" : "not_found",
+      warehouse_source: input.mode_code === "warehouse_to_pickup_point"
+        ? input.warehouse_id ? "input_env_or_arg" : "not_found"
+        : "not_required",
+    }
+  }
+}
+
+function selectPublishableKey<T extends { title?: string | null; token?: string | null }>(keys: T[]) {
+  return keys.find((candidate) => candidate.title === DEFAULT_PUBLISHABLE_KEY_TITLE && candidate.token) ??
+    keys.find((candidate) => candidate.title === LOCAL_SMOKE_PUBLISHABLE_KEY_TITLE && candidate.token) ??
+    keys.find((candidate) => candidate.token) ??
+    null
+}
+
+function buildProvidedKeyDiscovery(value: string | null): DeliveryHubStorefrontNeutralSmokeKeyDiscovery {
+  return {
+    attempted: false,
+    source: value ? "input_env_or_arg" : "not_requested",
+    found: Boolean(value),
+    created: false,
+    publishable_key_provided: Boolean(value),
+    publishable_key_value_printed: false,
+    linked_sales_channel: null,
+    existing_publishable_key_count: null,
+    selected_key_title: null,
+    error_code: null,
+    error_message: null,
+  }
+}
+
+function buildMissingKeyDiscovery(source: "not_requested" | "not_found"): DeliveryHubStorefrontNeutralSmokeKeyDiscovery {
+  return {
+    attempted: source !== "not_requested",
+    source,
+    found: false,
+    created: false,
+    publishable_key_provided: false,
+    publishable_key_value_printed: false,
+    linked_sales_channel: null,
+    existing_publishable_key_count: null,
+    selected_key_title: null,
+    error_code: null,
+    error_message: null,
+  }
+}
+
+function buildDefaultInputDiscovery(
+  input: DeliveryHubStorefrontNeutralSmokeArgs
+): DeliveryHubStorefrontNeutralSmokeInputDiscovery {
+  return {
+    attempted: false,
+    connection_source: input.connection_id ? "input_env_or_arg" : "not_requested",
+    warehouse_source: input.mode_code === "warehouse_to_pickup_point"
+      ? input.warehouse_id ? "input_env_or_arg" : "not_requested"
+      : "not_required",
+    resolved_connection_id: input.connection_id,
+    resolved_warehouse_id: input.warehouse_id,
+  }
+}
+
+function omitPublishableKeyValue(
+  discovery: DeliveryHubStorefrontNeutralSmokeKeyDiscovery & { value?: string | null }
+): DeliveryHubStorefrontNeutralSmokeKeyDiscovery {
+  const { value: _value, ...safeDiscovery } = discovery
+  return safeDiscovery
 }
 
 function buildQuoteRequestBody(input: DeliveryHubStorefrontNeutralSmokeArgs) {
@@ -539,6 +983,18 @@ function readArgOrEnv(
   envName: string
 ): string | undefined {
   return args[argName] ?? env[envName]
+}
+
+function readBoolean(value: unknown, fallback: boolean) {
+  if (value === "true") {
+    return true
+  }
+
+  if (value === "false") {
+    return false
+  }
+
+  return fallback
 }
 
 function normalizeModeCode(value: string | undefined): DeliveryHubStorefrontNeutralSmokeModeCode | null {

@@ -1,11 +1,50 @@
 import { afterEach, describe, expect, it, jest } from "@jest/globals"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import deliveryHubStorefrontNeutralSmoke, {
   buildDeliveryHubStorefrontNeutralSmokeSafeSummary,
   parseDeliveryHubStorefrontNeutralSmokeArgs,
+  resolveDeliveryHubStorefrontNeutralSmokeInputs,
   runDeliveryHubStorefrontNeutralSmoke,
 } from "../../scripts/delivery-hub-storefront-neutral-smoke"
 
 const originalFetch = global.fetch
+const mockCreateApiKeysWorkflowRun = jest.fn(async () => ({
+  result: [
+    {
+      id: "apk_created",
+      title: "Local Delivery Hub Store Smoke",
+      token: "pk_created_secret_like_value",
+    },
+  ],
+}))
+const mockLinkSalesChannelsToApiKeyWorkflowRun = jest.fn(async () => ({ result: [] }))
+
+jest.mock("@medusajs/medusa/core-flows", () => ({
+  createApiKeysWorkflow: () => ({ run: mockCreateApiKeysWorkflowRun }),
+  linkSalesChannelsToApiKeyWorkflow: () => ({ run: mockLinkSalesChannelsToApiKeyWorkflowRun }),
+}))
+
+const defaultKeyDiscovery = {
+  attempted: false,
+  source: "input_env_or_arg" as const,
+  found: true,
+  created: false,
+  publishable_key_provided: true,
+  publishable_key_value_printed: false as const,
+  linked_sales_channel: null,
+  existing_publishable_key_count: null,
+  selected_key_title: null,
+  error_code: null,
+  error_message: null,
+}
+
+const defaultInputDiscovery = {
+  attempted: false,
+  connection_source: "input_env_or_arg" as const,
+  warehouse_source: "not_required" as const,
+  resolved_connection_id: "conn_1",
+  resolved_warehouse_id: null,
+}
 
 describe("Delivery Hub storefront-neutral smoke harness", () => {
   afterEach(() => {
@@ -158,6 +197,8 @@ describe("Delivery Hub storefront-neutral smoke harness", () => {
     const summary = buildDeliveryHubStorefrontNeutralSmokeSafeSummary({
       generated_at: "2026-04-27T00:00:00.000Z",
       input: args,
+      key_discovery: defaultKeyDiscovery,
+      input_discovery: defaultInputDiscovery,
       quote_http_status: null,
       quote_body: null,
       selection_http_status: null,
@@ -185,6 +226,8 @@ describe("Delivery Hub storefront-neutral smoke harness", () => {
     const summary = buildDeliveryHubStorefrontNeutralSmokeSafeSummary({
       generated_at: "2026-04-27T00:00:00.000Z",
       input: args,
+      key_discovery: defaultKeyDiscovery,
+      input_discovery: defaultInputDiscovery,
       quote_http_status: 502,
       quote_body: {
         error: {
@@ -259,6 +302,69 @@ describe("Delivery Hub storefront-neutral smoke harness", () => {
     expect(summaryJson).not.toMatch(/raw_reference|quote_key|provider_offer_id/i)
     expect(summary.safety.request_headers_printed).toBe(false)
   })
+
+  it("discovers an existing publishable key in memory without exposing its value", async () => {
+    const resolution = await resolveDeliveryHubStorefrontNeutralSmokeInputs(
+      parseDeliveryHubStorefrontNeutralSmokeArgs([
+        "--connection-id=conn_1",
+        "--cart-id=cart_1",
+        "--mode=dropoff_point_to_pickup_point",
+        "--origin-point-id=origin_1",
+        "--destination-point-id=pvz_1",
+      ]),
+      buildContainer({
+        apiKeys: [
+          {
+            id: "apk_existing",
+            title: "Webshop",
+            token: "pk_test_secret_like_value",
+          },
+        ],
+        salesChannels: [{ id: "sc_default", name: "Default Sales Channel" }],
+      }) as never
+    )
+
+    expect(resolution.key_discovery.error_message).toBeNull()
+    expect(resolution.input.publishable_api_key).toBe("pk_test_secret_like_value")
+    expect(resolution.key_discovery).toEqual(expect.objectContaining({
+      source: "existing_publishable_key",
+      found: true,
+      created: false,
+      publishable_key_provided: true,
+      publishable_key_value_printed: false,
+      linked_sales_channel: true,
+      existing_publishable_key_count: 1,
+      selected_key_title: "Webshop",
+    }))
+    expect(JSON.stringify(resolution.key_discovery)).not.toContain("pk_test_secret_like_value")
+  })
+
+  it("creates a local publishable key only when none exists and keeps output value-free", async () => {
+    const resolution = await resolveDeliveryHubStorefrontNeutralSmokeInputs(
+      parseDeliveryHubStorefrontNeutralSmokeArgs([
+        "--connection-id=conn_1",
+        "--cart-id=cart_1",
+        "--mode=dropoff_point_to_pickup_point",
+        "--origin-point-id=origin_1",
+        "--destination-point-id=pvz_1",
+      ]),
+      buildContainer({
+        apiKeys: [],
+        salesChannels: [{ id: "sc_default", name: "Default Sales Channel" }],
+      }) as never
+    )
+
+    expect(resolution.key_discovery.error_message).toBeNull()
+    expect(resolution.input.publishable_api_key).toBe("pk_created_secret_like_value")
+    expect(resolution.key_discovery).toEqual(expect.objectContaining({
+      found: true,
+      publishable_key_provided: true,
+      publishable_key_value_printed: false,
+      linked_sales_channel: true,
+      selected_key_title: "Local Delivery Hub Store Smoke",
+    }))
+    expect(JSON.stringify(resolution.key_discovery)).not.toContain("pk_created_secret_like_value")
+  })
 })
 
 function buildQuoteResponse() {
@@ -316,4 +422,50 @@ function buildJsonResponse(status: number, body: unknown) {
     status,
     text: async () => JSON.stringify(body),
   } as Response
+}
+
+function buildContainer({
+  apiKeys,
+  salesChannels,
+}: {
+  apiKeys: Array<{ id: string; title: string; token: string }>
+  salesChannels: Array<{ id: string; name: string }>
+}) {
+  return {
+    resolve: jest.fn((key: string) => {
+      if (key === ContainerRegistrationKeys.QUERY || key === "query") {
+        return {
+          graph: jest.fn(async ({ entity }: { entity: string }) => {
+            if (entity === "api_key") {
+              return {
+                data: apiKeys.length
+                  ? apiKeys
+                  : [
+                    {
+                      id: "apk_created",
+                      title: "Local Delivery Hub Store Smoke",
+                      token: "pk_created_secret_like_value",
+                    },
+                  ],
+              }
+            }
+
+            if (entity === "sales_channel") {
+              return { data: salesChannels }
+            }
+
+            return { data: [] }
+          }),
+        }
+      }
+
+      if (key === ContainerRegistrationKeys.PG_CONNECTION || key === "pg_connection") {
+        return {
+          raw: jest.fn(async () => ({ rows: [] })),
+        }
+      }
+
+      return {}
+    }),
+  }
 }
