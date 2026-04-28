@@ -14,6 +14,7 @@ import {
 } from "@lib/data/delivery-hub"
 import { calculatePriceForShippingOption } from "@lib/data/fulfillment"
 import {
+  DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED,
   DELIVERY_HUB_PREVIEW_DEFAULT_CONNECTION_ID,
   DELIVERY_HUB_PREVIEW_DEFAULT_DESTINATION_POINT_ID,
   DELIVERY_HUB_PREVIEW_DEFAULT_ORIGIN_POINT_ID,
@@ -23,6 +24,7 @@ import {
 } from "@lib/config"
 import { storefrontConfig } from "@lib/storefront-config"
 import {
+  buildDeliveryHubCheckoutCutoverGateStatus,
   buildDeliveryHubCommitEligibilityModel,
   buildDeliveryHubHandoffContractMatrixPreviewModel,
   buildDeliveryHubHandoffPreviewModel,
@@ -763,6 +765,10 @@ const Shipping: React.FC<ShippingProps> = ({
     buildDeliveryHubHandoffContractMatrixPreviewModel(
       deliveryHubRehearsalState.preview_input
     )
+  const deliveryHubCheckoutCutoverGateStatus =
+    buildDeliveryHubCheckoutCutoverGateStatus({
+      enabled: DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED,
+    })
   const deliveryHubNeutralPreviewQuotes =
     deliveryHubNeutralPreviewState.quotes?.quotes ?? []
   const selectedDeliveryHubNeutralPreviewQuote =
@@ -1413,6 +1419,29 @@ const Shipping: React.FC<ShippingProps> = ({
                         <span data-testid="delivery-hub-preview-no-provider-raw-guardrail">
                           Diagnostics are shopper-safe only: quote/selection status, count, price, ETA and safe correlation id; no raw provider body, token, auth header, ciphertext or publishable key value is displayed.
                         </span>
+                        <div
+                          className="mt-2 grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-base p-3"
+                          data-testid="delivery-hub-cutover-gate-status"
+                        >
+                          <span data-testid="delivery-hub-cutover-gate-flag-status">
+                            Checkout cutover flag: NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED={deliveryHubCheckoutCutoverGateStatus.enabled ? "true" : "false"}.
+                          </span>
+                          <span data-testid="delivery-hub-cutover-gate-mode">
+                            Cutover gate mode: {deliveryHubCheckoutCutoverGateStatus.mode}; canCommitShippingMethod={String(deliveryHubCheckoutCutoverGateStatus.canCommitShippingMethod)}.
+                          </span>
+                          <span data-testid="delivery-hub-cutover-gate-summary">
+                            {deliveryHubCheckoutCutoverGateStatus.status_label}
+                          </span>
+                          <span data-testid="delivery-hub-cutover-gate-detail">
+                            {deliveryHubCheckoutCutoverGateStatus.detail_label}
+                          </span>
+                          <span>
+                            Required readiness evidence: {deliveryHubCheckoutCutoverGateStatus.required_readiness_evidence.map((item) => item.label).join("; ")}.
+                          </span>
+                          <span>
+                            Commit blocked/preflight only: {deliveryHubCheckoutCutoverGateStatus.blocker_labels.join(" ")}
+                          </span>
+                        </div>
                       </div>
                     </div>
 

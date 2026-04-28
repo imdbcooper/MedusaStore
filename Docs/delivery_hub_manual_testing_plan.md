@@ -117,7 +117,8 @@ npm run smoke:delivery-hub-preview:browser
 Expected result:
 
 - disabled run: checkout delivery step показывает existing `ApiShip/Medusa fallback shipping`, а `delivery-hub-preview-shadow-block` отсутствует;
-- enabled run: preview/shadow block, guardrails, operation status и selection status видимы;
+- enabled run with cutover flag false: preview/shadow block, guardrails, operation status, selection status and the default-off cutover gate status are visible;
+- enabled run with cutover flag true: the cutover gate status recognizes `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` but still shows preflight/blocked-only and `canCommitShippingMethod=false`;
 - mocked quote response отображает quote count `1`, safe correlation id, `Neutral Carrier`, price/currency and unchanged checkout source-of-truth;
 - mocked save/clear меняют только preview metadata status (`saved` / `cleared`) while keeping checkout source-of-truth unchanged;
 - UI text scan не содержит raw provider body, token/auth header, ciphertext or publishable key value;
@@ -132,7 +133,9 @@ Expected result:
 - успешный Admin quote smoke, store-neutral quote/selection smoke, storefront preview validation и mock browser smoke являются readiness evidence only;
 - manual preview validation **не** является approval на checkout cutover;
 - default decision remains **NO-GO** until a separate approval gate explicitly records `GO`;
-- reserved future flag `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false` is default-off and has no runtime effect in this docs/flag-only checkpoint;
+- reserved future flag `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false` is now runtime-visible in the storefront preview/shadow guardrails as a default-off read-only/preflight gate;
+- when the flag is absent/false, `data-testid="delivery-hub-cutover-gate-status"` must show default-off and `canCommitShippingMethod=false`;
+- if an operator explicitly sets `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` in local/staging, the same guardrail must recognize `true` but still show preflight/blocked-only status and `canCommitShippingMethod=false`;
 - до отдельного approved cutover task Delivery Hub preview/selection path не должен вызывать `setShippingMethod()`, не должен заменять ApiShip/Medusa fallback checkout, и не должен запускать shipment create/cancel/status/retry.
 
 ---

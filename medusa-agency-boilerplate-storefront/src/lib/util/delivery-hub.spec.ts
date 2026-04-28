@@ -5,6 +5,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
 import {
+  buildDeliveryHubCheckoutCutoverGateStatus,
   buildDeliveryHubCommitEligibilityModel,
   buildDeliveryHubHandoffContractMatrixPreviewModel,
   buildDeliveryHubHandoffPreviewModel,
@@ -46,6 +47,7 @@ import {
   normalizeDeliveryHubSettingsResponse,
   shapeDeliveryHubQuotesPayload,
   shapeDeliveryHubQuotesQuery,
+  parseDeliveryHubCheckoutCutoverEnabledFlag,
   shapeDeliveryHubSaveSelectionPayload,
 } from "./delivery-hub.ts"
 import {
@@ -791,6 +793,44 @@ test("buildDeliveryHubSavedSelectionSummaryModel reconciles stale or invalid sav
     "Clear the stale neutral selection or save again after choosing a fresh Delivery Hub candidate."
   )
   assert.equal(JSON.stringify(summary).includes("point_stale_summary_internal_id"), false)
+})
+
+test("delivery hub checkout cutover flag parsing is explicit true only", () => {
+  assert.equal(parseDeliveryHubCheckoutCutoverEnabledFlag(undefined), false)
+  assert.equal(parseDeliveryHubCheckoutCutoverEnabledFlag(null), false)
+  assert.equal(parseDeliveryHubCheckoutCutoverEnabledFlag(false), false)
+  assert.equal(parseDeliveryHubCheckoutCutoverEnabledFlag(""), false)
+  assert.equal(parseDeliveryHubCheckoutCutoverEnabledFlag("TRUE"), false)
+  assert.equal(parseDeliveryHubCheckoutCutoverEnabledFlag("1"), false)
+  assert.equal(parseDeliveryHubCheckoutCutoverEnabledFlag("true"), true)
+  assert.equal(parseDeliveryHubCheckoutCutoverEnabledFlag(true), true)
+})
+
+test("buildDeliveryHubCheckoutCutoverGateStatus stays default-off and preflight-only", () => {
+  const disabled = buildDeliveryHubCheckoutCutoverGateStatus()
+  const enabled = buildDeliveryHubCheckoutCutoverGateStatus({ enabled: true })
+
+  assert.equal(disabled.enabled, false)
+  assert.equal(disabled.mode, "disabled")
+  assert.equal(disabled.canCommitShippingMethod, false)
+  assert.equal(disabled.status_label.includes("default-off"), true)
+  assert.equal(
+    disabled.detail_label.includes("existing checkout shipping stays source-of-truth"),
+    true
+  )
+  assert.equal(enabled.enabled, true)
+  assert.equal(enabled.mode, "preflight")
+  assert.equal(enabled.canCommitShippingMethod, false)
+  assert.equal(enabled.status_label.includes("preflight only"), true)
+  assert.equal(enabled.detail_label.includes("real shipping-method commit remains blocked"), true)
+  assert.deepEqual(
+    enabled.required_readiness_evidence.map((item) => item.code),
+    ["backend_live_smoke", "browser_mock_smoke", "rollback_plan", "approval_gate"]
+  )
+  assert.equal(
+    enabled.blocker_labels.some((label) => label.includes("canCommitShippingMethod=false")),
+    true
+  )
 })
 
 test("buildDeliveryHubCommitEligibilityModel returns ready handoff only for saved neutral selection with matching deliveryhub option", () => {
@@ -10306,6 +10346,7 @@ test("delivery hub selection cut-in wires only neutral save/clear helpers and ke
     "utf8"
   )
   const utilSource = readFileSync(new URL("./delivery-hub.ts", import.meta.url), "utf8")
+  const cartSource = readFileSync(new URL("../data/cart.ts", import.meta.url), "utf8")
 
   assert.equal(/saveDeliveryHubSelection\s*[,(]/.test(shippingSource), true)
   assert.equal(/clearDeliveryHubSelection\s*[,(]/.test(shippingSource), true)
@@ -10314,14 +10355,19 @@ test("delivery hub selection cut-in wires only neutral save/clear helpers and ke
   assert.equal(shippingSource.includes("checkout source-of-truth unchanged"), true)
   assert.equal(shippingSource.includes("Delivery Hub Preview/Shadow UI"), true)
   assert.equal(shippingSource.includes("void handleDeliveryHubNeutralPreviewQuote()"), true)
+  assert.equal(shippingSource.includes("delivery-hub-cutover-gate-status"), true)
+  assert.equal(shippingSource.includes("canCommitShippingMethod"), true)
+  assert.equal(shippingSource.includes("blocked/preflight only"), true)
   assert.equal(shippingSource.includes("setShippingMethod"), true)
   assert.equal(/handleDeliveryHubNeutralPreviewSelection[\s\S]*setShippingMethod/.test(shippingSource), false)
   assert.equal(/saveDeliveryHubSelection\s*\(/.test(utilSource), false)
   assert.equal(/clearDeliveryHubSelection\s*\(/.test(utilSource), false)
-  assert.equal(/setShippingMethod\s*\(/.test(utilSource), false)
+  assert.equal(/setShippingMethod\s*\(\s*\{/.test(utilSource), false)
   assert.equal(/setShippingMethod\s*\(\s*\{[^}]*delivery/i.test(shippingSource), false)
+  assert.equal(/deliveryHub[A-Za-z0-9]*\s*\([^)]*setShippingMethod/.test(shippingSource), false)
   assert.equal(/createFulfillment\s*\(/.test(shippingSource + utilSource), false)
   assert.equal(/activation[_ -]?ready/i.test(utilSource), false)
+  assert.equal(/delivery[-_ ]?hub[\s\S]{0,200}setShippingMethod/i.test(cartSource), false)
 })
 
 test("delivery hub preview shadow UI exposes stable manual validation hooks and guardrails", () => {
@@ -10338,6 +10384,11 @@ test("delivery hub preview shadow UI exposes stable manual validation hooks and 
     "delivery-hub-preview-dev-defaults-status",
     "delivery-hub-preview-source-of-truth-guardrail",
     "delivery-hub-preview-no-provider-raw-guardrail",
+    "delivery-hub-cutover-gate-status",
+    "delivery-hub-cutover-gate-flag-status",
+    "delivery-hub-cutover-gate-mode",
+    "delivery-hub-cutover-gate-summary",
+    "delivery-hub-cutover-gate-detail",
     "delivery-hub-preview-quote-type",
     "delivery-hub-preview-connection-id",
     "delivery-hub-preview-destination-point-id",
@@ -10377,6 +10428,13 @@ test("delivery hub preview shadow UI exposes stable manual validation hooks and 
     ),
     true
   )
+  assert.equal(
+    shippingSource.includes(
+      "Checkout cutover flag: NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED="
+    ),
+    true
+  )
+  assert.equal(shippingSource.includes("Commit blocked/preflight only:"), true)
   assert.equal(
     shippingSource.includes(
       "Operation status: {deliveryHubNeutralPreviewState.status}"

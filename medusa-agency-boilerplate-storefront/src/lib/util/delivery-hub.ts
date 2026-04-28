@@ -1174,6 +1174,31 @@ export type DeliveryHubCommitEligibilityModel = {
   hint_messages: string[]
 }
 
+export type DeliveryHubCheckoutCutoverGateMode = "disabled" | "preflight" | "blocked"
+
+export type DeliveryHubCheckoutCutoverReadinessEvidenceCode =
+  | "backend_live_smoke"
+  | "browser_mock_smoke"
+  | "rollback_plan"
+  | "approval_gate"
+
+export type DeliveryHubCheckoutCutoverReadinessEvidence = {
+  code: DeliveryHubCheckoutCutoverReadinessEvidenceCode
+  label: string
+  status: "required"
+}
+
+export type DeliveryHubCheckoutCutoverGateStatus = {
+  enabled: boolean
+  mode: DeliveryHubCheckoutCutoverGateMode
+  status_label: string
+  detail_label: string
+  canCommitShippingMethod: false
+  required_readiness_evidence: DeliveryHubCheckoutCutoverReadinessEvidence[]
+  blocker_labels: string[]
+  hint_messages: string[]
+}
+
 export type DeliveryHubShadowCatalogPreviewState = {
   status: "idle" | "loading" | "ready" | "error"
   default_connection_label: string | null
@@ -2960,6 +2985,77 @@ function hasDeliveryHubPersistedSelectionMismatch(
     readiness.selection.quote_reference.id !== selection.quote_reference.id ||
     readiness.selection.quote_reference.version !== selection.quote_reference.version
   )
+}
+
+export function parseDeliveryHubCheckoutCutoverEnabledFlag(value: unknown): boolean {
+  return value === true || value === "true"
+}
+
+export function buildDeliveryHubCheckoutCutoverGateStatus(input: {
+  enabled?: boolean | string | null
+} = {}): DeliveryHubCheckoutCutoverGateStatus {
+  const enabled = parseDeliveryHubCheckoutCutoverEnabledFlag(input.enabled)
+  const requiredReadinessEvidence: DeliveryHubCheckoutCutoverReadinessEvidence[] = [
+    {
+      code: "backend_live_smoke",
+      label: "Backend live smoke for both first-tranche quote modes is current and sanitized",
+      status: "required",
+    },
+    {
+      code: "browser_mock_smoke",
+      label: "Storefront mock browser smoke proves preview quote/save/clear without checkout commit",
+      status: "required",
+    },
+    {
+      code: "rollback_plan",
+      label: "Rollback/fallback plan preserves existing ApiShip/Medusa checkout source-of-truth",
+      status: "required",
+    },
+    {
+      code: "approval_gate",
+      label: "Explicit checkout cutover approval gate records GO in the cutover plan",
+      status: "required",
+    },
+  ]
+
+  if (!enabled) {
+    return {
+      enabled: false,
+      mode: "disabled",
+      status_label: "Delivery Hub checkout cutover gate is default-off",
+      detail_label:
+        "NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED is not explicitly true, so Delivery Hub remains preview/neutral-selection metadata only and existing checkout shipping stays source-of-truth.",
+      canCommitShippingMethod: false,
+      required_readiness_evidence: requiredReadinessEvidence,
+      blocker_labels: [
+        "Cutover flag is disabled by default.",
+        "No Delivery Hub shipping-method commit implementation is approved in this step.",
+      ],
+      hint_messages: [
+        "This runtime-visible gate is read-only/preflight status only and does not switch checkout.",
+        "Use the existing ApiShip/Medusa shipping selection as the checkout source-of-truth.",
+      ],
+    }
+  }
+
+  return {
+    enabled: true,
+    mode: "preflight",
+    status_label: "Delivery Hub checkout cutover flag is recognized for preflight only",
+    detail_label:
+      "NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED is explicitly true, but real shipping-method commit remains blocked until a separate approved implementation tranche wires it safely.",
+    canCommitShippingMethod: false,
+    required_readiness_evidence: requiredReadinessEvidence,
+    blocker_labels: [
+      "canCommitShippingMethod=false invariant is enforced for this cutover-prep step.",
+      "Explicit implementation and approval are still required before any Delivery Hub setShippingMethod() path can exist.",
+      "Existing ApiShip/Medusa checkout remains source-of-truth while this gate is preflight-only.",
+    ],
+    hint_messages: [
+      "The flag is visible to operators/devs, but checkout cutover has not happened.",
+      "Do not treat this status as active checkout source-of-truth or fulfillment execution readiness.",
+    ],
+  }
 }
 
 export function buildDeliveryHubCommitEligibilityModel(input: {

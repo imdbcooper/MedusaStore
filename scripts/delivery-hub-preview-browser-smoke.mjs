@@ -456,7 +456,7 @@ async function waitForHttpOk(url, label) {
   fail(`${label} did not become reachable: ${lastError?.message || url}`)
 }
 
-async function startStorefront({ enabled, mockBackendUrl }) {
+async function startStorefront({ enabled, cutoverEnabled = false, mockBackendUrl }) {
   const port = await getFreePort()
   const url = `http://127.0.0.1:${port}`
   const env = {
@@ -470,6 +470,7 @@ async function startStorefront({ enabled, mockBackendUrl }) {
     NEXT_PUBLIC_DEFAULT_REGION: "ru",
     NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: mockPublicKey,
     NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED: enabled ? "true" : "false",
+    NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED: cutoverEnabled ? "true" : "false",
     NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED: "true",
     NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_CONNECTION_ID: connectionId,
     NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_DESTINATION_POINT_ID: destinationPointId,
@@ -504,8 +505,9 @@ async function startStorefront({ enabled, mockBackendUrl }) {
     }
   })
 
-  await waitForHttpOk(`${url}/ru/checkout?step=delivery`, `Storefront preview smoke server (${enabled ? "enabled" : "disabled"})`)
-  log(`Storefront preview smoke server ready (${enabled ? "enabled" : "disabled"}) on ${url}`)
+  const label = `${enabled ? "enabled" : "disabled"}, cutover ${cutoverEnabled ? "true" : "false"}`
+  await waitForHttpOk(`${url}/ru/checkout?step=delivery`, `Storefront preview smoke server (${label})`)
+  log(`Storefront preview smoke server ready (${label}) on ${url}`)
   return {
     url,
     stop: async () => {
@@ -694,7 +696,7 @@ async function runDisabledCheck(baseUrl) {
   log("Disabled feature-flag check passed: preview block is hidden and existing shipping contour remains visible.")
 }
 
-async function runEnabledFlow(baseUrl) {
+async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) {
   const sessionId = await newPageSession(baseUrl)
   await navigate(sessionId, `${baseUrl}/ru/checkout?step=delivery`)
   await waitFor(sessionId, "Boolean(document.querySelector('[data-testid=\"delivery-hub-preview-shadow-block\"]'))", "Delivery Hub preview block")
@@ -706,6 +708,7 @@ async function runEnabledFlow(baseUrl) {
       previewVisible: Boolean(document.querySelector('[data-testid="delivery-hub-preview-shadow-block"]')),
       existingShippingVisible: text.includes('ApiShip/Medusa fallback shipping'),
       guardrails: document.querySelector('[data-testid="delivery-hub-preview-guardrails"]')?.innerText || '',
+      cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
       operationStatus: document.querySelector('[data-testid="delivery-hub-preview-operation-status"]')?.innerText || '',
       selectionStatus: document.querySelector('[data-testid="delivery-hub-preview-selection-status"]')?.innerText || '',
     }
@@ -715,6 +718,7 @@ async function runEnabledFlow(baseUrl) {
   if (!initial.existingShippingVisible) fail("Existing ApiShip/Medusa checkout contour is missing; preview must stay adjacent.")
   if (!initial.guardrails.includes("checkout source-of-truth unchanged")) fail("Source-of-truth guardrail is missing.")
   if (!initial.guardrails.includes("does not commit a Medusa shipping method")) fail("No-checkout-cutover guardrail is missing.")
+  assertCutoverGate(initial.cutoverGate, expectedCutoverEnabled)
   assertNoUnsafeNeedles(initial.text, "initial enabled preview page")
 
   await evaluate(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-get-quotes-button\"]').click()")
@@ -751,12 +755,14 @@ async function runEnabledFlow(baseUrl) {
       selectionCorrelation: document.querySelector('[data-testid="delivery-hub-preview-selection-correlation-id"]')?.innerText || '',
       sourceOfTruth: document.querySelector('[data-testid="delivery-hub-preview-source-of-truth-status"]')?.innerText || '',
       existingShippingVisible: text.includes('ApiShip/Medusa fallback shipping'),
+      cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
     }
   })()`)
 
   if (!afterSave.selectionStatus.includes("saved")) fail("Mocked selection save did not surface saved metadata status.")
   if (!afterSave.sourceOfTruth.includes("checkout source-of-truth unchanged")) fail("Source-of-truth status changed after save.")
   if (!afterSave.existingShippingVisible) fail("Existing ApiShip/Medusa checkout contour disappeared after save.")
+  assertCutoverGate(afterSave.cutoverGate, expectedCutoverEnabled)
   assertNoUnsafeNeedles(afterSave.text, "after mocked selection save")
 
   await evaluate(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-clear-selection-button\"]').click()")
@@ -776,6 +782,28 @@ async function runEnabledFlow(baseUrl) {
   assertNoUnsafeNeedles(afterClear.text, "after mocked selection clear")
 
   log("Enabled browser smoke passed: quote/save/clear used mocked Store API responses and checkout contour stayed adjacent.")
+}
+
+function assertCutoverGate(text, expectedEnabled) {
+  const gateText = String(text || "")
+  if (!gateText.includes("NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED")) {
+    fail("Cutover gate flag status is not visible in preview guardrails.")
+  }
+  if (!gateText.includes(`=${expectedEnabled ? "true" : "false"}`)) {
+    fail(`Cutover gate did not reflect expected flag value ${expectedEnabled}.`)
+  }
+  if (!gateText.includes("canCommitShippingMethod=false")) {
+    fail("Cutover gate did not preserve canCommitShippingMethod=false invariant.")
+  }
+  if (!gateText.includes("Commit blocked/preflight only")) {
+    fail("Cutover gate did not visibly state commit blocked/preflight-only posture.")
+  }
+  if (expectedEnabled && !gateText.includes("preflight")) {
+    fail("Cutover gate true run did not remain preflight-only.")
+  }
+  if (!expectedEnabled && !gateText.includes("default-off")) {
+    fail("Cutover gate default run did not show default-off posture.")
+  }
 }
 
 function assertNoUnsafeNeedles(text, label) {
@@ -818,7 +846,13 @@ async function main() {
 
   mockSelection = null
   storefront = await startStorefront({ enabled: true, mockBackendUrl })
-  await runEnabledFlow(storefront.url)
+  await runEnabledFlow(storefront.url, { expectedCutoverEnabled: false })
+  await storefront.stop()
+  nextProcess = null
+
+  mockSelection = null
+  storefront = await startStorefront({ enabled: true, cutoverEnabled: true, mockBackendUrl })
+  await runEnabledFlow(storefront.url, { expectedCutoverEnabled: true })
 
   log("Delivery Hub preview browser smoke passed without live Yandex/backend and without checkout cutover.")
 }

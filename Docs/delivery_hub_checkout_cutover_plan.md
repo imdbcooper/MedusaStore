@@ -4,7 +4,7 @@
 >
 > Current decision: **NO-GO for real checkout source-of-truth cutover** until this document's approval gates are explicitly passed in a later scoped task.
 >
-> Scope of this document: documentation and reserved flag strategy only. It does not implement runtime cutover, does not call `setShippingMethod()` for Delivery Hub, does not remove ApiShip/legacy compatibility, and does not perform shipment create/cancel/status/retry.
+> Scope of this document: readiness gate plus a runtime-visible, read-only/preflight storefront status surface for the reserved flag. It does not implement runtime checkout cutover, does not call `setShippingMethod()` for Delivery Hub, does not remove ApiShip/legacy compatibility, and does not perform shipment create/cancel/status/retry.
 
 ---
 
@@ -294,7 +294,8 @@ Required semantics:
 - `false` means Delivery Hub remains preview/neutral-selection-only and existing checkout shipping source-of-truth remains active;
 - `true` may only enable the future commit UI/path after all approval gates pass;
 - the flag must not contain secrets and must not encode provider credentials or ids;
-- adding the placeholder flag does not create runtime behavior by itself;
+- the current storefront implementation parses the flag with explicit-true semantics only and exposes a read-only/preflight status in the preview/shadow UI;
+- even when the flag is `true`, current runtime status remains `canCommitShippingMethod=false` and real commit remains blocked pending separate implementation/approval;
 - backend execution/shipment gates remain separate and are not implied by this storefront checkout flag.
 
 This flag is intentionally separate from `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED`. Preview validates quote/selection behavior; cutover controls future shipping-method commit behavior.
@@ -360,7 +361,8 @@ This document does not add that call and does not approve adding it without a se
 
 - Preview flag disabled: Delivery Hub block hidden or preview-only, fallback shipping visible.
 - Preview flag enabled but cutover flag disabled: quote/save/clear works, no shipping-method commit.
-- Future cutover flag enabled with mocked ready backend: commit CTA appears only when exact preconditions pass.
+- Current cutover-prep flag enabled with mocked ready backend: the UI recognizes the flag but still shows preflight/blocked-only and `canCommitShippingMethod=false`; no commit CTA/path exists in this step.
+- Future approved cutover implementation only: commit CTA may appear only when exact preconditions pass.
 - Blocked states: stale selection, missing option, mismatched option, failed readiness.
 - UI text scan confirms no token/auth/ciphertext/raw provider/publishable key value.
 
@@ -439,14 +441,16 @@ If any required field is missing, the default decision is **NO-GO**.
 
 ## 13. Current checkpoint outcome
 
-This checkpoint creates the formal plan and gate only.
+This checkpoint now has a runtime-visible default-off gate/preflight status in the storefront preview/shadow UI, but still does not implement checkout cutover.
 
 Current outcome:
 
 - readiness plan: prepared;
+- reserved flag parsing: explicit `true` only, default false;
+- runtime visibility: `delivery-hub-cutover-gate-status` shows disabled/default-off or true/preflight status;
+- commit invariant: `canCommitShippingMethod=false` in both flag modes;
 - checkout cutover: **not performed**;
 - Delivery Hub call to `setShippingMethod()`: **not added**;
 - ApiShip/legacy compatibility: **preserved**;
 - shipment create/cancel/status/retry: **not performed**;
-- production/runtime code path: **unchanged**;
-- next required step before implementation: review and approval of this plan, then a separately scoped cutover implementation task if and only if the gate result is `GO`.
+- next required step before real cutover implementation: review and approval of this plan, then a separately scoped cutover implementation task if and only if the gate result is `GO`.
