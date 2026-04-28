@@ -104,6 +104,18 @@ module.exports = defineConfig({
       cookieSecret: process.env.COOKIE_SECRET || "supersecret",
     },
   },
+  admin: {
+    vite: () => ({
+      server: {
+        host: "0.0.0.0",
+        allowedHosts: ["localhost", ".localhost", "127.0.0.1"],
+        hmr: {
+          port: 5173,
+          clientPort: 5173,
+        },
+      },
+    }),
+  },
   modules: [
     {
       resolve: "@medusajs/medusa/notification",

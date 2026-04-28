@@ -41,13 +41,14 @@ services:
   medusa-backend:
     image: node:20-bookworm
     container_name: medusa-backend
-    working_dir: /app
+    working_dir: /server
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     volumes:
-      - ./medusa-agency-boilerplate:/app
+      - ./medusa-agency-boilerplate:/server
     ports:
       - "${MEDUSA_BACKEND_PORT:-9000}:9000"
-    command: sh -lc 'rm -rf /app/node_modules/.vite && npm run dev'
+      - "${MEDUSA_ADMIN_HMR_PORT:-5173}:5173"
+    command: sh -lc 'rm -rf /server/node_modules/.vite && npm run dev'
     depends_on:
       medusa-db:
         condition: service_healthy
@@ -64,6 +65,8 @@ services:
       - STORE_CORS=${STORE_CORS}
       - ADMIN_CORS=${ADMIN_CORS}
       - AUTH_CORS=${AUTH_CORS}
+      - DELIVERY_HUB_ENCRYPTION_KEY=${DELIVERY_HUB_ENCRYPTION_KEY:-}
+      - DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED=${DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED:-false}
     networks:
       - medusa_net
 

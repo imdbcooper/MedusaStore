@@ -17,6 +17,7 @@
     "seed": "medusa exec ./src/scripts/seed.ts",
     "prepare:checkout-runtime": "medusa exec ./src/scripts/prepare-checkout-runtime.ts",
     "admin:api-key:local": "medusa exec ./src/scripts/create-secret-admin-api-key.ts",
+    "delivery:store-smoke": "medusa exec ./src/scripts/delivery-hub-storefront-neutral-smoke.ts",
     "start": "medusa start",
     "dev": "medusa develop",
     "typecheck": "tsc --noEmit",
