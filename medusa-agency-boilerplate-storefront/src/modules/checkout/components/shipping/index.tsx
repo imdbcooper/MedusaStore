@@ -7,6 +7,7 @@ import {
   listDeliveryHubPickupPoints,
   listDeliveryHubPickupWindows,
   previewDeliveryHubQuotes,
+  retrieveDeliveryHubCutoverCandidate,
   retrieveDeliveryHubCutoverPreconditions,
   retrieveDeliveryHubReadiness,
   retrieveDeliveryHubSelection,
@@ -27,6 +28,7 @@ import { storefrontConfig } from "@lib/storefront-config"
 import {
   buildDeliveryHubCheckoutCutoverGateStatus,
   buildDeliveryHubCommitEligibilityModel,
+  buildDeliveryHubCutoverCandidatePreviewModel,
   buildDeliveryHubCutoverPreconditionsPreviewModel,
   buildDeliveryHubHandoffContractMatrixPreviewModel,
   buildDeliveryHubHandoffPreviewModel,
@@ -40,6 +42,7 @@ import {
   buildDeliveryHubShippingOptionParityPreviewModel,
   buildDeliveryHubWriteIntentContractPreviewModel,
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
+  type DeliveryHubCutoverCandidateResponse,
   type DeliveryHubCutoverPreconditionsResponse,
   type DeliveryHubListQuotesInput,
   type DeliveryHubNeutralSelectionRehearsalInput,
@@ -81,6 +84,11 @@ type DeliveryHubRehearsalState = {
 type DeliveryHubCutoverPreconditionsState = {
   status: "idle" | "loading" | "ready" | "unavailable"
   preconditions: DeliveryHubCutoverPreconditionsResponse | null
+}
+
+type DeliveryHubCutoverCandidateState = {
+  status: "idle" | "loading" | "ready" | "unavailable"
+  candidate: DeliveryHubCutoverCandidateResponse | null
 }
 
 type DeliveryHubSelectionCutInState = {
@@ -175,6 +183,11 @@ const Shipping: React.FC<ShippingProps> = ({
     useState<DeliveryHubCutoverPreconditionsState>({
       status: "idle",
       preconditions: null,
+    })
+  const [deliveryHubCutoverCandidateState, setDeliveryHubCutoverCandidateState] =
+    useState<DeliveryHubCutoverCandidateState>({
+      status: "idle",
+      candidate: null,
     })
   const [deliveryHubNeutralPreviewForm, setDeliveryHubNeutralPreviewForm] =
     useState<DeliveryHubNeutralPreviewFormState>({
@@ -273,6 +286,11 @@ const Shipping: React.FC<ShippingProps> = ({
       preconditions: null,
     })
 
+    setDeliveryHubCutoverCandidateState({
+      status: "loading",
+      candidate: null,
+    })
+
     Promise.allSettled([
       retrieveDeliveryHubSettings(),
       retrieveDeliveryHubSelection(cart.id),
@@ -283,6 +301,7 @@ const Shipping: React.FC<ShippingProps> = ({
       }),
       listDeliveryHubPickupWindows(),
       retrieveDeliveryHubCutoverPreconditions(),
+      retrieveDeliveryHubCutoverCandidate(cart.id),
     ])
       .then(async (results) => {
         if (cancelled) {
@@ -295,9 +314,14 @@ const Shipping: React.FC<ShippingProps> = ({
         const pickupPoints = results[3].status === "fulfilled" ? results[3].value : null
         const pickupWindows = results[4].status === "fulfilled" ? results[4].value : null
         const cutoverPreconditions = results[5].status === "fulfilled" ? results[5].value : null
+        const cutoverCandidate = results[6].status === "fulfilled" ? results[6].value : null
         setDeliveryHubCutoverPreconditionsState({
           status: cutoverPreconditions ? "ready" : "unavailable",
           preconditions: cutoverPreconditions,
+        })
+        setDeliveryHubCutoverCandidateState({
+          status: cutoverCandidate ? "ready" : "unavailable",
+          candidate: cutoverCandidate,
         })
         const destinationPoint =
           pickupPoints?.points.find((point) => point.is_destination_pickup_allowed) ??
@@ -351,6 +375,10 @@ const Shipping: React.FC<ShippingProps> = ({
         setDeliveryHubCutoverPreconditionsState({
           status: "unavailable",
           preconditions: null,
+        })
+        setDeliveryHubCutoverCandidateState({
+          status: "unavailable",
+          candidate: null,
         })
 
         const previewInput: DeliveryHubNeutralSelectionRehearsalInput = {
@@ -583,7 +611,12 @@ const Shipping: React.FC<ShippingProps> = ({
       pickup_window: null,
       correlation_id: deliveryHubNeutralPreviewState.quotes?.diagnostics?.correlation_id ?? null,
     })
-      .then((selection) => {
+      .then(async (selection) => {
+        const candidate = await retrieveDeliveryHubCutoverCandidate(cart.id)
+        setDeliveryHubCutoverCandidateState({
+          status: candidate ? "ready" : "unavailable",
+          candidate,
+        })
         setDeliveryHubNeutralPreviewState((current) => ({
           ...current,
           status: "saved",
@@ -611,7 +644,12 @@ const Shipping: React.FC<ShippingProps> = ({
     }))
 
     await clearDeliveryHubSelection({ cart_id: cart.id })
-      .then((selection) => {
+      .then(async (selection) => {
+        const candidate = await retrieveDeliveryHubCutoverCandidate(cart.id)
+        setDeliveryHubCutoverCandidateState({
+          status: candidate ? "ready" : "unavailable",
+          candidate,
+        })
         setDeliveryHubNeutralPreviewState((current) => ({
           ...current,
           status: "cleared",
@@ -801,6 +839,10 @@ const Shipping: React.FC<ShippingProps> = ({
   const deliveryHubCutoverPreconditionsPreview =
     buildDeliveryHubCutoverPreconditionsPreviewModel(
       deliveryHubCutoverPreconditionsState.preconditions
+    )
+  const deliveryHubCutoverCandidatePreview =
+    buildDeliveryHubCutoverCandidatePreviewModel(
+      deliveryHubCutoverCandidateState.candidate
     )
   const deliveryHubNeutralPreviewQuotes =
     deliveryHubNeutralPreviewState.quotes?.quotes ?? []
@@ -1502,6 +1544,47 @@ const Shipping: React.FC<ShippingProps> = ({
                             <span key={precondition.code}>
                               {precondition.code}: {precondition.status} · {precondition.detail}
                             </span>
+                          ))}
+                        </div>
+                        <div
+                          className="mt-2 grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-base p-3"
+                          data-testid="delivery-hub-cutover-candidate-status"
+                        >
+                          <span data-testid="delivery-hub-cutover-candidate-availability">
+                            Candidate planner: {deliveryHubCutoverCandidatePreview.availability}; load status={deliveryHubCutoverCandidateState.status}.
+                          </span>
+                          <span data-testid="delivery-hub-cutover-candidate-summary">
+                            {deliveryHubCutoverCandidatePreview.status_label} · {deliveryHubCutoverCandidatePreview.detail_label}
+                          </span>
+                          <span data-testid="delivery-hub-cutover-candidate-commit-status">
+                            candidate only / no checkout commit; canCommitShippingMethod={String(deliveryHubCutoverCandidatePreview.canCommitShippingMethod)}.
+                          </span>
+                          {deliveryHubCutoverCandidatePreview.candidate_label && (
+                            <span data-testid="delivery-hub-cutover-candidate-option">
+                              Candidate shipping option: {deliveryHubCutoverCandidatePreview.candidate_label}
+                            </span>
+                          )}
+                          {deliveryHubCutoverCandidatePreview.amount_label && (
+                            <span data-testid="delivery-hub-cutover-candidate-amount">
+                              Candidate amount: {deliveryHubCutoverCandidatePreview.amount_label}
+                            </span>
+                          )}
+                          {deliveryHubCutoverCandidatePreview.pickup_point_label && (
+                            <span data-testid="delivery-hub-cutover-candidate-pickup-point">
+                              Candidate pickup point: {deliveryHubCutoverCandidatePreview.pickup_point_label}
+                            </span>
+                          )}
+                          <span data-testid="delivery-hub-cutover-candidate-blockers">
+                            Blocked reasons: {deliveryHubCutoverCandidatePreview.blocked_reasons.join(", ") || "none"}.
+                          </span>
+                          <span data-testid="delivery-hub-cutover-candidate-preconditions">
+                            Required preconditions: {deliveryHubCutoverCandidatePreview.required_preconditions.join(", ") || "none"}.
+                          </span>
+                          <span data-testid="delivery-hub-cutover-candidate-guardrails">
+                            Guardrails: {deliveryHubCutoverCandidatePreview.guardrail_labels.join("; ")}.
+                          </span>
+                          {deliveryHubCutoverCandidatePreview.hint_messages.slice(0, 4).map((message) => (
+                            <span key={message}>{message}</span>
                           ))}
                         </div>
                       </div>

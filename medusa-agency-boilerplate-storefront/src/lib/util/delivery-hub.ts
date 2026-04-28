@@ -31,6 +31,13 @@ export const DELIVERY_HUB_SELECTION_READINESS_ISSUE_CODES = [
   "connection_credentials_not_ready",
 ] as const
 
+export const DELIVERY_HUB_CUTOVER_CANDIDATE_STATUSES = [
+  "ready_for_review",
+  "blocked",
+  "selection_missing",
+  "shipping_option_missing",
+] as const
+
 export type DeliveryHubQuoteType = (typeof DELIVERY_HUB_QUOTE_TYPES)[number]
 
 export type DeliveryHubConnectionState =
@@ -57,6 +64,9 @@ export type DeliveryHubSelectionReadinessIssueCode =
   | "connection_disabled"
   | "connection_inactive"
   | "connection_credentials_not_ready"
+
+export type DeliveryHubCutoverCandidateStatus =
+  (typeof DELIVERY_HUB_CUTOVER_CANDIDATE_STATUSES)[number]
 
 export type DeliveryHubIntervalUtc = {
   from: string
@@ -887,6 +897,38 @@ export function normalizeDeliveryHubSelectionResponse(
   return response
 }
 
+function readCutoverCandidateStatus(
+  value: unknown,
+  field: string
+): DeliveryHubCutoverCandidateStatus {
+  if (
+    typeof value !== "string" ||
+    !DELIVERY_HUB_CUTOVER_CANDIDATE_STATUSES.includes(
+      value as DeliveryHubCutoverCandidateStatus
+    )
+  ) {
+    throw new Error(`Delivery Hub payload field \"${field}\" must be a supported cutover candidate status`)
+  }
+
+  return value as DeliveryHubCutoverCandidateStatus
+}
+
+function readSafeCutoverLabel(value: unknown, field: string) {
+  const label = readRequiredString(value, field)
+
+  if (/token|authorization|raw_reference|ciphertext|provider_offer_id|quote_key|publishable/i.test(label)) {
+    throw new Error(`Delivery Hub payload field \"${field}\" must not expose provider internals or secret material`)
+  }
+
+  return label
+}
+
+function normalizeDeliveryHubSafeStringArray(value: unknown, field: string) {
+  const entries = Array.isArray(value) ? value : []
+
+  return entries.map((entry, index) => readSafeCutoverLabel(entry, `${field}.${index}`))
+}
+
 function readCutoverPreconditionStatus(
   value: unknown,
   field: string
@@ -985,6 +1027,80 @@ export function normalizeDeliveryHubReadinessResponse(
       record.quote_context === null || record.quote_context === undefined
         ? null
         : normalizeDeliveryHubSelectionQuoteContext(record.quote_context, "quote_context"),
+  }
+}
+
+export function normalizeDeliveryHubCutoverCandidateResponse(
+  payload: unknown
+): DeliveryHubCutoverCandidateResponse {
+  const record = requireRecord(payload, "cutover-candidate")
+  const guardrails = requireRecord(record.guardrails, "guardrails")
+  const canCommit = readBoolean(record.can_commit_shipping_method, "can_commit_shipping_method")
+  const guardrailCanCommit = readBoolean(
+    guardrails.can_commit_shipping_method,
+    "guardrails.can_commit_shipping_method"
+  )
+  const checkoutSourceOfTruth = readRequiredString(
+    record.checkout_source_of_truth,
+    "checkout_source_of_truth"
+  )
+
+  if (canCommit || guardrailCanCommit) {
+    throw new Error("Delivery Hub cutover candidate cannot enable shipping-method commit")
+  }
+
+  if (checkoutSourceOfTruth !== "unchanged") {
+    throw new Error('Delivery Hub payload field "checkout_source_of_truth" must be unchanged')
+  }
+
+  return {
+    ok: true,
+    version: readLiteralOne(record.version, "version"),
+    cart_id: readRequiredString(record.cart_id, "cart_id"),
+    selection_present: readBoolean(record.selection_present, "selection_present"),
+    selection_reference_id: readOptionalString(record.selection_reference_id),
+    candidate_status: readCutoverCandidateStatus(record.candidate_status, "candidate_status"),
+    candidate_shipping_option_id: readOptionalString(record.candidate_shipping_option_id),
+    candidate_shipping_option_name: record.candidate_shipping_option_name === null || record.candidate_shipping_option_name === undefined
+      ? null
+      : readSafeCutoverLabel(record.candidate_shipping_option_name, "candidate_shipping_option_name"),
+    candidate_amount: readNullableFiniteNumber(record.candidate_amount, "candidate_amount"),
+    currency_code: readOptionalString(record.currency_code),
+    candidate_pickup_point_id: readOptionalString(record.candidate_pickup_point_id),
+    required_preconditions: normalizeDeliveryHubSafeStringArray(
+      record.required_preconditions,
+      "required_preconditions"
+    ),
+    blocked_reasons: normalizeDeliveryHubSafeStringArray(
+      record.blocked_reasons,
+      "blocked_reasons"
+    ),
+    can_commit_shipping_method: false,
+    checkout_source_of_truth: "unchanged",
+    guardrails: {
+      no_network_calls: readBoolean(guardrails.no_network_calls, "guardrails.no_network_calls")
+        ? true
+        : failDeliveryHubBooleanGuardrail("guardrails.no_network_calls"),
+      no_provider_payloads: readBoolean(
+        guardrails.no_provider_payloads,
+        "guardrails.no_provider_payloads"
+      )
+        ? true
+        : failDeliveryHubBooleanGuardrail("guardrails.no_provider_payloads"),
+      no_secret_material: readBoolean(
+        guardrails.no_secret_material,
+        "guardrails.no_secret_material"
+      )
+        ? true
+        : failDeliveryHubBooleanGuardrail("guardrails.no_secret_material"),
+      shipment_lifecycle_not_enabled: readBoolean(
+        guardrails.shipment_lifecycle_not_enabled,
+        "guardrails.shipment_lifecycle_not_enabled"
+      )
+        ? true
+        : failDeliveryHubBooleanGuardrail("guardrails.shipment_lifecycle_not_enabled"),
+      can_commit_shipping_method: false,
+    },
   }
 }
 
@@ -1145,6 +1261,77 @@ export function buildDeliveryHubCutoverPreconditionsPreviewModel(
       blockedCodes.includes("can_commit_shipping_method")
         ? "Shipping-method commit remains blocked by invariant."
         : null,
+    ]),
+  }
+}
+
+export function buildDeliveryHubCutoverCandidatePreviewModel(
+  candidate: DeliveryHubCutoverCandidateResponse | null | undefined
+): DeliveryHubCutoverCandidatePreviewModel {
+  if (!candidate) {
+    return {
+      tone: "warning",
+      availability: "unavailable",
+      status_label: "Cutover candidate planner unavailable",
+      detail_label: "Planner response is unavailable; Delivery Hub checkout commit remains blocked fail-safe.",
+      candidate_label: null,
+      amount_label: null,
+      pickup_point_label: null,
+      blocked_reasons: ["candidate_planner_unavailable", "can_commit_shipping_method_false"],
+      required_preconditions: ["neutral_selection_ready", "matching_delivery_hub_shipping_option_present"],
+      guardrail_labels: [
+        "fail-safe unavailable planner",
+        "checkout source-of-truth unchanged",
+        "can_commit_shipping_method=false",
+      ],
+      canCommitShippingMethod: false,
+      hint_messages: [
+        "Candidate planner is evidence only; unavailable planner cannot approve or commit checkout.",
+      ],
+    }
+  }
+
+  const candidateReady = candidate.candidate_status === "ready_for_review"
+  const candidateLabel = candidate.candidate_shipping_option_id
+    ? `${candidate.candidate_shipping_option_name ?? "Delivery Hub shipping option"} (${candidate.candidate_shipping_option_id})`
+    : null
+  const amountLabel = candidate.candidate_amount !== null
+    ? `${candidate.candidate_amount} ${candidate.currency_code ?? ""}`.trim()
+    : null
+  const pickupPointLabel = candidate.candidate_pickup_point_id
+    ? `pickup_point_id=${candidate.candidate_pickup_point_id}`
+    : null
+
+  return {
+    tone: candidateReady ? "positive" : "warning",
+    availability: "available",
+    status_label: candidateReady
+      ? "Cutover candidate planner ready for review · candidate only"
+      : `Cutover candidate planner blocked · ${candidate.candidate_status}`,
+    detail_label: candidateReady
+      ? "If a later cutover tranche is approved, this neutral selection and Medusa shipping option would be reviewed as the candidate. No checkout commit happens now."
+      : "Candidate planner did not find a complete safe candidate. Checkout source-of-truth remains unchanged.",
+    candidate_label: candidateLabel,
+    amount_label: amountLabel,
+    pickup_point_label: pickupPointLabel,
+    blocked_reasons: candidate.blocked_reasons,
+    required_preconditions: candidate.required_preconditions,
+    guardrail_labels: [
+      `checkout_source_of_truth=${candidate.checkout_source_of_truth}`,
+      `no_network_calls=${String(candidate.guardrails.no_network_calls)}`,
+      `no_provider_payloads=${String(candidate.guardrails.no_provider_payloads)}`,
+      `no_secret_material=${String(candidate.guardrails.no_secret_material)}`,
+      `shipment_lifecycle_not_enabled=${String(candidate.guardrails.shipment_lifecycle_not_enabled)}`,
+      "can_commit_shipping_method=false",
+    ],
+    canCommitShippingMethod: false,
+    hint_messages: uniqueDeliveryHubMessages([
+      "Candidate only / no checkout commit.",
+      candidate.selection_present ? "Neutral stored selection is present." : "Neutral stored selection is missing.",
+      candidateReady ? "Operator approval and a separate future cutover tranche are still required." : null,
+      candidate.blocked_reasons.includes("can_commit_shipping_method_false")
+        ? "Commit invariant remains false."
+        : "Commit invariant remains false by storefront normalizer.",
     ]),
   }
 }
@@ -1440,6 +1627,46 @@ export type DeliveryHubCutoverPreconditionsResponse = {
     shipment_lifecycle_not_enabled: true
     can_commit_shipping_method: false
   }
+}
+
+export type DeliveryHubCutoverCandidateResponse = {
+  ok: true
+  version: 1
+  cart_id: string
+  selection_present: boolean
+  selection_reference_id: string | null
+  candidate_status: DeliveryHubCutoverCandidateStatus
+  candidate_shipping_option_id: string | null
+  candidate_shipping_option_name: string | null
+  candidate_amount: number | null
+  currency_code: string | null
+  candidate_pickup_point_id: string | null
+  required_preconditions: string[]
+  blocked_reasons: string[]
+  can_commit_shipping_method: false
+  checkout_source_of_truth: "unchanged"
+  guardrails: {
+    no_network_calls: true
+    no_provider_payloads: true
+    no_secret_material: true
+    shipment_lifecycle_not_enabled: true
+    can_commit_shipping_method: false
+  }
+}
+
+export type DeliveryHubCutoverCandidatePreviewModel = {
+  tone: "neutral" | "positive" | "warning"
+  availability: "available" | "unavailable"
+  status_label: string
+  detail_label: string
+  candidate_label: string | null
+  amount_label: string | null
+  pickup_point_label: string | null
+  blocked_reasons: string[]
+  required_preconditions: string[]
+  guardrail_labels: string[]
+  canCommitShippingMethod: false
+  hint_messages: string[]
 }
 
 export type DeliveryHubCutoverPreconditionsAvailability =

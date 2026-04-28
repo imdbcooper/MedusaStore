@@ -48,6 +48,10 @@ import {
   type DeliveryHubCutoverPreconditionsResponse,
 } from "./cutover-preconditions"
 import {
+  buildDeliveryHubCutoverCandidate,
+  type DeliveryHubCutoverCandidateResponse,
+} from "./cutover-candidate"
+import {
   buildDeliveryHubStoreSelectionConnectionSummary,
   buildDeliveryHubStoreSelectionReadiness,
   createMissingDeliveryHubSelectionConnectionSummary,
@@ -1289,6 +1293,18 @@ export class DeliveryHubService {
       default_connection_id: defaultConnectionId,
       connections,
     }
+  }
+
+  async getStoreCutoverCandidate(input: {
+    cart_id: string
+    metadata?: unknown
+    current_shipping_options?: DeliveryHubShippingOptionSnapshot[] | null
+  }): Promise<DeliveryHubCutoverCandidateResponse> {
+    return buildDeliveryHubCutoverCandidate({
+      cart_id: input.cart_id,
+      metadata: input.metadata,
+      current_shipping_options: input.current_shipping_options ?? [],
+    })
   }
 
   async getStoreCutoverPreconditions(): Promise<DeliveryHubCutoverPreconditionsResponse> {

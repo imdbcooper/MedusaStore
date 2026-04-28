@@ -275,6 +275,42 @@ const StoreDeliveryReadinessResponseSchema = z
   })
   .strict()
 
+const StoreDeliveryCutoverCandidateStatusSchema = z.enum([
+  "ready_for_review",
+  "blocked",
+  "selection_missing",
+  "shipping_option_missing",
+])
+
+const StoreDeliveryCutoverCandidateResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    version: z.literal(1),
+    cart_id: z.string(),
+    selection_present: z.boolean(),
+    selection_reference_id: z.string().nullable(),
+    candidate_status: StoreDeliveryCutoverCandidateStatusSchema,
+    candidate_shipping_option_id: z.string().nullable(),
+    candidate_shipping_option_name: z.string().nullable(),
+    candidate_amount: z.number().nullable(),
+    currency_code: z.string().nullable(),
+    candidate_pickup_point_id: z.string().nullable(),
+    required_preconditions: z.array(z.string()),
+    blocked_reasons: z.array(z.string()),
+    can_commit_shipping_method: z.literal(false),
+    checkout_source_of_truth: z.literal("unchanged"),
+    guardrails: z
+      .object({
+        no_network_calls: z.literal(true),
+        no_provider_payloads: z.literal(true),
+        no_secret_material: z.literal(true),
+        shipment_lifecycle_not_enabled: z.literal(true),
+        can_commit_shipping_method: z.literal(false),
+      })
+      .strict(),
+  })
+  .strict()
+
 const StoreDeliveryCutoverPreconditionStatusSchema = z.enum([
   "ready",
   "missing",
@@ -419,6 +455,10 @@ export function sanitizeStoreDeliverySelectionResponse(result: unknown) {
 
 export function sanitizeStoreDeliveryCutoverPreconditionsResponse(result: unknown) {
   return StoreDeliveryCutoverPreconditionsResponseSchema.parse(result)
+}
+
+export function sanitizeStoreDeliveryCutoverCandidateResponse(result: unknown) {
+  return StoreDeliveryCutoverCandidateResponseSchema.parse(result)
 }
 
 export function parseStoreDeliveryItems(rawItems: string | undefined) {

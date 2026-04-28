@@ -654,3 +654,14 @@ cd medusa-agency-boilerplate && MEDUSA_PUBLISHABLE_KEY=<store_publishable_key> D
 ```
 
 This verifies Delivery Hub public neutral quote + selection persistence without checkout cutover. Expected success: `quotes_count > 0`, `selection.saved=true`, `checkout_source_of_truth="unchanged"`, safe correlation id present, and no token/auth/raw provider/ciphertext fragments in output. The local `2026-04-27` rerun passed this check for both dropoff→PVZ and warehouse→PVZ scenarios.
+
+
+### Manual check: read-only cutover candidate planner
+
+1. Open checkout delivery step with Delivery Hub preview enabled.
+2. Confirm the Preview/Shadow UI shows `delivery-hub-cutover-candidate-status` near cutover preconditions.
+3. With no saved Delivery Hub neutral selection, confirm candidate planner shows blocked/selection missing and `canCommitShippingMethod=false`.
+4. Save a neutral Delivery Hub preview selection. Confirm candidate planner can show a candidate shipping option summary when a safe matching Delivery Hub shipping option is available.
+5. Confirm the label says “candidate only / no checkout commit”, checkout source-of-truth remains unchanged, and the ApiShip/Medusa shipping option remains the live checkout contour.
+6. Inspect page text/network payloads for absence of raw provider body, raw `quote_key`, provider offer ids, auth headers, tokens, ciphertext, credentials, event logs, or publishable key values.
+7. Do not treat planner output as approval; operator approval and a separate future cutover implementation remain required.

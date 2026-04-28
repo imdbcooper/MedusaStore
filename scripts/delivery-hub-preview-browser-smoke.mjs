@@ -21,6 +21,7 @@ const connectionId = "conn_delivery_hub_preview_smoke"
 const destinationPointId = "pvz_delivery_hub_preview_smoke"
 const originPointId = "dropoff_delivery_hub_preview_smoke"
 const quoteReferenceId = "dhsel_quote_delivery_hub_preview_smoke"
+const candidateShippingOptionId = "deliveryhub:dropoff_point_to_pickup_point"
 const correlationId = "corr_delivery_hub_preview_smoke"
 const mockPublicKey = "pk_delivery_hub_preview_smoke_placeholder_not_real"
 const unsafeNeedles = [
@@ -274,12 +275,20 @@ async function startMockBackend() {
       }
 
       if (req.method === "GET" && pathname === "/store/delivery/selection") {
+        if (!mockSelection) {
+          mockSelection = buildSelectionFromBody({})
+        }
         sendJson(res, 200, { ok: true, cart_id: cartId, selection: mockSelection })
         return
       }
 
       if (req.method === "GET" && pathname === "/store/delivery/cutover-preconditions") {
         sendJson(res, 200, buildCutoverPreconditionsResponse())
+        return
+      }
+
+      if (req.method === "GET" && pathname === "/store/delivery/cutover-candidate") {
+        sendJson(res, 200, buildCutoverCandidateResponse())
         return
       }
 
@@ -410,6 +419,77 @@ async function startMockBackend() {
   const url = `http://127.0.0.1:${port}`
   log(`Delivery Hub preview mock Store API listening on ${url}`)
   return url
+}
+
+function buildCutoverCandidateResponse() {
+  if (!mockSelection) {
+    return {
+      ok: true,
+      version: 1,
+      cart_id: cartId,
+      selection_present: false,
+      selection_reference_id: null,
+      candidate_status: "selection_missing",
+      candidate_shipping_option_id: null,
+      candidate_shipping_option_name: null,
+      candidate_amount: null,
+      currency_code: null,
+      candidate_pickup_point_id: null,
+      required_preconditions: [
+        "neutral_selection_ready",
+        "matching_delivery_hub_shipping_option_present",
+        "operator_approval_required",
+        "can_commit_shipping_method_false",
+      ],
+      blocked_reasons: [
+        "selection_missing",
+        "operator_approval_required",
+        "can_commit_shipping_method_false",
+      ],
+      can_commit_shipping_method: false,
+      checkout_source_of_truth: "unchanged",
+      guardrails: {
+        no_network_calls: true,
+        no_provider_payloads: true,
+        no_secret_material: true,
+        shipment_lifecycle_not_enabled: true,
+        can_commit_shipping_method: false,
+      },
+    }
+  }
+
+  return {
+    ok: true,
+    version: 1,
+    cart_id: cartId,
+    selection_present: true,
+    selection_reference_id: mockSelection.quote_reference.id,
+    candidate_status: "ready_for_review",
+    candidate_shipping_option_id: candidateShippingOptionId,
+    candidate_shipping_option_name: "Delivery Hub Pickup Candidate",
+    candidate_amount: mockSelection.quote.amount,
+    currency_code: mockSelection.quote.currency_code,
+    candidate_pickup_point_id: mockSelection.pickup_point.provider_point_id,
+    required_preconditions: [
+      "neutral_selection_ready",
+      "matching_delivery_hub_shipping_option_present",
+      "operator_approval_required",
+      "can_commit_shipping_method_false",
+    ],
+    blocked_reasons: [
+      "operator_approval_required",
+      "can_commit_shipping_method_false",
+    ],
+    can_commit_shipping_method: false,
+    checkout_source_of_truth: "unchanged",
+    guardrails: {
+      no_network_calls: true,
+      no_provider_payloads: true,
+      no_secret_material: true,
+      shipment_lifecycle_not_enabled: true,
+      can_commit_shipping_method: false,
+    },
+  }
 }
 
 function buildCutoverPreconditionsResponse() {
@@ -819,6 +899,12 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
     "cutover preconditions verifier"
   )
 
+  await waitFor(
+    sessionId,
+    "document.querySelector('[data-testid=\"delivery-hub-cutover-candidate-status\"]')?.innerText.includes('Candidate planner: available')",
+    "cutover candidate planner"
+  )
+
   const initial = await evaluate(sessionId, `(() => {
     const text = document.body.innerText
     return {
@@ -828,6 +914,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
       guardrails: document.querySelector('[data-testid="delivery-hub-preview-guardrails"]')?.innerText || '',
       cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
       cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.innerText || '',
+      cutoverCandidate: document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')?.innerText || '',
       operationStatus: document.querySelector('[data-testid="delivery-hub-preview-operation-status"]')?.innerText || '',
       selectionStatus: document.querySelector('[data-testid="delivery-hub-preview-selection-status"]')?.innerText || '',
     }
@@ -839,6 +926,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
   if (!initial.guardrails.includes("does not commit a Medusa shipping method")) fail("No-checkout-cutover guardrail is missing.")
   assertCutoverGate(initial.cutoverGate, expectedCutoverEnabled)
   assertCutoverPreconditions(initial.cutoverPreconditions)
+  assertCutoverCandidate(initial.cutoverCandidate, "ready_for_review")
   assertNoUnsafeNeedles(initial.text, "initial enabled preview page")
 
   await evaluate(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-get-quotes-button\"]').click()")
@@ -877,6 +965,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
       existingShippingVisible: text.includes('ApiShip/Medusa fallback shipping'),
       cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
       cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.innerText || '',
+      cutoverCandidate: document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')?.innerText || '',
     }
   })()`)
 
@@ -885,6 +974,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
   if (!afterSave.existingShippingVisible) fail("Existing ApiShip/Medusa checkout contour disappeared after save.")
   assertCutoverGate(afterSave.cutoverGate, expectedCutoverEnabled)
   assertCutoverPreconditions(afterSave.cutoverPreconditions)
+  assertCutoverCandidate(afterSave.cutoverCandidate, "ready_for_review")
   assertNoUnsafeNeedles(afterSave.text, "after mocked selection save")
 
   await evaluate(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-clear-selection-button\"]').click()")
@@ -925,6 +1015,29 @@ function assertCutoverGate(text, expectedEnabled) {
   }
   if (!expectedEnabled && !gateText.includes("default-off")) {
     fail("Cutover gate default run did not show default-off posture.")
+  }
+}
+
+function assertCutoverCandidate(text, expectedStatus) {
+  const candidateText = String(text || "")
+  if (!candidateText.includes("Candidate planner: available")) {
+    fail("Cutover candidate planner availability is not visible in preview guardrails.")
+  }
+  if (!candidateText.includes("candidate only / no checkout commit")) {
+    fail("Cutover candidate planner did not state candidate-only/no-commit posture.")
+  }
+  if (!candidateText.includes("canCommitShippingMethod=false")) {
+    fail("Cutover candidate planner did not preserve canCommitShippingMethod=false invariant.")
+  }
+  const statusSatisfied =
+    candidateText.includes(expectedStatus) ||
+    (expectedStatus === "ready_for_review" && candidateText.includes("ready for review")) ||
+    (expectedStatus === "selection_missing" && candidateText.includes("selection missing"))
+  if (!statusSatisfied) {
+    fail(`Cutover candidate planner did not surface expected status ${expectedStatus}: ${candidateText}`)
+  }
+  if (expectedStatus === "ready_for_review" && !candidateText.includes(candidateShippingOptionId)) {
+    fail("Cutover candidate planner did not surface safe candidate shipping option id.")
   }
 }
 

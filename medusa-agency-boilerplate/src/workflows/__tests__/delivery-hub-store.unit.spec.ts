@@ -7,6 +7,7 @@ import * as deliveryReadinessRoute from "../../api/store/delivery/readiness/rout
 import * as deliverySelectionRoute from "../../api/store/delivery/selection/route"
 import * as deliverySettingsRoute from "../../api/store/delivery/settings/route"
 import * as deliveryCutoverPreconditionsRoute from "../../api/store/delivery/cutover-preconditions/route"
+import * as deliveryCutoverCandidateRoute from "../../api/store/delivery/cutover-candidate/route"
 import { DeliveryHubError } from "../../modules/delivery-hub/errors"
 import { DeliveryHubService } from "../../modules/delivery-hub/service"
 
@@ -18,6 +19,10 @@ const originalStoreDeliverySelectionReadinessDeps = {
   ...deliveryReadinessRoute.storeDeliverySelectionReadinessDeps,
 }
 
+const originalStoreDeliveryCutoverCandidateDeps = {
+  ...deliveryCutoverCandidateRoute.storeDeliveryCutoverCandidateDeps,
+}
+
 describe("Delivery Hub store routes", () => {
   afterEach(() => {
     Object.assign(
@@ -27,6 +32,10 @@ describe("Delivery Hub store routes", () => {
     Object.assign(
       deliveryReadinessRoute.storeDeliverySelectionReadinessDeps,
       originalStoreDeliverySelectionReadinessDeps
+    )
+    Object.assign(
+      deliveryCutoverCandidateRoute.storeDeliveryCutoverCandidateDeps,
+      originalStoreDeliveryCutoverCandidateDeps
     )
     jest.restoreAllMocks()
   })
@@ -1366,6 +1375,104 @@ describe("Delivery Hub store routes", () => {
     )
   })
 
+  it("returns read-only cutover candidate planner payload", async () => {
+    const result = buildCutoverCandidateResult()
+    const candidateSpy = jest
+      .spyOn(DeliveryHubService.prototype, "getStoreCutoverCandidate")
+      .mockResolvedValue(result as any)
+    deliveryCutoverCandidateRoute.storeDeliveryCutoverCandidateDeps.getDeliveryHubCartById =
+      jest.fn(async () => ({
+        id: "cart_1",
+        metadata: {
+          delivery_hub: {
+            selection: {
+              quote_key: "must-not-leak",
+            },
+          },
+        },
+      })) as any
+    deliveryCutoverCandidateRoute.storeDeliveryCutoverCandidateDeps.requireDeliveryHubCart =
+      jest.fn((cart) => cart) as any
+    const res = createMockResponse()
+
+    await deliveryCutoverCandidateRoute.GET(
+      createMockRequest({
+        validatedQuery: {
+          cart_id: "cart_1",
+        },
+        shippingOptions: [
+          {
+            id: "deliveryhub:warehouse_to_pickup_point",
+            name: "Delivery Hub Pickup",
+            provider_id: "deliveryhub_deliveryhub",
+            data: {
+              raw_reference: "must-not-leak",
+            },
+          },
+        ],
+      }) as any,
+      res as any
+    )
+
+    expect(candidateSpy).toHaveBeenCalledWith({
+      cart_id: "cart_1",
+      metadata: {
+        delivery_hub: {
+          selection: {
+            quote_key: "must-not-leak",
+          },
+        },
+      },
+      current_shipping_options: [
+        {
+          id: "deliveryhub:warehouse_to_pickup_point",
+          name: "Delivery Hub Pickup",
+          provider_id: "deliveryhub_deliveryhub",
+          data: {
+            raw_reference: "must-not-leak",
+          },
+        },
+      ],
+    })
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith(result)
+    expect(JSON.stringify((res.json as jest.Mock).mock.calls[0][0])).not.toMatch(
+      /token|authorization|raw_reference|ciphertext|provider_offer_id|quote_key|publishable/i
+    )
+  })
+
+  it("rejects cutover candidate payloads that try to enable commit or leak provider fragments", async () => {
+    jest.spyOn(DeliveryHubService.prototype, "getStoreCutoverCandidate").mockResolvedValue({
+      ...buildCutoverCandidateResult(),
+      can_commit_shipping_method: true,
+      blocked_reasons: ["token=secret-token"],
+    } as any)
+    deliveryCutoverCandidateRoute.storeDeliveryCutoverCandidateDeps.getDeliveryHubCartById =
+      jest.fn(async () => ({
+        id: "cart_1",
+        metadata: {},
+      })) as any
+    deliveryCutoverCandidateRoute.storeDeliveryCutoverCandidateDeps.requireDeliveryHubCart =
+      jest.fn((cart) => cart) as any
+    const res = createMockResponse()
+
+    await deliveryCutoverCandidateRoute.GET(
+      createMockRequest({
+        validatedQuery: {
+          cart_id: "cart_1",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(res.status).toHaveBeenCalledWith(400)
+    const payload = (res.json as jest.Mock).mock.calls[0][0] as any
+    expect(payload.error.code).toBe("DELIVERY_HUB_VALIDATION_ERROR")
+    expect(payload.error.message).toBe("Store delivery request validation failed")
+    expect(JSON.stringify(payload.error.details)).toContain("can_commit_shipping_method")
+    expect(JSON.stringify(payload.error.details)).not.toContain("secret-token")
+  })
+
   it("rejects cutover preconditions payloads that try to enable commit or leak provider fragments", async () => {
     jest.spyOn(DeliveryHubService.prototype, "getStoreCutoverPreconditions").mockResolvedValue({
       ...buildCutoverPreconditionsResult(),
@@ -1537,6 +1644,41 @@ describe("Delivery Hub store routes", () => {
   })
 })
 
+function buildCutoverCandidateResult() {
+  return {
+    ok: true,
+    version: 1,
+    cart_id: "cart_1",
+    selection_present: true,
+    selection_reference_id: "dhsel_0123456789abcdef0123456789abcdef",
+    candidate_status: "ready_for_review",
+    candidate_shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
+    candidate_shipping_option_name: "Delivery Hub Pickup",
+    candidate_amount: 499,
+    currency_code: "RUB",
+    candidate_pickup_point_id: "pvz_1",
+    required_preconditions: [
+      "neutral_selection_ready",
+      "matching_delivery_hub_shipping_option_present",
+      "operator_approval_required",
+      "can_commit_shipping_method_false",
+    ],
+    blocked_reasons: [
+      "operator_approval_required",
+      "can_commit_shipping_method_false",
+    ],
+    can_commit_shipping_method: false,
+    checkout_source_of_truth: "unchanged",
+    guardrails: {
+      no_network_calls: true,
+      no_provider_payloads: true,
+      no_secret_material: true,
+      shipment_lifecycle_not_enabled: true,
+      can_commit_shipping_method: false,
+    },
+  }
+}
+
 function buildCutoverPreconditionsResult() {
   return {
     ok: true,
@@ -1646,12 +1788,19 @@ function createStoreSelection(overrides?: Record<string, unknown>) {
 }
 
 function createMockRequest(input?: Partial<any>) {
+  const shippingOptions = input?.shippingOptions ?? []
+  const scope = input?.scope ?? {
+    resolve: jest.fn(() => ({
+      graph: jest.fn(async () => ({
+        data: shippingOptions,
+      })),
+    })),
+  }
+
   return {
-    scope: {
-      resolve: jest.fn(),
-    },
     validatedQuery: {},
     ...input,
+    scope,
   }
 }
 

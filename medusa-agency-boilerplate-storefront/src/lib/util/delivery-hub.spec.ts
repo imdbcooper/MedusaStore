@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs"
 import {
   buildDeliveryHubCheckoutCutoverGateStatus,
   buildDeliveryHubCommitEligibilityModel,
+  buildDeliveryHubCutoverCandidatePreviewModel,
   buildDeliveryHubCutoverPreconditionsPreviewModel,
   buildDeliveryHubHandoffContractMatrixPreviewModel,
   buildDeliveryHubHandoffPreviewModel,
@@ -43,6 +44,7 @@ import {
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
   normalizeDeliveryHubCatalogResponse,
   normalizeDeliveryHubPickupPointsResponse,
+  normalizeDeliveryHubCutoverCandidateResponse,
   normalizeDeliveryHubCutoverPreconditionsResponse,
   normalizeDeliveryHubQuotesResponse,
   normalizeDeliveryHubReadinessResponse,
@@ -219,6 +221,174 @@ test("normalizeDeliveryHubSettingsResponse keeps only neutral shopper-safe setti
 
   assert.equal("provider_code" in response.settings.summary, false)
   assert.equal("secrets" in response.settings, false)
+})
+
+test("normalizeDeliveryHubCutoverCandidateResponse keeps candidate safe and invariant false", () => {
+  const response = normalizeDeliveryHubCutoverCandidateResponse({
+    ok: true,
+    version: 1,
+    cart_id: "cart_candidate",
+    selection_present: true,
+    selection_reference_id: "dhsel_0123456789abcdef0123456789abcdef",
+    candidate_status: "ready_for_review",
+    candidate_shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
+    candidate_shipping_option_name: "Delivery Hub Pickup",
+    candidate_amount: 499,
+    currency_code: "RUB",
+    candidate_pickup_point_id: "pvz_candidate",
+    required_preconditions: [
+      "neutral_selection_ready",
+      "matching_delivery_hub_shipping_option_present",
+    ],
+    blocked_reasons: [
+      "operator_approval_required",
+      "can_commit_shipping_method_false",
+    ],
+    can_commit_shipping_method: false,
+    checkout_source_of_truth: "unchanged",
+    guardrails: {
+      no_network_calls: true,
+      no_provider_payloads: true,
+      no_secret_material: true,
+      shipment_lifecycle_not_enabled: true,
+      can_commit_shipping_method: false,
+    },
+    raw_reference: {
+      offer_id: "unsafe-offer-id",
+    },
+    quote_key: "unsafe-quote-key",
+  })
+
+  assert.deepEqual(response, {
+    ok: true,
+    version: 1,
+    cart_id: "cart_candidate",
+    selection_present: true,
+    selection_reference_id: "dhsel_0123456789abcdef0123456789abcdef",
+    candidate_status: "ready_for_review",
+    candidate_shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
+    candidate_shipping_option_name: "Delivery Hub Pickup",
+    candidate_amount: 499,
+    currency_code: "RUB",
+    candidate_pickup_point_id: "pvz_candidate",
+    required_preconditions: [
+      "neutral_selection_ready",
+      "matching_delivery_hub_shipping_option_present",
+    ],
+    blocked_reasons: [
+      "operator_approval_required",
+      "can_commit_shipping_method_false",
+    ],
+    can_commit_shipping_method: false,
+    checkout_source_of_truth: "unchanged",
+    guardrails: {
+      no_network_calls: true,
+      no_provider_payloads: true,
+      no_secret_material: true,
+      shipment_lifecycle_not_enabled: true,
+      can_commit_shipping_method: false,
+    },
+  })
+  const serialized = JSON.stringify(response)
+  assert.equal(serialized.includes("unsafe-offer-id"), false)
+  assert.equal(serialized.includes("unsafe-quote-key"), false)
+})
+
+test("normalizeDeliveryHubCutoverCandidateResponse rejects commit true and unsafe labels", () => {
+  assert.throws(
+    () => normalizeDeliveryHubCutoverCandidateResponse({
+      ok: true,
+      version: 1,
+      cart_id: "cart_candidate",
+      selection_present: true,
+      selection_reference_id: "dhsel_0123456789abcdef0123456789abcdef",
+      candidate_status: "ready_for_review",
+      candidate_shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
+      candidate_shipping_option_name: "Delivery Hub Pickup",
+      candidate_amount: 499,
+      currency_code: "RUB",
+      candidate_pickup_point_id: "pvz_candidate",
+      required_preconditions: [],
+      blocked_reasons: [],
+      can_commit_shipping_method: true,
+      checkout_source_of_truth: "unchanged",
+      guardrails: {
+        no_network_calls: true,
+        no_provider_payloads: true,
+        no_secret_material: true,
+        shipment_lifecycle_not_enabled: true,
+        can_commit_shipping_method: false,
+      },
+    }),
+    /cannot enable shipping-method commit/
+  )
+
+  assert.throws(
+    () => normalizeDeliveryHubCutoverCandidateResponse({
+      ok: true,
+      version: 1,
+      cart_id: "cart_candidate",
+      selection_present: true,
+      selection_reference_id: "dhsel_0123456789abcdef0123456789abcdef",
+      candidate_status: "ready_for_review",
+      candidate_shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
+      candidate_shipping_option_name: "token=secret",
+      candidate_amount: 499,
+      currency_code: "RUB",
+      candidate_pickup_point_id: "pvz_candidate",
+      required_preconditions: [],
+      blocked_reasons: [],
+      can_commit_shipping_method: false,
+      checkout_source_of_truth: "unchanged",
+      guardrails: {
+        no_network_calls: true,
+        no_provider_payloads: true,
+        no_secret_material: true,
+        shipment_lifecycle_not_enabled: true,
+        can_commit_shipping_method: false,
+      },
+    }),
+    /must not expose provider internals/
+  )
+})
+
+test("buildDeliveryHubCutoverCandidatePreviewModel fails safe and labels candidate-only", () => {
+  const unavailable = buildDeliveryHubCutoverCandidatePreviewModel(null)
+
+  assert.equal(unavailable.availability, "unavailable")
+  assert.equal(unavailable.canCommitShippingMethod, false)
+  assert.equal(unavailable.blocked_reasons.includes("candidate_planner_unavailable"), true)
+
+  const ready = buildDeliveryHubCutoverCandidatePreviewModel({
+    ok: true,
+    version: 1,
+    cart_id: "cart_candidate",
+    selection_present: true,
+    selection_reference_id: "dhsel_0123456789abcdef0123456789abcdef",
+    candidate_status: "ready_for_review",
+    candidate_shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
+    candidate_shipping_option_name: "Delivery Hub Pickup",
+    candidate_amount: 499,
+    currency_code: "RUB",
+    candidate_pickup_point_id: "pvz_candidate",
+    required_preconditions: ["operator_approval_required"],
+    blocked_reasons: ["can_commit_shipping_method_false"],
+    can_commit_shipping_method: false,
+    checkout_source_of_truth: "unchanged",
+    guardrails: {
+      no_network_calls: true,
+      no_provider_payloads: true,
+      no_secret_material: true,
+      shipment_lifecycle_not_enabled: true,
+      can_commit_shipping_method: false,
+    },
+  })
+
+  assert.equal(ready.availability, "available")
+  assert.equal(ready.canCommitShippingMethod, false)
+  assert.equal(ready.status_label.includes("candidate only"), true)
+  assert.equal(ready.candidate_label?.includes("deliveryhub:warehouse_to_pickup_point"), true)
+  assert.equal(ready.hint_messages.includes("Candidate only / no checkout commit."), true)
 })
 
 test("shapeDeliveryHubQuotesQuery serializes interval and items for neutral store route contract", () => {

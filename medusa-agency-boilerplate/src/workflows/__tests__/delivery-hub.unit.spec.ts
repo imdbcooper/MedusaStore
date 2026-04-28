@@ -1036,6 +1036,241 @@ describe("Delivery Hub service", () => {
     expect(result.quote_context?.connection).not.toHaveProperty("credentials_state")
   })
 
+  it("builds missing-selection cutover candidate fail-safe without provider calls or writes", async () => {
+    const pg = createMockPg([], [], [])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+    const quoteWhSpy = jest.spyOn(adapter, "quoteWarehouseToPickupPoint")
+    const quoteDropoffSpy = jest.spyOn(adapter, "quoteDropoffPointToPickupPoint")
+    const pickupSpy = jest.spyOn(adapter, "listPickupPoints")
+    const windowsSpy = jest.spyOn(adapter, "listPickupWindows")
+
+    const result = await service.getStoreCutoverCandidate({
+      cart_id: "cart_candidate_missing",
+      metadata: {},
+      current_shipping_options: [],
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      version: 1,
+      cart_id: "cart_candidate_missing",
+      selection_present: false,
+      selection_reference_id: null,
+      candidate_status: "selection_missing",
+      candidate_shipping_option_id: null,
+      candidate_shipping_option_name: null,
+      candidate_amount: null,
+      currency_code: null,
+      candidate_pickup_point_id: null,
+      required_preconditions: [
+        "neutral_selection_ready",
+        "matching_delivery_hub_shipping_option_present",
+        "operator_approval_required",
+        "can_commit_shipping_method_false",
+      ],
+      blocked_reasons: [
+        "selection_missing",
+        "operator_approval_required",
+        "can_commit_shipping_method_false",
+      ],
+      can_commit_shipping_method: false,
+      checkout_source_of_truth: "unchanged",
+      guardrails: {
+        no_network_calls: true,
+        no_provider_payloads: true,
+        no_secret_material: true,
+        shipment_lifecycle_not_enabled: true,
+        can_commit_shipping_method: false,
+      },
+    })
+    expect(quoteWhSpy).not.toHaveBeenCalled()
+    expect(quoteDropoffSpy).not.toHaveBeenCalled()
+    expect(pickupSpy).not.toHaveBeenCalled()
+    expect(windowsSpy).not.toHaveBeenCalled()
+    expect(pg.calls.some((call: any) => call.sql.includes("insert into"))).toBe(false)
+    expect(pg.calls.some((call: any) => call.sql.includes("create table if not exists"))).toBe(false)
+  })
+
+  it("builds safe read-only cutover candidate summary from neutral selection and managed shipping option", async () => {
+    const pg = createMockPg([], [], [])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+    const quoteWhSpy = jest.spyOn(adapter, "quoteWarehouseToPickupPoint")
+    const quoteDropoffSpy = jest.spyOn(adapter, "quoteDropoffPointToPickupPoint")
+    const pickupSpy = jest.spyOn(adapter, "listPickupPoints")
+    const windowsSpy = jest.spyOn(adapter, "listPickupWindows")
+
+    const result = await service.getStoreCutoverCandidate({
+      cart_id: "cart_candidate_ready",
+      metadata: {
+        delivery_hub: {
+          selection: {
+            version: 1,
+            provider_code: "yandex",
+            connection_id: "conn_candidate",
+            quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+            quote_reference: {
+              id: "dhsel_0123456789abcdef0123456789abcdef",
+              version: 1,
+            },
+            quote: {
+              carrier_code: "yandex",
+              carrier_label: "Yandex Delivery",
+              amount: 499,
+              currency_code: "RUB",
+              delivery_eta_min: 1,
+              delivery_eta_max: 2,
+              pickup_point_required: true,
+              pickup_window_required: false,
+              quote_key: "quote-key-must-not-leak",
+            },
+            pickup_point: {
+              provider_point_id: "pvz_candidate",
+              provider_point_code: "code_1",
+              name: "PVZ Candidate",
+              address: "Tverskaya 1",
+              city: "Moscow",
+              region: "Moscow",
+              postal_code: "101000",
+              lat: 55.75,
+              lng: 37.61,
+              is_origin_dropoff_allowed: true,
+              is_destination_pickup_allowed: true,
+              payment_methods: ["card"],
+            },
+            pickup_window: null,
+            correlation_id: "corr_candidate_must_not_leak",
+            updated_at: "2026-04-25T03:00:00.000Z",
+            backend: {
+              token: "backend-token-must-not-leak",
+            },
+          },
+        },
+      },
+      current_shipping_options: [
+        {
+          id: "deliveryhub:dropoff_point_to_pickup_point",
+          name: "Delivery Hub Pickup Candidate",
+          provider_id: "deliveryhub_deliveryhub",
+          data: {
+            version: 1,
+            provider_code: "deliveryhub",
+            provider_id: "deliveryhub_deliveryhub",
+            id: "deliveryhub:dropoff_point_to_pickup_point",
+            mode_code: "dropoff_point_to_pickup_point",
+            raw_reference: {
+              offer_id: "provider-offer-must-not-leak",
+            },
+          },
+        },
+      ],
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      version: 1,
+      cart_id: "cart_candidate_ready",
+      selection_present: true,
+      selection_reference_id: "dhsel_0123456789abcdef0123456789abcdef",
+      candidate_status: "ready_for_review",
+      candidate_shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+      candidate_shipping_option_name: "Delivery Hub Pickup Candidate",
+      candidate_amount: 499,
+      currency_code: "RUB",
+      candidate_pickup_point_id: "pvz_candidate",
+      required_preconditions: [
+        "neutral_selection_ready",
+        "matching_delivery_hub_shipping_option_present",
+        "operator_approval_required",
+        "can_commit_shipping_method_false",
+      ],
+      blocked_reasons: [
+        "operator_approval_required",
+        "can_commit_shipping_method_false",
+      ],
+      can_commit_shipping_method: false,
+      checkout_source_of_truth: "unchanged",
+      guardrails: {
+        no_network_calls: true,
+        no_provider_payloads: true,
+        no_secret_material: true,
+        shipment_lifecycle_not_enabled: true,
+        can_commit_shipping_method: false,
+      },
+    })
+    const serialized = JSON.stringify(result)
+    expect(serialized).not.toMatch(
+      /quote-key-must-not-leak|corr_candidate_must_not_leak|backend-token-must-not-leak|provider-offer-must-not-leak/i
+    )
+    expect(serialized).not.toMatch(/authorization|ciphertext|raw_reference|quote_key|token|provider_offer_id/i)
+    expect(quoteWhSpy).not.toHaveBeenCalled()
+    expect(quoteDropoffSpy).not.toHaveBeenCalled()
+    expect(pickupSpy).not.toHaveBeenCalled()
+    expect(windowsSpy).not.toHaveBeenCalled()
+    expect(pg.calls.some((call: any) => call.sql.includes("insert into"))).toBe(false)
+    expect(pg.calls.some((call: any) => call.sql.includes("create table if not exists"))).toBe(false)
+  })
+
+  it("keeps cutover candidate blocked when matching shipping option is missing", async () => {
+    const pg = createMockPg([], [], [])
+    const service = new DeliveryHubService(pg as any)
+
+    const result = await service.getStoreCutoverCandidate({
+      cart_id: "cart_candidate_no_option",
+      metadata: {
+        delivery_hub: {
+          selection: {
+            version: 1,
+            provider_code: "yandex",
+            connection_id: "conn_candidate",
+            quote_type: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+            quote_reference: {
+              id: "dhsel_0123456789abcdef0123456789abcdef",
+              version: 1,
+            },
+            quote: {
+              carrier_code: "yandex",
+              carrier_label: "Yandex Delivery",
+              amount: 499,
+              currency_code: "RUB",
+              delivery_eta_min: 1,
+              delivery_eta_max: 2,
+              pickup_point_required: true,
+              pickup_window_required: false,
+            },
+            pickup_point: {
+              provider_point_id: "pvz_candidate",
+              provider_point_code: "code_1",
+              name: "PVZ Candidate",
+              address: "Tverskaya 1",
+              city: "Moscow",
+              region: "Moscow",
+              postal_code: "101000",
+              lat: 55.75,
+              lng: 37.61,
+              is_origin_dropoff_allowed: false,
+              is_destination_pickup_allowed: true,
+              payment_methods: ["card"],
+            },
+            pickup_window: null,
+            updated_at: "2026-04-25T03:00:00.000Z",
+          },
+        },
+      },
+      current_shipping_options: [],
+    })
+
+    expect(result.candidate_status).toBe("shipping_option_missing")
+    expect(result.candidate_shipping_option_id).toBeNull()
+    expect(result.can_commit_shipping_method).toBe(false)
+    expect(result.blocked_reasons).toEqual([
+      "matching_delivery_hub_shipping_option_missing",
+      "operator_approval_required",
+      "can_commit_shipping_method_false",
+    ])
+  })
+
   it("builds read-only cutover preconditions from stored safe state without provider calls or writes", async () => {
     const warehouse = createWarehouseRecord({
       id: "wh_ready",

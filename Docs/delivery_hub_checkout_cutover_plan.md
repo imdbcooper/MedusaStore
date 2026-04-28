@@ -469,3 +469,12 @@ Current outcome:
 - ApiShip/legacy compatibility: **preserved**;
 - shipment create/cancel/status/retry: **not performed**;
 - next required step before real cutover implementation: review and approval of this plan, then a separately scoped cutover implementation task if and only if the gate result is `GO`.
+
+
+### Read-only cutover candidate planner (pre-approval evidence only)
+
+A candidate planner is available as a safe pre-cutover diagnostic: `GET /store/delivery/cutover-candidate?cart_id=...`. It reads the neutral Delivery Hub selection already stored on the cart and compares it with safe Medusa shipping-option catalog snapshots to show which Delivery Hub shipping option would be reviewed in a future approved checkout commit tranche.
+
+This is not approval and not cutover. The response keeps `can_commit_shipping_method=false`, `checkout_source_of_truth=unchanged`, and includes guardrails for no network calls, no provider payloads, no secret material, and shipment lifecycle disabled. Missing selection or missing matching shipping option remains blocked/fail-safe.
+
+The planner must not expose raw provider offer ids, raw `quote_key`, provider DTOs, auth headers, tokens, ciphertext, credentials, event logs, or publishable key values. It must not call Yandex/provider APIs, create/cancel/status/retry shipments, mutate cart metadata, or call/storefront-wire `setShippingMethod()`.

@@ -751,3 +751,16 @@ Fresh manual Admin validation now confirms both mandatory first-tranche quote pa
 - `dropoff_point_to_pickup_point`: fresh screenshot confirms connection `yandexTestname · test · active`, destination PVZ/platform station id `e1139f6d-e34f-47a9-a55f-31f032a861a6`, origin dropoff point id `019d2a9da5877011a771b75e903f3039`, currency `RUB`, quantity `1`, weight `500` grams, declared price `2000`, correlation id `a4adab14-ff1c-40da-a2cd-bfa0726e3be7`, `quotes count=13`, first offer price `181.9 rub`, visible ETA examples `3–4`, `4–5`, `5–6`, `6–7`, pickup window required `no`, provider reference redacted.
 
 This closes the manual quote smoke baseline for both supported Yandex first-tranche paths only at quote/offer stage. It does not change checkout, ApiShip/legacy fulfillment, shipment execution, confirmation, status/cancel/retry semantics, env gates or runtime wiring. The subsequent storefront-neutral quote/selection smoke has now also passed over existing Delivery Hub neutral contracts without checkout cutover; next safe step is to keep this as regression evidence while planning any separate checkout cutover behind explicit approval.
+
+
+## 2026-04-28T09:00:00Z — Delivery Hub read-only cutover candidate planner
+
+Implemented the next controlled cutover-prep step as read-only candidate/evidence only. Backend now exposes `GET /store/delivery/cutover-candidate?cart_id=...` to derive a safe future Medusa shipping-option candidate from stored neutral Delivery Hub cart selection plus current shipping-option catalog snapshots. The planner returns only shopper/operator-safe summary fields, keeps `can_commit_shipping_method=false`, and reports `checkout_source_of_truth=unchanged`.
+
+Behavior:
+- Missing neutral selection returns `candidate_status=selection_missing` with blocked reasons and no candidate ids/amounts.
+- Present neutral selection plus matching Delivery Hub managed shipping option returns `candidate_status=ready_for_review`, candidate shipping option id/name, amount/currency, and pickup point id.
+- Present selection without a matching option returns `candidate_status=shipping_option_missing`.
+- Planner does not call provider/Yandex, shipment lifecycle, cart mutation, or Medusa shipping-method commit.
+
+Storefront Preview/Shadow UI now loads the candidate planner beside cutover preconditions at `delivery-hub-cutover-candidate-status` and labels it strictly “candidate only / no checkout commit”; unavailable planner fails safe.

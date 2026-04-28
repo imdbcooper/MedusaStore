@@ -151,6 +151,10 @@ export const DeliveryHubStoreSelectionReadinessQuerySchema = z.object({
   cart_id: z.string().trim().min(1),
 })
 
+export const DeliveryHubStoreCutoverCandidateQuerySchema = z.object({
+  cart_id: z.string().trim().min(1),
+})
+
 export const DeliveryHubStoreCatalogQuerySchema = z.object({})
 
 export const DeliveryHubStoreSettingsQuerySchema = z.object({})
