@@ -407,7 +407,7 @@ const StoreDeliveryCutoverApprovalArtifactResponseSchema = z
     required_acknowledgements: z
       .object({
         rollback_reviewed: z.literal(false),
-        apiship_fallback_available: z.literal(false),
+        legacy_fallback_available: z.literal(false),
         no_secrets_logged: z.literal(false),
         shipment_lifecycle_not_enabled: z.literal(false),
         approval_does_not_enable_commit: z.literal(false),

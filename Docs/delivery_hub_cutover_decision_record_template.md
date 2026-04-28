@@ -95,14 +95,14 @@ The endpoint intentionally returns these acknowledgement placeholders as `false`
 | Acknowledgement | Required value in endpoint | Operator evidence note |
 |---|---:|---|
 | Rollback reviewed | `false` | `<operator note>` |
-| ApiShip/Medusa fallback available | `false` | `<operator note>` |
+| Legacy delivery fallback available | `false` | `<operator note>` |
 | No secrets logged | `false` | `<operator note>` |
 | Shipment lifecycle not enabled by this step | `false` | `<operator note>` |
 | Approval does not enable commit | `false` | `<operator note>` |
 
 Rollback statement to review:
 
-> Operator must confirm rollback/fallback keeps existing ApiShip/Medusa checkout source-of-truth available before any future executable cutover implementation.
+> Operator must confirm rollback/no-fallback keeps Delivery Hub checkout fail-closed when readiness is blocked and does not rely on a legacy delivery fallback before any future executable production enablement.
 
 ---
 
@@ -147,4 +147,4 @@ If any evidence shows a true commit flag or executable approval state, the decis
 | Shipping-method commit remains disabled | `yes` |
 | Review pending after implementation task | `yes` |
 
-This decision record is complete only as evidence. It does not create executable approval state, does not call `setShippingMethod()`, does not switch checkout source-of-truth, does not remove ApiShip/Medusa fallback, and does not perform shipment create/cancel/status/retry.
+This decision record is complete only as evidence. It does not create executable approval state, does not call `setShippingMethod()`, does not switch checkout source-of-truth, does not reintroduce a legacy delivery fallback, and does not perform shipment create/cancel/status/retry.

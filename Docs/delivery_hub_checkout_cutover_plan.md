@@ -6,7 +6,7 @@
 >
 > Operator go/no-go review index: [`delivery_hub_cutover_go_no_go_index.md`](./delivery_hub_cutover_go_no_go_index.md).
 >
-> Scope of this document: readiness gate plus runtime-visible storefront cutover guardrails for the default-off flag, cutover preconditions verifier, candidate planner, non-executable operator decision artifact, and the new guarded commit handoff. It is not production-enabled by default, does not remove ApiShip/legacy compatibility, and does not perform shipment create/cancel/status/retry.
+> Scope of this document: readiness gate plus runtime-visible storefront cutover guardrails for the default-off flag, cutover preconditions verifier, candidate planner, non-executable operator decision artifact, and the new guarded commit handoff. It is not production-enabled by default, does not reintroduce a legacy delivery fallback, and does not perform shipment create/cancel/status/retry.
 
 ---
 
@@ -24,14 +24,14 @@ The Delivery Hub contour has already reached these confirmed milestones:
 - A read-only Store API verifier `GET /store/delivery/cutover-preconditions` aggregates safe precondition evidence labels for future planning only; it uses stored/configured state, does not call Yandex/live providers, and always reports `can_commit_shipping_method=false`.
 - A read-only Store API candidate planner `GET /store/delivery/cutover-candidate?cart_id=<cart_id>` summarizes the saved neutral selection plus matching Delivery Hub shipping-option candidate. Storefront treats this evidence as one required input for local guarded commit eligibility; the endpoint itself remains non-executable and still reports `can_commit_shipping_method=false`.
 - A read-only Store API decision artifact template `GET /store/delivery/cutover-approval-template?cart_id=<cart_id>` now binds preconditions plus optional candidate evidence into the non-executable artifact type `delivery_hub_checkout_cutover_decision`, with default `decision_status=not_requested` and commit controls locked false.
-- The preview/shadow UI remains default-off for commit: quote and selection can be exercised, the cutover gate, verifier, candidate planner, and decision artifact can be observed, and a commit CTA is enabled only when the explicit cutover flag is true and a ready candidate maps to an available Delivery Hub Medusa shipping option. Flag-off keeps existing Medusa/ApiShip/legacy-compatible checkout behavior.
+- The preview/shadow UI remains default-off for commit: quote and selection can be exercised, the cutover gate, verifier, candidate planner, and decision artifact can be observed, and a commit CTA is enabled only when the explicit cutover flag is true and a ready candidate maps to an available Delivery Hub Medusa shipping option. Flag-off keeps Delivery Hub checkout fail-closed and does not select a legacy delivery fallback automatically.
 
 ### Explicit non-goals and limits for the current checkpoint
 
 This checkpoint is **not** a checkout cutover. It must not:
 
 - make Delivery Hub the checkout source of truth;
-- remove or functionally change ApiShip/legacy compatibility;
+- reintroduce a legacy delivery fallback;
 - enable production cutover by default or change production source-of-truth without explicit flag/approval;
 - patch official Medusa Admin internals;
 - create, cancel, refresh, retry, confirm, or otherwise execute shipments;
@@ -48,7 +48,7 @@ A future Delivery Hub checkout cutover means all of the following become true in
 3. The storefront determines a validated Delivery Hub Medusa shipping option that exactly matches the persisted neutral selection and backend readiness state.
 4. Only after all preconditions pass, the storefront may call the existing Medusa cart shipping method mutation through `setShippingMethod()`.
 5. The committed Medusa cart/order/fulfillment metadata carries enough neutral Delivery Hub references for later fulfillment handoff without exposing provider raw payloads.
-6. Existing Medusa/ApiShip/legacy shipping remains a fallback and rollback path.
+6. Delivery Hub remains the only delivery commit contour; rollback/no-fallback keeps checkout fail-closed when readiness is blocked.
 
 The first guarded implementation now covers item 4 only under the explicit flag and ready-candidate guardrails. Production rollout remains a separate approval/review decision; flag-off remains quote/selection/preview metadata only for checkout.
 
@@ -119,7 +119,7 @@ Required before approval:
 - Artifact type is exactly `delivery_hub_checkout_cutover_decision` and default `decision_status` is `not_requested`.
 - Allowed decision-status vocabulary is `not_requested`, `go_requested`, `no_go`, and `approved_but_commit_disabled`; none of these states may enable checkout commit by themselves.
 - Artifact binds a sanitized `preconditions_summary`, sanitized `candidate_summary`, reviewer/operator/technical-owner placeholders, generated timestamp, rollback acknowledgement statement, required acknowledgement placeholders, and required signoff placeholders.
-- Required acknowledgements stay placeholders in endpoint output: rollback reviewed, ApiShip fallback available, no secrets logged, shipment lifecycle not enabled, and approval does not enable commit are all returned as `false` until manually reviewed outside runtime execution.
+- Required acknowledgements stay placeholders in endpoint output: rollback reviewed, legacy delivery fallback available, no secrets logged, shipment lifecycle not enabled, and approval does not enable commit are all returned as `false` until manually reviewed outside runtime execution.
 - Required signoffs stay `pending` placeholders in endpoint output for operator, reviewer, and technical owner.
 - Commit controls are invariant: `can_commit_shipping_method=false`, `requires_separate_implementation=true`, `requires_feature_flag=true`, and `approval_is_executable=false`.
 - The route may include safe opaque selection/shipping-option/pickup-point ids already exposed by the candidate planner, but must not expose raw quote keys, raw provider offer ids, raw provider bodies, auth headers, token values, ciphertext, publishable key values, backend execution tokens, or arbitrary provider metadata.
@@ -161,12 +161,12 @@ Required before approval:
 Required before approval:
 
 - A default-off cutover flag exists and can be disabled without code changes.
-- Disabling preview/cutover flags returns checkout to existing Medusa/ApiShip/legacy-compatible shipping source-of-truth.
+- Disabling preview/cutover flags removes Delivery Hub preview/cutover artifacts and keeps checkout delivery fail-closed rather than selecting a legacy delivery method automatically.
 - Existing carts with saved Delivery Hub metadata do not break checkout when cutover is disabled.
 - Existing committed non-Delivery-Hub shipping methods remain valid and are not mutated by the rollback.
 - Operators have a documented fallback path and smoke checklist.
 - Automated rollback drill command: `npm run smoke:delivery-hub-rollback:browser`.
-- Expected automated drill result: no Delivery Hub preview/gate/preconditions/candidate/decision blocks when flags are off, no Delivery Hub-specific Medusa shipping-method commit request, no visible raw provider/auth/secret material, no shipment lifecycle action strings, and visible existing `ApiShip/Medusa fallback shipping` throughout fallback runs.
+- Expected automated drill result: no Delivery Hub preview/gate/preconditions/candidate/decision blocks when flags are off, no Delivery Hub-specific Medusa shipping-method commit request, no visible raw provider/auth/secret material, no shipment lifecycle action strings, and no visible legacy delivery fallback contour throughout no-fallback runs.
 
 ---
 
@@ -384,17 +384,17 @@ This is not production default enablement and not production rollout approval.
 
 ## 8. Rollback/fallback design
 
-Rollback must preserve the existing Medusa/ApiShip/legacy-compatible shipping contour.
+Rollback/no-fallback must preserve the Delivery Hub-only checkout posture and avoid automatic legacy delivery fallback selection.
 
 Required fallback rules:
 
 1. If cutover flag is disabled, Delivery Hub commit UI/path is unavailable.
-2. Existing Medusa shipping selection remains the checkout source of truth.
-3. Saved Delivery Hub neutral metadata may remain visible as preview/readiness information, but it must not block fallback shipping.
-4. If Delivery Hub readiness is stale, missing, mismatched, or fails validation, commit is blocked and shopper can continue with existing fallback shipping options.
+2. Delivery Hub remains the only delivery commit contour when the explicit cutover guard is satisfied.
+3. Saved Delivery Hub neutral metadata may remain visible as preview/readiness information, but blocked readiness must fail closed rather than selecting a fallback delivery method.
+4. If Delivery Hub readiness is stale, missing, mismatched, or fails validation, commit is blocked and no automatic legacy delivery method is selected.
 5. If a cart already committed a Delivery Hub shipping method and rollback is needed, operator guidance must decide whether to keep the committed method, require shopper reselection, or clear only Delivery Hub-specific metadata through an approved path.
 6. Rollback must not delete order/fulfillment audit history.
-7. Rollback must not remove ApiShip/legacy compatibility or mutate unrelated shipping options.
+7. Rollback must not reintroduce legacy delivery fallback behavior or mutate unrelated shipping options.
 
 ---
 
@@ -482,8 +482,8 @@ npm run smoke:delivery-hub-rollback:browser
 - Start with cutover flag disabled: fallback checkout path works.
 - Enable cutover in a controlled local/staging environment: ready path can commit only if approved preconditions pass.
 - Disable cutover again: fallback checkout path remains available.
-- Existing saved Delivery Hub metadata does not break fallback checkout.
-- Existing ApiShip/Medusa fallback shipping remains visible and functional.
+- Existing saved Delivery Hub metadata does not re-enable legacy delivery fallback checkout.
+- No legacy delivery fallback shipping is required or visible.
 
 ---
 
@@ -523,8 +523,8 @@ Browser mock smoke: PASS | FAIL
 Live local backend smoke: PASS | FAIL
 Rollback smoke: PASS | FAIL
 No-secret/raw-provider scan: PASS | FAIL
-Fallback preserved: YES | NO
-ApiShip/legacy contour changed: NO | YES with explanation
+No-fallback posture preserved: YES | NO
+Legacy delivery fallback contour reintroduced: NO | YES with explanation
 Shipment create/cancel/status/retry performed: NO | YES with explanation
 Final decision notes: <safe summary only>
 ```
@@ -548,7 +548,7 @@ Current outcome:
 - operator staging smoke: `npm run smoke:delivery-hub-cutover:browser` exercises explicit flag-on behavior against local mock/no-network Store API;
 - staging dry-run evidence: `npm run evidence:delivery-hub-staging-dry-run` is available as sanitized staging rollout input under `.delivery-hub-cutover-evidence/staging-dry-run/`;
 - Delivery Hub call to `setShippingMethod()`: **added only for the matched Medusa shipping option id after guard success**;
-- ApiShip/legacy compatibility: **preserved**;
+- legacy delivery fallback: **not required or reintroduced**;
 - shipment create/cancel/status/retry: **not performed**;
 - next required step before production rollout: separate review plus explicit operator/technical approval and rollout decision.
 

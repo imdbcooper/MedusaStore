@@ -76,7 +76,7 @@ NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID=fa279b9d-316d-45c2-aa8d-aa
 
 1. Перезапустите storefront после изменения env.
 2. Откройте checkout и перейдите на шаг доставки.
-3. Убедитесь, что legacy/Medusa/ApiShip shipping selection UI остаётся на месте выше preview-блока.
+3. Убедитесь, что Delivery Hub shipping selection UI is the only active delivery contour; no legacy delivery fallback UI should be required above the preview block.
 4. Найдите блок **Delivery Hub Preview/Shadow UI**. Для DOM/Playwright/manual locator можно использовать stable hook `data-testid="delivery-hub-preview-shadow-block"`.
 5. В guardrail-блоке (`data-testid="delivery-hub-preview-guardrails"`) проверьте видимые признаки:
    - `data-testid="delivery-hub-preview-feature-flag-status"` показывает `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true`;
@@ -126,7 +126,7 @@ The shortcut reuses the same mock harness in cutover mode: it runs only the expl
 
 Expected result:
 
-- disabled run: checkout delivery step показывает existing `ApiShip/Medusa fallback shipping`, а `delivery-hub-preview-shadow-block` отсутствует;
+- disabled run: checkout delivery step показывает no legacy delivery fallback shipping, а `delivery-hub-preview-shadow-block` отсутствует;
 - enabled run with cutover flag false: preview/shadow block, guardrails, operation status, selection status and the default-off cutover gate status are visible;
 - enabled run with cutover flag true: the cutover gate status recognizes `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true`; with the mocked ready candidate it can show `canCommitShippingMethod=true`, the smoke clicks the actual storefront commit CTA, and the mock Store API receives exactly one commit containing only the mapped Delivery Hub Medusa shipping option id;
 - mocked verifier response is visible at `data-testid="delivery-hub-cutover-preconditions-status"`, includes `operator_approval_required`, `shipment_lifecycle_not_enabled`, `can_commit_shipping_method`, and preserves `canCommitShippingMethod=false`;
@@ -135,7 +135,7 @@ Expected result:
 - mocked quote response отображает quote count `1`, safe correlation id, `Neutral Carrier`, price/currency and unchanged checkout source-of-truth;
 - mocked save/clear меняют только preview metadata status (`saved` / `cleared`) while keeping checkout source-of-truth unchanged;
 - UI text scan не содержит raw provider body, token/auth header, ciphertext or publishable key value;
-- positive cutover smoke does exercise the guarded browser `setShippingMethod()` path only after the explicit cutover flag and ready mocked candidate; preview-only/flag-off runs still do not call it, existing ApiShip/Medusa fallback remains visible, and no shipment operations are created.
+- positive cutover smoke does exercise the guarded browser `setShippingMethod()` path only after the explicit cutover flag and ready mocked candidate; preview-only/flag-off runs still do not call it, no legacy delivery fallback is required or visible, and no shipment operations are created.
 
 ### Rollback/fallback browser drill
 
@@ -147,12 +147,12 @@ npm run smoke:delivery-hub-rollback:browser
 
 This drill is intentionally mock/no-network. It reuses the local mocked Store API and temporary storefront `next dev` contour from the preview browser smoke, but runs the scenarios as a rollback proof instead of a generic preview pass:
 
-1. **All Delivery Hub flags off**: `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=false` and `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false`; expected result is no preview block, no cutover gate/preconditions/candidate/decision artifact blocks, no Delivery Hub shipping-method commit request, and visible existing `ApiShip/Medusa fallback shipping`.
-2. **Preview enabled, cutover flag false**: preview/shadow blocks are visible and can quote/save/clear mocked neutral metadata, but source-of-truth remains unchanged, existing ApiShip/Medusa contour remains visible, and no Medusa shipping-method commit request is made.
+1. **All Delivery Hub flags off**: `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=false` and `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false`; expected result is no preview block, no cutover gate/preconditions/candidate/decision artifact blocks, no Delivery Hub shipping-method commit request, and visible no legacy delivery fallback shipping.
+2. **Preview enabled, cutover flag false**: preview/shadow blocks are visible and can quote/save/clear mocked neutral metadata, but source-of-truth remains unchanged, no legacy delivery fallback contour is required or visible, and no Medusa shipping-method commit request is made.
 3. **Preview enabled, cutover flag true**: the reserved cutover flag is recognized; with the mocked ready candidate the UI can enable guarded commit eligibility and commit only the mapped mock Delivery Hub Medusa shipping option id, while mocked backend candidate/decision artifacts remain evidence-only and no provider payload is sent.
-4. **Simulated rollback/off restart**: after the cutover-true rehearsal, the script restarts storefront with both flags off while mock Delivery Hub selection still exists; expected result is that Delivery Hub UI/artifacts disappear again, no Delivery Hub preview/cutover endpoint is called, and the existing ApiShip/Medusa shipping contour remains visible.
+4. **Simulated rollback/off restart**: after the cutover-true rehearsal, the script restarts storefront with both flags off while mock Delivery Hub selection still exists; expected result is that Delivery Hub UI/artifacts disappear again, no Delivery Hub preview/cutover endpoint is called, and the no legacy delivery fallback contour is required or visible.
 
-The drill additionally scans visible UI text for unsafe raw provider/auth/secret needles and shipment lifecycle action strings, and fails if any Delivery Hub-specific Medusa shipping-method commit path is observed in mock requests. Passing this command means rollback/fallback is still flag-off, mock-only, and source-of-truth remains the existing Medusa/ApiShip checkout contour; it is not production cutover approval.
+The drill additionally scans visible UI text for unsafe raw provider/auth/secret needles and shipment lifecycle action strings, and fails if any Delivery Hub-specific Medusa shipping-method commit path is observed in mock requests. Passing this command means rollback/fallback is still flag-off, mock-only, and source-of-truth remains the Delivery Hub-only guarded contour; it is not production cutover approval.
 
 ### Controlled staging enablement / rollback checklist
 
@@ -165,7 +165,7 @@ The drill additionally scans visible UI text for unsafe raw provider/auth/secret
    ```
 
 4. If a controlled staging cart/order path is available, place one operator-approved test cart/order through the guarded Delivery Hub checkout path and record only sanitized outcome/status. Do not put secrets, auth headers, provider raw bodies, raw Yandex DTOs, raw offer ids, raw quote keys, ciphertext, or publishable key values into docs/log excerpts.
-5. Roll back by setting `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false` in staging and redeploying/restarting the storefront. Existing ApiShip/Medusa fallback must remain available.
+5. Roll back by setting `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false` in staging and redeploying/restarting the storefront. No legacy delivery fallback must be required or reintroduced.
 6. Run the rollback/fallback smoke after rollback:
 
    ```bash
@@ -227,7 +227,7 @@ Full convention: [`delivery_hub_cutover_evidence_bundle.md`](./delivery_hub_cuto
 - if an operator explicitly sets `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` in local/staging, the same guardrail must recognize `true`; `canCommitShippingMethod` may become `true` only when a ready candidate maps to an available Delivery Hub Medusa shipping option, otherwise it must fail closed as `false`;
 - `data-testid="delivery-hub-cutover-preconditions-status"` must show either available verifier evidence or fail-safe unavailable state, and in both cases `canCommitShippingMethod=false`;
 - `data-testid="delivery-hub-cutover-approval-artifact"` must show either available non-executable decision evidence or fail-safe unavailable state, and in both cases `canCommitShippingMethod=false`;
-- до отдельного approved cutover task Delivery Hub preview/selection path не должен вызывать `setShippingMethod()`, не должен заменять ApiShip/Medusa fallback checkout, и не должен запускать shipment create/cancel/status/retry.
+- до отдельного approved cutover task Delivery Hub preview/selection path не должен вызывать `setShippingMethod()`, не должен reintroduce legacy delivery fallback checkout, и не должен запускать shipment create/cancel/status/retry.
 
 ---
 
@@ -468,11 +468,11 @@ GET /admin/delivery/pickup-windows?connection_id=<saved_connection_id>&warehouse
 | `warehouse_to_pickup_point` | PASS through direct Yandex `POST /offers/create` | `quotes count=4`; currency `RUB`; first/UI price `181.9 rub`; pickup window required `no`; interval пустой/не передавался |
 | `dropoff_point_to_pickup_point` | PASS through direct Yandex `POST /offers/create` | connection `yandexTestname · test · active`; destination PVZ/platform station id `e1139f6d-e34f-47a9-a55f-31f032a861a6`; origin dropoff point id `019d2a9da5877011a771b75e903f3039`; currency `RUB`; quantity `1`; weight `500` grams; declared price `2000`; correlation id `a4adab14-ff1c-40da-a2cd-bfa0726e3be7`; `quotes count=13`; first offer price `181.9 rub`; visible ETA examples `3–4`, `4–5`, `5–6`, `6–7`; pickup window required `no`; provider reference redacted |
 
-Эти baselines подтверждают именно quote/offer-only contour. Они не означают checkout cutover, shipping-method commit activation, shipment create, status/cancel/retry validation или ApiShip/legacy-provider execution.
+Эти baselines подтверждают именно quote/offer-only contour. Они не означают checkout cutover, shipping-method commit activation, shipment create, status/cancel/retry validation или legacy-provider execution.
 
 ### 7.2) Storefront-neutral quote/selection smoke без checkout cutover
 
-Текущий backend/storefront-facing smoke contour теперь можно проверить одной безопасной командой. Harness вызывает только `POST /store/delivery/quotes` и `POST /store/delivery/selection`, берёт первый neutral quote, сохраняет selection в cart metadata only и печатает только safe summary. Он не вызывает `setShippingMethod`, не меняет committed Medusa shipping method, не делает checkout source-of-truth cutover, не вызывает shipment create/cancel/status/retry и не трогает ApiShip/legacy route execution.
+Текущий backend/storefront-facing smoke contour теперь можно проверить одной безопасной командой. Harness вызывает только `POST /store/delivery/quotes` и `POST /store/delivery/selection`, берёт первый neutral quote, сохраняет selection в cart metadata only и печатает только safe summary. Он не вызывает `setShippingMethod`, не меняет committed Medusa shipping method, не делает checkout source-of-truth cutover, не вызывает shipment create/cancel/status/retry и не трогает legacy delivery route execution.
 
 #### 2026-04-27 autonomous local smoke result
 
@@ -489,7 +489,7 @@ Final result is **PASS for neutral quote + selection**:
 
 - Dropoff → PVZ: connection `30e7b02b-71de-42d8-8587-86780c2850b8`, cart `cart_01KQ82YXCRW3QQ01GP9CK5RCT8`, origin `019d2a9da5877011a771b75e903f3039`, destination `e1139f6d-e34f-47a9-a55f-31f032a861a6`, `RUB`, item quantity `1`, weight `500`, price `2000`; quote HTTP `200`, `quotes_count=13`, first price `181.9 rub`, selection HTTP `200`, `selection.saved=true`, `checkout_source_of_truth="unchanged"`, safe correlation id `9f2cdca3-6b4b-4275-903d-c739429ded34`.
 - Warehouse → PVZ optional run: same cart/connection, warehouse `fa279b9d-316d-45c2-aa8d-aa92a77d15ba`; quote HTTP `200`, `quotes_count=4`, first price `181.9 rub`, selection HTTP `200`, `selection.saved=true`, `checkout_source_of_truth="unchanged"`, safe correlation id `802348f7-21b3-4389-87f8-5f81a6fc9125`.
-- No checkout cutover, ApiShip/legacy action, shipment create/cancel/status/retry was executed.
+- No checkout cutover, legacy delivery action, shipment create/cancel/status/retry was executed.
 
 Что подготовить перед командой:
 
@@ -702,7 +702,7 @@ docker compose up -d --force-recreate medusa-backend
 
 ## 2026-04-27 latest safe findings: pickup windows and 5Post
 
-- **5Post in the Admin UI is expected for the current Yandex sandbox pickup-point catalog.** The admin lookup returns sanitized Yandex pickup point fields, and the visible `5 Post (Пятерочка)` value comes from the Yandex `name` field. Provider remains `yandex`; this is not a UI label bug, not warehouse/provider mapping, and not ApiShip contamination.
+- **5Post in the Admin UI is expected for the current Yandex sandbox pickup-point catalog.** The admin lookup returns sanitized Yandex pickup point fields, and the visible `5 Post (Пятерочка)` value comes from the Yandex `name` field. Provider remains `yandex`; this is not a UI label bug, not warehouse/provider mapping, and not legacy delivery contamination.
 - For `Test_warehouse` / mapped provider warehouse `fbed3aa1-2cc6-4370-ab4d-59c5cc9bb924`, sampled Moscow/near-Moscow PVZ ids from the Yandex list did not produce pickup windows. Safe sampled ids included `0195749be6e...`, `0195749be91...`, `0195749be9b...`, `0195749bedc...`, `0195749bf06...`.
 - The original UI failure was reproduced safely on sampled PVZ `0195749be9b...`: admin error `DELIVERY_HUB_PROVIDER_ERROR`, provider status `400`, safe provider code/message `no_delivery_options / No delivery options for interval`.
 - Backend request shape was confirmed through safe summaries: test host `https://b2b.taxi.tst.yandex.net/api/b2b/platform`, path `/offers/info?last_mile_policy=self_pickup`, non-empty `places`, mapped source warehouse, and destination PVZ id when selected.
@@ -748,6 +748,6 @@ This verifies Delivery Hub public neutral quote + selection persistence without 
 2. Confirm the Preview/Shadow UI shows `delivery-hub-cutover-candidate-status` near cutover preconditions.
 3. With no saved Delivery Hub neutral selection, confirm candidate planner shows blocked/selection missing and `canCommitShippingMethod=false`.
 4. Save a neutral Delivery Hub preview selection. Confirm candidate planner can show a candidate shipping option summary when a safe matching Delivery Hub shipping option is available.
-5. Confirm the label says “candidate only / no checkout commit”, checkout source-of-truth remains unchanged, and the ApiShip/Medusa shipping option remains the live checkout contour.
+5. Confirm the label says “candidate only / no checkout commit”, checkout source-of-truth remains unchanged, and the Delivery Hub-only guarded option remains the live checkout contour.
 6. Inspect page text/network payloads for absence of raw provider body, raw `quote_key`, provider offer ids, auth headers, tokens, ciphertext, credentials, event logs, or publishable key values.
 7. Do not treat planner output as approval; operator approval and a separate future cutover implementation remain required.

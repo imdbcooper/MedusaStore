@@ -1015,7 +1015,7 @@ test("buildDeliveryHubCheckoutCutoverGateStatus is default-off and only enables 
   assert.equal(disabled.canCommitShippingMethod, false)
   assert.equal(disabled.status_label.includes("default-off"), true)
   assert.equal(
-    disabled.detail_label.includes("no ApiShip/legacy fallback is selected automatically"),
+    disabled.detail_label.includes("no legacy delivery fallback is selected automatically"),
     true
   )
   assert.equal(enabled.enabled, true)
@@ -1196,7 +1196,7 @@ function buildCutoverApprovalArtifactFixture(overrides: Record<string, unknown> 
     },
     required_acknowledgements: {
       rollback_reviewed: false,
-      apiship_fallback_available: false,
+      legacy_fallback_available: false,
       no_secrets_logged: false,
       shipment_lifecycle_not_enabled: false,
       approval_does_not_enable_commit: false,
@@ -1374,7 +1374,7 @@ test("normalizeDeliveryHubCutoverApprovalArtifactResponse keeps artifact non-exe
     },
     required_acknowledgements: {
       rollback_reviewed: false,
-      apiship_fallback_available: false,
+      legacy_fallback_available: false,
       no_secrets_logged: false,
       shipment_lifecycle_not_enabled: false,
       approval_does_not_enable_commit: false,
@@ -1460,7 +1460,7 @@ test("buildDeliveryHubCheckoutCutoverGateStatus uses no-fallback fail-closed cop
   assert.equal(disabled.status_label.includes("fail-closed"), true)
   assert.equal(
     [...disabled.blocker_labels, ...disabled.hint_messages, disabled.detail_label].some((message) =>
-      message.includes("No ApiShip") || message.includes("no ApiShip")
+      message.includes("No legacy delivery fallback") || message.includes("no legacy delivery fallback")
     ),
     true
   )
@@ -1471,7 +1471,7 @@ test("buildDeliveryHubCheckoutCutoverGateStatus uses no-fallback fail-closed cop
     available_shipping_options: [],
   })
   assert.equal(blocked.canCommitShippingMethod, false)
-  assert.equal(blocked.detail_label.includes("No ApiShip/legacy fallback"), true)
+  assert.equal(blocked.detail_label.includes("No legacy delivery fallback"), true)
 })
 
 
@@ -11135,7 +11135,7 @@ test("delivery hub preview shadow UI exposes stable manual validation hooks and 
     ),
     true
   )
-  assert.equal(shippingSource.includes("no automatic ApiShip or legacy fallback"), true)
+  assert.equal(shippingSource.includes("no automatic legacy delivery fallback"), true)
   assert.equal(
     shippingSource.includes(
       "Diagnostics are shopper-safe only: quote/selection status, count, price, ETA and safe correlation id; no raw provider body, token, auth header, ciphertext or publishable key value is displayed."

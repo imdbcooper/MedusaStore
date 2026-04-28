@@ -1619,7 +1619,7 @@ const Shipping: React.FC<ShippingProps> = ({
                         Delivery Hub Preview/Shadow UI
                       </Text>
                       <Text className="text-ui-fg-muted txt-small">
-                        Operator/dev validation surface. It calls neutral Delivery Hub store endpoints and can save neutral metadata. The active checkout path is Delivery Hub only: shipping-method commit can call setShippingMethod() only when the explicit cutover flag is true and a ready Delivery Hub candidate maps to an available Medusa shipping option; otherwise checkout delivery fails closed with retry/operator action and no automatic ApiShip or legacy fallback.
+                        Operator/dev validation surface. It calls neutral Delivery Hub store endpoints and can save neutral metadata. The active checkout path is Delivery Hub only: shipping-method commit can call setShippingMethod() only when the explicit cutover flag is true and a ready Delivery Hub candidate maps to an available Medusa shipping option; otherwise checkout delivery fails closed with retry/operator action and no automatic legacy delivery fallback.
                       </Text>
                       <div
                         className="grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"

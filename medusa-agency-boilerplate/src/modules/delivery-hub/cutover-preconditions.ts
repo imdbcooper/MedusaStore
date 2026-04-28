@@ -191,7 +191,7 @@ export function buildDeliveryHubCutoverPreconditions(
       label: "Rollback/no-fallback plan readiness",
       status: "ready",
       ready: true,
-      detail: "Cutover plan keeps Delivery Hub checkout fail-closed when readiness is blocked and does not require ApiShip fallback.",
+      detail: "Cutover plan keeps Delivery Hub checkout fail-closed when readiness is blocked and does not require a legacy delivery fallback.",
       evidence: [
         {
           label: "Docs/current_work.md documents default-off/no-fallback fail-closed posture",

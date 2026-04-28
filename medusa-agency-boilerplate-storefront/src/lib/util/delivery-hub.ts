@@ -324,7 +324,7 @@ export type DeliveryHubCutoverApprovalArtifactResponse = {
   }
   required_acknowledgements: {
     rollback_reviewed: false
-    apiship_fallback_available: false
+    legacy_fallback_available: false
     no_secrets_logged: false
     shipment_lifecycle_not_enabled: false
     approval_does_not_enable_commit: false
@@ -1424,7 +1424,7 @@ export function normalizeDeliveryHubCutoverApprovalArtifactResponse(
     },
     required_acknowledgements: {
       rollback_reviewed: readFalseLiteral(requiredAcknowledgements.rollback_reviewed, "required_acknowledgements.rollback_reviewed"),
-      apiship_fallback_available: readFalseLiteral(requiredAcknowledgements.apiship_fallback_available, "required_acknowledgements.apiship_fallback_available"),
+      legacy_fallback_available: readFalseLiteral(requiredAcknowledgements.legacy_fallback_available, "required_acknowledgements.legacy_fallback_available"),
       no_secrets_logged: readFalseLiteral(requiredAcknowledgements.no_secrets_logged, "required_acknowledgements.no_secrets_logged"),
       shipment_lifecycle_not_enabled: readFalseLiteral(requiredAcknowledgements.shipment_lifecycle_not_enabled, "required_acknowledgements.shipment_lifecycle_not_enabled"),
       approval_does_not_enable_commit: readFalseLiteral(requiredAcknowledgements.approval_does_not_enable_commit, "required_acknowledgements.approval_does_not_enable_commit"),
@@ -4019,13 +4019,13 @@ export function buildDeliveryHubCheckoutCutoverGateStatus(input: {
       mode: "disabled",
       status_label: "Delivery Hub checkout cutover gate is default-off and fail-closed",
       detail_label:
-        "NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED is not explicitly true, so no Delivery Hub shipping-method commit is attempted and no ApiShip/legacy fallback is selected automatically.",
+        "NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED is not explicitly true, so no Delivery Hub shipping-method commit is attempted and no legacy delivery fallback is selected automatically.",
       canCommitShippingMethod: false,
       required_readiness_evidence: requiredReadinessEvidence,
       blocker_labels: [
         "Cutover flag is disabled by default.",
         "No Delivery Hub shipping-method commit is attempted while the flag is off.",
-        "No ApiShip or legacy fallback shipping method is selected automatically.",
+        "No legacy delivery fallback shipping method is selected automatically.",
       ],
       hint_messages: [
         "Flag-off rollback verifies Delivery Hub artifacts disappear and checkout delivery remains fail-closed instead of falling back.",
@@ -4056,7 +4056,7 @@ export function buildDeliveryHubCheckoutCutoverGateStatus(input: {
     mode: "blocked",
     status_label: "Delivery Hub checkout cutover flag is enabled but commit is fail-closed",
     detail_label:
-      "The flag is explicit true, but the candidate is missing, not ready, invalid, or does not map to an available Medusa shipping option. No ApiShip/legacy fallback is selected automatically.",
+      "The flag is explicit true, but the candidate is missing, not ready, invalid, or does not map to an available Medusa shipping option. No legacy delivery fallback is selected automatically.",
     canCommitShippingMethod: false,
     required_readiness_evidence: requiredReadinessEvidence,
     blocker_labels: candidateGuard.reason_codes.map((reason) => reason.replace(/_/g, " ")),
@@ -4324,7 +4324,7 @@ export function buildDeliveryHubCommitEligibilityModel(input: {
         ? "NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED must be explicit true before this Delivery Hub commit handoff can run."
         : null,
       reasonCodes.includes("missing_cutover_candidate")
-        ? "Cutover candidate evidence is unavailable; fail closed without selecting an ApiShip or legacy fallback."
+        ? "Cutover candidate evidence is unavailable; fail closed without selecting a legacy delivery fallback."
         : null,
       reasonCodes.includes("cutover_candidate_not_ready")
         ? "Cutover candidate must be ready_for_review, selection-present and guardrail-clean before commit."

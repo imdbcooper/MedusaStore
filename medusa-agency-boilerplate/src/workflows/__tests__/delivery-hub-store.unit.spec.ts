@@ -1534,7 +1534,7 @@ describe("Delivery Hub store routes", () => {
     })
   })
 
-  it("keeps legacy ApiShip store route contour untouched", () => {
+  it("keeps neutral Delivery Hub store route contour available", () => {
     expect(deliveryQuotesRoute).toHaveProperty("GET")
     expect(deliveryQuotesRoute).toHaveProperty("POST")
     expect(deliverySelectionRoute).toHaveProperty("POST")

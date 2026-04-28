@@ -77,7 +77,7 @@ The generated bundle includes:
 - command/status placeholders for `npm run smoke:delivery-hub-preview:browser` and `npm run smoke:delivery-hub-rollback:browser`;
 - preserved invariants proving the exporter did not perform checkout cutover or provider execution.
 
-The staging dry-run bundle additionally includes the current git commit/dirty-clean status without diff dumps, expected cutover and rollback smoke commands, operator statuses (`PASS|FAIL|NOT_RUN`), staging cutover flag state assertion (`true|false|unknown`), sanitized manual staging cart/order note, sanitized rollback verification note, and explicit guardrails that production defaults remain unchanged and ApiShip/Medusa fallback is preserved.
+The staging dry-run bundle additionally includes the current git commit/dirty-clean status without diff dumps, expected cutover and rollback smoke commands, operator statuses (`PASS|FAIL|NOT_RUN`), staging cutover flag state assertion (`true|false|unknown`), sanitized manual staging cart/order note, sanitized rollback verification note, and explicit guardrails that production defaults remain unchanged and legacy delivery fallback is not required.
 
 The exporter records smoke command status placeholders only. Browser smokes remain separate operator actions.
 
@@ -128,6 +128,6 @@ The exporter does not:
 - call Medusa runtime or storefront runtime;
 - create/cancel/status/retry shipments;
 - mutate cart/order/fulfillment/shipping-option state;
-- remove or functionally change ApiShip/legacy fallback;
+- reintroduce legacy delivery fallback;
 - patch official Medusa Admin internals;
 - commit generated environment-specific output.

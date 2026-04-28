@@ -302,7 +302,7 @@ function buildBundle(options = {}) {
       approval_is_executable: false,
       provider_network_calls_performed_by_exporter: false,
       shipment_create_cancel_status_retry_performed: false,
-      apiship_legacy_removed_or_functionally_changed: false,
+      legacy_delivery_removed_or_functionally_changed: false,
       generated_environment_specific_output_should_be_committed: false,
       review_status: "pending_separate_review",
     },

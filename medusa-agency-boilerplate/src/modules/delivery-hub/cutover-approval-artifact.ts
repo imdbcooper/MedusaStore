@@ -72,7 +72,7 @@ export type DeliveryHubCutoverApprovalArtifact = {
   candidate_summary: DeliveryHubCutoverApprovalCandidateSummary
   required_acknowledgements: {
     rollback_reviewed: false
-    apiship_fallback_available: false
+    legacy_fallback_available: false
     no_secrets_logged: false
     shipment_lifecycle_not_enabled: false
     approval_does_not_enable_commit: false
@@ -128,7 +128,7 @@ export function buildDeliveryHubCutoverApprovalArtifact(
     candidate_summary: buildCandidateSummary(candidate),
     required_acknowledgements: {
       rollback_reviewed: false,
-      apiship_fallback_available: false,
+      legacy_fallback_available: false,
       no_secrets_logged: false,
       shipment_lifecycle_not_enabled: false,
       approval_does_not_enable_commit: false,
@@ -141,7 +141,7 @@ export function buildDeliveryHubCutoverApprovalArtifact(
     rollback_acknowledgement: {
       required: true,
       statement:
-        "Operator must confirm rollback/no-fallback keeps Delivery Hub checkout fail-closed when readiness is blocked and does not rely on ApiShip fallback before any future executable production enablement.",
+        "Operator must confirm rollback/no-fallback keeps Delivery Hub checkout fail-closed when readiness is blocked and does not rely on a legacy delivery fallback before any future executable production enablement.",
     },
     commit_controls: {
       can_commit_shipping_method: false,

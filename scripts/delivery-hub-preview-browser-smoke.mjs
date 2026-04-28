@@ -521,7 +521,7 @@ function buildCutoverApprovalArtifactResponse() {
     },
     required_acknowledgements: {
       rollback_reviewed: false,
-      apiship_fallback_available: false,
+      legacy_fallback_available: false,
       no_secrets_logged: false,
       shipment_lifecycle_not_enabled: false,
       approval_does_not_enable_commit: false,
@@ -669,7 +669,7 @@ function buildCutoverPreconditionsResponse() {
         label: "Rollback/no-fallback plan ready",
         status: "ready",
         ready: true,
-        detail: "Rollback remains flag-off and fail-closed without requiring ApiShip fallback.",
+        detail: "Rollback remains flag-off and fail-closed without requiring a legacy delivery fallback.",
         evidence: [{ label: "no-fallback browser smoke documents rollback", status: "ready" }],
       },
       {
@@ -1048,7 +1048,7 @@ async function runDisabledCheck(baseUrl, label = "disabled feature-flag check") 
       absentTestIds,
       hiddenCutoverTestIds,
       deliveryHubShippingVisible: optionText.includes('Delivery Hub Pickup Candidate'),
-      legacyFallbackVisible: optionText.includes('ApiShip/Medusa fallback shipping'),
+      legacyFallbackVisible: optionText.includes('Legacy/Medusa fallback shipping'),
       deliveryHubPreviewTextVisible: text.includes('Delivery Hub Preview/Shadow UI'),
       cutoverArtifactTextVisible: text.includes('delivery_hub_checkout_cutover_decision') || text.includes('Decision artifact only / no approval execution'),
       commitStatusTextVisible: Boolean(document.querySelector('[data-testid="delivery-hub-checkout-commit-guard"]')) || Boolean(document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')),
@@ -1098,7 +1098,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
       text,
       previewVisible: Boolean(document.querySelector('[data-testid="delivery-hub-preview-shadow-block"]')),
       deliveryHubShippingVisible: optionText.includes('Delivery Hub Pickup Candidate'),
-      legacyFallbackVisible: optionText.includes('ApiShip/Medusa fallback shipping'),
+      legacyFallbackVisible: optionText.includes('Legacy/Medusa fallback shipping'),
       guardrails: document.querySelector('[data-testid="delivery-hub-preview-guardrails"]')?.innerText || '',
       cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
       cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.innerText || '',
@@ -1112,7 +1112,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
   if (!initial.previewVisible) fail("Delivery Hub preview block did not render when enabled.")
   if (!initial.deliveryHubShippingVisible) fail("Delivery Hub checkout option is missing in no-fallback smoke.")
   if (initial.legacyFallbackVisible) fail("Legacy fallback checkout contour is visible in no-fallback smoke.")
-  if (!initial.text.includes("no automatic ApiShip or legacy fallback")) fail("No-fallback guardrail is missing.")
+  if (!initial.text.includes("no automatic legacy delivery fallback")) fail("No-fallback guardrail is missing.")
   if (!expectedCutoverEnabled && !initial.guardrails.includes("default-off") && !initial.cutoverGate.includes("default-off")) fail("Default-off checkout cutover guardrail is missing.")
   assertCutoverGate(initial.cutoverGate, expectedCutoverEnabled)
   assertCutoverPreconditions(initial.cutoverPreconditions)
@@ -1155,7 +1155,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
       selectionCorrelation: document.querySelector('[data-testid="delivery-hub-preview-selection-correlation-id"]')?.innerText || '',
       sourceOfTruth: document.querySelector('[data-testid="delivery-hub-preview-source-of-truth-status"]')?.innerText || '',
       deliveryHubShippingVisible: optionText.includes('Delivery Hub Pickup Candidate'),
-      legacyFallbackVisible: optionText.includes('ApiShip/Medusa fallback shipping'),
+      legacyFallbackVisible: optionText.includes('Legacy/Medusa fallback shipping'),
       cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
       cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.innerText || '',
       cutoverCandidate: document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')?.innerText || '',
@@ -1223,7 +1223,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
       text,
       sourceOfTruth: document.querySelector('[data-testid="delivery-hub-preview-source-of-truth-status"]')?.innerText || '',
       deliveryHubShippingVisible: optionText.includes('Delivery Hub Pickup Candidate'),
-      legacyFallbackVisible: optionText.includes('ApiShip/Medusa fallback shipping'),
+      legacyFallbackVisible: optionText.includes('Legacy/Medusa fallback shipping'),
     }
   })()`)
 

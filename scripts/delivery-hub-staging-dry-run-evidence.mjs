@@ -359,7 +359,7 @@ function buildBundle(options = {}) {
       no_live_provider_payload_captured: true,
       no_live_yandex_or_provider_calls: true,
       no_shipment_create_cancel_status_retry_execution: true,
-      apiship_medusa_fallback_preserved: true,
+      legacy_delivery_fallback_not_required: true,
       official_medusa_admin_internals_untouched: true,
     },
     review_posture: {

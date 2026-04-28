@@ -15,7 +15,7 @@
 | Preview/shadow UI | `Preview/shadow ready` |
 | Cutover implementation | `Default-off storefront commit path implemented; production not enabled` |
 | Production checkout source-of-truth | `NO-GO for production checkout source-of-truth` |
-| Existing checkout source-of-truth | Existing ApiShip/Medusa checkout remains active |
+| Existing checkout source-of-truth | Delivery Hub-only checkout remains fail-closed unless the explicit guard passes |
 | Commit invariant | Backend evidence remains `can_commit_shipping_method=false`; storefront commit eligibility is true only under explicit flag + ready mapped candidate |
 | Approval posture | Evidence and decision artifact are non-executable |
 
@@ -65,7 +65,7 @@ Endpoint outputs are evidence-only. They must keep commit controls disabled and 
    - Expected posture: explicit flag-on local mock path commits only the mapped Delivery Hub Medusa shipping option and uses no live provider/network calls.
 3. Run rollback browser smoke:
    - `npm run smoke:delivery-hub-rollback:browser`
-   - Expected posture: flags-off fallback keeps existing ApiShip/Medusa checkout visible and active.
+   - Expected posture: flags-off no-fallback keeps Delivery Hub artifacts hidden and does not select legacy delivery automatically.
 4. Run evidence bundle check/export:
    - `npm run evidence:delivery-hub-cutover:check`
    - `npm run evidence:delivery-hub-cutover`
@@ -101,13 +101,13 @@ If any evidence claims production commit is enabled by default, approval is exec
 
 ## 5. Rollback/fallback statement
 
-Existing ApiShip/Medusa checkout remains the production source-of-truth until a later, separately approved rollout enables the default-off Delivery Hub commit path.
+Delivery Hub checkout remains default-off/fail-closed until a later, separately approved rollout enables the guarded commit path.
 
 For this review state:
 
-- disabling Delivery Hub preview/cutover flags must leave fallback checkout available;
-- saved Delivery Hub neutral metadata must not block existing fallback shipping;
-- no ApiShip/Medusa fallback path is removed or functionally changed;
+- disabling Delivery Hub preview/cutover flags must remove Delivery Hub artifacts and keep delivery checkout fail-closed;
+- saved Delivery Hub neutral metadata must not re-enable a legacy delivery fallback;
+- no legacy delivery fallback path is reintroduced;
 - staging enablement evidence should follow the concise checklist in [`delivery_hub_manual_testing_plan.md`](./delivery_hub_manual_testing_plan.md): keep committed defaults false, set the cutover flag only in staging deployment config, run cutover smoke, optionally place one sanitized controlled staging cart/order, set the flag false to roll back, and run rollback smoke;
 - rollback evidence is mock/no-network unless separately documented by an operator.
 
