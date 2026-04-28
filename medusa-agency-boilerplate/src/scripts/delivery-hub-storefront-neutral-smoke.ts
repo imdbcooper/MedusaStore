@@ -415,7 +415,7 @@ export function buildDeliveryHubStorefrontNeutralSmokeSafeSummary(
       ok: quoteBody.ok === true,
       quotes_count: Array.isArray(quoteBody.quotes) ? quoteBody.quotes.length : 0,
       selected_quote_reference: {
-        id: safeString(selectedQuoteReference.id),
+        id_present: !!safeString(selectedQuoteReference.id),
         version: safeNumber(selectedQuoteReference.version),
       },
       selected_quote_price: {
@@ -433,7 +433,7 @@ export function buildDeliveryHubStorefrontNeutralSmokeSafeSummary(
       ok: selectionBody.ok === true,
       saved: selectionBody.ok === true && !!selection.quote_reference,
       selected_quote_reference: {
-        id: safeString(savedQuoteReference.id ?? selectedQuoteReference.id),
+        id_present: !!safeString(savedQuoteReference.id ?? selectedQuoteReference.id),
         version: safeNumber(savedQuoteReference.version ?? selectedQuoteReference.version),
       },
       pickup_point_id: safeString(selectedPickupPointId),
