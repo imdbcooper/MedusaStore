@@ -1,6 +1,7 @@
 import { DELIVERY_HUB_MODE_CODE, DELIVERY_HUB_PROVIDER_YANDEX } from "../../constants"
 import { isDeliveryHubError } from "../../errors"
 import type { YandexDeliveryClient } from "./client"
+import { YANDEX_DELIVERY_API_PATH } from "./endpoints"
 import {
   materializeYandexCreateShipmentPayloadPreview,
   type YandexCreateShipmentMaterializerMode,
@@ -9,7 +10,7 @@ import {
 } from "./create-shipment-materializer"
 
 export const YANDEX_CREATE_SHIPMENT_DISPATCH_PORT_VERSION = 1
-export const YANDEX_CREATE_SHIPMENT_API_PATH = "/shipments/create"
+export const YANDEX_CREATE_SHIPMENT_API_PATH = YANDEX_DELIVERY_API_PATH.requestCreate
 
 export type YandexCreateShipmentDispatchPortBlockedReasonCode =
   | "execution_gate_disabled"
@@ -44,15 +45,18 @@ export type YandexCreateShipmentDispatchPortContract = {
 
 export type YandexCreateShipmentDispatchRequestPayload = {
   source: {
-    warehouse_id?: string
-    pickup_point_id?: string
+    platform_station?: {
+      platform_id: string
+    }
     interval_utc?: {
       from: string
       to: string
     }
   }
   destination: {
-    pickup_point_id: string
+    platform_station: {
+      platform_id: string
+    }
   }
   recipient: {
     full_name: string
@@ -336,18 +340,28 @@ function buildExecutableRequestPayload(
       ? normalizeString(input.provider_origin_dispatch_context.origin_point_id)
       : null
 
+  const source: YandexCreateShipmentDispatchRequestPayload["source"] = {
+    platform_station: {
+      platform_id: mode === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
+        ? warehouseOriginId ?? ""
+        : dropoffOriginPointId ?? "",
+    },
+  }
+
+  if (mode === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint) {
+    const interval = normalizePickupInterval(input.pickup_interval_utc)
+
+    if (interval) {
+      source.interval_utc = interval
+    }
+  }
+
   return {
-    source:
-      mode === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
-        ? {
-            warehouse_id: warehouseOriginId ?? undefined,
-            interval_utc: normalizePickupInterval(input.pickup_interval_utc) ?? undefined,
-          }
-        : {
-            pickup_point_id: dropoffOriginPointId ?? undefined,
-          },
+    source,
     destination: {
-      pickup_point_id: normalizeString(input.destination_pickup_point?.provider_point_id) ?? "",
+      platform_station: {
+        platform_id: normalizeString(input.destination_pickup_point?.provider_point_id) ?? "",
+      },
     },
     recipient: {
       full_name: recipientName,

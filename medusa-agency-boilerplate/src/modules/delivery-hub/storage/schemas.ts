@@ -58,6 +58,28 @@ export const DeliveryHubConnectionTestSchema = z.object({
   include_pickup_points: z.boolean().optional(),
 })
 
+
+export const DeliveryHubAdminPickupPointsQuerySchema = z.object({
+  connection_id: z.string().trim().min(1),
+  city: z.string().trim().min(1).optional(),
+  country_code: z.string().trim().min(2).max(2).optional(),
+  geo_id: z.coerce.number().int().min(0).optional(),
+  pickup_point_id: z.string().trim().min(1).optional(),
+  operator_id: z.enum(["market_l4g", "5post"]).optional(),
+  station_type: z.enum(["pickup_point", "terminal", "warehouse"]).optional(),
+  available_for_dropoff: z.coerce.boolean().optional(),
+  is_yandex_branded: z.coerce.boolean().optional(),
+  is_not_branded_partner_station: z.coerce.boolean().optional(),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+})
+
+export const DeliveryHubAdminPickupWindowsQuerySchema = z.object({
+  connection_id: z.string().trim().min(1),
+  warehouse_id: z.string().trim().min(1).optional(),
+  destination_point_id: z.string().trim().min(1),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+})
+
 export const DeliveryHubQuoteItemsSchema = z
   .array(
     z.object({
@@ -86,16 +108,29 @@ export const DeliveryHubTestQuoteSchema = z.object({
   items: DeliveryHubQuoteItemsSchema,
 })
 
-export const DeliveryHubStoreQuotesQuerySchema = z.object({
+const DeliveryHubStoreQuoteModeSchema = z.enum([
+  "warehouse_to_pickup_point",
+  "dropoff_point_to_pickup_point",
+])
+
+const DeliveryHubStoreQuoteBaseSchema = z.object({
   connection_id: z.string().trim().min(1).optional(),
-  mode_code: z.enum(["warehouse_to_pickup_point", "dropoff_point_to_pickup_point"]),
+  mode_code: DeliveryHubStoreQuoteModeSchema,
   currency_code: z.string().trim().min(3).max(3).optional(),
   destination_point_id: z.string().trim().min(1),
   origin_point_id: z.string().trim().min(1).optional(),
   warehouse_id: z.string().trim().min(1).optional(),
+})
+
+export const DeliveryHubStoreQuotesQuerySchema = DeliveryHubStoreQuoteBaseSchema.extend({
   interval_utc: z.string().trim().optional(),
   items: z.string().trim().optional(),
 })
+
+export const DeliveryHubStoreQuotesBodySchema = DeliveryHubStoreQuoteBaseSchema.extend({
+  interval_utc: DeliveryHubIntervalUtcSchema.nullable().optional(),
+  items: DeliveryHubQuoteItemsSchema,
+}).strict()
 
 export const DeliveryHubStorePickupPointsQuerySchema = z.object({
   connection_id: z.string().trim().min(1).optional(),
@@ -137,6 +172,11 @@ export const DeliveryHubStoreCartSelectionPickupPointSchema = z
   .object({
     provider_point_id: z.string().trim().min(1),
     provider_point_code: z.string().trim().min(1).nullable().optional(),
+    provider_operator_id: z.string().trim().min(1).nullable().optional(),
+    network_label: z.string().trim().min(1).nullable().optional(),
+    is_yandex_branded: z.boolean().nullable().optional(),
+    is_market_partner: z.boolean().nullable().optional(),
+    station_type: z.string().trim().min(1).nullable().optional(),
     name: z.string().trim().min(1),
     address: z.string().trim().min(1),
     city: z.string().trim().min(1).nullable().optional(),

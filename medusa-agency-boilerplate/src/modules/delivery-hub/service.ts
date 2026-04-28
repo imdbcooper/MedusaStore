@@ -17,6 +17,8 @@ import type {
   DeliveryConnectionUpsertInput,
 } from "./domain/connection"
 import type { DeliveryQuote } from "./domain/quote"
+import type { DeliveryPickupPoint } from "./domain/pickup-point"
+import type { DeliveryPickupWindow } from "./domain/pickup-window"
 import type {
   DeliveryHubDiagnosticsSummary,
   DeliveryTestQuoteEcho,
@@ -160,6 +162,59 @@ export type DeliveryHubExecutionPlanObservabilityReadModel = {
 export type DeliveryHubAdminShipmentOperationsSnapshot = {
   ok: true
   operations: DeliveryHubAdminShipmentOperationsViewModel
+}
+
+export type DeliveryHubAdminPickupPointLookupPoint = {
+  id: string
+  code: string | null
+  operator_id: string | null
+  network_label: string | null
+  station_type: string | null
+  is_yandex_branded: boolean | null
+  is_market_partner: boolean | null
+  name: string
+  address: string
+  city: string | null
+  available_for_dropoff: boolean
+  coordinates: {
+    lat: number | null
+    lng: number | null
+  }
+}
+
+export type DeliveryHubAdminPickupPointLookupResponse = {
+  ok: true
+  connection: DeliveryConnectionPublic
+  points: DeliveryHubAdminPickupPointLookupPoint[]
+  limit: number
+  total_available: number
+  returned_count: number
+  truncated: boolean
+  correlation_id: string
+}
+
+export type DeliveryHubAdminPickupWindowLookupWindow = {
+  date: string
+  time_from: string | null
+  time_to: string | null
+  interval_utc: {
+    from: string
+    to: string
+  }
+  label: string
+}
+
+export type DeliveryHubAdminPickupWindowLookupResponse = {
+  ok: true
+  connection: DeliveryConnectionPublic
+  warehouse_id: string
+  destination_point_id: string | null
+  windows: DeliveryHubAdminPickupWindowLookupWindow[]
+  limit: number
+  total_available: number
+  returned_count: number
+  truncated: boolean
+  correlation_id: string
 }
 
 type DeliveryStoreQuotePublic = Omit<
@@ -636,7 +691,9 @@ export class DeliveryHubService {
         config: connection.config,
         metadata: connection.metadata,
         credentials_envelope: connection.credentials_envelope,
-        credentials_state: connection.credentials_state,
+        credentials_state: connection.credentials_envelope
+          ? DELIVERY_HUB_CREDENTIALS_STATE.sealed
+          : connection.credentials_state,
         credentials_fingerprint: connection.credentials_fingerprint,
         credentials_last_validated_at: new Date().toISOString(),
         credentials_last_error_code: null,
@@ -756,6 +813,198 @@ export class DeliveryHubService {
           ...buildTestQuoteInputEcho(input),
           provider_warehouse_id_present: !!resolvedWarehouseId,
         }),
+        response_summary: buildProviderErrorSummary(normalized, correlationId),
+      })
+
+      await this.materializeConnectionFailure(connection, normalized)
+      normalized.details = buildProviderErrorSummary(normalized, correlationId)
+      throw normalized
+    }
+  }
+
+  async listAdminPickupPoints(input: {
+    connection_id: string
+    city?: string | null
+    country_code?: string | null
+    geo_id?: number | null
+    pickup_point_id?: string | null
+    operator_id?: string | null
+    station_type?: "pickup_point" | "terminal" | "warehouse" | null
+    available_for_dropoff?: boolean | null
+    is_yandex_branded?: boolean | null
+    is_not_branded_partner_station?: boolean | null
+    limit?: number | null
+  }): Promise<DeliveryHubAdminPickupPointLookupResponse> {
+    const connection = await this.requireConnection(input.connection_id)
+    const adapter = getDeliveryHubAdapter(connection.provider_code)
+    const correlationId = crypto.randomUUID()
+    const countryCode = normalizeNullableText(input.country_code) ?? connection.country_code
+    const city = normalizeNullableText(input.city)
+    const geoId = Number.isInteger(input.geo_id) ? input.geo_id : null
+    const pickupPointId = normalizeNullableText(input.pickup_point_id)
+    const operatorId = normalizeNullableText(input.operator_id)
+    const stationType = input.station_type ?? null
+    const availableForDropoff = typeof input.available_for_dropoff === "boolean" ? input.available_for_dropoff : null
+    const isYandexBranded = typeof input.is_yandex_branded === "boolean" ? input.is_yandex_branded : null
+    const isNotBrandedPartnerStation = typeof input.is_not_branded_partner_station === "boolean" ? input.is_not_branded_partner_station : null
+    const limit = normalizePickupPointLookupLimit(input.limit)
+
+    try {
+      const points = await adapter.listPickupPoints(this.buildAdapterContext(connection, correlationId), {
+        city,
+        country_code: countryCode,
+        geo_id: geoId,
+        pickup_point_ids: pickupPointId ? [pickupPointId] : null,
+        operator_ids: operatorId ? [operatorId] : null,
+        station_type: stationType,
+        available_for_dropoff: availableForDropoff,
+        is_yandex_branded: isYandexBranded,
+        is_not_branded_partner_station: isNotBrandedPartnerStation,
+      })
+      const sampledPoints = points.slice(0, limit).map(sanitizeAdminPickupPoint)
+
+      await this.appendLog({
+        connection,
+        kind: DELIVERY_HUB_LOG_KIND.pickupPoints,
+        correlation_id: correlationId,
+        success: true,
+        request_summary: {
+          city,
+          country_code: countryCode,
+          geo_id: geoId,
+          pickup_point_id_present: !!pickupPointId,
+          operator_id: operatorId,
+          station_type: stationType,
+          available_for_dropoff: availableForDropoff,
+          is_yandex_branded: isYandexBranded,
+          is_not_branded_partner_station: isNotBrandedPartnerStation,
+          limit,
+          admin_lookup: true,
+        },
+        response_summary: {
+          pickup_points_count: points.length,
+          returned_count: sampledPoints.length,
+          truncated: points.length > sampledPoints.length,
+        },
+      })
+
+      return {
+        ok: true,
+        connection: serializeDeliveryConnectionPublic(connection),
+        points: sampledPoints,
+        limit,
+        total_available: points.length,
+        returned_count: sampledPoints.length,
+        truncated: points.length > sampledPoints.length,
+        correlation_id: correlationId,
+      }
+    } catch (error) {
+      const normalized = normalizeDeliveryHubError(error)
+
+      await this.appendLog({
+        connection,
+        kind: DELIVERY_HUB_LOG_KIND.pickupPoints,
+        correlation_id: correlationId,
+        success: false,
+        error_code: normalized.code,
+        request_summary: {
+          city,
+          country_code: countryCode,
+          geo_id: geoId,
+          pickup_point_id_present: !!pickupPointId,
+          operator_id: operatorId,
+          station_type: stationType,
+          available_for_dropoff: availableForDropoff,
+          is_yandex_branded: isYandexBranded,
+          is_not_branded_partner_station: isNotBrandedPartnerStation,
+          limit,
+          admin_lookup: true,
+        },
+        response_summary: buildProviderErrorSummary(normalized, correlationId),
+      })
+
+      await this.materializeConnectionFailure(connection, normalized)
+      normalized.details = buildProviderErrorSummary(normalized, correlationId)
+      throw normalized
+    }
+  }
+
+  async listAdminPickupWindows(input: {
+    connection_id: string
+    warehouse_id?: string | null
+    destination_point_id?: string | null
+    limit?: number | null
+    items?: Array<{
+      quantity?: number
+      weight_grams?: number
+      price?: number
+    }>
+  }): Promise<DeliveryHubAdminPickupWindowLookupResponse> {
+    const connection = await this.requireConnection(input.connection_id)
+    const adapter = getDeliveryHubAdapter(connection.provider_code)
+    const correlationId = crypto.randomUUID()
+    const resolvedWarehouseId = await this.resolveWarehouseProviderRef(connection, input.warehouse_id)
+    const providerWarehouseId = requireString(resolvedWarehouseId, "warehouse_id")
+    const destinationPointId = normalizeNullableText(input.destination_point_id)
+    const limit = normalizePickupWindowLookupLimit(input.limit)
+
+    try {
+      const windows = await adapter.listPickupWindows(this.buildAdapterContext(connection, correlationId), {
+        warehouse_id: providerWarehouseId,
+        destination_point_id: destinationPointId,
+        items: input.items,
+      })
+      const sampledWindows = windows.slice(0, limit).map(sanitizeAdminPickupWindow)
+
+      await this.appendLog({
+        connection,
+        kind: DELIVERY_HUB_LOG_KIND.pickupWindows,
+        correlation_id: correlationId,
+        success: true,
+        request_summary: {
+          warehouse_id: input.warehouse_id ?? null,
+          provider_warehouse_id_present: !!providerWarehouseId,
+          destination_point_id_present: !!destinationPointId,
+          limit,
+          item_count: Array.isArray(input.items) ? input.items.length : 0,
+          admin_lookup: true,
+        },
+        response_summary: {
+          pickup_windows_count: windows.length,
+          returned_count: sampledWindows.length,
+          truncated: windows.length > sampledWindows.length,
+        },
+      })
+
+      return {
+        ok: true,
+        connection: serializeDeliveryConnectionPublic(connection),
+        warehouse_id: input.warehouse_id ?? "",
+        destination_point_id: destinationPointId,
+        windows: sampledWindows,
+        limit,
+        total_available: windows.length,
+        returned_count: sampledWindows.length,
+        truncated: windows.length > sampledWindows.length,
+        correlation_id: correlationId,
+      }
+    } catch (error) {
+      const normalized = normalizeDeliveryHubError(error)
+
+      await this.appendLog({
+        connection,
+        kind: DELIVERY_HUB_LOG_KIND.pickupWindows,
+        correlation_id: correlationId,
+        success: false,
+        error_code: normalized.code,
+        request_summary: {
+          warehouse_id: input.warehouse_id ?? null,
+          provider_warehouse_id_present: !!providerWarehouseId,
+          destination_point_id_present: !!destinationPointId,
+          limit,
+          item_count: Array.isArray(input.items) ? input.items.length : 0,
+          admin_lookup: true,
+        },
         response_summary: buildProviderErrorSummary(normalized, correlationId),
       })
 
@@ -963,6 +1212,11 @@ export class DeliveryHubService {
                 provider_warehouse_id: requireString(resolvedWarehouseId, "warehouse_id"),
               })
         ),
+        diagnostics: {
+          correlation_id: correlationId,
+          checkout_source_of_truth: "unchanged",
+          contour: "delivery_hub_storefront_preview",
+        },
       }
     } catch (error) {
       const normalized = normalizeDeliveryHubError(error)
@@ -1630,6 +1884,55 @@ function sanitizeAdminQuote(quote: DeliveryQuote): DeliveryQuote {
     ...quote,
     raw_reference: redactRecord(quote.raw_reference ?? {}),
   }
+}
+
+function sanitizeAdminPickupPoint(point: DeliveryPickupPoint): DeliveryHubAdminPickupPointLookupPoint {
+  return {
+    id: point.provider_point_id,
+    code: point.provider_point_code,
+    operator_id: point.provider_operator_id ?? null,
+    network_label: point.network_label ?? null,
+    station_type: point.station_type ?? null,
+    is_yandex_branded: point.is_yandex_branded ?? null,
+    is_market_partner: point.is_market_partner ?? null,
+    name: point.name,
+    address: point.address,
+    city: point.city,
+    available_for_dropoff: point.is_origin_dropoff_allowed,
+    coordinates: {
+      lat: point.lat,
+      lng: point.lng,
+    },
+  }
+}
+
+function sanitizeAdminPickupWindow(window: DeliveryPickupWindow): DeliveryHubAdminPickupWindowLookupWindow {
+  return {
+    date: window.date,
+    time_from: window.time_from,
+    time_to: window.time_to,
+    interval_utc: {
+      from: window.interval_utc.from,
+      to: window.interval_utc.to,
+    },
+    label: window.label,
+  }
+}
+
+function normalizePickupPointLookupLimit(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 20
+  }
+
+  return Math.max(1, Math.min(50, Math.floor(value)))
+}
+
+function normalizePickupWindowLookupLimit(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 20
+  }
+
+  return Math.max(1, Math.min(50, Math.floor(value)))
 }
 
 function requireString(value: string | null | undefined, field: string) {

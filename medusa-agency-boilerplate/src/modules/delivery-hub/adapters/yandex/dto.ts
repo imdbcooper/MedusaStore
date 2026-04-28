@@ -1,6 +1,9 @@
 export type YandexPickupPointDto = {
   id?: string | number
   code?: string | null
+  operator_id?: string | null
+  operator_station_id?: string | null
+  type?: string | null
   name?: string | null
   address?: {
     full_address?: string | null
@@ -11,10 +14,14 @@ export type YandexPickupPointDto = {
     longitude?: number | string | null
   } | null
   available_for_dropoff?: boolean | null
+  is_yandex_branded?: boolean | null
+  is_market_partner?: boolean | null
   payment_methods?: string[] | null
 }
 
 export type YandexPickupWindowDto = {
+  from?: string | null
+  to?: string | null
   date?: string | null
   time_from?: string | null
   time_to?: string | null
@@ -33,5 +40,18 @@ export type YandexPricingOfferDto = {
   eta?: {
     days_min?: number | null
     days_max?: number | null
+  } | null
+  offer_details?: {
+    delivery_interval?: {
+      min?: string | null
+      max?: string | null
+      policy?: string | null
+    } | null
+    pickup_interval?: {
+      min?: string | null
+      max?: string | null
+    } | null
+    pricing?: string | null
+    pricing_total?: string | null
   } | null
 }

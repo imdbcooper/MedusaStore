@@ -1,5 +1,6 @@
 import { isDeliveryHubError } from "../../errors"
 import type { YandexDeliveryClient } from "./client"
+import { YANDEX_DELIVERY_API_PATH } from "./endpoints"
 
 export const YANDEX_SHIPMENT_CANCEL_VERSION = 1
 
@@ -11,7 +12,7 @@ export const YANDEX_SHIPMENT_CANCEL_VERSION = 1
  * covered by mocked no-network tests, and must be live-validated against Yandex documentation or a
  * test account before any production guarantee is claimed.
  */
-export const YANDEX_SHIPMENT_CANCEL_API_PATH = "/shipments/cancel"
+export const YANDEX_SHIPMENT_CANCEL_API_PATH = YANDEX_DELIVERY_API_PATH.requestCancel
 
 export type YandexShipmentCancelStatusCategory =
   | "cancelled"

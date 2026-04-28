@@ -11,11 +11,25 @@ import type {
 
 export function mapYandexPickupPoint(dto: YandexPickupPointDto): DeliveryPickupPoint {
   const providerPointId = String(dto.id ?? dto.code ?? "")
+  const operatorId = normalizeNullableString(dto.operator_id)
+  const name = normalizeString(dto.name, providerPointId || "Yandex pickup point")
+  const isYandexBranded = normalizeNullableBoolean(dto.is_yandex_branded)
+  const isMarketPartner = normalizeNullableBoolean(dto.is_market_partner)
 
   return {
     provider_point_id: providerPointId,
     provider_point_code: normalizeNullableString(dto.code),
-    name: normalizeString(dto.name, providerPointId || "Yandex pickup point"),
+    provider_operator_id: operatorId,
+    network_label: buildYandexPickupPointNetworkLabel({
+      operator_id: operatorId,
+      name,
+      is_yandex_branded: isYandexBranded,
+      is_market_partner: isMarketPartner,
+    }),
+    is_yandex_branded: isYandexBranded,
+    is_market_partner: isMarketPartner,
+    station_type: normalizeNullableString(dto.type),
+    name,
     address: normalizeString(dto.address?.full_address, ""),
     city: normalizeNullableString(dto.address?.locality),
     region: normalizeNullableString(dto.address?.province),
@@ -27,20 +41,42 @@ export function mapYandexPickupPoint(dto: YandexPickupPointDto): DeliveryPickupP
     payment_methods: Array.isArray(dto.payment_methods) ? dto.payment_methods : [],
     metadata: {
       available_for_dropoff: !!dto.available_for_dropoff,
+      operator_id: operatorId,
+      operator_station_id: normalizeNullableString(dto.operator_station_id),
+      station_type: normalizeNullableString(dto.type),
+      is_yandex_branded: isYandexBranded,
+      is_market_partner: isMarketPartner,
+      network_label: buildYandexPickupPointNetworkLabel({
+        operator_id: operatorId,
+        name,
+        is_yandex_branded: isYandexBranded,
+        is_market_partner: isMarketPartner,
+      }),
     },
   }
 }
 
 export function mapYandexPickupWindow(dto: YandexPickupWindowDto): DeliveryPickupWindow {
+  const intervalFrom = normalizeString(dto.interval_utc?.from ?? dto.from, "")
+  const intervalTo = normalizeString(dto.interval_utc?.to ?? dto.to, "")
+  const date = normalizeString(dto.date, deriveUtcDate(intervalFrom))
+  const timeFrom = normalizeNullableString(dto.time_from) ?? deriveUtcTime(intervalFrom)
+  const timeTo = normalizeNullableString(dto.time_to) ?? deriveUtcTime(intervalTo)
+
   return {
-    date: normalizeString(dto.date, ""),
-    time_from: normalizeNullableString(dto.time_from),
-    time_to: normalizeNullableString(dto.time_to),
+    date,
+    time_from: timeFrom,
+    time_to: timeTo,
     interval_utc: {
-      from: normalizeString(dto.interval_utc?.from, ""),
-      to: normalizeString(dto.interval_utc?.to, ""),
+      from: intervalFrom,
+      to: intervalTo,
     },
-    label: buildPickupWindowLabel(dto),
+    label: buildPickupWindowLabel({
+      ...dto,
+      date,
+      time_from: timeFrom,
+      time_to: timeTo,
+    }),
     metadata: {},
   }
 }
@@ -53,16 +89,17 @@ export function mapYandexQuote(
     pickup_window_options?: DeliveryPickupWindow[]
   }
 ): DeliveryQuote {
-  const amount = normalizeNumber(offer.price?.amount)
-  const currency = normalizeNullableString(offer.price?.currency)
+  const pricing = parseYandexPricing(offer)
+  const amount = pricing.amount
+  const currency = pricing.currency
   const quoteKey = normalizeNullableString(offer.offer_id)
 
   if (amount === null || amount < 0) {
-    throw createYandexOfferShapeError("price.amount", offer, "missing_or_invalid_amount")
+    throw createYandexOfferShapeError("price.amount|offer_details.pricing_total", offer, "missing_or_invalid_amount")
   }
 
   if (!currency) {
-    throw createYandexOfferShapeError("price.currency", offer, "missing_or_invalid_currency")
+    throw createYandexOfferShapeError("price.currency|offer_details.pricing_total", offer, "missing_or_invalid_currency")
   }
 
   if (!quoteKey) {
@@ -76,19 +113,49 @@ export function mapYandexQuote(
     quote_key: quoteKey,
     amount,
     currency_code: currency.toLowerCase(),
-    delivery_eta_min: offer.eta?.days_min ?? null,
-    delivery_eta_max: offer.eta?.days_max ?? offer.eta?.days_min ?? null,
+    delivery_eta_min: normalizeEtaDays(offer.eta?.days_min, offer.offer_details?.delivery_interval?.min),
+    delivery_eta_max:
+      normalizeEtaDays(offer.eta?.days_max, offer.offer_details?.delivery_interval?.max) ??
+      normalizeEtaDays(offer.eta?.days_min, offer.offer_details?.delivery_interval?.min),
     pickup_point_required: true,
     pickup_point_ids: [input.destination_point_id],
     pickup_points_embedded: [],
-    pickup_window_required:
-      input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+    pickup_window_required: false,
     pickup_window_options: input.pickup_window_options ?? [],
     raw_reference: {
       provider_offer_id: quoteKey,
       provider: DELIVERY_HUB_PROVIDER_YANDEX,
     },
   }
+}
+
+function buildYandexPickupPointNetworkLabel(input: {
+  operator_id: string | null
+  name: string
+  is_yandex_branded: boolean | null
+  is_market_partner: boolean | null
+}) {
+  if (input.operator_id === "5post" || /5\s*post|пят[её]роч/i.test(input.name)) {
+    return "5 Post"
+  }
+
+  if (
+    input.operator_id === "market_l4g" ||
+    input.is_yandex_branded === true ||
+    /яндекс|yandex/i.test(input.name)
+  ) {
+    return input.is_yandex_branded === true ? "Яндекс Маркет" : "Яндекс Маркет / партнёр"
+  }
+
+  if (input.is_market_partner === true) {
+    return "Партнёрский ПВЗ Яндекса"
+  }
+
+  return input.operator_id
+}
+
+function normalizeNullableBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : null
 }
 
 function createYandexOfferShapeError(
@@ -120,7 +187,73 @@ function describeYandexOfferShape(offer: YandexPricingOfferDto): Record<string, 
     keys: Object.keys(root).sort(),
     price_keys: price ? Object.keys(price).sort() : null,
     eta_keys: eta ? Object.keys(eta).sort() : null,
+    offer_details_keys:
+      root.offer_details && typeof root.offer_details === "object"
+        ? Object.keys(root.offer_details as Record<string, unknown>).sort()
+        : null,
   }
+}
+
+function parseYandexPricing(offer: YandexPricingOfferDto) {
+  const directAmount = normalizeNumber(offer.price?.amount)
+  const directCurrency = normalizeNullableString(offer.price?.currency)
+
+  if (directAmount !== null || directCurrency) {
+    return {
+      amount: directAmount,
+      currency: directCurrency,
+    }
+  }
+
+  const parsedPricing = parseYandexMoney(offer.offer_details?.pricing_total) ??
+    parseYandexMoney(offer.offer_details?.pricing)
+
+  return {
+    amount: parsedPricing?.amount ?? null,
+    currency: parsedPricing?.currency ?? null,
+  }
+}
+
+function parseYandexMoney(value: unknown) {
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const match = value.trim().match(/^(-?\d+(?:[.,]\d+)?)\s*([A-Za-zА-Яа-я]{3})$/u)
+
+  if (!match) {
+    return null
+  }
+
+  const amount = Number(match[1].replace(",", "."))
+
+  if (!Number.isFinite(amount)) {
+    return null
+  }
+
+  return {
+    amount,
+    currency: match[2],
+  }
+}
+
+function normalizeEtaDays(value: unknown, intervalBoundary?: string | null) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  if (!intervalBoundary) {
+    return null
+  }
+
+  const parsed = new Date(intervalBoundary)
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+
+  const diffMs = parsed.getTime() - Date.now()
+  return Math.max(0, Math.ceil(diffMs / 86_400_000))
 }
 
 function buildPickupWindowLabel(dto: YandexPickupWindowDto) {
@@ -129,6 +262,26 @@ function buildPickupWindowLabel(dto: YandexPickupWindowDto) {
   const to = normalizeString(dto.time_to, "")
 
   return [date, from && to ? `${from}-${to}` : from || to].filter(Boolean).join(" ")
+}
+
+function deriveUtcDate(value: string) {
+  if (!value.trim()) {
+    return ""
+  }
+
+  const parsed = new Date(value)
+
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10)
+}
+
+function deriveUtcTime(value: string) {
+  if (!value.trim()) {
+    return null
+  }
+
+  const parsed = new Date(value)
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(11, 16)
 }
 
 function normalizeString(value: unknown, fallback: string) {

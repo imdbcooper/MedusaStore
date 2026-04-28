@@ -13,10 +13,26 @@ export type DeliveryHubAdapterContext = {
 export type DeliveryHubListPickupPointsInput = {
   city?: string | null
   country_code?: string | null
+  geo_id?: number | null
+  pickup_point_ids?: string[] | null
+  operator_ids?: string[] | null
+  station_type?: "pickup_point" | "terminal" | "warehouse" | null
+  payment_method?: string | null
+  available_for_dropoff?: boolean | null
+  is_yandex_branded?: boolean | null
+  is_not_branded_partner_station?: boolean | null
+  payment_methods?: string[] | null
+  pickup_services?: string[] | null
 }
 
 export type DeliveryHubListPickupWindowsInput = {
   warehouse_id: string
+  destination_point_id?: string | null
+  items?: Array<{
+    quantity?: number
+    weight_grams?: number
+    price?: number
+  }>
 }
 
 export type DeliveryHubQuoteWarehouseToPickupPointInput = {

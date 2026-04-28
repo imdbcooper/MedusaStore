@@ -1,8 +1,9 @@
 import { isDeliveryHubError } from "../../errors"
 import type { YandexDeliveryClient } from "./client"
+import { YANDEX_DELIVERY_API_PATH } from "./endpoints"
 
 export const YANDEX_SHIPMENT_STATUS_POLLING_VERSION = 1
-export const YANDEX_SHIPMENT_STATUS_API_PATH = "/shipments/info"
+export const YANDEX_SHIPMENT_STATUS_API_PATH = YANDEX_DELIVERY_API_PATH.requestInfo
 
 export type YandexShipmentStatusNeutralStatus =
   | "accepted"
