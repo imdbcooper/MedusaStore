@@ -2,7 +2,7 @@
 
 > Operator-facing index for the final Delivery Hub checkout cutover review chain.
 >
-> Current verdict: **NO-GO for real checkout cutover** until a separate implementation tranche and explicit operator/technical approvals exist.
+> Current verdict: **NO-GO for production checkout source-of-truth cutover** until the new default-off implementation receives separate review plus explicit operator/technical approvals.
 >
 > Scope: navigation, evidence ordering, blocker inventory, rollback/fallback and redaction reminders only. This document does not run or enable runtime cutover.
 
@@ -13,13 +13,13 @@
 | Area | Status |
 |---|---|
 | Preview/shadow UI | `Preview/shadow ready` |
-| Cutover implementation | `Cutover implementation not enabled` |
+| Cutover implementation | `Default-off storefront commit path implemented; production not enabled` |
 | Production checkout source-of-truth | `NO-GO for production checkout source-of-truth` |
 | Existing checkout source-of-truth | Existing ApiShip/Medusa checkout remains active |
-| Commit invariant | `can_commit_shipping_method=false` / `canCommitShippingMethod=false` |
+| Commit invariant | Backend evidence remains `can_commit_shipping_method=false`; storefront commit eligibility is true only under explicit flag + ready mapped candidate |
 | Approval posture | Evidence and decision artifact are non-executable |
 
-This is the final review index for the current evidence chain. It intentionally stops before any real checkout source-of-truth switch.
+This is the review index for the evidence chain plus the first default-off implementation tranche. It intentionally stops before any production checkout source-of-truth switch.
 
 ---
 
@@ -42,7 +42,7 @@ Defined in [`package.json`](../package.json):
 - Evidence bundle check: `npm run evidence:delivery-hub-cutover:check`
 - Evidence bundle generation: `npm run evidence:delivery-hub-cutover`
 
-These commands remain evidence/review actions. They do not approve or perform checkout cutover.
+These commands remain evidence/review actions. They do not approve production checkout cutover; the updated browser smoke can exercise the local mock commit only under the explicit flag and ready candidate.
 
 ### Store API evidence endpoints
 
@@ -58,7 +58,7 @@ Endpoint outputs are evidence-only. They must keep commit controls disabled and 
 
 1. Run preview browser smoke:
    - `npm run smoke:delivery-hub-preview:browser`
-   - Expected posture: preview/shadow UI visible only when enabled, source-of-truth unchanged, no Delivery Hub shipping-method commit.
+   - Expected posture: preview/shadow UI visible only when enabled; flag-off makes no Delivery Hub shipping-method commit; flag-on with a ready mock candidate commits only the mapped mock Medusa shipping option.
 2. Run rollback browser smoke:
    - `npm run smoke:delivery-hub-rollback:browser`
    - Expected posture: flags-off fallback keeps existing ApiShip/Medusa checkout visible and active.
@@ -70,34 +70,34 @@ Endpoint outputs are evidence-only. They must keep commit controls disabled and 
    - `GET /store/delivery/cutover-preconditions`
    - `GET /store/delivery/cutover-candidate?cart_id=<cart_id>`
    - `GET /store/delivery/cutover-approval-template?cart_id=<cart_id>`
-   - Required invariant: `can_commit_shipping_method=false`, `canCommitShippingMethod=false`, `approval_is_executable=false`.
+   - Required invariant: backend `can_commit_shipping_method=false` and `approval_is_executable=false` remain non-executable evidence; storefront `canCommitShippingMethod` may become true only from explicit flag + ready mapped candidate.
 5. Complete the human decision record:
    - Use [`delivery_hub_cutover_decision_record_template.md`](./delivery_hub_cutover_decision_record_template.md).
-   - Allowed outcome for the current runtime state remains `NO-GO` or evidence accepted with commit disabled.
-6. Only then plan a separate implementation tranche:
-   - Any real checkout source-of-truth cutover must be a new scoped implementation/review task.
-   - It must explicitly preserve rollback/fallback and must not reuse this index as executable approval.
+   - Allowed outcome for production remains `NO-GO` or evidence accepted with production commit disabled until explicit rollout approval is recorded.
+6. Delegate separate implementation review and then plan rollout only if approved:
+   - The default-off code tranche must be reviewed separately before production enablement.
+   - Any production source-of-truth rollout must explicitly preserve rollback/fallback and must not reuse this index as executable approval.
 
 ---
 
-## 4. Remaining hard blockers before real cutover
+## 4. Remaining hard blockers before production cutover
 
-Real production checkout cutover remains blocked by all of the following:
+Production checkout source-of-truth cutover remains blocked by all of the following:
 
-- Delivery Hub-specific `setShippingMethod()` path is not implemented by design; the current mutation seam is [`cart.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts).
-- `canCommitShippingMethod=false` / `can_commit_shipping_method=false` invariants remain required; storefront normalization rejects commit-enabled candidate evidence in [`delivery-hub.ts`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts).
-- Executable approval state is disabled; decision artifacts are templates/evidence only.
+- Delivery Hub-specific `setShippingMethod()` path is implemented only as a default-off guarded storefront handoff through [`cart.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/cart.ts); it is not production-enabled by default.
+- Backend `can_commit_shipping_method=false` evidence invariants remain required; storefront [`delivery-hub.ts`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts) allows local `canCommitShippingMethod=true` only when the explicit cutover flag, ready candidate, safe guardrails and mapped option all pass.
+- Executable approval state is disabled; decision artifacts are templates/evidence only and do not themselves trigger commit.
 - Shipment lifecycle hardening is not enabled/live-validated for checkout source-of-truth cutover.
 - Production rollout/rollback rehearsal is not completed.
 - Explicit operator and technical-owner approval is not recorded as an executable release gate.
 
-If any evidence claims commit is enabled, approval is executable, or Delivery Hub is already checkout source-of-truth, treat the review as **NO-GO** and return the package for correction.
+If any evidence claims production commit is enabled by default, approval is executable, raw provider data is needed by storefront, or Delivery Hub is already production checkout source-of-truth, treat the review as **NO-GO** and return the package for correction.
 
 ---
 
 ## 5. Rollback/fallback statement
 
-Existing ApiShip/Medusa checkout remains the source-of-truth until a later, separately approved implementation changes it.
+Existing ApiShip/Medusa checkout remains the production source-of-truth until a later, separately approved rollout enables the default-off Delivery Hub commit path.
 
 For this review state:
 
@@ -130,6 +130,6 @@ Use presence markers, counts, safe correlation ids, redacted summaries, and scre
 
 ## 7. Final verdict for this index
 
-**NO-GO for real checkout cutover.**
+**NO-GO for production checkout source-of-truth cutover.**
 
-The current chain is ready for operator review as preview/shadow and evidence only. Real production checkout source-of-truth cutover requires a separate implementation tranche, separate approval gate, separate rollback rehearsal, and separate review.
+The current chain now includes a default-off implementation tranche that still requires separate code review. Real production checkout source-of-truth cutover requires explicit flag enablement, operator/technical approval, production rollback rehearsal, and separate review.

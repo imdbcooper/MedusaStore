@@ -2124,6 +2124,10 @@ export type DeliveryHubCommitEligibleShippingOption = {
 }
 
 export type DeliveryHubCommitEligibilityReasonCode =
+  | "cutover_flag_disabled"
+  | "missing_cutover_candidate"
+  | "cutover_candidate_not_ready"
+  | "cutover_candidate_option_mismatch"
   | "missing_saved_selection"
   | "missing_mode_code"
   | "selection_not_ready"
@@ -2148,11 +2152,12 @@ export type DeliveryHubCommitEligibilityModel = {
   expected_shipping_option_id: string | null
   current_shipping_option_id: string | null
   is_committed: boolean
+  canCommitShippingMethod: boolean
   reason_codes: DeliveryHubCommitEligibilityReasonCode[]
   hint_messages: string[]
 }
 
-export type DeliveryHubCheckoutCutoverGateMode = "disabled" | "preflight" | "blocked"
+export type DeliveryHubCheckoutCutoverGateMode = "disabled" | "preflight" | "ready" | "blocked"
 
 export type DeliveryHubCheckoutCutoverReadinessEvidenceCode =
   | "backend_live_smoke"
@@ -2171,7 +2176,7 @@ export type DeliveryHubCheckoutCutoverGateStatus = {
   mode: DeliveryHubCheckoutCutoverGateMode
   status_label: string
   detail_label: string
-  canCommitShippingMethod: false
+  canCommitShippingMethod: boolean
   required_readiness_evidence: DeliveryHubCheckoutCutoverReadinessEvidence[]
   blocker_labels: string[]
   hint_messages: string[]
@@ -3971,8 +3976,20 @@ export function parseDeliveryHubCheckoutCutoverEnabledFlag(value: unknown): bool
 
 export function buildDeliveryHubCheckoutCutoverGateStatus(input: {
   enabled?: boolean | string | null
+  candidate?: DeliveryHubCutoverCandidateResponse | null
+  available_shipping_options?: Array<{
+    id?: string | null
+    name?: string | null
+    provider_id?: string | null
+    data?: Record<string, unknown> | null
+  }> | null
 } = {}): DeliveryHubCheckoutCutoverGateStatus {
   const enabled = parseDeliveryHubCheckoutCutoverEnabledFlag(input.enabled)
+  const candidateGuard = evaluateDeliveryHubCutoverCandidateCommitGuard({
+    enabled,
+    candidate: input.candidate,
+    available_shipping_options: input.available_shipping_options,
+  })
   const requiredReadinessEvidence: DeliveryHubCheckoutCutoverReadinessEvidence[] = [
     {
       code: "backend_live_smoke",
@@ -3981,17 +3998,17 @@ export function buildDeliveryHubCheckoutCutoverGateStatus(input: {
     },
     {
       code: "browser_mock_smoke",
-      label: "Storefront mock browser smoke proves preview quote/save/clear without checkout commit",
+      label: "Storefront mock browser smoke proves flag-off rollback and flag-on commit with local mocks",
       status: "required",
     },
     {
       code: "rollback_plan",
-      label: "Rollback/fallback plan preserves existing ApiShip/Medusa checkout source-of-truth",
+      label: "Rollback/fallback plan preserves existing ApiShip/Medusa checkout source-of-truth when the cutover flag is off",
       status: "required",
     },
     {
       code: "approval_gate",
-      label: "Explicit checkout cutover approval gate records GO in the cutover plan",
+      label: "Explicit checkout cutover approval/review records GO before production enablement",
       status: "required",
     },
   ]
@@ -4007,36 +4024,132 @@ export function buildDeliveryHubCheckoutCutoverGateStatus(input: {
       required_readiness_evidence: requiredReadinessEvidence,
       blocker_labels: [
         "Cutover flag is disabled by default.",
-        "No Delivery Hub shipping-method commit implementation is approved in this step.",
+        "No Delivery Hub shipping-method commit is attempted while the flag is off.",
       ],
       hint_messages: [
-        "This runtime-visible gate is read-only/preflight status only and does not switch checkout.",
+        "Flag-off rollback returns to the existing ApiShip/Medusa shipping selection behavior.",
         "Use the existing ApiShip/Medusa shipping selection as the checkout source-of-truth.",
+      ],
+    }
+  }
+
+  if (candidateGuard.canCommitShippingMethod) {
+    return {
+      enabled: true,
+      mode: "ready",
+      status_label: "Delivery Hub checkout cutover flag is enabled and a ready candidate maps to an available shipping option",
+      detail_label:
+        "The storefront may commit only the matched Medusa shipping option id from the Delivery Hub candidate; provider payloads, credentials and shipment execution remain out of scope.",
+      canCommitShippingMethod: true,
+      required_readiness_evidence: requiredReadinessEvidence,
+      blocker_labels: [],
+      hint_messages: [
+        "Commit is still default-off and available only for this explicit flag-on runtime.",
+        "Turning the flag off removes this commit path and preserves the legacy manual shipping selection fallback.",
       ],
     }
   }
 
   return {
     enabled: true,
-    mode: "preflight",
-    status_label: "Delivery Hub checkout cutover flag is recognized for preflight only",
+    mode: "blocked",
+    status_label: "Delivery Hub checkout cutover flag is enabled but commit is fail-closed",
     detail_label:
-      "NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED is explicitly true, but real shipping-method commit remains blocked until a separate approved implementation tranche wires it safely.",
+      "The flag is explicit true, but the candidate is missing, not ready, invalid, or does not map to an available Medusa shipping option. Existing checkout shipping remains available.",
     canCommitShippingMethod: false,
     required_readiness_evidence: requiredReadinessEvidence,
-    blocker_labels: [
-      "canCommitShippingMethod=false invariant is enforced for this cutover-prep step.",
-      "Explicit implementation and approval are still required before any Delivery Hub setShippingMethod() path can exist.",
-      "Existing ApiShip/Medusa checkout remains source-of-truth while this gate is preflight-only.",
-    ],
+    blocker_labels: candidateGuard.reason_codes.map((reason) => reason.replace(/_/g, " ")),
     hint_messages: [
-      "The flag is visible to operators/devs, but checkout cutover has not happened.",
-      "Do not treat this status as active checkout source-of-truth or fulfillment execution readiness.",
+      "No automatic fallback mutation is attempted from a bad Delivery Hub candidate.",
+      "Keep or choose an existing ApiShip/Medusa shipping method while the Delivery Hub candidate is blocked.",
     ],
   }
 }
 
+export function evaluateDeliveryHubCutoverCandidateCommitGuard(input: {
+  enabled?: boolean | string | null
+  candidate?: DeliveryHubCutoverCandidateResponse | null
+  available_shipping_options?: Array<{
+    id?: string | null
+    name?: string | null
+    provider_id?: string | null
+    data?: Record<string, unknown> | null
+  }> | null
+}): {
+  canCommitShippingMethod: boolean
+  shipping_option_id: string | null
+  shipping_option_label: string | null
+  reason_codes: DeliveryHubCommitEligibilityReasonCode[]
+} {
+  const enabled = parseDeliveryHubCheckoutCutoverEnabledFlag(input.enabled)
+  const candidate = input.candidate ?? null
+  const reasonCodes: DeliveryHubCommitEligibilityReasonCode[] = []
+  const pushReason = (code: DeliveryHubCommitEligibilityReasonCode) => {
+    if (!reasonCodes.includes(code)) {
+      reasonCodes.push(code)
+    }
+  }
+
+  if (!enabled) {
+    pushReason("cutover_flag_disabled")
+  }
+
+  if (!candidate) {
+    pushReason("missing_cutover_candidate")
+    return {
+      canCommitShippingMethod: false,
+      shipping_option_id: null,
+      shipping_option_label: null,
+      reason_codes: reasonCodes,
+    }
+  }
+
+  const candidateShippingOptionId = readOptionalString(candidate.candidate_shipping_option_id)
+  const candidateModeCode = candidateShippingOptionId?.startsWith("deliveryhub:")
+    ? candidateShippingOptionId.replace(/^deliveryhub:/, "")
+    : null
+  const candidateReady =
+    candidate.selection_present &&
+    candidate.candidate_status === "ready_for_review" &&
+    !!candidateShippingOptionId &&
+    candidate.checkout_source_of_truth === "unchanged" &&
+    candidate.guardrails.no_network_calls &&
+    candidate.guardrails.no_provider_payloads &&
+    candidate.guardrails.no_secret_material &&
+    candidate.guardrails.shipment_lifecycle_not_enabled &&
+    candidate.guardrails.can_commit_shipping_method === false &&
+    candidate.can_commit_shipping_method === false &&
+    isDeliveryHubQuoteType(candidateModeCode)
+
+  if (!candidateReady) {
+    pushReason("cutover_candidate_not_ready")
+  }
+
+  const matchedOption = candidateReady
+    ? input.available_shipping_options?.find((option) =>
+        isDeliveryHubCommitEligibleOption(
+          option,
+          candidateShippingOptionId as string,
+          candidateModeCode as DeliveryHubQuoteType
+        )
+      ) ?? null
+    : null
+
+  if (!matchedOption) {
+    pushReason("cutover_candidate_option_mismatch")
+  }
+
+  return {
+    canCommitShippingMethod: enabled && candidateReady && !!matchedOption,
+    shipping_option_id: matchedOption?.id ?? null,
+    shipping_option_label: matchedOption?.name ?? null,
+    reason_codes: reasonCodes,
+  }
+}
+
 export function buildDeliveryHubCommitEligibilityModel(input: {
+  cutover_enabled?: boolean | string | null
+  cutover_candidate?: DeliveryHubCutoverCandidateResponse | null
   persisted_selection?: DeliveryHubSelectionResponse | null
   readiness?: DeliveryHubReadinessResponse | null
   available_shipping_options?: Array<{
@@ -4053,7 +4166,12 @@ export function buildDeliveryHubCommitEligibilityModel(input: {
   const readiness = input.readiness ?? null
   const currentShippingOptionId =
     readOptionalString(input.current_shipping_method?.shipping_option_id) ?? null
-  const reasonCodes: DeliveryHubCommitEligibilityReasonCode[] = []
+  const cutoverGuard = evaluateDeliveryHubCutoverCandidateCommitGuard({
+    enabled: input.cutover_enabled,
+    candidate: input.cutover_candidate,
+    available_shipping_options: input.available_shipping_options,
+  })
+  const reasonCodes: DeliveryHubCommitEligibilityReasonCode[] = [...cutoverGuard.reason_codes]
   const pushReason = (code: DeliveryHubCommitEligibilityReasonCode) => {
     if (!reasonCodes.includes(code)) {
       reasonCodes.push(code)
@@ -4075,6 +4193,7 @@ export function buildDeliveryHubCommitEligibilityModel(input: {
       expected_shipping_option_id: null,
       current_shipping_option_id: currentShippingOptionId,
       is_committed: false,
+      canCommitShippingMethod: false,
       reason_codes: reasonCodes,
       hint_messages: [
         "Only the persisted neutral Delivery Hub contract is eligible for storefront handoff; raw provider payloads are never used here.",
@@ -4121,7 +4240,10 @@ export function buildDeliveryHubCommitEligibilityModel(input: {
     !reasonCodes.includes("selection_not_ready") &&
     !reasonCodes.includes("selection_mismatch") &&
     !reasonCodes.includes("provider_mismatch") &&
-    !reasonCodes.includes("missing_delivery_hub_option")
+    !reasonCodes.includes("missing_delivery_hub_option") &&
+    !reasonCodes.includes("cutover_candidate_option_mismatch") &&
+    !reasonCodes.includes("cutover_candidate_not_ready") &&
+    !reasonCodes.includes("missing_cutover_candidate")
 
   if (isCommitted) {
     return {
@@ -4136,6 +4258,7 @@ export function buildDeliveryHubCommitEligibilityModel(input: {
       expected_shipping_option_id: expectedShippingOptionId,
       current_shipping_option_id: currentShippingOptionId,
       is_committed: true,
+      canCommitShippingMethod: false,
       reason_codes: reasonCodes.filter((code) => code !== "missing_delivery_hub_option"),
       hint_messages: [
         "This only commits the Medusa shipping method id; fulfillment execution remains blocked separately in the backend.",
@@ -4143,7 +4266,7 @@ export function buildDeliveryHubCommitEligibilityModel(input: {
     }
   }
 
-  if (reasonCodes.length === 0 && matchedOption) {
+  if (reasonCodes.length === 0 && matchedOption && cutoverGuard.canCommitShippingMethod) {
     return {
       tone: "positive",
       status: "ready",
@@ -4157,6 +4280,7 @@ export function buildDeliveryHubCommitEligibilityModel(input: {
       expected_shipping_option_id: expectedShippingOptionId,
       current_shipping_option_id: currentShippingOptionId,
       is_committed: false,
+      canCommitShippingMethod: true,
       reason_codes: [],
       hint_messages: [
         "Commit uses only the matched Medusa shipping option id derived from the saved neutral Delivery Hub selection.",
@@ -4180,6 +4304,7 @@ export function buildDeliveryHubCommitEligibilityModel(input: {
     expected_shipping_option_id: expectedShippingOptionId,
     current_shipping_option_id: currentShippingOptionId,
     is_committed: false,
+    canCommitShippingMethod: false,
     reason_codes: reasonCodes,
     hint_messages: uniqueDeliveryHubMessages([
       reasonCodes.includes("selection_not_ready")
@@ -4193,6 +4318,18 @@ export function buildDeliveryHubCommitEligibilityModel(input: {
         : null,
       reasonCodes.includes("provider_mismatch")
         ? "The cart is currently committed to a different Delivery Hub contour than the saved neutral selection, so no automatic switch is attempted."
+        : null,
+      reasonCodes.includes("cutover_flag_disabled")
+        ? "NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED must be explicit true before this Delivery Hub commit handoff can run."
+        : null,
+      reasonCodes.includes("missing_cutover_candidate")
+        ? "Cutover candidate evidence is unavailable; fail closed to existing checkout shipping."
+        : null,
+      reasonCodes.includes("cutover_candidate_not_ready")
+        ? "Cutover candidate must be ready_for_review, selection-present and guardrail-clean before commit."
+        : null,
+      reasonCodes.includes("cutover_candidate_option_mismatch")
+        ? "Cutover candidate shipping option id must map to an available Delivery Hub Medusa shipping option on this cart."
         : null,
       "Saved Delivery Hub metadata is never treated as fulfillment confirmation or shipment creation.",
     ]),

@@ -1,12 +1,12 @@
 # Delivery Hub checkout cutover readiness plan and approval gate
 
-> Status: formal readiness/approval gate for a future checkout cutover.
+> Status: formal readiness/approval gate plus default-off implementation status for the first controlled checkout commit path.
 >
-> Current decision: **NO-GO for real checkout source-of-truth cutover** until this document's approval gates are explicitly passed in a later scoped task.
+> Current decision: **NO-GO for production checkout source-of-truth cutover** until explicit operator/technical approvals and rollout review pass. A storefront commit path now exists only behind `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` and ready-candidate guardrails.
 >
 > Operator go/no-go review index: [`delivery_hub_cutover_go_no_go_index.md`](./delivery_hub_cutover_go_no_go_index.md).
 >
-> Scope of this document: readiness gate plus runtime-visible, read-only/preflight storefront status surfaces for the reserved flag, cutover preconditions verifier, candidate planner, and non-executable operator decision artifact. It does not implement runtime checkout cutover, does not call `setShippingMethod()` for Delivery Hub, does not remove ApiShip/legacy compatibility, and does not perform shipment create/cancel/status/retry.
+> Scope of this document: readiness gate plus runtime-visible storefront cutover guardrails for the default-off flag, cutover preconditions verifier, candidate planner, non-executable operator decision artifact, and the new guarded commit handoff. It is not production-enabled by default, does not remove ApiShip/legacy compatibility, and does not perform shipment create/cancel/status/retry.
 
 ---
 
@@ -22,18 +22,17 @@ The Delivery Hub contour has already reached these confirmed milestones:
   - warehouse: quote `4`, neutral selection saved, checkout source-of-truth unchanged.
 - Storefront Delivery Hub Preview/Shadow UI exists and is covered by source-level tests plus mock browser smokes: `npm run smoke:delivery-hub-preview:browser` for preview behavior and `npm run smoke:delivery-hub-rollback:browser` for rollback/fallback drill proof.
 - A read-only Store API verifier `GET /store/delivery/cutover-preconditions` aggregates safe precondition evidence labels for future planning only; it uses stored/configured state, does not call Yandex/live providers, and always reports `can_commit_shipping_method=false`.
-- A read-only Store API candidate planner `GET /store/delivery/cutover-candidate?cart_id=<cart_id>` summarizes the saved neutral selection plus matching Delivery Hub shipping-option candidate without enabling commit.
+- A read-only Store API candidate planner `GET /store/delivery/cutover-candidate?cart_id=<cart_id>` summarizes the saved neutral selection plus matching Delivery Hub shipping-option candidate. Storefront treats this evidence as one required input for local guarded commit eligibility; the endpoint itself remains non-executable and still reports `can_commit_shipping_method=false`.
 - A read-only Store API decision artifact template `GET /store/delivery/cutover-approval-template?cart_id=<cart_id>` now binds preconditions plus optional candidate evidence into the non-executable artifact type `delivery_hub_checkout_cutover_decision`, with default `decision_status=not_requested` and commit controls locked false.
-- The preview/shadow UI is intentionally labeled as metadata-only: quote and selection can be exercised, the cutover gate, verifier, candidate planner, and decision artifact can be observed, but the committed checkout shipping method remains the existing Medusa/ApiShip/legacy-compatible contour.
+- The preview/shadow UI remains default-off for commit: quote and selection can be exercised, the cutover gate, verifier, candidate planner, and decision artifact can be observed, and a commit CTA is enabled only when the explicit cutover flag is true and a ready candidate maps to an available Delivery Hub Medusa shipping option. Flag-off keeps existing Medusa/ApiShip/legacy-compatible checkout behavior.
 
-### Explicit non-goal for the current checkpoint
+### Explicit non-goals and limits for the current checkpoint
 
 This checkpoint is **not** a checkout cutover. It must not:
 
-- wire a Delivery Hub path into `setShippingMethod()`;
 - make Delivery Hub the checkout source of truth;
 - remove or functionally change ApiShip/legacy compatibility;
-- change production runtime code paths;
+- enable production cutover by default or change production source-of-truth without explicit flag/approval;
 - patch official Medusa Admin internals;
 - create, cancel, refresh, retry, confirm, or otherwise execute shipments;
 - expose merchant credentials, auth headers, ciphertext, tokens, publishable key values, or raw provider payloads.
@@ -51,7 +50,7 @@ A future Delivery Hub checkout cutover means all of the following become true in
 5. The committed Medusa cart/order/fulfillment metadata carries enough neutral Delivery Hub references for later fulfillment handoff without exposing provider raw payloads.
 6. Existing Medusa/ApiShip/legacy shipping remains a fallback and rollback path.
 
-Until those conditions are approved and implemented, Delivery Hub remains quote/selection/preview metadata only for checkout.
+The first guarded implementation now covers item 4 only under the explicit flag and ready-candidate guardrails. Production rollout remains a separate approval/review decision; flag-off remains quote/selection/preview metadata only for checkout.
 
 ---
 
@@ -134,9 +133,9 @@ Required before approval:
 - Preview/shadow UI remains feature-flagged and disabled by default.
 - Preview UI has already demonstrated neutral quote and save/clear behavior without checkout commit.
 - Browser mock smoke verifies disabled/enabled flag behavior, quote rendering, selection save/clear, no-secret UI text, and unchanged checkout source of truth.
-- Rollback browser drill `npm run smoke:delivery-hub-rollback:browser` verifies all-flags-off fallback, preview-enabled/cutover-false source-of-truth preservation, preview-enabled/cutover-true preflight-only posture, and simulated flags-off restart after cutover-true rehearsal.
+- Rollback browser drill `npm run smoke:delivery-hub-rollback:browser` verifies all-flags-off fallback, preview-enabled/cutover-false source-of-truth preservation, preview-enabled/cutover-true guarded mock commit only for a ready mapped candidate, and simulated flags-off restart after cutover-true rehearsal.
 - Manual preview validation is recorded only as readiness evidence, not as cutover approval.
-- No Delivery Hub preview path calls `setShippingMethod()` before the go/no-go gate passes.
+- No Delivery Hub preview path calls `setShippingMethod()` while the cutover flag is false; when true, the only allowed call is the guarded matched-option handoff with no provider payload data.
 
 ### 3.7 Fulfillment bridge readiness
 
@@ -274,10 +273,11 @@ Go only if:
 - browser mock smoke passes;
 - cutover flag is default disabled;
 - read-only cutover preconditions verifier is visible when available and fails safe when unavailable;
-- verifier and UI continue to show `can_commit_shipping_method=false` / `canCommitShippingMethod=false`;
-- no `setShippingMethod()` call is possible unless a future approved cutover implementation explicitly adds the path and backend readiness returns an exact match.
+- backend verifier and approval artifact continue to show `can_commit_shipping_method=false` / evidence-only posture;
+- storefront local `canCommitShippingMethod` remains `false` while the explicit cutover flag is off or the candidate is missing/bad/unmapped;
+- storefront local `canCommitShippingMethod` may become `true` only when the explicit cutover flag is `true`, the candidate is ready, and `candidate_shipping_option_id` maps to an available Delivery Hub Medusa shipping option.
 
-Current status: **preflight evidence aggregator exists; real commit path remains not approved in this checkpoint**.
+Current status: **default-off storefront commit handoff implemented; production approval remains pending and the flag remains disabled by default**.
 
 ### Gate D — shipping-option match gate
 
@@ -351,10 +351,10 @@ Required semantics:
 
 - default is `false` in all examples/templates;
 - `false` means Delivery Hub remains preview/neutral-selection-only and existing checkout shipping source-of-truth remains active;
-- `true` may only enable the future commit UI/path after all approval gates pass;
+- `true` may enable the guarded local/staging commit UI/path only when a ready candidate maps to an available Delivery Hub Medusa shipping option; production enablement still requires explicit approval/review;
 - the flag must not contain secrets and must not encode provider credentials or ids;
-- the current storefront implementation parses the flag with explicit-true semantics only and exposes a read-only/preflight status in the preview/shadow UI;
-- even when the flag is `true`, current runtime status remains `canCommitShippingMethod=false` and real commit remains blocked pending separate implementation/approval;
+- the current storefront implementation parses the flag with explicit-true semantics only and exposes gate status plus commit eligibility in the preview/shadow UI;
+- when the flag is `true`, the storefront may call the existing Medusa `setShippingMethod()` only for a ready candidate whose `candidate_shipping_option_id` maps to an available Delivery Hub option; bad/missing candidates fail closed with `canCommitShippingMethod=false`;
 - backend execution/shipment gates remain separate and are not implied by this storefront checkout flag.
 
 This flag is intentionally separate from `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED`. Preview validates quote/selection behavior; cutover controls future shipping-method commit behavior.
@@ -377,11 +377,11 @@ Required fallback rules:
 
 ---
 
-## 9. Future `setShippingMethod()` path and required preconditions
+## 9. Guarded `setShippingMethod()` path and required preconditions
 
 The existing storefront helper `setShippingMethod()` in `medusa-agency-boilerplate-storefront/src/lib/data/cart.ts` remains the only acceptable Medusa shipping-method mutation seam for checkout.
 
-A future Delivery Hub path may call `setShippingMethod()` only after all of these preconditions pass in the same user action/request cycle:
+The Delivery Hub path may call `setShippingMethod()` only after all of these preconditions pass in the same user action/request cycle:
 
 1. `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true`.
 2. The shopper has a current cart id.
@@ -394,7 +394,7 @@ A future Delivery Hub path may call `setShippingMethod()` only after all of thes
 9. Fallback shipping remains available when any precondition fails.
 10. The commit result is observed with safe logs/diagnostics and can be rolled back by disabling the flag for new attempts.
 
-This document does not add that call and does not approve adding it without a separate implementation/review tranche.
+The current implementation adds this call path only behind the explicit flag and guardrails above. This document does not approve production enablement; review and operator/technical release approval remain separate.
 
 ---
 
@@ -423,10 +423,10 @@ This document does not add that call and does not approve adding it without a se
 - Preview flag disabled: Delivery Hub block hidden or preview-only, fallback shipping visible.
 - Preview flag enabled but cutover flag disabled: quote/save/clear works, no shipping-method commit.
 - Mock verifier response is visible at `delivery-hub-cutover-preconditions-status`, includes required/blocked preconditions, and preserves `canCommitShippingMethod=false`.
-- Mock candidate response is visible at `delivery-hub-cutover-candidate-status`, summarizes the candidate without enabling commit.
+- Mock candidate response is visible at `delivery-hub-cutover-candidate-status`, summarizes the candidate, and contributes to local commit eligibility only when the explicit cutover flag is true.
 - Mock decision artifact response is visible at `delivery-hub-cutover-approval-artifact`, says `Decision artifact only / no approval execution`, shows pending signoff placeholders, and preserves `can_commit_shipping_method=false`, `canCommitShippingMethod=false`, and `approval_is_executable=false`.
-- Current cutover-prep flag enabled with mocked ready backend: the UI recognizes the flag but still shows preflight/blocked-only and `canCommitShippingMethod=false`; no commit CTA/path exists in this step.
-- Future approved cutover implementation only: commit CTA may appear only when exact preconditions pass.
+- Cutover flag enabled with mocked ready backend: the UI shows `canCommitShippingMethod=true`, enables the commit CTA, and commits only the expected mock Medusa shipping option id with no provider payload.
+- Cutover flag enabled with missing/bad candidate: UI remains fail-closed with `canCommitShippingMethod=false` and no commit request.
 - Blocked states: stale selection, missing option, mismatched option, failed readiness.
 - UI text scan confirms no token/auth/ciphertext/raw provider/publishable key value.
 
@@ -505,20 +505,20 @@ If any required field is missing, the default decision is **NO-GO**.
 
 ## 13. Current checkpoint outcome
 
-This checkpoint now has a runtime-visible default-off gate/preflight status plus a read-only cutover preconditions verifier in the storefront preview/shadow UI, but still does not implement checkout cutover.
+This checkpoint now has a runtime-visible default-off guarded checkout commit path in the storefront preview/shadow UI. It remains not production-enabled by default and still requires explicit flag, ready candidate, mapped shipping option, review, and operator/technical approval before any production source-of-truth rollout.
 
 Current outcome:
 
 - readiness plan: prepared;
 - reserved flag parsing: explicit `true` only, default false;
-- runtime visibility: `delivery-hub-cutover-gate-status` shows disabled/default-off or true/preflight status;
+- runtime visibility: `delivery-hub-cutover-gate-status` shows disabled/default-off, fail-closed blocked, or ready mapped-candidate status;
 - preconditions verifier: `GET /store/delivery/cutover-preconditions` and `delivery-hub-cutover-preconditions-status` aggregate safe evidence/preflight labels only;
-- commit invariant: `can_commit_shipping_method=false` / `canCommitShippingMethod=false` in verifier and gate modes;
-- checkout cutover: **not performed**;
-- Delivery Hub call to `setShippingMethod()`: **not added**;
+- commit invariant: backend verifier/artifact controls remain `can_commit_shipping_method=false`; storefront `canCommitShippingMethod` becomes true only under explicit flag plus ready mapped candidate;
+- checkout cutover: **implemented only as default-off guarded storefront commit handoff, not production-enabled**;
+- Delivery Hub call to `setShippingMethod()`: **added only for the matched Medusa shipping option id after guard success**;
 - ApiShip/legacy compatibility: **preserved**;
 - shipment create/cancel/status/retry: **not performed**;
-- next required step before real cutover implementation: review and approval of this plan, then a separately scoped cutover implementation task if and only if the gate result is `GO`.
+- next required step before production rollout: separate review plus explicit operator/technical approval and rollout decision.
 
 
 ### Read-only cutover candidate planner (pre-approval evidence only)

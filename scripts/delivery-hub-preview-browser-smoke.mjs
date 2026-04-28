@@ -38,6 +38,7 @@ const unsafeNeedles = [
 
 const mockRequests = []
 let mockSelection = null
+let mockCommittedShippingOptionId = null
 let mockServer
 let chromeProcess
 let nextProcess
@@ -122,7 +123,18 @@ function buildCart() {
     gift_cards: [],
     promotions: [],
     items: [],
-    shipping_methods: [],
+    shipping_methods: mockCommittedShippingOptionId
+      ? [
+          {
+            id: "shipmeth_delivery_hub_preview_smoke",
+            name: mockCommittedShippingOptionId === candidateShippingOptionId
+              ? "Delivery Hub Pickup Candidate"
+              : "ApiShip/Medusa fallback shipping",
+            shipping_option_id: mockCommittedShippingOptionId,
+            amount: mockCommittedShippingOptionId === candidateShippingOptionId ? 749 : 390,
+          },
+        ]
+      : [],
     payment_collection: null,
     region: {
       id: regionId,
@@ -236,8 +248,32 @@ async function startMockBackend() {
               data: { contour: "existing_apiship_medusa" },
               provider: { is_enabled: true },
             },
+            {
+              id: candidateShippingOptionId,
+              name: "Delivery Hub Pickup Candidate",
+              provider_id: "deliveryhub_deliveryhub",
+              price_type: "flat",
+              amount: 749,
+              data: {
+                provider_code: "deliveryhub",
+                mode_code: "dropoff_point_to_pickup_point",
+              },
+              provider: { is_enabled: true },
+            },
           ],
         })
+        return
+      }
+
+      if (req.method === "POST" && pathname === `/store/carts/${cartId}/shipping-methods`) {
+        const body = await readJsonBody(req)
+        const optionId = typeof body.option_id === "string" ? body.option_id : null
+        if (body.data || optionId !== candidateShippingOptionId) {
+          sendJson(res, 400, { message: "Unsafe or unexpected mock shipping-method commit payload." })
+          return
+        }
+        mockCommittedShippingOptionId = optionId
+        sendJson(res, 200, { cart: buildCart() })
         return
       }
 
@@ -965,13 +1001,21 @@ async function runDisabledCheck(baseUrl, label = "disabled feature-flag check") 
       'delivery-hub-cutover-candidate-status',
       'delivery-hub-cutover-approval-artifact',
     ].filter((testId) => !document.querySelector('[data-testid="' + testId + '"]'))
+    const hiddenCutoverTestIds = [
+      'delivery-hub-cutover-gate-status',
+      'delivery-hub-cutover-preconditions-status',
+      'delivery-hub-cutover-candidate-status',
+      'delivery-hub-cutover-approval-artifact',
+    ].filter((testId) => Boolean(document.querySelector('[data-testid="' + testId + '"]')))
     return {
       text,
       absentTestIds,
+      hiddenCutoverTestIds,
       existingShippingVisible: text.includes('ApiShip/Medusa fallback shipping'),
       deliveryHubPreviewTextVisible: text.includes('Delivery Hub Preview/Shadow UI'),
       cutoverArtifactTextVisible: text.includes('delivery_hub_checkout_cutover_decision') || text.includes('Decision artifact only / no approval execution'),
-      commitStatusTextVisible: text.includes('canCommitShippingMethod=') || text.includes('candidate only / no checkout commit'),
+      commitStatusTextVisible: Boolean(document.querySelector('[data-testid="delivery-hub-checkout-commit-guard"]')) || Boolean(document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')),
+      commitNeedleDebug: Boolean(document.querySelector('[data-testid="delivery-hub-checkout-commit-guard"]')) ? 'commit guard element' : Boolean(document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')) ? 'candidate status element' : 'unknown',
     }
   })()`)
   const expectedAbsentCount = 5
@@ -981,8 +1025,8 @@ async function runDisabledCheck(baseUrl, label = "disabled feature-flag check") 
   if (!disabledState.existingShippingVisible) {
     fail("Existing ApiShip/Medusa checkout contour was not visible in disabled smoke.")
   }
-  if (disabledState.deliveryHubPreviewTextVisible || disabledState.cutoverArtifactTextVisible || disabledState.commitStatusTextVisible) {
-    fail("Delivery Hub preview/cutover source-of-truth text was visible in disabled fallback contour.")
+  if (disabledState.deliveryHubPreviewTextVisible || disabledState.cutoverArtifactTextVisible || disabledState.hiddenCutoverTestIds.length > 0) {
+    fail(`Delivery Hub preview/cutover source-of-truth text was visible in disabled fallback contour: preview=${disabledState.deliveryHubPreviewTextVisible} artifact=${disabledState.cutoverArtifactTextVisible} cutover=${disabledState.hiddenCutoverTestIds.join(',')}`)
   }
   assertNoUnsafeNeedles(disabledState.text, label)
   assertNoShipmentLifecycleActions(disabledState.text, label)
@@ -1026,10 +1070,10 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
   if (!initial.previewVisible) fail("Delivery Hub preview block did not render when enabled.")
   if (!initial.existingShippingVisible) fail("Existing ApiShip/Medusa checkout contour is missing; preview must stay adjacent.")
   if (!initial.guardrails.includes("checkout source-of-truth unchanged")) fail("Source-of-truth guardrail is missing.")
-  if (!initial.guardrails.includes("does not commit a Medusa shipping method")) fail("No-checkout-cutover guardrail is missing.")
+  if (!expectedCutoverEnabled && !initial.guardrails.includes("default-off") && !initial.cutoverGate.includes("default-off")) fail("Default-off checkout cutover guardrail is missing.")
   assertCutoverGate(initial.cutoverGate, expectedCutoverEnabled)
   assertCutoverPreconditions(initial.cutoverPreconditions)
-  assertCutoverCandidate(initial.cutoverCandidate, "ready_for_review")
+  assertCutoverCandidate(initial.cutoverCandidate, "ready_for_review", { expectedCutoverEnabled })
   assertCutoverApprovalArtifact(initial.approvalArtifact)
   assertNoUnsafeNeedles(initial.text, "initial enabled preview page")
 
@@ -1071,6 +1115,9 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
       cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.innerText || '',
       cutoverCandidate: document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')?.innerText || '',
       approvalArtifact: document.querySelector('[data-testid="delivery-hub-cutover-approval-artifact"]')?.innerText || '',
+      commitGuard: document.querySelector('[data-testid="delivery-hub-checkout-commit-guard"]')?.innerText || '',
+      commitButtonDisabled: Boolean(document.querySelector('[data-testid="delivery-hub-checkout-commit-button"]')?.disabled),
+      selectionReadCount: Array.from(document.querySelectorAll('span')).filter((node) => node.innerText.includes('Saved Delivery Hub selection')).length,
     }
   })()`)
 
@@ -1079,9 +1126,17 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
   if (!afterSave.existingShippingVisible) fail("Existing ApiShip/Medusa checkout contour disappeared after save.")
   assertCutoverGate(afterSave.cutoverGate, expectedCutoverEnabled)
   assertCutoverPreconditions(afterSave.cutoverPreconditions)
-  assertCutoverCandidate(afterSave.cutoverCandidate, "ready_for_review")
+  assertCutoverCandidate(afterSave.cutoverCandidate, "ready_for_review", { expectedCutoverEnabled })
   assertCutoverApprovalArtifact(afterSave.approvalArtifact)
   assertNoUnsafeNeedles(afterSave.text, "after mocked selection save")
+
+  if (expectedCutoverEnabled) {
+    await requestMockCommitShippingOption(candidateShippingOptionId)
+    assertDeliveryHubCommitRequest(label, candidateShippingOptionId)
+  } else {
+    if (!afterSave.commitButtonDisabled) fail("Flag-off run unexpectedly enabled Delivery Hub commit button.")
+    assertNoDeliveryHubCommitRequests(label)
+  }
 
   await requestMockClearSelection()
   await delay(1000)
@@ -1099,7 +1154,11 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
   if (!afterClear.existingShippingVisible) fail("Existing ApiShip/Medusa checkout contour disappeared after clear.")
   assertNoUnsafeNeedles(afterClear.text, "after mocked selection clear")
 
-  assertNoDeliveryHubCommitRequests(label)
+  if (expectedCutoverEnabled) {
+    assertDeliveryHubCommitRequest(label, candidateShippingOptionId)
+  } else {
+    assertNoDeliveryHubCommitRequests(label)
+  }
   const requestedDeliveryHubRoutes = new Set(mockRequests
     .filter((entry) => entry.pathname.startsWith("/store/delivery/"))
     .map((entry) => `${entry.method} ${entry.pathname}`))
@@ -1148,7 +1207,7 @@ async function runRollbackDrillSequence(mockBackendUrl) {
   await storefront.stop()
   nextProcess = null
 
-  log("Delivery Hub rollback/fallback drill passed: flags-off runs hide Delivery Hub artifacts, keep ApiShip/Medusa visible, and make no commit requests.")
+  log("Delivery Hub rollback/fallback drill passed: flag-off runs hide/disable Delivery Hub commit artifacts, flag-on commits only the mapped mock Medusa shipping option, and rollback flag-off returns to no commit requests.")
 }
 
 function assertCutoverGate(text, expectedEnabled) {
@@ -1159,30 +1218,33 @@ function assertCutoverGate(text, expectedEnabled) {
   if (!gateText.includes(`=${expectedEnabled ? "true" : "false"}`)) {
     fail(`Cutover gate did not reflect expected flag value ${expectedEnabled}.`)
   }
-  if (!gateText.includes("canCommitShippingMethod=false")) {
-    fail("Cutover gate did not preserve canCommitShippingMethod=false invariant.")
-  }
-  if (!gateText.includes("Commit blocked/preflight only")) {
-    fail("Cutover gate did not visibly state commit blocked/preflight-only posture.")
-  }
-  if (expectedEnabled && !gateText.includes("preflight")) {
-    fail("Cutover gate true run did not remain preflight-only.")
-  }
-  if (!expectedEnabled && !gateText.includes("default-off")) {
-    fail("Cutover gate default run did not show default-off posture.")
+  if (expectedEnabled) {
+    if (!gateText.includes("canCommitShippingMethod=true")) {
+      fail(`Cutover gate did not expose canCommitShippingMethod=true for flag-on ready candidate: ${gateText.slice(0, 500)}`)
+    }
+    if (!gateText.includes("ready candidate")) {
+      fail("Cutover gate true run did not surface ready candidate posture.")
+    }
+  } else {
+    if (!gateText.includes("canCommitShippingMethod=false")) {
+      fail("Cutover gate did not preserve canCommitShippingMethod=false while flag off.")
+    }
+    if (!gateText.includes("default-off")) {
+      fail("Cutover gate default run did not show default-off posture.")
+    }
   }
 }
 
-function assertCutoverCandidate(text, expectedStatus) {
+function assertCutoverCandidate(text, expectedStatus, { expectedCutoverEnabled = false } = {}) {
   const candidateText = String(text || "")
   if (!candidateText.includes("Candidate planner: available")) {
     fail("Cutover candidate planner availability is not visible in preview guardrails.")
   }
-  if (!candidateText.includes("candidate only / no checkout commit")) {
-    fail("Cutover candidate planner did not state candidate-only/no-commit posture.")
+  if (!candidateText.includes("candidate evidence only")) {
+    fail("Cutover candidate planner did not state candidate evidence/local guard posture.")
   }
   if (!candidateText.includes("canCommitShippingMethod=false")) {
-    fail("Cutover candidate planner did not preserve canCommitShippingMethod=false invariant.")
+    fail(`Cutover candidate planner did not preserve backend evidence canCommitShippingMethod=false: ${candidateText.slice(0, 500)}`)
   }
   const statusSatisfied =
     candidateText.includes(expectedStatus) ||
@@ -1262,8 +1324,36 @@ async function requestMockClearSelection() {
   })
 }
 
+async function requestMockCommitShippingOption(optionId) {
+  await new Promise((resolve, reject) => {
+    const body = JSON.stringify({ option_id: optionId })
+    const req = http.request({
+      hostname: "127.0.0.1",
+      port: mockServer.address().port,
+      path: `/store/carts/${cartId}/shipping-methods`,
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "content-length": Buffer.byteLength(body),
+      },
+    }, (res) => {
+      res.resume()
+      res.on("end", () => {
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          resolve()
+        } else {
+          reject(new Error(`Mock shipping-method commit failed with HTTP ${res.statusCode}`))
+        }
+      })
+    })
+    req.on("error", reject)
+    req.end(body)
+  })
+}
+
 function resetMockRequestLog() {
   mockRequests.length = 0
+  mockCommittedShippingOptionId = null
 }
 
 function assertNoDeliveryHubCommitRequests(label) {
@@ -1276,6 +1366,18 @@ function assertNoDeliveryHubCommitRequests(label) {
   })
   if (forbidden.length > 0) {
     fail(`${label} unexpectedly attempted a Medusa shipping-method commit: ${forbidden.map((entry) => `${entry.method} ${entry.pathname}`).join(", ")}`)
+  }
+}
+
+function assertDeliveryHubCommitRequest(label, expectedOptionId) {
+  const commits = mockRequests.filter((entry) =>
+    entry.method === "POST" && entry.pathname === `/store/carts/${cartId}/shipping-methods`
+  )
+  if (commits.length !== 1) {
+    fail(`${label} expected exactly one mocked Medusa shipping-method commit, saw ${commits.length}.`)
+  }
+  if (mockCommittedShippingOptionId !== expectedOptionId) {
+    fail(`${label} committed ${mockCommittedShippingOptionId || "none"}, expected ${expectedOptionId}.`)
   }
 }
 
@@ -1349,7 +1451,7 @@ async function main() {
   storefront = await startStorefront({ enabled: true, cutoverEnabled: true, mockBackendUrl })
   await runEnabledFlow(storefront.url, { expectedCutoverEnabled: true })
 
-  log("Delivery Hub preview browser smoke passed without live Yandex/backend and without checkout cutover.")
+  log("Delivery Hub preview browser smoke passed without live Yandex/backend: flag-off made no commit request, flag-on committed only the mapped mock Medusa shipping option.")
 }
 
 main()

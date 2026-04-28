@@ -715,18 +715,20 @@ const Shipping: React.FC<ShippingProps> = ({
     const previousId = shippingMethodId
     setShippingMethodId(id)
 
-    await setShippingMethod({
-      cartId: cart.id,
-      shippingMethodId: id,
-      data,
-    })
-      .catch((err) => {
-        setShippingMethodId(previousId)
-        setError(err.message)
+    try {
+      await setShippingMethod({
+        cartId: cart.id,
+        shippingMethodId: id,
+        data,
       })
-      .finally(() => {
-        setIsLoading(false)
-      })
+      return true
+    } catch (err: any) {
+      setShippingMethodId(previousId)
+      setError(err.message)
+      return false
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleSaveDeliveryHubSelectionCutIn = async () => {
@@ -794,6 +796,41 @@ const Shipping: React.FC<ShippingProps> = ({
           message: err.message ?? "Unable to clear Delivery Hub selection.",
         })
       })
+  }
+
+  const handleDeliveryHubCheckoutCutoverCommit = async () => {
+    if (!deliveryHubCommitEligibility.canCommitShippingMethod || !deliveryHubCommitEligibility.shipping_option_id) {
+      setDeliveryHubSelectionCutInState({
+        status: "blocked",
+        message:
+          "Delivery Hub checkout commit is blocked fail-safe. Keep or choose an existing ApiShip/Medusa shipping method.",
+      })
+      return
+    }
+
+    setDeliveryHubSelectionCutInState({
+      status: "committing",
+      message:
+        "Committing the matched Delivery Hub Medusa shipping option. No provider payloads or shipment execution are sent.",
+    })
+
+    const committed = await commitShippingMethod(deliveryHubCommitEligibility.shipping_option_id)
+
+    if (!committed) {
+      setDeliveryHubSelectionCutInState({
+        status: "error",
+        message:
+          "Delivery Hub checkout commit failed safely. Existing ApiShip/Medusa shipping selection remains available; choose a legacy method or retry after refreshing the candidate.",
+      })
+      return
+    }
+
+    setDeliveryHubSelectionCutInState({
+      status: "committed",
+      message:
+        "Delivery Hub shipping option committed through Medusa. Shipment creation/execution remains disabled and rollback is flag-off.",
+    })
+    router.refresh()
   }
 
 
@@ -870,9 +907,19 @@ const Shipping: React.FC<ShippingProps> = ({
     buildDeliveryHubHandoffContractMatrixPreviewModel(
       deliveryHubRehearsalState.preview_input
     )
+  const deliveryHubCommitEligibility = buildDeliveryHubCommitEligibilityModel({
+    cutover_enabled: DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED,
+    cutover_candidate: deliveryHubCutoverCandidateState.candidate,
+    persisted_selection: deliveryHubRehearsalState.preview_input.persisted_selection,
+    readiness: deliveryHubRehearsalState.preview_input.readiness,
+    available_shipping_options: shippingMethods,
+    current_shipping_method: cartShippingMethod,
+  })
   const deliveryHubCheckoutCutoverGateStatus =
     buildDeliveryHubCheckoutCutoverGateStatus({
       enabled: DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED,
+      candidate: deliveryHubCutoverCandidateState.candidate,
+      available_shipping_options: shippingMethods,
     })
   const deliveryHubCutoverPreconditionsPreview =
     buildDeliveryHubCutoverPreconditionsPreviewModel(
@@ -1155,6 +1202,44 @@ const Shipping: React.FC<ShippingProps> = ({
                             </span>
                           ) : (
                             "Clear neutral selection"
+                          )}
+                        </Button>
+                      </div>
+                      <div
+                        className="grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"
+                        data-testid="delivery-hub-checkout-commit-guard"
+                      >
+                        <span data-testid="delivery-hub-checkout-commit-guard-status">
+                          Commit guard: {deliveryHubCommitEligibility.status}; canCommitShippingMethod={String(deliveryHubCommitEligibility.canCommitShippingMethod)}.
+                        </span>
+                        <span>{deliveryHubCommitEligibility.status_label}</span>
+                        <span>{deliveryHubCommitEligibility.detail_label}</span>
+                        <span>Candidate shipping option: {deliveryHubCommitEligibility.shipping_option_id ?? "none"}</span>
+                        <span>Current shipping option: {deliveryHubCommitEligibility.current_shipping_option_id ?? "none"}</span>
+                        {deliveryHubCommitEligibility.reason_codes.length > 0 && (
+                          <span>Commit blockers: {deliveryHubCommitEligibility.reason_codes.join(", ")}</span>
+                        )}
+                        <Button
+                          size="small"
+                          variant="secondary"
+                          type="button"
+                          disabled={
+                            !deliveryHubCommitEligibility.canCommitShippingMethod ||
+                            isLoading ||
+                            deliveryHubSelectionMutationInFlight ||
+                            deliveryHubSelectionCutInState.status === "committing"
+                          }
+                          onClick={() => {
+                            void handleDeliveryHubCheckoutCutoverCommit()
+                          }}
+                          data-testid="delivery-hub-checkout-commit-button"
+                        >
+                          {deliveryHubSelectionCutInState.status === "committing" ? (
+                            <span className="flex items-center gap-x-2">
+                              <Loader /> Committing Delivery Hub shipping
+                            </span>
+                          ) : (
+                            "Commit Delivery Hub shipping option"
                           )}
                         </Button>
                       </div>
@@ -1518,7 +1603,7 @@ const Shipping: React.FC<ShippingProps> = ({
                         Delivery Hub Preview/Shadow UI
                       </Text>
                       <Text className="text-ui-fg-muted txt-small">
-                        Operator/dev validation surface only. It calls neutral Delivery Hub store endpoints, can save neutral metadata, and keeps checkout source-of-truth unchanged. It never calls setShippingMethod() and does not replace the legacy ApiShip/Medusa delivery selection above.
+                        Operator/dev validation surface. It calls neutral Delivery Hub store endpoints and can save neutral metadata. The Delivery Hub shipping-method commit path remains default-off and can call setShippingMethod() only when the explicit cutover flag is true and a ready candidate maps to an available Medusa shipping option; legacy ApiShip/Medusa delivery selection above remains available for fallback/rollback.
                       </Text>
                       <div
                         className="grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"
@@ -1556,7 +1641,7 @@ const Shipping: React.FC<ShippingProps> = ({
                             Required readiness evidence: {deliveryHubCheckoutCutoverGateStatus.required_readiness_evidence.map((item) => item.label).join("; ")}.
                           </span>
                           <span>
-                            Commit blocked/preflight only: {deliveryHubCheckoutCutoverGateStatus.blocker_labels.join(" ")}
+                            Commit guardrails: {deliveryHubCheckoutCutoverGateStatus.canCommitShippingMethod ? "ready candidate can commit matched shipping option" : deliveryHubCheckoutCutoverGateStatus.blocker_labels.join(" ")}
                           </span>
                         </div>
                         <div
@@ -1599,7 +1684,7 @@ const Shipping: React.FC<ShippingProps> = ({
                             {deliveryHubCutoverCandidatePreview.status_label} · {deliveryHubCutoverCandidatePreview.detail_label}
                           </span>
                           <span data-testid="delivery-hub-cutover-candidate-commit-status">
-                            candidate only / no checkout commit; canCommitShippingMethod={String(deliveryHubCutoverCandidatePreview.canCommitShippingMethod)}.
+                            candidate evidence only; checkout commit requires explicit flag plus local commit guard; canCommitShippingMethod={String(deliveryHubCommitEligibility.canCommitShippingMethod)}.
                           </span>
                           {deliveryHubCutoverCandidatePreview.candidate_label && (
                             <span data-testid="delivery-hub-cutover-candidate-option">

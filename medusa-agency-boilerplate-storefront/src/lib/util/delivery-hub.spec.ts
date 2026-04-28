@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs"
 import {
   buildDeliveryHubCheckoutCutoverGateStatus,
   buildDeliveryHubCommitEligibilityModel,
+  evaluateDeliveryHubCutoverCandidateCommitGuard,
   buildDeliveryHubCutoverApprovalArtifactPreviewModel,
   buildDeliveryHubCutoverCandidatePreviewModel,
   buildDeliveryHubCutoverPreconditionsPreviewModel,
@@ -980,9 +981,34 @@ test("delivery hub checkout cutover flag parsing is explicit true only", () => {
   assert.equal(parseDeliveryHubCheckoutCutoverEnabledFlag(true), true)
 })
 
-test("buildDeliveryHubCheckoutCutoverGateStatus stays default-off and preflight-only", () => {
-  const disabled = buildDeliveryHubCheckoutCutoverGateStatus()
-  const enabled = buildDeliveryHubCheckoutCutoverGateStatus({ enabled: true })
+test("buildDeliveryHubCheckoutCutoverGateStatus is default-off and only enables commit for ready mapped candidate", () => {
+  const readyCandidate = buildCutoverCandidateFixture()
+  const availableShippingOptions = [
+    {
+      id: "deliveryhub:dropoff_point_to_pickup_point",
+      name: "Delivery Hub Pickup Candidate",
+      provider_id: "deliveryhub_deliveryhub",
+      data: {
+        provider_code: "deliveryhub",
+        mode_code: "dropoff_point_to_pickup_point",
+      },
+    },
+  ]
+  const disabled = buildDeliveryHubCheckoutCutoverGateStatus({
+    enabled: false,
+    candidate: readyCandidate,
+    available_shipping_options: availableShippingOptions,
+  })
+  const enabled = buildDeliveryHubCheckoutCutoverGateStatus({
+    enabled: true,
+    candidate: readyCandidate,
+    available_shipping_options: availableShippingOptions,
+  })
+  const badCandidate = buildDeliveryHubCheckoutCutoverGateStatus({
+    enabled: true,
+    candidate: { ...readyCandidate, candidate_status: "blocked" },
+    available_shipping_options: availableShippingOptions,
+  })
 
   assert.equal(disabled.enabled, false)
   assert.equal(disabled.mode, "disabled")
@@ -993,16 +1019,18 @@ test("buildDeliveryHubCheckoutCutoverGateStatus stays default-off and preflight-
     true
   )
   assert.equal(enabled.enabled, true)
-  assert.equal(enabled.mode, "preflight")
-  assert.equal(enabled.canCommitShippingMethod, false)
-  assert.equal(enabled.status_label.includes("preflight only"), true)
-  assert.equal(enabled.detail_label.includes("real shipping-method commit remains blocked"), true)
+  assert.equal(enabled.mode, "ready")
+  assert.equal(enabled.canCommitShippingMethod, true)
+  assert.equal(enabled.status_label.includes("ready candidate maps"), true)
   assert.deepEqual(
     enabled.required_readiness_evidence.map((item) => item.code),
     ["backend_live_smoke", "browser_mock_smoke", "rollback_plan", "approval_gate"]
   )
+  assert.equal(badCandidate.enabled, true)
+  assert.equal(badCandidate.mode, "blocked")
+  assert.equal(badCandidate.canCommitShippingMethod, false)
   assert.equal(
-    enabled.blocker_labels.some((label) => label.includes("canCommitShippingMethod=false")),
+    badCandidate.blocker_labels.some((label) => label.includes("cutover candidate not ready")),
     true
   )
 })
@@ -1079,6 +1107,34 @@ function buildCutoverPreconditionsFixture(overrides: Record<string, unknown> = {
       no_secret_material: true,
       shipment_lifecycle_not_enabled: true,
       can_commit_shipping_method: false,
+    },
+    ...overrides,
+  }
+}
+
+function buildCutoverCandidateFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    ok: true as const,
+    version: 1 as const,
+    cart_id: "cart_candidate",
+    selection_present: true,
+    selection_reference_id: "dhsel_0123456789abcdef0123456789abcdef",
+    candidate_status: "ready_for_review" as const,
+    candidate_shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+    candidate_shipping_option_name: "Delivery Hub Pickup Candidate",
+    candidate_amount: 749,
+    currency_code: "RUB",
+    candidate_pickup_point_id: "pvz_decision",
+    required_preconditions: ["neutral_selection_ready"],
+    blocked_reasons: [],
+    can_commit_shipping_method: false as const,
+    checkout_source_of_truth: "unchanged" as const,
+    guardrails: {
+      no_network_calls: true as const,
+      no_provider_payloads: true as const,
+      no_secret_material: true as const,
+      shipment_lifecycle_not_enabled: true as const,
+      can_commit_shipping_method: false as const,
     },
     ...overrides,
   }
@@ -1397,8 +1453,64 @@ test("buildDeliveryHubCutoverApprovalArtifactPreviewModel fails safe and keeps c
   )
 })
 
-test("buildDeliveryHubCommitEligibilityModel returns ready handoff only for saved neutral selection with matching deliveryhub option", () => {
+
+test("evaluateDeliveryHubCutoverCandidateCommitGuard blocks flag off and bad candidate but allows ready mapped candidate", () => {
+  const readyCandidate = buildCutoverCandidateFixture()
+  const availableShippingOptions = [
+    {
+      id: "deliveryhub:dropoff_point_to_pickup_point",
+      name: "Delivery Hub Pickup Candidate",
+      provider_id: "deliveryhub_deliveryhub",
+      data: { provider_code: "deliveryhub", mode_code: "dropoff_point_to_pickup_point" },
+    },
+  ]
+
+  const flagOff = evaluateDeliveryHubCutoverCandidateCommitGuard({
+    enabled: false,
+    candidate: readyCandidate,
+    available_shipping_options: availableShippingOptions,
+  })
+  const ready = evaluateDeliveryHubCutoverCandidateCommitGuard({
+    enabled: true,
+    candidate: readyCandidate,
+    available_shipping_options: availableShippingOptions,
+  })
+  const missingCandidate = evaluateDeliveryHubCutoverCandidateCommitGuard({
+    enabled: true,
+    candidate: null,
+    available_shipping_options: availableShippingOptions,
+  })
+  const badCandidate = evaluateDeliveryHubCutoverCandidateCommitGuard({
+    enabled: true,
+    candidate: buildCutoverCandidateFixture({ candidate_status: "blocked" }),
+    available_shipping_options: availableShippingOptions,
+  })
+  const missingOption = evaluateDeliveryHubCutoverCandidateCommitGuard({
+    enabled: true,
+    candidate: readyCandidate,
+    available_shipping_options: [{ id: "manual-flat-rate", name: "Flat", provider_id: "manual_manual", data: null }],
+  })
+
+  assert.equal(flagOff.canCommitShippingMethod, false)
+  assert.equal(flagOff.reason_codes.includes("cutover_flag_disabled"), true)
+  assert.equal(ready.canCommitShippingMethod, true)
+  assert.equal(ready.shipping_option_id, "deliveryhub:dropoff_point_to_pickup_point")
+  assert.deepEqual(ready.reason_codes, [])
+  assert.equal(missingCandidate.canCommitShippingMethod, false)
+  assert.equal(missingCandidate.reason_codes.includes("missing_cutover_candidate"), true)
+  assert.equal(badCandidate.canCommitShippingMethod, false)
+  assert.equal(badCandidate.reason_codes.includes("cutover_candidate_not_ready"), true)
+  assert.equal(missingOption.canCommitShippingMethod, false)
+  assert.equal(missingOption.reason_codes.includes("cutover_candidate_option_mismatch"), true)
+})
+
+test("buildDeliveryHubCommitEligibilityModel returns ready handoff only for flag-on saved neutral selection with matching deliveryhub option and candidate", () => {
   const model = buildDeliveryHubCommitEligibilityModel({
+    cutover_enabled: true,
+    cutover_candidate: buildCutoverCandidateFixture({
+      candidate_shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
+      candidate_shipping_option_name: "Delivery Hub Pickup",
+    }),
     persisted_selection: {
       ok: true,
       cart_id: "cart_commit_ready",
@@ -1505,6 +1617,7 @@ test("buildDeliveryHubCommitEligibilityModel returns ready handoff only for save
   })
 
   assert.equal(model.status, "ready")
+  assert.equal(model.canCommitShippingMethod, true)
   assert.equal(model.shipping_option_id, "deliveryhub:warehouse_to_pickup_point")
   assert.equal(model.expected_shipping_option_id, "deliveryhub:warehouse_to_pickup_point")
   assert.equal(model.current_shipping_option_id, "manual-flat-rate")
@@ -5264,7 +5377,7 @@ test("buildDeliveryHubHandoffContractMatrixPreviewModel stays shopper-safe and p
   }
 })
 
-test("checkout shipping source wires delivery-hub save/clear without Delivery Hub shipping method commit", () => {
+test("checkout shipping source keeps Delivery Hub commit behind explicit cutover guard", () => {
   const source = readFileSync(
     new URL("../../modules/checkout/components/shipping/index.tsx", import.meta.url),
     "utf8"
@@ -5273,9 +5386,13 @@ test("checkout shipping source wires delivery-hub save/clear without Delivery Hu
   assert.equal(source.includes("saveDeliveryHubSelection"), true)
   assert.equal(source.includes("clearDeliveryHubSelection"), true)
   assert.equal(source.includes("buildDeliveryHubSelectionSaveCutInPayload"), true)
-  assert.equal(source.includes("setShippingMethod({\n      cartId: cart.id"), true)
+  assert.equal(source.includes("handleDeliveryHubCheckoutCutoverCommit"), true)
+  assert.equal(source.includes("DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED"), true)
+  assert.equal(source.includes("deliveryHubCommitEligibility.canCommitShippingMethod"), true)
+  assert.equal(source.includes("commitShippingMethod(deliveryHubCommitEligibility.shipping_option_id)"), true)
   assert.equal(source.includes("shippingMethodId: guard.payload"), false)
   assert.equal(source.includes("shippingMethodId: deliveryHubSelectionSaveCutInGuard"), false)
+  assert.equal(/setShippingMethod\s*\([\s\S]*data:\s*deliveryHub/i.test(source), false)
 })
 
 test("buildDeliveryHubShadowSelectionActionabilityPreviewModel derives neutral read-only actionability states", () => {
@@ -10924,14 +11041,15 @@ test("delivery hub selection cut-in wires only neutral save/clear helpers and ke
   assert.equal(shippingSource.includes("retrieveDeliveryHubCutoverPreconditions()"), true)
   assert.equal(shippingSource.includes("buildDeliveryHubCutoverPreconditionsPreviewModel"), true)
   assert.equal(shippingSource.includes("canCommitShippingMethod"), true)
-  assert.equal(shippingSource.includes("blocked/preflight only"), true)
+  assert.equal(shippingSource.includes("handleDeliveryHubCheckoutCutoverCommit"), true)
+  assert.equal(shippingSource.includes("delivery-hub-checkout-commit-guard"), true)
+  assert.equal(shippingSource.includes("Delivery Hub checkout commit is blocked fail-safe"), true)
   assert.equal(shippingSource.includes("setShippingMethod"), true)
   assert.equal(/handleDeliveryHubNeutralPreviewSelection[\s\S]*setShippingMethod/.test(shippingSource), false)
   assert.equal(/saveDeliveryHubSelection\s*\(/.test(utilSource), false)
   assert.equal(/clearDeliveryHubSelection\s*\(/.test(utilSource), false)
   assert.equal(/setShippingMethod\s*\(\s*\{/.test(utilSource), false)
   assert.equal(/setShippingMethod\s*\(\s*\{[^}]*delivery/i.test(shippingSource), false)
-  assert.equal(/deliveryHub[A-Za-z0-9]*\s*\([^)]*setShippingMethod/.test(shippingSource), false)
   assert.equal(/createFulfillment\s*\(/.test(shippingSource + utilSource), false)
   assert.equal(/activation[_ -]?ready/i.test(utilSource), false)
   assert.equal(/delivery[-_ ]?hub[\s\S]{0,200}setShippingMethod/i.test(cartSource), false)
@@ -10991,7 +11109,7 @@ test("delivery hub preview shadow UI exposes stable manual validation hooks and 
 
   assert.equal(
     shippingSource.includes(
-      "Guardrail: checkout source-of-truth unchanged; Delivery Hub preview metadata does not commit a Medusa shipping method."
+      "Operator/dev validation surface. It calls neutral Delivery Hub store endpoints and can save neutral metadata. The Delivery Hub shipping-method commit path remains default-off"
     ),
     true
   )
@@ -11007,7 +11125,8 @@ test("delivery hub preview shadow UI exposes stable manual validation hooks and 
     ),
     true
   )
-  assert.equal(shippingSource.includes("Commit blocked/preflight only:"), true)
+  assert.equal(shippingSource.includes("Commit guardrails:"), true)
+  assert.equal(shippingSource.includes("ready candidate can commit matched shipping option"), true)
   assert.equal(
     shippingSource.includes(
       "Operation status: {deliveryHubNeutralPreviewState.status}"
