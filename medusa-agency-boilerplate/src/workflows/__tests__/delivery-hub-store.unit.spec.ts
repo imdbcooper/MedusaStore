@@ -6,6 +6,7 @@ import * as deliveryQuotesRoute from "../../api/store/delivery/quotes/route"
 import * as deliveryReadinessRoute from "../../api/store/delivery/readiness/route"
 import * as deliverySelectionRoute from "../../api/store/delivery/selection/route"
 import * as deliverySettingsRoute from "../../api/store/delivery/settings/route"
+import * as deliveryCutoverPreconditionsRoute from "../../api/store/delivery/cutover-preconditions/route"
 import { DeliveryHubError } from "../../modules/delivery-hub/errors"
 import { DeliveryHubService } from "../../modules/delivery-hub/service"
 
@@ -1348,6 +1349,55 @@ describe("Delivery Hub store routes", () => {
     expect(JSON.stringify(payload.error.details)).toContain("quote_key")
   })
 
+  it("returns read-only checkout cutover preconditions payload", async () => {
+    const result = buildCutoverPreconditionsResult()
+    const preconditionsSpy = jest
+      .spyOn(DeliveryHubService.prototype, "getStoreCutoverPreconditions")
+      .mockResolvedValue(result as any)
+    const res = createMockResponse()
+
+    await deliveryCutoverPreconditionsRoute.GET(createMockRequest() as any, res as any)
+
+    expect(preconditionsSpy).toHaveBeenCalledWith()
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith(result)
+    expect(JSON.stringify((res.json as jest.Mock).mock.calls[0][0])).not.toMatch(
+      /token|authorization|raw_reference|ciphertext|provider_offer_id|quote_key|publishable/i
+    )
+  })
+
+  it("rejects cutover preconditions payloads that try to enable commit or leak provider fragments", async () => {
+    jest.spyOn(DeliveryHubService.prototype, "getStoreCutoverPreconditions").mockResolvedValue({
+      ...buildCutoverPreconditionsResult(),
+      can_commit_shipping_method: true,
+      preconditions: [
+        {
+          code: "store_quote_contract_ready",
+          label: "Store quote contract readiness",
+          status: "ready",
+          ready: true,
+          detail: "Unsafe raw_reference provider_offer_id should not pass",
+          evidence: [
+            {
+              label: "token=secret-token",
+              status: "ready",
+            },
+          ],
+        },
+      ],
+    } as any)
+    const res = createMockResponse()
+
+    await deliveryCutoverPreconditionsRoute.GET(createMockRequest() as any, res as any)
+
+    expect(res.status).toHaveBeenCalledWith(400)
+    const payload = (res.json as jest.Mock).mock.calls[0][0] as any
+    expect(payload.error.code).toBe("DELIVERY_HUB_VALIDATION_ERROR")
+    expect(payload.error.message).toBe("Store delivery request validation failed")
+    expect(JSON.stringify(payload.error.details)).toContain("can_commit_shipping_method")
+    expect(JSON.stringify(payload.error.details)).not.toContain("secret-token")
+  })
+
   it("returns controlled error payload for store route failures", async () => {
     jest.spyOn(DeliveryHubService.prototype, "listStorePickupPoints").mockRejectedValue(
       new DeliveryHubError({
@@ -1486,6 +1536,73 @@ describe("Delivery Hub store routes", () => {
     })
   })
 })
+
+function buildCutoverPreconditionsResult() {
+  return {
+    ok: true,
+    version: 1,
+    posture: "evidence_preflight_only",
+    status: "preflight_only",
+    can_commit_shipping_method: false,
+    summary: {
+      ready_count: 6,
+      missing_count: 1,
+      required_count: 1,
+      blocked_count: 1,
+      not_enabled_count: 1,
+      total_count: 10,
+    },
+    preconditions: [
+      {
+        code: "store_quote_contract_ready",
+        label: "Store quote contract readiness",
+        status: "ready",
+        ready: true,
+        detail: "Read-only planner projects both first-tranche store quote modes.",
+        evidence: [
+          {
+            label: "projected_modes=warehouse_to_pickup_point,dropoff_point_to_pickup_point",
+            status: "ready",
+          },
+        ],
+      },
+      {
+        code: "operator_approval_required",
+        label: "Operator approval required",
+        status: "required",
+        ready: false,
+        detail: "Separate approved cutover tranche is required before commit can be enabled.",
+        evidence: [
+          {
+            label: "approval_gate=required_future_cutover_tranche",
+            status: "required",
+          },
+        ],
+      },
+      {
+        code: "can_commit_shipping_method",
+        label: "Shipping-method commit remains blocked",
+        status: "blocked",
+        ready: false,
+        detail: "can_commit_shipping_method=false; verifier aggregates evidence only.",
+        evidence: [
+          {
+            label: "can_commit_shipping_method=false",
+            status: "blocked",
+          },
+        ],
+      },
+    ],
+    guardrails: {
+      checkout_source_of_truth: "unchanged",
+      no_network_calls: true,
+      no_provider_payloads: true,
+      no_secret_material: true,
+      shipment_lifecycle_not_enabled: true,
+      can_commit_shipping_method: false,
+    },
+  }
+}
 
 function createStoreSelection(overrides?: Record<string, unknown>) {
   return {

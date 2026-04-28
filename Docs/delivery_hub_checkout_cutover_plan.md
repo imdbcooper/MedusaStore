@@ -4,7 +4,7 @@
 >
 > Current decision: **NO-GO for real checkout source-of-truth cutover** until this document's approval gates are explicitly passed in a later scoped task.
 >
-> Scope of this document: readiness gate plus a runtime-visible, read-only/preflight storefront status surface for the reserved flag. It does not implement runtime checkout cutover, does not call `setShippingMethod()` for Delivery Hub, does not remove ApiShip/legacy compatibility, and does not perform shipment create/cancel/status/retry.
+> Scope of this document: readiness gate plus runtime-visible, read-only/preflight storefront status surfaces for the reserved flag and cutover preconditions verifier. It does not implement runtime checkout cutover, does not call `setShippingMethod()` for Delivery Hub, does not remove ApiShip/legacy compatibility, and does not perform shipment create/cancel/status/retry.
 
 ---
 
@@ -19,7 +19,8 @@ The Delivery Hub contour has already reached these confirmed milestones:
   - dropoff: quote `13`, neutral selection saved, checkout source-of-truth unchanged;
   - warehouse: quote `4`, neutral selection saved, checkout source-of-truth unchanged.
 - Storefront Delivery Hub Preview/Shadow UI exists and is covered by source-level tests plus a mock browser smoke.
-- The preview/shadow UI is intentionally labeled as metadata-only: quote and selection can be exercised, but the committed checkout shipping method remains the existing Medusa/ApiShip/legacy-compatible contour.
+- A read-only Store API verifier `GET /store/delivery/cutover-preconditions` aggregates safe precondition evidence labels for future planning only; it uses stored/configured state, does not call Yandex/live providers, and always reports `can_commit_shipping_method=false`.
+- The preview/shadow UI is intentionally labeled as metadata-only: quote and selection can be exercised, the cutover gate and verifier can be observed, but the committed checkout shipping method remains the existing Medusa/ApiShip/legacy-compatible contour.
 
 ### Explicit non-goal for the current checkpoint
 
@@ -97,7 +98,17 @@ Required before approval:
 - Backend readiness can prove the saved selection still matches the active connection, supported quote type, destination PVZ, optional origin, and quote reference posture.
 - Stale/missing/mismatched selection blocks checkout commit rather than falling back to an unsafe partial commit.
 
-### 3.5 Storefront preview readiness
+### 3.5 Cutover preconditions verifier readiness
+
+Required before approval:
+
+- `GET /store/delivery/cutover-preconditions` remains read-only/no-network and must not call Yandex or live providers.
+- Response includes only safe evidence categories/statuses such as `store_quote_contract_ready`, `neutral_selection_ready`, `preview_ui_ready`, `browser_mock_smoke_ready`, `rollback_plan_ready`, `admin_yandex_quote_baseline_recorded`, `fulfillment_bridge_preview_ready`, `operator_approval_required`, `shipment_lifecycle_not_enabled`, and `can_commit_shipping_method`.
+- Response boundary keeps `can_commit_shipping_method=false` and never exposes raw provider payloads, raw Yandex DTOs, auth headers, ciphertext, token values, publishable key values, backend execution tokens, or arbitrary provider metadata.
+- Storefront failure mode is fail-safe: if the verifier is unavailable or invalid, `delivery-hub-cutover-preconditions-status` shows unavailable and checkout commit remains blocked.
+- Verifier output is evidence/preflight only; it is not operator approval, not shipment lifecycle enablement, and not a checkout cutover.
+
+### 3.6 Storefront preview readiness
 
 Required before approval:
 
@@ -107,7 +118,7 @@ Required before approval:
 - Manual preview validation is recorded only as readiness evidence, not as cutover approval.
 - No Delivery Hub preview path calls `setShippingMethod()` before the go/no-go gate passes.
 
-### 3.6 Fulfillment bridge readiness
+### 3.7 Fulfillment bridge readiness
 
 Required before approval:
 
@@ -116,7 +127,7 @@ Required before approval:
 - Unsupported, stale, drifted, or incomplete handoffs remain blocked with safe diagnostics.
 - Shipment execution remains behind its own backend execution gate and is not automatically implied by checkout source-of-truth cutover.
 
-### 3.7 Observability readiness
+### 3.8 Observability readiness
 
 Required before approval:
 
@@ -126,7 +137,7 @@ Required before approval:
 - Safe event/audit records distinguish preview metadata operations from real Medusa shipping method commits.
 - Metrics/alerts exist or are explicitly accepted as manual for the first cutover tranche.
 
-### 3.8 Rollback readiness
+### 3.9 Rollback readiness
 
 Required before approval:
 
@@ -240,9 +251,11 @@ Go only if:
 - preview/shadow UI source-level tests pass;
 - browser mock smoke passes;
 - cutover flag is default disabled;
-- no `setShippingMethod()` call is possible unless the future cutover flag is enabled and backend readiness returns exact match.
+- read-only cutover preconditions verifier is visible when available and fails safe when unavailable;
+- verifier and UI continue to show `can_commit_shipping_method=false` / `canCommitShippingMethod=false`;
+- no `setShippingMethod()` call is possible unless a future approved cutover implementation explicitly adds the path and backend readiness returns an exact match.
 
-Current status: **preview evidence exists; real commit path remains not approved in this checkpoint**.
+Current status: **preflight evidence aggregator exists; real commit path remains not approved in this checkpoint**.
 
 ### Gate D — shipping-option match gate
 
@@ -346,13 +359,13 @@ This document does not add that call and does not approve adding it without a se
 - Store API quote and selection schema validation.
 - Selection persistence/read/clear shape.
 - Readiness matching for valid, stale, missing, malformed, mismatched connection, mismatched quote type, mismatched pickup point/window, and missing shipping option.
-- Storefront helper/model tests for disabled flag, blocked state, ready state, and no-secret rendering.
+- Storefront helper/model tests for disabled flag, blocked state, cutover preconditions normalization/fail-safe behavior, ready state, and no-secret rendering.
 - Fulfillment bridge metadata shape tests.
 - Rollback/fallback helper tests.
 
 ### No-network API tests
 
-- Exported Store API route handlers for quote/selection/readiness.
+- Exported Store API route handlers for quote/selection/readiness/cutover-preconditions.
 - Admin route handlers for quote diagnostics and pickup point/warehouse readiness.
 - Response-boundary rejection of raw provider/internal/secret-like fragments.
 - No Delivery Hub `setShippingMethod()` call when cutover flag is false.
@@ -361,6 +374,7 @@ This document does not add that call and does not approve adding it without a se
 
 - Preview flag disabled: Delivery Hub block hidden or preview-only, fallback shipping visible.
 - Preview flag enabled but cutover flag disabled: quote/save/clear works, no shipping-method commit.
+- Mock verifier response is visible at `delivery-hub-cutover-preconditions-status`, includes required/blocked preconditions, and preserves `canCommitShippingMethod=false`.
 - Current cutover-prep flag enabled with mocked ready backend: the UI recognizes the flag but still shows preflight/blocked-only and `canCommitShippingMethod=false`; no commit CTA/path exists in this step.
 - Future approved cutover implementation only: commit CTA may appear only when exact preconditions pass.
 - Blocked states: stale selection, missing option, mismatched option, failed readiness.
@@ -441,14 +455,15 @@ If any required field is missing, the default decision is **NO-GO**.
 
 ## 13. Current checkpoint outcome
 
-This checkpoint now has a runtime-visible default-off gate/preflight status in the storefront preview/shadow UI, but still does not implement checkout cutover.
+This checkpoint now has a runtime-visible default-off gate/preflight status plus a read-only cutover preconditions verifier in the storefront preview/shadow UI, but still does not implement checkout cutover.
 
 Current outcome:
 
 - readiness plan: prepared;
 - reserved flag parsing: explicit `true` only, default false;
 - runtime visibility: `delivery-hub-cutover-gate-status` shows disabled/default-off or true/preflight status;
-- commit invariant: `canCommitShippingMethod=false` in both flag modes;
+- preconditions verifier: `GET /store/delivery/cutover-preconditions` and `delivery-hub-cutover-preconditions-status` aggregate safe evidence/preflight labels only;
+- commit invariant: `can_commit_shipping_method=false` / `canCommitShippingMethod=false` in verifier and gate modes;
 - checkout cutover: **not performed**;
 - Delivery Hub call to `setShippingMethod()`: **not added**;
 - ApiShip/legacy compatibility: **preserved**;

@@ -7,6 +7,7 @@ import {
   listDeliveryHubPickupPoints,
   listDeliveryHubPickupWindows,
   previewDeliveryHubQuotes,
+  retrieveDeliveryHubCutoverPreconditions,
   retrieveDeliveryHubReadiness,
   retrieveDeliveryHubSelection,
   retrieveDeliveryHubSettings,
@@ -26,6 +27,7 @@ import { storefrontConfig } from "@lib/storefront-config"
 import {
   buildDeliveryHubCheckoutCutoverGateStatus,
   buildDeliveryHubCommitEligibilityModel,
+  buildDeliveryHubCutoverPreconditionsPreviewModel,
   buildDeliveryHubHandoffContractMatrixPreviewModel,
   buildDeliveryHubHandoffPreviewModel,
   buildDeliveryHubNeutralSelectionRehearsalModel,
@@ -38,6 +40,7 @@ import {
   buildDeliveryHubShippingOptionParityPreviewModel,
   buildDeliveryHubWriteIntentContractPreviewModel,
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
+  type DeliveryHubCutoverPreconditionsResponse,
   type DeliveryHubListQuotesInput,
   type DeliveryHubNeutralSelectionRehearsalInput,
   type DeliveryHubNeutralSelectionRehearsalModel,
@@ -73,6 +76,11 @@ type DeliveryHubRehearsalState = {
   model: DeliveryHubNeutralSelectionRehearsalModel
   preview_input: DeliveryHubNeutralSelectionRehearsalInput
   issue_message: string | null
+}
+
+type DeliveryHubCutoverPreconditionsState = {
+  status: "idle" | "loading" | "ready" | "unavailable"
+  preconditions: DeliveryHubCutoverPreconditionsResponse | null
 }
 
 type DeliveryHubSelectionCutInState = {
@@ -162,6 +170,11 @@ const Shipping: React.FC<ShippingProps> = ({
     useState<DeliveryHubSelectionCutInState>({
       status: "idle",
       message: null,
+    })
+  const [deliveryHubCutoverPreconditionsState, setDeliveryHubCutoverPreconditionsState] =
+    useState<DeliveryHubCutoverPreconditionsState>({
+      status: "idle",
+      preconditions: null,
     })
   const [deliveryHubNeutralPreviewForm, setDeliveryHubNeutralPreviewForm] =
     useState<DeliveryHubNeutralPreviewFormState>({
@@ -255,6 +268,11 @@ const Shipping: React.FC<ShippingProps> = ({
       issue_message: null,
     }))
 
+    setDeliveryHubCutoverPreconditionsState({
+      status: "loading",
+      preconditions: null,
+    })
+
     Promise.allSettled([
       retrieveDeliveryHubSettings(),
       retrieveDeliveryHubSelection(cart.id),
@@ -264,6 +282,7 @@ const Shipping: React.FC<ShippingProps> = ({
         country_code: cart.shipping_address?.country_code,
       }),
       listDeliveryHubPickupWindows(),
+      retrieveDeliveryHubCutoverPreconditions(),
     ])
       .then(async (results) => {
         if (cancelled) {
@@ -275,6 +294,11 @@ const Shipping: React.FC<ShippingProps> = ({
         const readiness = results[2].status === "fulfilled" ? results[2].value : null
         const pickupPoints = results[3].status === "fulfilled" ? results[3].value : null
         const pickupWindows = results[4].status === "fulfilled" ? results[4].value : null
+        const cutoverPreconditions = results[5].status === "fulfilled" ? results[5].value : null
+        setDeliveryHubCutoverPreconditionsState({
+          status: cutoverPreconditions ? "ready" : "unavailable",
+          preconditions: cutoverPreconditions,
+        })
         const destinationPoint =
           pickupPoints?.points.find((point) => point.is_destination_pickup_allowed) ??
           pickupPoints?.points[0] ??
@@ -323,6 +347,11 @@ const Shipping: React.FC<ShippingProps> = ({
         if (cancelled) {
           return
         }
+
+        setDeliveryHubCutoverPreconditionsState({
+          status: "unavailable",
+          preconditions: null,
+        })
 
         const previewInput: DeliveryHubNeutralSelectionRehearsalInput = {
           cart_id: cart.id,
@@ -769,6 +798,10 @@ const Shipping: React.FC<ShippingProps> = ({
     buildDeliveryHubCheckoutCutoverGateStatus({
       enabled: DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED,
     })
+  const deliveryHubCutoverPreconditionsPreview =
+    buildDeliveryHubCutoverPreconditionsPreviewModel(
+      deliveryHubCutoverPreconditionsState.preconditions
+    )
   const deliveryHubNeutralPreviewQuotes =
     deliveryHubNeutralPreviewState.quotes?.quotes ?? []
   const selectedDeliveryHubNeutralPreviewQuote =
@@ -1441,6 +1474,35 @@ const Shipping: React.FC<ShippingProps> = ({
                           <span>
                             Commit blocked/preflight only: {deliveryHubCheckoutCutoverGateStatus.blocker_labels.join(" ")}
                           </span>
+                        </div>
+                        <div
+                          className="mt-2 grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-base p-3"
+                          data-testid="delivery-hub-cutover-preconditions-status"
+                        >
+                          <span data-testid="delivery-hub-cutover-preconditions-availability">
+                            Preconditions verifier: {deliveryHubCutoverPreconditionsPreview.availability}; load status={deliveryHubCutoverPreconditionsState.status}.
+                          </span>
+                          <span data-testid="delivery-hub-cutover-preconditions-summary">
+                            {deliveryHubCutoverPreconditionsPreview.status_label} · {deliveryHubCutoverPreconditionsPreview.summary_label}
+                          </span>
+                          <span data-testid="delivery-hub-cutover-preconditions-commit-status">
+                            {deliveryHubCutoverPreconditionsPreview.commit_label}; canCommitShippingMethod={String(deliveryHubCutoverPreconditionsPreview.canCommitShippingMethod)}.
+                          </span>
+                          <span data-testid="delivery-hub-cutover-preconditions-guardrails">
+                            Guardrails: {deliveryHubCutoverPreconditionsPreview.guardrail_labels.join("; ")}.
+                          </span>
+                          <span data-testid="delivery-hub-cutover-preconditions-missing">
+                            Missing/required/blocked: {[
+                              ...deliveryHubCutoverPreconditionsPreview.missing_codes,
+                              ...deliveryHubCutoverPreconditionsPreview.required_codes,
+                              ...deliveryHubCutoverPreconditionsPreview.blocked_codes,
+                            ].join(", ") || "none"}.
+                          </span>
+                          {deliveryHubCutoverPreconditionsPreview.preconditions.slice(0, 10).map((precondition) => (
+                            <span key={precondition.code}>
+                              {precondition.code}: {precondition.status} · {precondition.detail}
+                            </span>
+                          ))}
                         </div>
                       </div>
                     </div>

@@ -4,6 +4,7 @@ import { sdk } from "@lib/config"
 import medusaError from "@lib/util/medusa-error"
 import {
   normalizeDeliveryHubCatalogResponse,
+  normalizeDeliveryHubCutoverPreconditionsResponse,
   normalizeDeliveryHubPickupPointsResponse,
   normalizeDeliveryHubPickupWindowsResponse,
   normalizeDeliveryHubReadinessResponse,
@@ -18,6 +19,7 @@ import {
   shapeDeliveryHubSaveSelectionPayload,
   type DeliveryHubCatalogResponse,
   type DeliveryHubClearSelectionInput,
+  type DeliveryHubCutoverPreconditionsResponse,
   type DeliveryHubListPickupPointsInput,
   type DeliveryHubListPickupWindowsInput,
   type DeliveryHubListQuotesInput,
@@ -82,6 +84,19 @@ export async function retrieveDeliveryHubSettings() {
       cache: "no-store",
     })
     .then((response) => normalizeDeliveryHubSettingsResponse(response))
+    .catch(() => null)
+}
+
+export async function retrieveDeliveryHubCutoverPreconditions() {
+  const headers = await getDeliveryHubHeaders()
+
+  return sdk.client
+    .fetch<DeliveryHubCutoverPreconditionsResponse>(`/store/delivery/cutover-preconditions`, {
+      method: "GET",
+      headers,
+      cache: "no-store",
+    })
+    .then((response) => normalizeDeliveryHubCutoverPreconditionsResponse(response))
     .catch(() => null)
 }
 

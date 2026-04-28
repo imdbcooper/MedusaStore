@@ -155,6 +155,8 @@ export const DeliveryHubStoreCatalogQuerySchema = z.object({})
 
 export const DeliveryHubStoreSettingsQuerySchema = z.object({})
 
+export const DeliveryHubStoreCutoverPreconditionsQuerySchema = z.object({})
+
 export const DeliveryHubStoreCartSelectionQuoteSchema = z
   .object({
     carrier_code: z.string().trim().min(1),

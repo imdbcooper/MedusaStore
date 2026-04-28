@@ -1036,6 +1036,153 @@ describe("Delivery Hub service", () => {
     expect(result.quote_context?.connection).not.toHaveProperty("credentials_state")
   })
 
+  it("builds read-only cutover preconditions from stored safe state without provider calls or writes", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_ready",
+      provider_code: "yandex",
+      provider_warehouse_id: "ya-wh-ready",
+    })
+    const connection = createConnectionRecord({
+      id: "conn_ready",
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      config: {
+        default_warehouse_id: warehouse.id,
+      },
+      credentials_envelope: {
+        mode: "sealed",
+        ciphertext: "ciphertext-must-not-leak",
+        iv: "iv-must-not-leak",
+        auth_tag: "tag-must-not-leak",
+      },
+      metadata: {
+        token: "metadata-token-must-not-leak",
+      },
+    })
+    const pg = createMockPg(
+      [connection],
+      [
+        {
+          id: "log_wh",
+          connection_id: connection.id,
+          provider_code: "yandex",
+          kind: "quote",
+          correlation_id: "corr_wh_should_not_leak",
+          success: true,
+          request_summary: {
+            mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+            Authorization: "Bearer should-not-leak",
+          },
+          response_summary: {
+            quote_keys: ["quote-key-must-not-leak"],
+          },
+          error_code: null,
+          created_at: "2026-04-24T00:00:00.000Z",
+        },
+        {
+          id: "log_dropoff",
+          connection_id: connection.id,
+          provider_code: "yandex",
+          kind: "quote",
+          correlation_id: "corr_dropoff_should_not_leak",
+          success: true,
+          request_summary: {
+            mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+            token: "request-token-must-not-leak",
+          },
+          response_summary: {
+            raw_reference: "raw-reference-must-not-leak",
+          },
+          error_code: null,
+          created_at: "2026-04-24T00:01:00.000Z",
+        },
+      ],
+      [warehouse]
+    )
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+    const quoteWhSpy = jest.spyOn(adapter, "quoteWarehouseToPickupPoint")
+    const quoteDropoffSpy = jest.spyOn(adapter, "quoteDropoffPointToPickupPoint")
+    const pickupSpy = jest.spyOn(adapter, "listPickupPoints")
+    const windowsSpy = jest.spyOn(adapter, "listPickupWindows")
+
+    const result = await service.getStoreCutoverPreconditions()
+
+    expect(result.ok).toBe(true)
+    expect(result.posture).toBe("evidence_preflight_only")
+    expect(result.status).toBe("preflight_only")
+    expect(result.can_commit_shipping_method).toBe(false)
+    expect(result.guardrails).toEqual({
+      checkout_source_of_truth: "unchanged",
+      no_network_calls: true,
+      no_provider_payloads: true,
+      no_secret_material: true,
+      shipment_lifecycle_not_enabled: true,
+      can_commit_shipping_method: false,
+    })
+    expect(result.preconditions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "store_quote_contract_ready",
+          status: "ready",
+          ready: true,
+        }),
+        expect.objectContaining({
+          code: "admin_yandex_quote_baseline_recorded",
+          status: "ready",
+          ready: true,
+        }),
+        expect.objectContaining({
+          code: "operator_approval_required",
+          status: "required",
+          ready: false,
+        }),
+        expect.objectContaining({
+          code: "can_commit_shipping_method",
+          status: "blocked",
+          ready: false,
+        }),
+      ])
+    )
+    const serialized = JSON.stringify(result)
+    expect(serialized).not.toMatch(
+      /ciphertext-must-not-leak|metadata-token-must-not-leak|Bearer should-not-leak|quote-key-must-not-leak|raw-reference-must-not-leak|request-token-must-not-leak|corr_wh_should_not_leak|corr_dropoff_should_not_leak/i
+    )
+    expect(serialized).not.toMatch(/authorization|ciphertext|raw_reference|quote_key|token/i)
+    expect(quoteWhSpy).not.toHaveBeenCalled()
+    expect(quoteDropoffSpy).not.toHaveBeenCalled()
+    expect(pickupSpy).not.toHaveBeenCalled()
+    expect(windowsSpy).not.toHaveBeenCalled()
+    expect(pg.calls.some((call: any) => call.sql.includes("insert into"))).toBe(false)
+    expect(pg.calls.some((call: any) => call.sql.includes("create table if not exists"))).toBe(false)
+  })
+
+  it("builds missing quote-baseline preconditions without creating read-only tables", async () => {
+    const pg = createMockPg([], [], [])
+    const service = new DeliveryHubService(pg as any)
+
+    const result = await service.getStoreCutoverPreconditions()
+
+    expect(result.can_commit_shipping_method).toBe(false)
+    expect(result.preconditions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "admin_yandex_quote_baseline_recorded",
+          status: "missing",
+          ready: false,
+        }),
+        expect.objectContaining({
+          code: "can_commit_shipping_method",
+          status: "blocked",
+          ready: false,
+        }),
+      ])
+    )
+    expect(pg.calls.some((call: any) => call.sql.includes("create table if not exists"))).toBe(false)
+    expect(pg.calls.some((call: any) => call.sql.includes("insert into"))).toBe(false)
+  })
+
   it("returns neutral readiness connection summary for credentials-not-ready store case", async () => {
     const connection = createConnectionRecord({
       id: "conn_1",
@@ -1157,18 +1304,20 @@ describe("Delivery Hub service", () => {
       currency_code: "RUB",
     })
 
-    expect(result).toEqual({
-      ok: true,
-      quotes: [
-        expect.objectContaining({
-          amount: 499,
-          quote_reference: expect.objectContaining({
-            id: expect.any(String),
-            version: 1,
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        quotes: [
+          expect.objectContaining({
+            amount: 499,
+            quote_reference: expect.objectContaining({
+              id: expect.any(String),
+              version: 1,
+            }),
           }),
-        }),
-      ],
-    })
+        ],
+      })
+    )
     expect(result.quotes[0]).not.toHaveProperty("quote_key")
     expect(result.quotes[0]).not.toHaveProperty("raw_reference")
     expect(quoteSpy).toHaveBeenCalledWith(
@@ -1257,7 +1406,9 @@ function createMockPg(initialConnections: any[], initialEventLogs: any[] = [], i
           rows: [
             {
               table_name:
-                tableName === "delivery_connections" || tableName === "delivery_warehouses"
+                tableName === "delivery_connections" ||
+                tableName === "delivery_warehouses" ||
+                tableName === "delivery_event_logs"
                   ? tableName
                   : null,
             },

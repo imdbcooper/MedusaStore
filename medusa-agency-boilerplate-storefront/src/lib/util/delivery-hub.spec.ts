@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs"
 import {
   buildDeliveryHubCheckoutCutoverGateStatus,
   buildDeliveryHubCommitEligibilityModel,
+  buildDeliveryHubCutoverPreconditionsPreviewModel,
   buildDeliveryHubHandoffContractMatrixPreviewModel,
   buildDeliveryHubHandoffPreviewModel,
   buildDeliveryHubNeutralSelectionRehearsalModel,
@@ -42,6 +43,7 @@ import {
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
   normalizeDeliveryHubCatalogResponse,
   normalizeDeliveryHubPickupPointsResponse,
+  normalizeDeliveryHubCutoverPreconditionsResponse,
   normalizeDeliveryHubQuotesResponse,
   normalizeDeliveryHubReadinessResponse,
   normalizeDeliveryHubSettingsResponse,
@@ -829,6 +831,180 @@ test("buildDeliveryHubCheckoutCutoverGateStatus stays default-off and preflight-
   )
   assert.equal(
     enabled.blocker_labels.some((label) => label.includes("canCommitShippingMethod=false")),
+    true
+  )
+})
+
+function buildCutoverPreconditionsFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    ok: true,
+    version: 1,
+    posture: "evidence_preflight_only",
+    status: "preflight_only",
+    can_commit_shipping_method: false,
+    summary: {
+      ready_count: 6,
+      missing_count: 1,
+      required_count: 1,
+      blocked_count: 2,
+      not_enabled_count: 1,
+      total_count: 10,
+    },
+    preconditions: [
+      {
+        code: "store_quote_contract_ready",
+        label: "Store quote contract ready",
+        status: "ready",
+        ready: true,
+        detail: "Neutral Store quote contract exposes shopper-safe labels only.",
+        evidence: [{ label: "quotes route normalized", status: "ready" }],
+      },
+      {
+        code: "neutral_selection_ready",
+        label: "Neutral selection ready",
+        status: "ready",
+        ready: true,
+        detail: "Neutral persisted selection contract is available without committing checkout.",
+        evidence: [{ label: "selection route normalized", status: "ready" }],
+      },
+      {
+        code: "admin_yandex_quote_baseline_recorded",
+        label: "Admin/Yandex quote baseline recorded",
+        status: "missing",
+        ready: false,
+        detail: "Stored safe quote evidence for both validated modes is not complete yet.",
+        evidence: [{ label: "stored safe event labels only", status: "missing" }],
+      },
+      {
+        code: "operator_approval_required",
+        label: "Operator approval required",
+        status: "required",
+        ready: false,
+        detail: "A separate operator-approved implementation tranche is required before cutover.",
+        evidence: [{ label: "manual approval gate", status: "required" }],
+      },
+      {
+        code: "shipment_lifecycle_not_enabled",
+        label: "Shipment lifecycle not enabled",
+        status: "blocked",
+        ready: false,
+        detail: "Shipment create/cancel/status/retry stays outside this preflight verifier.",
+        evidence: [{ label: "shipment lifecycle disabled", status: "blocked" }],
+      },
+      {
+        code: "can_commit_shipping_method",
+        label: "Shipping-method commit remains blocked",
+        status: "blocked",
+        ready: false,
+        detail: "can_commit_shipping_method=false until a separate approved cutover tranche.",
+        evidence: [{ label: "runtime invariant", status: "blocked" }],
+      },
+    ],
+    guardrails: {
+      checkout_source_of_truth: "unchanged",
+      no_network_calls: true,
+      no_provider_payloads: true,
+      no_secret_material: true,
+      shipment_lifecycle_not_enabled: true,
+      can_commit_shipping_method: false,
+    },
+    ...overrides,
+  }
+}
+
+test("normalizeDeliveryHubCutoverPreconditionsResponse keeps verifier safe and commit-blocked", () => {
+  const response = normalizeDeliveryHubCutoverPreconditionsResponse({
+    ...buildCutoverPreconditionsFixture(),
+    raw_reference: "must-not-leak",
+    token: "must-not-leak",
+    preconditions: [
+      ...buildCutoverPreconditionsFixture().preconditions,
+      {
+        code: "preview_ui_ready",
+        label: "Preview UI ready",
+        status: "ready",
+        ready: true,
+        detail: "Preview/shadow UI exists near checkout guardrails.",
+        evidence: [
+          { label: "delivery-hub-cutover-preconditions-status", status: "ready" },
+        ],
+        raw_provider_payload: "must-not-leak",
+      },
+    ],
+  })
+  const serialized = JSON.stringify(response).toLowerCase()
+
+  assert.equal(response.posture, "evidence_preflight_only")
+  assert.equal(response.status, "preflight_only")
+  assert.equal(response.can_commit_shipping_method, false)
+  assert.equal(response.guardrails.can_commit_shipping_method, false)
+  assert.equal(response.guardrails.no_network_calls, true)
+  assert.equal(response.preconditions.some((entry) => entry.code === "can_commit_shipping_method"), true)
+  assert.equal(serialized.includes("must-not-leak"), false)
+  assert.equal(serialized.includes("raw_provider_payload"), false)
+  assert.equal(serialized.includes("raw_reference"), false)
+  assert.equal(serialized.includes("token"), false)
+})
+
+test("normalizeDeliveryHubCutoverPreconditionsResponse rejects commit enabling and guardrail drift", () => {
+  assert.throws(
+    () => normalizeDeliveryHubCutoverPreconditionsResponse(
+      buildCutoverPreconditionsFixture({ can_commit_shipping_method: true })
+    ),
+    /cannot enable shipping-method commit/
+  )
+  assert.throws(
+    () => normalizeDeliveryHubCutoverPreconditionsResponse(
+      buildCutoverPreconditionsFixture({
+        guardrails: {
+          ...buildCutoverPreconditionsFixture().guardrails,
+          can_commit_shipping_method: true,
+        },
+      })
+    ),
+    /cannot enable shipping-method commit/
+  )
+  assert.throws(
+    () => normalizeDeliveryHubCutoverPreconditionsResponse(
+      buildCutoverPreconditionsFixture({
+        guardrails: {
+          ...buildCutoverPreconditionsFixture().guardrails,
+          no_network_calls: false,
+        },
+      })
+    ),
+    /no_network_calls/
+  )
+})
+
+test("buildDeliveryHubCutoverPreconditionsPreviewModel fails safe when verifier is unavailable", () => {
+  const unavailable = buildDeliveryHubCutoverPreconditionsPreviewModel(null)
+
+  assert.equal(unavailable.availability, "unavailable")
+  assert.equal(unavailable.tone, "warning")
+  assert.equal(unavailable.canCommitShippingMethod, false)
+  assert.equal(unavailable.commit_label, "canCommitShippingMethod=false")
+  assert.deepEqual(unavailable.blocked_codes, ["can_commit_shipping_method"])
+  assert.equal(
+    unavailable.summary_label.includes("checkout cutover remains blocked"),
+    true
+  )
+})
+
+test("buildDeliveryHubCutoverPreconditionsPreviewModel aggregates available verifier status without approval", () => {
+  const normalized = normalizeDeliveryHubCutoverPreconditionsResponse(buildCutoverPreconditionsFixture())
+  const model = buildDeliveryHubCutoverPreconditionsPreviewModel(normalized)
+
+  assert.equal(model.availability, "available")
+  assert.equal(model.tone, "warning")
+  assert.equal(model.canCommitShippingMethod, false)
+  assert.equal(model.commit_label, "canCommitShippingMethod=false")
+  assert.equal(model.missing_codes.includes("admin_yandex_quote_baseline_recorded"), true)
+  assert.equal(model.required_codes.includes("operator_approval_required"), true)
+  assert.equal(model.blocked_codes.includes("can_commit_shipping_method"), true)
+  assert.equal(model.guardrail_labels.includes("no_network_calls=true"), true)
+  assert.equal(
+    model.hint_messages.some((message) => message.includes("not cutover approval")),
     true
   )
 })
@@ -10356,6 +10532,9 @@ test("delivery hub selection cut-in wires only neutral save/clear helpers and ke
   assert.equal(shippingSource.includes("Delivery Hub Preview/Shadow UI"), true)
   assert.equal(shippingSource.includes("void handleDeliveryHubNeutralPreviewQuote()"), true)
   assert.equal(shippingSource.includes("delivery-hub-cutover-gate-status"), true)
+  assert.equal(shippingSource.includes("delivery-hub-cutover-preconditions-status"), true)
+  assert.equal(shippingSource.includes("retrieveDeliveryHubCutoverPreconditions()"), true)
+  assert.equal(shippingSource.includes("buildDeliveryHubCutoverPreconditionsPreviewModel"), true)
   assert.equal(shippingSource.includes("canCommitShippingMethod"), true)
   assert.equal(shippingSource.includes("blocked/preflight only"), true)
   assert.equal(shippingSource.includes("setShippingMethod"), true)
@@ -10389,6 +10568,12 @@ test("delivery hub preview shadow UI exposes stable manual validation hooks and 
     "delivery-hub-cutover-gate-mode",
     "delivery-hub-cutover-gate-summary",
     "delivery-hub-cutover-gate-detail",
+    "delivery-hub-cutover-preconditions-status",
+    "delivery-hub-cutover-preconditions-availability",
+    "delivery-hub-cutover-preconditions-summary",
+    "delivery-hub-cutover-preconditions-commit-status",
+    "delivery-hub-cutover-preconditions-guardrails",
+    "delivery-hub-cutover-preconditions-missing",
     "delivery-hub-preview-quote-type",
     "delivery-hub-preview-connection-id",
     "delivery-hub-preview-destination-point-id",

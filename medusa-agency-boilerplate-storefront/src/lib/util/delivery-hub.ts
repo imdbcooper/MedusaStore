@@ -887,6 +887,83 @@ export function normalizeDeliveryHubSelectionResponse(
   return response
 }
 
+function readCutoverPreconditionStatus(
+  value: unknown,
+  field: string
+): DeliveryHubCutoverPreconditionStatus {
+  if (
+    typeof value !== "string" ||
+    !DELIVERY_HUB_CUTOVER_PRECONDITION_STATUSES.includes(
+      value as DeliveryHubCutoverPreconditionStatus
+    )
+  ) {
+    throw new Error(`Delivery Hub payload field \"${field}\" must be a supported cutover precondition status`)
+  }
+
+  return value as DeliveryHubCutoverPreconditionStatus
+}
+
+function readCutoverPreconditionCode(
+  value: unknown,
+  field: string
+): DeliveryHubCutoverPreconditionCode {
+  if (
+    typeof value !== "string" ||
+    !DELIVERY_HUB_CUTOVER_PRECONDITION_CODES.includes(
+      value as DeliveryHubCutoverPreconditionCode
+    )
+  ) {
+    throw new Error(`Delivery Hub payload field \"${field}\" must be a supported cutover precondition code`)
+  }
+
+  return value as DeliveryHubCutoverPreconditionCode
+}
+
+function readLiteralOne(value: unknown, field: string): 1 {
+  if (value !== 1) {
+    throw new Error(`Delivery Hub payload field \"${field}\" must equal 1`)
+  }
+
+  return 1
+}
+
+function readNonNegativeInteger(value: unknown, field: string) {
+  const parsed = readFiniteNumber(value, field)
+
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`Delivery Hub payload field \"${field}\" must be a non-negative integer`)
+  }
+
+  return parsed
+}
+
+function normalizeDeliveryHubCutoverPrecondition(
+  value: unknown,
+  field: string
+): DeliveryHubCutoverPrecondition {
+  const record = requireRecord(value, field)
+  const evidence = Array.isArray(record.evidence) ? record.evidence : []
+
+  return {
+    code: readCutoverPreconditionCode(record.code, `${field}.code`),
+    label: readRequiredString(record.label, `${field}.label`),
+    status: readCutoverPreconditionStatus(record.status, `${field}.status`),
+    ready: readBoolean(record.ready, `${field}.ready`),
+    detail: readRequiredString(record.detail, `${field}.detail`),
+    evidence: evidence.map((entry, index) => {
+      const evidenceRecord = requireRecord(entry, `${field}.evidence.${index}`)
+
+      return {
+        label: readRequiredString(evidenceRecord.label, `${field}.evidence.${index}.label`),
+        status: readCutoverPreconditionStatus(
+          evidenceRecord.status,
+          `${field}.evidence.${index}.status`
+        ),
+      }
+    }),
+  }
+}
+
 export function normalizeDeliveryHubReadinessResponse(
   payload: unknown
 ): DeliveryHubReadinessResponse {
@@ -908,6 +985,167 @@ export function normalizeDeliveryHubReadinessResponse(
       record.quote_context === null || record.quote_context === undefined
         ? null
         : normalizeDeliveryHubSelectionQuoteContext(record.quote_context, "quote_context"),
+  }
+}
+
+export function normalizeDeliveryHubCutoverPreconditionsResponse(
+  payload: unknown
+): DeliveryHubCutoverPreconditionsResponse {
+  const record = requireRecord(payload, "cutover-preconditions")
+  const summary = requireRecord(record.summary, "summary")
+  const guardrails = requireRecord(record.guardrails, "guardrails")
+  const preconditions = Array.isArray(record.preconditions) ? record.preconditions : []
+
+  const posture = readRequiredString(record.posture, "posture")
+  const status = readRequiredString(record.status, "status")
+  const checkoutSourceOfTruth = readRequiredString(
+    guardrails.checkout_source_of_truth,
+    "guardrails.checkout_source_of_truth"
+  )
+  const canCommit = readBoolean(record.can_commit_shipping_method, "can_commit_shipping_method")
+  const guardrailCanCommit = readBoolean(
+    guardrails.can_commit_shipping_method,
+    "guardrails.can_commit_shipping_method"
+  )
+
+  if (posture !== "evidence_preflight_only") {
+    throw new Error('Delivery Hub payload field "posture" must be evidence_preflight_only')
+  }
+
+  if (status !== "preflight_only") {
+    throw new Error('Delivery Hub payload field "status" must be preflight_only')
+  }
+
+  if (checkoutSourceOfTruth !== "unchanged") {
+    throw new Error(
+      'Delivery Hub payload field "guardrails.checkout_source_of_truth" must be unchanged'
+    )
+  }
+
+  if (canCommit || guardrailCanCommit) {
+    throw new Error(
+      'Delivery Hub cutover preconditions cannot enable shipping-method commit'
+    )
+  }
+
+  return {
+    ok: true,
+    version: readLiteralOne(record.version, "version"),
+    posture: "evidence_preflight_only",
+    status: "preflight_only",
+    can_commit_shipping_method: false,
+    summary: {
+      ready_count: readNonNegativeInteger(summary.ready_count, "summary.ready_count"),
+      missing_count: readNonNegativeInteger(summary.missing_count, "summary.missing_count"),
+      required_count: readNonNegativeInteger(summary.required_count, "summary.required_count"),
+      blocked_count: readNonNegativeInteger(summary.blocked_count, "summary.blocked_count"),
+      not_enabled_count: readNonNegativeInteger(
+        summary.not_enabled_count,
+        "summary.not_enabled_count"
+      ),
+      total_count: readNonNegativeInteger(summary.total_count, "summary.total_count"),
+    },
+    preconditions: preconditions.map((precondition, index) =>
+      normalizeDeliveryHubCutoverPrecondition(precondition, `preconditions.${index}`)
+    ),
+    guardrails: {
+      checkout_source_of_truth: "unchanged",
+      no_network_calls: readBoolean(guardrails.no_network_calls, "guardrails.no_network_calls")
+        ? true
+        : failDeliveryHubBooleanGuardrail("guardrails.no_network_calls"),
+      no_provider_payloads: readBoolean(
+        guardrails.no_provider_payloads,
+        "guardrails.no_provider_payloads"
+      )
+        ? true
+        : failDeliveryHubBooleanGuardrail("guardrails.no_provider_payloads"),
+      no_secret_material: readBoolean(
+        guardrails.no_secret_material,
+        "guardrails.no_secret_material"
+      )
+        ? true
+        : failDeliveryHubBooleanGuardrail("guardrails.no_secret_material"),
+      shipment_lifecycle_not_enabled: readBoolean(
+        guardrails.shipment_lifecycle_not_enabled,
+        "guardrails.shipment_lifecycle_not_enabled"
+      )
+        ? true
+        : failDeliveryHubBooleanGuardrail("guardrails.shipment_lifecycle_not_enabled"),
+      can_commit_shipping_method: false,
+    },
+  }
+}
+
+function failDeliveryHubBooleanGuardrail(field: string): never {
+  throw new Error(`Delivery Hub payload field \"${field}\" must be true`)
+}
+
+export function buildDeliveryHubCutoverPreconditionsPreviewModel(
+  preconditions: DeliveryHubCutoverPreconditionsResponse | null | undefined
+): DeliveryHubCutoverPreconditionsPreviewModel {
+  if (!preconditions) {
+    return {
+      tone: "warning",
+      availability: "unavailable",
+      status_label: "Cutover preconditions verifier unavailable",
+      summary_label: "Verifier response is unavailable; checkout cutover remains blocked.",
+      commit_label: "canCommitShippingMethod=false",
+      ready_count: 0,
+      total_count: 0,
+      missing_codes: [],
+      required_codes: [],
+      blocked_codes: ["can_commit_shipping_method"],
+      guardrail_labels: [
+        "fail-safe unavailable verifier",
+        "checkout source-of-truth unchanged",
+      ],
+      preconditions: [],
+      canCommitShippingMethod: false,
+      hint_messages: [
+        "Delivery Hub checkout commit remains disabled when the preconditions verifier cannot be loaded.",
+      ],
+    }
+  }
+
+  const missingCodes = preconditions.preconditions
+    .filter((entry) => entry.status === "missing")
+    .map((entry) => entry.code)
+  const requiredCodes = preconditions.preconditions
+    .filter((entry) => entry.status === "required")
+    .map((entry) => entry.code)
+  const blockedCodes = preconditions.preconditions
+    .filter((entry) => entry.status === "blocked")
+    .map((entry) => entry.code)
+
+  return {
+    tone: missingCodes.length || requiredCodes.length || blockedCodes.length ? "warning" : "positive",
+    availability: "available",
+    status_label: "Cutover preconditions verifier available · evidence/preflight only",
+    summary_label: `${preconditions.summary.ready_count}/${preconditions.summary.total_count} preconditions ready; missing=${preconditions.summary.missing_count}; required=${preconditions.summary.required_count}; blocked=${preconditions.summary.blocked_count}.`,
+    commit_label: "canCommitShippingMethod=false",
+    ready_count: preconditions.summary.ready_count,
+    total_count: preconditions.summary.total_count,
+    missing_codes: missingCodes,
+    required_codes: requiredCodes,
+    blocked_codes: blockedCodes,
+    guardrail_labels: [
+      `checkout_source_of_truth=${preconditions.guardrails.checkout_source_of_truth}`,
+      `no_network_calls=${String(preconditions.guardrails.no_network_calls)}`,
+      `no_provider_payloads=${String(preconditions.guardrails.no_provider_payloads)}`,
+      `no_secret_material=${String(preconditions.guardrails.no_secret_material)}`,
+      `shipment_lifecycle_not_enabled=${String(preconditions.guardrails.shipment_lifecycle_not_enabled)}`,
+    ],
+    preconditions: preconditions.preconditions,
+    canCommitShippingMethod: false,
+    hint_messages: uniqueDeliveryHubMessages([
+      "Verifier aggregates safe evidence labels only and is not cutover approval.",
+      requiredCodes.includes("operator_approval_required")
+        ? "Operator approval remains required in a separate implementation tranche."
+        : null,
+      blockedCodes.includes("can_commit_shipping_method")
+        ? "Shipping-method commit remains blocked by invariant."
+        : null,
+    ]),
   }
 }
 
@@ -1138,6 +1376,91 @@ export type DeliveryHubSavedSelectionSummaryModel = {
   correlation_id_label: string | null
   reconciliation_messages: string[]
   action_label: string | null
+}
+
+export const DELIVERY_HUB_CUTOVER_PRECONDITION_CODES = [
+  "store_quote_contract_ready",
+  "neutral_selection_ready",
+  "preview_ui_ready",
+  "browser_mock_smoke_ready",
+  "rollback_plan_ready",
+  "admin_yandex_quote_baseline_recorded",
+  "fulfillment_bridge_preview_ready",
+  "operator_approval_required",
+  "shipment_lifecycle_not_enabled",
+  "can_commit_shipping_method",
+] as const
+
+export const DELIVERY_HUB_CUTOVER_PRECONDITION_STATUSES = [
+  "ready",
+  "missing",
+  "required",
+  "blocked",
+  "not_enabled",
+] as const
+
+export type DeliveryHubCutoverPreconditionCode =
+  (typeof DELIVERY_HUB_CUTOVER_PRECONDITION_CODES)[number]
+
+export type DeliveryHubCutoverPreconditionStatus =
+  (typeof DELIVERY_HUB_CUTOVER_PRECONDITION_STATUSES)[number]
+
+export type DeliveryHubCutoverPrecondition = {
+  code: DeliveryHubCutoverPreconditionCode
+  label: string
+  status: DeliveryHubCutoverPreconditionStatus
+  ready: boolean
+  detail: string
+  evidence: Array<{
+    label: string
+    status: DeliveryHubCutoverPreconditionStatus
+  }>
+}
+
+export type DeliveryHubCutoverPreconditionsResponse = {
+  ok: true
+  version: 1
+  posture: "evidence_preflight_only"
+  status: "preflight_only"
+  can_commit_shipping_method: false
+  summary: {
+    ready_count: number
+    missing_count: number
+    required_count: number
+    blocked_count: number
+    not_enabled_count: number
+    total_count: number
+  }
+  preconditions: DeliveryHubCutoverPrecondition[]
+  guardrails: {
+    checkout_source_of_truth: "unchanged"
+    no_network_calls: true
+    no_provider_payloads: true
+    no_secret_material: true
+    shipment_lifecycle_not_enabled: true
+    can_commit_shipping_method: false
+  }
+}
+
+export type DeliveryHubCutoverPreconditionsAvailability =
+  | "available"
+  | "unavailable"
+
+export type DeliveryHubCutoverPreconditionsPreviewModel = {
+  tone: "neutral" | "positive" | "warning"
+  availability: DeliveryHubCutoverPreconditionsAvailability
+  status_label: string
+  summary_label: string
+  commit_label: string
+  ready_count: number
+  total_count: number
+  missing_codes: DeliveryHubCutoverPreconditionCode[]
+  required_codes: DeliveryHubCutoverPreconditionCode[]
+  blocked_codes: DeliveryHubCutoverPreconditionCode[]
+  guardrail_labels: string[]
+  preconditions: DeliveryHubCutoverPrecondition[]
+  canCommitShippingMethod: false
+  hint_messages: string[]
 }
 
 export type DeliveryHubCommitEligibleShippingOption = {

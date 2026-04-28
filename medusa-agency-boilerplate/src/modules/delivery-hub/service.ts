@@ -44,6 +44,10 @@ import {
   type DeliveryHubShippingOptionSyncOperationPlan,
 } from "./shipping-option-sync-operation-plan"
 import {
+  buildDeliveryHubCutoverPreconditions,
+  type DeliveryHubCutoverPreconditionsResponse,
+} from "./cutover-preconditions"
+import {
   buildDeliveryHubStoreSelectionConnectionSummary,
   buildDeliveryHubStoreSelectionReadiness,
   createMissingDeliveryHubSelectionConnectionSummary,
@@ -80,6 +84,7 @@ import {
 import {
   appendDeliveryEventLog,
   listDeliveryEventLogs,
+  listDeliveryEventLogsReadOnly,
   type DeliveryHubEventLogRecord,
 } from "./storage/event-log-repository"
 import { type DeliveryHubPgConnection } from "./storage/pg"
@@ -1284,6 +1289,45 @@ export class DeliveryHubService {
       default_connection_id: defaultConnectionId,
       connections,
     }
+  }
+
+  async getStoreCutoverPreconditions(): Promise<DeliveryHubCutoverPreconditionsResponse> {
+    const [connections, warehouses, quoteEventLogs] = await Promise.all([
+      listDeliveryConnectionsReadOnly(this.pg),
+      listDeliveryWarehousesReadOnly(this.pg),
+      listDeliveryEventLogsReadOnly(this.pg, {
+        provider_code: DELIVERY_HUB_PROVIDER_YANDEX,
+        limit: 100,
+      }),
+    ])
+    const shippingOptionPlan = planDeliveryHubDesiredShippingOptions({
+      connections,
+      warehouses,
+    })
+    const fulfillmentBridgePreview = buildDeliveryHubFulfillmentBridgePreview({
+      projected_modes: shippingOptionPlan.desired_options.map((option) => ({
+        mode_code: option.mode_code,
+        supporting_connection_ids: option.supporting_connection_ids,
+      })),
+      deferred_modes: shippingOptionPlan.deferred_options.map((option) => ({
+        mode_code: option.mode_code,
+        issues: option.issues.map<DeliveryHubFulfillmentBridgePlannerIssue>((issue) => ({
+          connection_id: issue.connection_id,
+          provider_code: issue.provider_code,
+          code: issue.code,
+          message: issue.message,
+          mode_code: issue.mode_code,
+        })),
+      })),
+    })
+
+    return buildDeliveryHubCutoverPreconditions({
+      connections,
+      warehouses,
+      shipping_option_plan: shippingOptionPlan,
+      fulfillment_bridge_preview: fulfillmentBridgePreview,
+      quote_event_logs: quoteEventLogs,
+    })
   }
 
   async getStoreSettings(): Promise<DeliveryHubStoreSettingsResponse> {

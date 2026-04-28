@@ -30,6 +30,7 @@ import {
   StoreDeliveryQuotesBodySchema,
   StoreDeliveryQuotesQuerySchema,
 } from "./store/delivery/quotes/route"
+import { StoreDeliveryCutoverPreconditionsQuerySchema } from "./store/delivery/cutover-preconditions/route"
 import { StoreDeliverySelectionReadinessQuerySchema } from "./store/delivery/readiness/route"
 import { StoreDeliverySettingsQuerySchema } from "./store/delivery/settings/route"
 import {
@@ -250,6 +251,16 @@ export default defineMiddlewares({
       methods: ["GET"],
       middlewares: [
         validateAndTransformQuery(StoreDeliverySettingsQuerySchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/store/delivery/cutover-preconditions",
+      methods: ["GET"],
+      middlewares: [
+        validateAndTransformQuery(StoreDeliveryCutoverPreconditionsQuerySchema, {
           defaults: [],
           isList: false,
         }),

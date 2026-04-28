@@ -275,6 +275,76 @@ const StoreDeliveryReadinessResponseSchema = z
   })
   .strict()
 
+const StoreDeliveryCutoverPreconditionStatusSchema = z.enum([
+  "ready",
+  "missing",
+  "required",
+  "blocked",
+  "not_enabled",
+])
+
+const StoreDeliveryCutoverPreconditionCodeSchema = z.enum([
+  "store_quote_contract_ready",
+  "neutral_selection_ready",
+  "preview_ui_ready",
+  "browser_mock_smoke_ready",
+  "rollback_plan_ready",
+  "admin_yandex_quote_baseline_recorded",
+  "fulfillment_bridge_preview_ready",
+  "operator_approval_required",
+  "shipment_lifecycle_not_enabled",
+  "can_commit_shipping_method",
+])
+
+const StoreDeliveryCutoverPreconditionsResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    version: z.literal(1),
+    posture: z.literal("evidence_preflight_only"),
+    status: z.literal("preflight_only"),
+    can_commit_shipping_method: z.literal(false),
+    summary: z
+      .object({
+        ready_count: z.number().int().nonnegative(),
+        missing_count: z.number().int().nonnegative(),
+        required_count: z.number().int().nonnegative(),
+        blocked_count: z.number().int().nonnegative(),
+        not_enabled_count: z.number().int().nonnegative(),
+        total_count: z.number().int().nonnegative(),
+      })
+      .strict(),
+    preconditions: z.array(
+      z
+        .object({
+          code: StoreDeliveryCutoverPreconditionCodeSchema,
+          label: z.string(),
+          status: StoreDeliveryCutoverPreconditionStatusSchema,
+          ready: z.boolean(),
+          detail: z.string(),
+          evidence: z.array(
+            z
+              .object({
+                label: z.string(),
+                status: StoreDeliveryCutoverPreconditionStatusSchema,
+              })
+              .strict()
+          ),
+        })
+        .strict()
+    ),
+    guardrails: z
+      .object({
+        checkout_source_of_truth: z.literal("unchanged"),
+        no_network_calls: z.literal(true),
+        no_provider_payloads: z.literal(true),
+        no_secret_material: z.literal(true),
+        shipment_lifecycle_not_enabled: z.literal(true),
+        can_commit_shipping_method: z.literal(false),
+      })
+      .strict(),
+  })
+  .strict()
+
 export function getStoreDeliveryHubService(req: MedusaRequest) {
   const pg = getDeliveryHubPgConnection(req.scope)
   return createDeliveryHubService(pg)
@@ -345,6 +415,10 @@ export function sanitizeStoreDeliveryReadinessResponse(result: unknown) {
 
 export function sanitizeStoreDeliverySelectionResponse(result: unknown) {
   return StoreDeliverySelectionResponseSchema.parse(result)
+}
+
+export function sanitizeStoreDeliveryCutoverPreconditionsResponse(result: unknown) {
+  return StoreDeliveryCutoverPreconditionsResponseSchema.parse(result)
 }
 
 export function parseStoreDeliveryItems(rawItems: string | undefined) {

@@ -100,6 +100,30 @@ export async function listDeliveryEventLogs(
 ) {
   await ensureDeliveryEventLogsTable(pg)
 
+  return listDeliveryEventLogsUnsafeAssumeTable(pg, input)
+}
+
+export async function listDeliveryEventLogsReadOnly(
+  pg: DeliveryHubPgConnection,
+  input: DeliveryHubEventLogListInput = {}
+) {
+  const rows = getRawRows<{ table_name: string | null }>(
+    await pg.raw(`
+      select to_regclass(?) as table_name
+    `, [DELIVERY_HUB_EVENT_LOGS_TABLE])
+  )
+
+  if (!rows[0]?.table_name) {
+    return []
+  }
+
+  return listDeliveryEventLogsUnsafeAssumeTable(pg, input)
+}
+
+async function listDeliveryEventLogsUnsafeAssumeTable(
+  pg: DeliveryHubPgConnection,
+  input: DeliveryHubEventLogListInput = {}
+) {
   const filters: string[] = []
   const params: unknown[] = []
   const connectionId = normalizeNullableText(input.connection_id)

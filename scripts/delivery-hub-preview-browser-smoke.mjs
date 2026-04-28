@@ -278,6 +278,11 @@ async function startMockBackend() {
         return
       }
 
+      if (req.method === "GET" && pathname === "/store/delivery/cutover-preconditions") {
+        sendJson(res, 200, buildCutoverPreconditionsResponse())
+        return
+      }
+
       if (req.method === "GET" && pathname === "/store/delivery/readiness") {
         sendJson(res, 200, {
           ok: true,
@@ -405,6 +410,114 @@ async function startMockBackend() {
   const url = `http://127.0.0.1:${port}`
   log(`Delivery Hub preview mock Store API listening on ${url}`)
   return url
+}
+
+function buildCutoverPreconditionsResponse() {
+  return {
+    ok: true,
+    version: 1,
+    posture: "evidence_preflight_only",
+    status: "preflight_only",
+    can_commit_shipping_method: false,
+    summary: {
+      ready_count: 7,
+      missing_count: 0,
+      required_count: 1,
+      blocked_count: 2,
+      not_enabled_count: 1,
+      total_count: 10,
+    },
+    preconditions: [
+      {
+        code: "store_quote_contract_ready",
+        label: "Store quote contract ready",
+        status: "ready",
+        ready: true,
+        detail: "Mock Store quote contract is available with shopper-safe labels only.",
+        evidence: [{ label: "mock store quote response normalized", status: "ready" }],
+      },
+      {
+        code: "neutral_selection_ready",
+        label: "Neutral selection ready",
+        status: "ready",
+        ready: true,
+        detail: "Mock neutral selection save/read path is available without checkout commit.",
+        evidence: [{ label: "mock selection route normalized", status: "ready" }],
+      },
+      {
+        code: "preview_ui_ready",
+        label: "Preview UI ready",
+        status: "ready",
+        ready: true,
+        detail: "Preview/shadow UI exposes verifier status near the cutover gate.",
+        evidence: [{ label: "delivery-hub-cutover-preconditions-status", status: "ready" }],
+      },
+      {
+        code: "browser_mock_smoke_ready",
+        label: "Browser mock smoke ready",
+        status: "ready",
+        ready: true,
+        detail: "Browser smoke uses local mock Store API responses only.",
+        evidence: [{ label: "delivery-hub-preview-browser-smoke.mjs", status: "ready" }],
+      },
+      {
+        code: "rollback_plan_ready",
+        label: "Rollback plan ready",
+        status: "ready",
+        ready: true,
+        detail: "Rollback remains flag-off/source-of-truth unchanged.",
+        evidence: [{ label: "checkout cutover plan documents rollback", status: "ready" }],
+      },
+      {
+        code: "admin_yandex_quote_baseline_recorded",
+        label: "Admin/Yandex quote baseline recorded",
+        status: "ready",
+        ready: true,
+        detail: "Existing live baseline is represented here by safe evidence labels only.",
+        evidence: [{ label: "warehouse and dropoff quote baselines recorded", status: "ready" }],
+      },
+      {
+        code: "fulfillment_bridge_preview_ready",
+        label: "Fulfillment bridge preview ready",
+        status: "ready",
+        ready: true,
+        detail: "Bridge preview remains diagnostic-only and mutation-free.",
+        evidence: [{ label: "diagnostic fulfillment bridge preview", status: "ready" }],
+      },
+      {
+        code: "operator_approval_required",
+        label: "Operator approval required",
+        status: "required",
+        ready: false,
+        detail: "A separate operator-approved tranche is still required before checkout cutover.",
+        evidence: [{ label: "manual approval gate", status: "required" }],
+      },
+      {
+        code: "shipment_lifecycle_not_enabled",
+        label: "Shipment lifecycle not enabled",
+        status: "blocked",
+        ready: false,
+        detail: "Shipment create/cancel/status/retry is not enabled by this verifier.",
+        evidence: [{ label: "shipment lifecycle disabled", status: "blocked" }],
+      },
+      {
+        code: "can_commit_shipping_method",
+        label: "Shipping-method commit remains blocked",
+        status: "blocked",
+        ready: false,
+        detail: "can_commit_shipping_method=false until separate approved cutover implementation.",
+        evidence: [{ label: "runtime invariant", status: "blocked" }],
+      },
+    ],
+    guardrails: {
+      checkout_source_of_truth: "unchanged",
+      no_network_calls: true,
+      no_provider_payloads: true,
+      no_secret_material: true,
+      shipment_lifecycle_not_enabled: true,
+      can_commit_shipping_method: false,
+    },
+  }
 }
 
 async function resolveChromeBinary() {
@@ -700,6 +813,11 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
   const sessionId = await newPageSession(baseUrl)
   await navigate(sessionId, `${baseUrl}/ru/checkout?step=delivery`)
   await waitFor(sessionId, "Boolean(document.querySelector('[data-testid=\"delivery-hub-preview-shadow-block\"]'))", "Delivery Hub preview block")
+  await waitFor(
+    sessionId,
+    "document.querySelector('[data-testid=\"delivery-hub-cutover-preconditions-status\"]')?.innerText.includes('Preconditions verifier: available')",
+    "cutover preconditions verifier"
+  )
 
   const initial = await evaluate(sessionId, `(() => {
     const text = document.body.innerText
@@ -709,6 +827,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
       existingShippingVisible: text.includes('ApiShip/Medusa fallback shipping'),
       guardrails: document.querySelector('[data-testid="delivery-hub-preview-guardrails"]')?.innerText || '',
       cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
+      cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.innerText || '',
       operationStatus: document.querySelector('[data-testid="delivery-hub-preview-operation-status"]')?.innerText || '',
       selectionStatus: document.querySelector('[data-testid="delivery-hub-preview-selection-status"]')?.innerText || '',
     }
@@ -719,6 +838,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
   if (!initial.guardrails.includes("checkout source-of-truth unchanged")) fail("Source-of-truth guardrail is missing.")
   if (!initial.guardrails.includes("does not commit a Medusa shipping method")) fail("No-checkout-cutover guardrail is missing.")
   assertCutoverGate(initial.cutoverGate, expectedCutoverEnabled)
+  assertCutoverPreconditions(initial.cutoverPreconditions)
   assertNoUnsafeNeedles(initial.text, "initial enabled preview page")
 
   await evaluate(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-get-quotes-button\"]').click()")
@@ -756,6 +876,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
       sourceOfTruth: document.querySelector('[data-testid="delivery-hub-preview-source-of-truth-status"]')?.innerText || '',
       existingShippingVisible: text.includes('ApiShip/Medusa fallback shipping'),
       cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
+      cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.innerText || '',
     }
   })()`)
 
@@ -763,6 +884,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
   if (!afterSave.sourceOfTruth.includes("checkout source-of-truth unchanged")) fail("Source-of-truth status changed after save.")
   if (!afterSave.existingShippingVisible) fail("Existing ApiShip/Medusa checkout contour disappeared after save.")
   assertCutoverGate(afterSave.cutoverGate, expectedCutoverEnabled)
+  assertCutoverPreconditions(afterSave.cutoverPreconditions)
   assertNoUnsafeNeedles(afterSave.text, "after mocked selection save")
 
   await evaluate(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-clear-selection-button\"]').click()")
@@ -803,6 +925,25 @@ function assertCutoverGate(text, expectedEnabled) {
   }
   if (!expectedEnabled && !gateText.includes("default-off")) {
     fail("Cutover gate default run did not show default-off posture.")
+  }
+}
+
+function assertCutoverPreconditions(text) {
+  const verifierText = String(text || "")
+  if (!verifierText.includes("Preconditions verifier: available")) {
+    fail("Cutover preconditions verifier availability is not visible in preview guardrails.")
+  }
+  if (!verifierText.includes("canCommitShippingMethod=false")) {
+    fail("Cutover preconditions verifier did not preserve canCommitShippingMethod=false invariant.")
+  }
+  if (!verifierText.includes("operator_approval_required")) {
+    fail("Cutover preconditions verifier did not surface operator approval as required.")
+  }
+  if (!verifierText.includes("shipment_lifecycle_not_enabled")) {
+    fail("Cutover preconditions verifier did not surface shipment lifecycle as not enabled.")
+  }
+  if (!verifierText.includes("can_commit_shipping_method")) {
+    fail("Cutover preconditions verifier did not surface commit blocker evidence.")
   }
 }
 
