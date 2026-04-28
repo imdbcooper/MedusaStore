@@ -35,6 +35,7 @@
     "smoke:storefront": "bash ./scripts/smoke-storefront.sh",
     "smoke:browser": "bash ./scripts/browser-smoke.sh",
     "smoke:delivery-hub-preview:browser": "node ./scripts/delivery-hub-preview-browser-smoke.mjs",
+    "smoke:delivery-hub-rollback:browser": "node ./scripts/delivery-hub-preview-browser-smoke.mjs --rollback-drill",
     "staging:verify": "bash ./scripts/staging-verification.sh",
     "integrity:baseline:static": "npm run lint && npm run typecheck && npm run backend:build && npm run storefront:build",
     "integrity:baseline:runtime-smoke": "npm run smoke:backend && npm run smoke:notification && npm run smoke:storefront && npm run smoke:browser",

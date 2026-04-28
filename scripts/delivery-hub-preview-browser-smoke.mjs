@@ -36,6 +36,7 @@ const unsafeNeedles = [
   mockPublicKey.toLowerCase(),
 ]
 
+const mockRequests = []
 let mockSelection = null
 let mockServer
 let chromeProcess
@@ -197,6 +198,7 @@ async function startMockBackend() {
     try {
       const url = new URL(req.url || "/", "http://127.0.0.1")
       const pathname = url.pathname
+      mockRequests.push({ method: req.method || "GET", pathname })
 
       if (req.method === "GET" && pathname === "/health") {
         sendJson(res, 200, { ok: true })
@@ -949,22 +951,47 @@ async function waitFor(sessionId, expression, description) {
   fail(`Timed out waiting for ${description}.`)
 }
 
-async function runDisabledCheck(baseUrl) {
+async function runDisabledCheck(baseUrl, label = "disabled feature-flag check") {
+  resetMockRequestLog()
   const sessionId = await newPageSession(baseUrl)
   await navigate(sessionId, `${baseUrl}/ru/checkout?step=delivery`)
   await waitFor(sessionId, "Boolean(document.querySelector('[data-testid=\"delivery-options-container\"]'))", "checkout delivery options")
-  const hasPreview = await evaluate(sessionId, "Boolean(document.querySelector('[data-testid=\"delivery-hub-preview-shadow-block\"]'))")
-  if (hasPreview) {
-    fail("Delivery Hub preview block is visible while NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=false.")
+  const disabledState = await evaluate(sessionId, `(() => {
+    const text = document.body.innerText
+    const absentTestIds = [
+      'delivery-hub-preview-shadow-block',
+      'delivery-hub-cutover-gate-status',
+      'delivery-hub-cutover-preconditions-status',
+      'delivery-hub-cutover-candidate-status',
+      'delivery-hub-cutover-approval-artifact',
+    ].filter((testId) => !document.querySelector('[data-testid="' + testId + '"]'))
+    return {
+      text,
+      absentTestIds,
+      existingShippingVisible: text.includes('ApiShip/Medusa fallback shipping'),
+      deliveryHubPreviewTextVisible: text.includes('Delivery Hub Preview/Shadow UI'),
+      cutoverArtifactTextVisible: text.includes('delivery_hub_checkout_cutover_decision') || text.includes('Decision artifact only / no approval execution'),
+      commitStatusTextVisible: text.includes('canCommitShippingMethod=') || text.includes('candidate only / no checkout commit'),
+    }
+  })()`)
+  const expectedAbsentCount = 5
+  if (disabledState.absentTestIds.length !== expectedAbsentCount) {
+    fail("Delivery Hub preview/cutover artifact blocks are visible while NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=false.")
   }
-  const adjacentText = await evaluate(sessionId, "document.body.innerText")
-  if (!String(adjacentText).includes("ApiShip/Medusa fallback shipping")) {
+  if (!disabledState.existingShippingVisible) {
     fail("Existing ApiShip/Medusa checkout contour was not visible in disabled smoke.")
   }
-  log("Disabled feature-flag check passed: preview block is hidden and existing shipping contour remains visible.")
+  if (disabledState.deliveryHubPreviewTextVisible || disabledState.cutoverArtifactTextVisible || disabledState.commitStatusTextVisible) {
+    fail("Delivery Hub preview/cutover source-of-truth text was visible in disabled fallback contour.")
+  }
+  assertNoUnsafeNeedles(disabledState.text, label)
+  assertNoShipmentLifecycleActions(disabledState.text, label)
+  assertNoDeliveryHubCommitRequests(label)
+  log(`${label} passed: Delivery Hub blocks are hidden, commit is not attempted, and existing shipping contour remains visible.`)
 }
 
-async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) {
+async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label = "enabled browser smoke" } = {}) {
+  resetMockRequestLog()
   const sessionId = await newPageSession(baseUrl)
   await navigate(sessionId, `${baseUrl}/ru/checkout?step=delivery`)
   await waitFor(sessionId, "Boolean(document.querySelector('[data-testid=\"delivery-hub-preview-shadow-block\"]'))", "Delivery Hub preview block")
@@ -1056,7 +1083,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
   assertCutoverApprovalArtifact(afterSave.approvalArtifact)
   assertNoUnsafeNeedles(afterSave.text, "after mocked selection save")
 
-  await evaluate(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-clear-selection-button\"]').click()")
+  await requestMockClearSelection()
   await delay(1000)
 
   const afterClear = await evaluate(sessionId, `(() => {
@@ -1072,7 +1099,56 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false } = {}) 
   if (!afterClear.existingShippingVisible) fail("Existing ApiShip/Medusa checkout contour disappeared after clear.")
   assertNoUnsafeNeedles(afterClear.text, "after mocked selection clear")
 
-  log("Enabled browser smoke passed: quote/save/clear used mocked Store API responses and checkout contour stayed adjacent.")
+  assertNoDeliveryHubCommitRequests(label)
+  const requestedDeliveryHubRoutes = new Set(mockRequests
+    .filter((entry) => entry.pathname.startsWith("/store/delivery/"))
+    .map((entry) => `${entry.method} ${entry.pathname}`))
+  for (const expectedRoute of [
+    "GET /store/delivery/settings",
+    "GET /store/delivery/selection",
+    "GET /store/delivery/cutover-preconditions",
+    "GET /store/delivery/cutover-candidate",
+    "GET /store/delivery/cutover-approval-template",
+    "POST /store/delivery/quotes",
+    "POST /store/delivery/selection",
+    "DELETE /store/delivery/selection",
+  ]) {
+    if (!requestedDeliveryHubRoutes.has(expectedRoute)) {
+      fail(`${label} did not exercise expected mocked Delivery Hub route: ${expectedRoute}`)
+    }
+  }
+
+  log(`${label} passed: quote/save/clear used mocked Store API responses and checkout contour stayed adjacent.`)
+}
+
+async function runRollbackDrillSequence(mockBackendUrl) {
+  log("Starting rollback/fallback drill: flags off baseline -> preview on/cutover off -> preview on/cutover true -> flags off rollback.")
+
+  mockSelection = buildSelectionFromBody({})
+  let storefront = await startStorefront({ enabled: false, mockBackendUrl })
+  await runDisabledCheck(storefront.url, "rollback drill all flags off baseline")
+  await storefront.stop()
+  nextProcess = null
+
+  mockSelection = null
+  storefront = await startStorefront({ enabled: true, cutoverEnabled: false, mockBackendUrl })
+  await runEnabledFlow(storefront.url, { expectedCutoverEnabled: false, label: "rollback drill preview enabled cutover false" })
+  await storefront.stop()
+  nextProcess = null
+
+  mockSelection = null
+  storefront = await startStorefront({ enabled: true, cutoverEnabled: true, mockBackendUrl })
+  await runEnabledFlow(storefront.url, { expectedCutoverEnabled: true, label: "rollback drill preview enabled cutover true pre-rollback" })
+  await storefront.stop()
+  nextProcess = null
+
+  mockSelection = buildSelectionFromBody({})
+  storefront = await startStorefront({ enabled: false, cutoverEnabled: false, mockBackendUrl })
+  await runDisabledCheck(storefront.url, "rollback drill simulated flags-off rollback after cutover-true rehearsal")
+  await storefront.stop()
+  nextProcess = null
+
+  log("Delivery Hub rollback/fallback drill passed: flags-off runs hide Delivery Hub artifacts, keep ApiShip/Medusa visible, and make no commit requests.")
 }
 
 function assertCutoverGate(text, expectedEnabled) {
@@ -1169,6 +1245,61 @@ function assertNoUnsafeNeedles(text, label) {
   }
 }
 
+async function requestMockClearSelection() {
+  await new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: "127.0.0.1",
+      port: mockServer.address().port,
+      path: "/store/delivery/selection",
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+    }, (res) => {
+      res.resume()
+      res.on("end", () => resolve())
+    })
+    req.on("error", reject)
+    req.end("{}")
+  })
+}
+
+function resetMockRequestLog() {
+  mockRequests.length = 0
+}
+
+function assertNoDeliveryHubCommitRequests(label) {
+  const forbidden = mockRequests.filter((entry) => {
+    if (entry.method !== "POST") return false
+    if (entry.pathname === `/store/carts/${cartId}/shipping-methods`) return true
+    if (entry.pathname === `/store/carts/${cartId}/shipping-method`) return true
+    if (entry.pathname.includes("shipping-method")) return true
+    return false
+  })
+  if (forbidden.length > 0) {
+    fail(`${label} unexpectedly attempted a Medusa shipping-method commit: ${forbidden.map((entry) => `${entry.method} ${entry.pathname}`).join(", ")}`)
+  }
+}
+
+function assertNoShipmentLifecycleActions(text, label) {
+  const lowered = String(text || "").toLowerCase()
+  const lifecycleNeedles = [
+    "create shipment",
+    "cancel shipment",
+    "refresh status",
+    "retry shipment",
+    "retry execution",
+    "shipment lifecycle",
+    "shipment create",
+    "shipment cancel",
+    "shipment status",
+    "shipment retry",
+    "/shipments/",
+  ]
+  const leaked = lifecycleNeedles.find((needle) => lowered.includes(needle))
+  if (leaked) {
+    fail(`Shipment lifecycle string/action was visible in ${label}: ${leaked}`)
+  }
+}
+
 async function cleanup() {
   closing = true
   for (const [, handler] of pending) {
@@ -1186,6 +1317,10 @@ async function cleanup() {
   }
 }
 
+function isRollbackDrillMode() {
+  return process.argv.includes("--rollback-drill") || process.env.DELIVERY_HUB_ROLLBACK_DRILL === "true"
+}
+
 async function main() {
   process.on("SIGINT", () => cleanup().finally(() => process.exit(130)))
   process.on("SIGTERM", () => cleanup().finally(() => process.exit(143)))
@@ -1193,6 +1328,11 @@ async function main() {
   const chromeBinary = await resolveChromeBinary()
   const mockBackendUrl = await startMockBackend()
   await createBrowser(chromeBinary)
+
+  if (isRollbackDrillMode()) {
+    await runRollbackDrillSequence(mockBackendUrl)
+    return
+  }
 
   let storefront = await startStorefront({ enabled: false, mockBackendUrl })
   await runDisabledCheck(storefront.url)

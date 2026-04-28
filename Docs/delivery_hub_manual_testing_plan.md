@@ -131,6 +131,23 @@ Expected result:
 - UI text scan не содержит raw provider body, token/auth header, ciphertext or publishable key value;
 - no checkout cutover: existing shipping contour остаётся visible, Delivery Hub preview не вызывает `setShippingMethod()` и не создаёт shipment operations.
 
+### Rollback/fallback browser drill
+
+Automated rollback/fallback drill command from the repository root:
+
+```bash
+npm run smoke:delivery-hub-rollback:browser
+```
+
+This drill is intentionally mock/no-network. It reuses the local mocked Store API and temporary storefront `next dev` contour from the preview browser smoke, but runs the scenarios as a rollback proof instead of a generic preview pass:
+
+1. **All Delivery Hub flags off**: `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=false` and `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false`; expected result is no preview block, no cutover gate/preconditions/candidate/decision artifact blocks, no Delivery Hub shipping-method commit request, and visible existing `ApiShip/Medusa fallback shipping`.
+2. **Preview enabled, cutover flag false**: preview/shadow blocks are visible and can quote/save/clear mocked neutral metadata, but source-of-truth remains unchanged, existing ApiShip/Medusa contour remains visible, and no Medusa shipping-method commit request is made.
+3. **Preview enabled, cutover flag true**: the reserved cutover flag is recognized, but UI remains preflight/blocked-only with `canCommitShippingMethod=false`; mocked candidate/decision artifacts remain evidence-only and no commit request is made.
+4. **Simulated rollback/off restart**: after the cutover-true rehearsal, the script restarts storefront with both flags off while mock Delivery Hub selection still exists; expected result is that Delivery Hub UI/artifacts disappear again, no Delivery Hub preview/cutover endpoint is called, and the existing ApiShip/Medusa shipping contour remains visible.
+
+The drill additionally scans visible UI text for unsafe raw provider/auth/secret needles and shipment lifecycle action strings, and fails if any Delivery Hub-specific Medusa shipping-method commit path is observed in mock requests. Passing this command means rollback/fallback is still flag-off, mock-only, and source-of-truth remains the existing Medusa/ApiShip checkout contour; it is not production cutover approval.
+
 ### Checkout cutover readiness gate
 
 Формальный go/no-go gate для будущего checkout source-of-truth cutover теперь вынесен в [`delivery_hub_checkout_cutover_plan.md`](./delivery_hub_checkout_cutover_plan.md).

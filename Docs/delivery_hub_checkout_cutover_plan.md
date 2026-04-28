@@ -18,7 +18,7 @@ The Delivery Hub contour has already reached these confirmed milestones:
 - Store-neutral quote plus selection is confirmed live without checkout cutover:
   - dropoff: quote `13`, neutral selection saved, checkout source-of-truth unchanged;
   - warehouse: quote `4`, neutral selection saved, checkout source-of-truth unchanged.
-- Storefront Delivery Hub Preview/Shadow UI exists and is covered by source-level tests plus a mock browser smoke.
+- Storefront Delivery Hub Preview/Shadow UI exists and is covered by source-level tests plus mock browser smokes: `npm run smoke:delivery-hub-preview:browser` for preview behavior and `npm run smoke:delivery-hub-rollback:browser` for rollback/fallback drill proof.
 - A read-only Store API verifier `GET /store/delivery/cutover-preconditions` aggregates safe precondition evidence labels for future planning only; it uses stored/configured state, does not call Yandex/live providers, and always reports `can_commit_shipping_method=false`.
 - A read-only Store API candidate planner `GET /store/delivery/cutover-candidate?cart_id=<cart_id>` summarizes the saved neutral selection plus matching Delivery Hub shipping-option candidate without enabling commit.
 - A read-only Store API decision artifact template `GET /store/delivery/cutover-approval-template?cart_id=<cart_id>` now binds preconditions plus optional candidate evidence into the non-executable artifact type `delivery_hub_checkout_cutover_decision`, with default `decision_status=not_requested` and commit controls locked false.
@@ -132,6 +132,7 @@ Required before approval:
 - Preview/shadow UI remains feature-flagged and disabled by default.
 - Preview UI has already demonstrated neutral quote and save/clear behavior without checkout commit.
 - Browser mock smoke verifies disabled/enabled flag behavior, quote rendering, selection save/clear, no-secret UI text, and unchanged checkout source of truth.
+- Rollback browser drill `npm run smoke:delivery-hub-rollback:browser` verifies all-flags-off fallback, preview-enabled/cutover-false source-of-truth preservation, preview-enabled/cutover-true preflight-only posture, and simulated flags-off restart after cutover-true rehearsal.
 - Manual preview validation is recorded only as readiness evidence, not as cutover approval.
 - No Delivery Hub preview path calls `setShippingMethod()` before the go/no-go gate passes.
 
@@ -159,10 +160,12 @@ Required before approval:
 Required before approval:
 
 - A default-off cutover flag exists and can be disabled without code changes.
-- Disabling the cutover flag returns checkout to existing Medusa/ApiShip/legacy-compatible shipping source-of-truth.
+- Disabling preview/cutover flags returns checkout to existing Medusa/ApiShip/legacy-compatible shipping source-of-truth.
 - Existing carts with saved Delivery Hub metadata do not break checkout when cutover is disabled.
 - Existing committed non-Delivery-Hub shipping methods remain valid and are not mutated by the rollback.
 - Operators have a documented fallback path and smoke checklist.
+- Automated rollback drill command: `npm run smoke:delivery-hub-rollback:browser`.
+- Expected automated drill result: no Delivery Hub preview/gate/preconditions/candidate/decision blocks when flags are off, no Delivery Hub-specific Medusa shipping-method commit request, no visible raw provider/auth/secret material, no shipment lifecycle action strings, and visible existing `ApiShip/Medusa fallback shipping` throughout fallback runs.
 
 ---
 
