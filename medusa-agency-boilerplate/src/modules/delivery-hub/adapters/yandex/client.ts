@@ -63,7 +63,8 @@ export class YandexDeliveryClient {
     const errorCategory = normalizeYandexHttpErrorCategory(response.status, data)
 
     if (!response.ok) {
-      const isAuthFailure = response.status === 401 || response.status === 403
+      const isAccessBlock = errorCategory === "provider_access_blocked"
+      const isAuthFailure = !isAccessBlock && (response.status === 401 || response.status === 403)
 
       throw new DeliveryHubError({
         code: isAuthFailure

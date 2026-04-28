@@ -691,8 +691,8 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
     } as any)
 
     await expect(client.post("/pickup-points/list", { limit: 1 }, "corr_403")).rejects.toMatchObject({
-      code: "DELIVERY_HUB_CREDENTIALS_INVALID",
-      status: 401,
+      code: "DELIVERY_HUB_PROVIDER_ERROR",
+      status: 502,
       details: {
         provider_status: 403,
         error_category: "provider_access_blocked",

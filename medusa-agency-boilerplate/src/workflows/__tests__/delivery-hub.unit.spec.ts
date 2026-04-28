@@ -1564,6 +1564,59 @@ describe("Delivery Hub service", () => {
       })
     )
   })
+
+  it("does not invalidate sealed credentials on provider access-block quote failure", async () => {
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      credentials_last_validated_at: "2026-04-28T18:52:16.000Z",
+      credentials_last_error_code: null,
+    })
+    const pg = createMockPg([connection])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+    jest.spyOn(adapter, "quoteDropoffPointToPickupPoint").mockRejectedValue(
+      new DeliveryHubError({
+        code: "DELIVERY_HUB_PROVIDER_ERROR",
+        message: "Yandex Delivery request failed with status 403",
+        status: 502,
+        details: {
+          provider_status: 403,
+          error_category: "provider_access_blocked",
+          correlation_id: "corr_access_block",
+        },
+      })
+    )
+
+    await expect(service.listStoreQuotes({
+      connection_id: connection.id,
+      mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
+      origin_point_id: "dropoff_1",
+      destination_point_id: "pvz_1",
+      currency_code: "RUB",
+      items: [{ quantity: 1, weight_grams: 500, price: 2000 }],
+    })).rejects.toMatchObject({
+      code: "DELIVERY_HUB_PROVIDER_ERROR",
+      status: 502,
+      details: expect.objectContaining({
+        provider_status: 403,
+        error_category: "provider_access_blocked",
+      }),
+    })
+
+    const upsertCalls = pg.calls.filter((call) => call.sql.includes("insert into delivery_connections"))
+    expect(upsertCalls).toHaveLength(1)
+    expect(upsertCalls[0].params[3]).toBe("active")
+    expect(upsertCalls[0].params[8]).toBe(DELIVERY_HUB_CREDENTIALS_STATE.sealed)
+    expect(upsertCalls[0].params[10]).toBe("2026-04-28T18:52:16.000Z")
+    expect(upsertCalls[0].params[11]).toBe("DELIVERY_HUB_PROVIDER_ERROR")
+
+    const eventLogCall = pg.calls.find((call) => call.sql.includes("insert into delivery_event_logs"))
+    expect(eventLogCall).toBeDefined()
+    expect(eventLogCall?.params[5]).toBe(false)
+    expect(eventLogCall?.params[8]).toBe("DELIVERY_HUB_PROVIDER_ERROR")
+  })
 })
 
 function expectDeliveryHubError(
