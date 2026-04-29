@@ -113,12 +113,23 @@ const DeliveryHubStoreQuoteModeSchema = z.enum([
   "dropoff_point_to_pickup_point",
 ])
 
+const DeliveryHubStoreQuoteRoutePointAddressSchema = z.object({
+  fullname: z.string().trim().min(1),
+  coordinates: z.tuple([z.number().finite(), z.number().finite()]).nullable().optional(),
+  contact: z.object({
+    name: z.string().trim().min(1).nullable().optional(),
+    phone: z.string().trim().min(1).nullable().optional(),
+  }).nullable().optional(),
+}).strict()
+
 const DeliveryHubStoreQuoteBaseSchema = z.object({
   connection_id: z.string().trim().min(1).optional(),
   mode_code: DeliveryHubStoreQuoteModeSchema,
   currency_code: z.string().trim().min(3).max(3).optional(),
   destination_point_id: z.string().trim().min(1),
+  destination_address: DeliveryHubStoreQuoteRoutePointAddressSchema.optional(),
   origin_point_id: z.string().trim().min(1).optional(),
+  origin_address: DeliveryHubStoreQuoteRoutePointAddressSchema.optional(),
   warehouse_id: z.string().trim().min(1).optional(),
 })
 

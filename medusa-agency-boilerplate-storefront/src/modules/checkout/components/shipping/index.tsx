@@ -222,6 +222,31 @@ function getDeliveryHubPickupPointLabel(point: DeliveryHubPickupPoint) {
   return [point.name, point.address].filter(Boolean).join(" · ")
 }
 
+function buildDeliveryHubQuoteDestinationAddress(
+  point: DeliveryHubPickupPoint,
+  addressContext: ReturnType<typeof buildDeliveryHubCheckoutAddressContext>
+) {
+  const fullname = [
+    point.postal_code ?? addressContext.postal_code,
+    point.city ?? addressContext.city,
+    point.address,
+  ]
+    .filter(Boolean)
+    .join(", ")
+
+  return {
+    fullname,
+    coordinates:
+      typeof point.lng === "number" && typeof point.lat === "number"
+        ? [point.lng, point.lat] as [number, number]
+        : null,
+    contact: {
+      name: addressContext.recipient_label,
+      phone: addressContext.phone,
+    },
+  }
+}
+
 function isCheckoutEligibleShippingOption(
   option: HttpTypes.StoreCartShippingOption
 ) {
@@ -573,6 +598,10 @@ const Shipping: React.FC<ShippingProps> = ({
                 mode_code: modeCode,
                 currency_code: cart.currency_code,
                 destination_point_id: destinationPoint.provider_point_id,
+                destination_address: buildDeliveryHubQuoteDestinationAddress(
+                  destinationPoint,
+                  deliveryHubAddressContext
+                ),
                 warehouse_id:
                   modeCode === "warehouse_to_pickup_point" &&
                   DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID
@@ -767,11 +796,27 @@ const Shipping: React.FC<ShippingProps> = ({
       return null
     }
 
+    const selectedDestinationPoint = getDeliveryHubDestinationPoints(deliveryHubPickupPointState.points)
+      .find((point) => point.provider_point_id === destinationPointId) ?? null
+
     return {
       connection_id: connectionId || null,
       mode_code: deliveryHubNeutralPreviewForm.quote_type,
       currency_code: cart.currency_code,
       destination_point_id: destinationPointId,
+      destination_address: selectedDestinationPoint
+        ? buildDeliveryHubQuoteDestinationAddress(
+            selectedDestinationPoint,
+            deliveryHubAddressContext
+          )
+        : {
+            fullname: deliveryHubAddressContext.address_label ?? destinationPointId,
+            coordinates: null,
+            contact: {
+              name: deliveryHubAddressContext.recipient_label,
+              phone: deliveryHubAddressContext.phone,
+            },
+          },
       origin_point_id:
         deliveryHubNeutralPreviewForm.quote_type === "dropoff_point_to_pickup_point"
           ? originPointId

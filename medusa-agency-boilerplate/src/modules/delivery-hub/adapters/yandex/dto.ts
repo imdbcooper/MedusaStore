@@ -55,3 +55,20 @@ export type YandexPricingOfferDto = {
     pricing_total?: string | null
   } | null
 }
+
+export type YandexCheckPriceDto = {
+  price?: string | number | null
+  currency?: string | null
+  currency_rules?: {
+    code?: string | null
+    text?: string | null
+    template?: string | null
+    sign?: string | null
+  } | null
+  requirements?: {
+    taxi_class?: string | null
+  } | null
+  distance_meters?: number | string | null
+  eta?: number | string | null
+  zone_id?: string | null
+}

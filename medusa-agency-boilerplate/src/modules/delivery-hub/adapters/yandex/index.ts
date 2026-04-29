@@ -1,16 +1,22 @@
+import crypto from "node:crypto"
 import { DELIVERY_HUB_MODE_CODE } from "../../constants"
 import type { DeliveryConnectionTestResult } from "../../domain/test-dto"
 import { DeliveryHubError } from "../../errors"
-import type { DeliveryHubAdapter } from "../types"
+import type { DeliveryHubAdapter, DeliveryHubRoutePointAddressInput } from "../types"
 import { yandexAdapterDefinition } from "./capabilities"
 import { YandexDeliveryClient } from "./client"
-import { YANDEX_DELIVERY_API_PATH } from "./endpoints"
 import {
+  YANDEX_DELIVERY_API_PATH,
+  YANDEX_DELIVERY_LEGACY_API_PATH,
+} from "./endpoints"
+import {
+  mapYandexCheckPriceQuote,
   mapYandexPickupPoint,
   mapYandexPickupWindow,
   mapYandexQuote,
 } from "./mapper"
 import type {
+  YandexCheckPriceDto,
   YandexPickupPointDto,
   YandexPickupWindowDto,
   YandexPricingOfferDto,
@@ -62,26 +68,28 @@ export function createYandexDeliveryAdapter(): DeliveryHubAdapter {
     },
     async quoteWarehouseToPickupPoint(context, input) {
       const client = new YandexDeliveryClient(context.connection)
+      const routeQuote = buildYandexCheckPriceRouteQuoteInput({
+        mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+        source_address: input.origin_address,
+        destination_address: input.destination_address,
+        destination_point_id: input.destination_point_id,
+        items: input.items,
+      })
 
-      const response = await client.post<YandexListResponse<YandexPricingOfferDto, "offers">>(
-        YANDEX_DELIVERY_API_PATH.offersCreate,
-        buildYandexOfferCreatePayload({
-          source_platform_station_id: input.warehouse_id,
-          destination_platform_station_id: input.destination_point_id,
-          interval_utc: input.interval_utc ?? null,
-          items: input.items,
-          diagnostic_comment: "Delivery Hub warehouse to PVZ quote diagnostic; do not confirm",
-        }),
+      const response = await client.postLegacy<YandexCheckPriceDto>(
+        YANDEX_DELIVERY_LEGACY_API_PATH.checkPrice,
+        routeQuote.payload,
         context.correlation_id
       )
 
-      return extractYandexArray<YandexPricingOfferDto>(response, "offers").map((offer) =>
-        mapYandexQuote(offer, {
+      return [
+        mapYandexCheckPriceQuote(response, {
           mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
           destination_point_id: input.destination_point_id,
+          quote_key: routeQuote.quote_key,
           pickup_window_options: [],
-        })
-      )
+        }),
+      ]
     },
     async quoteDropoffPointToPickupPoint(context, input) {
       const client = new YandexDeliveryClient(context.connection)
@@ -189,6 +197,127 @@ function buildYandexPickupWindowsPayload(input: YandexPickupWindowsInput) {
   }
 
   return payload
+}
+
+function buildYandexCheckPriceRouteQuoteInput(input: {
+  mode_code: string
+  source_address?: DeliveryHubRoutePointAddressInput | null
+  destination_address?: DeliveryHubRoutePointAddressInput | null
+  destination_point_id: string
+  items?: YandexQuoteItemsInput
+}) {
+  const sourcePoint = requireYandexRoutePointAddress(input.source_address, "origin_address")
+  const destinationPoint = requireYandexRoutePointAddress(input.destination_address, "destination_address")
+  const quoteKey = buildYandexCheckPriceQuoteKey(input.mode_code, input.destination_point_id)
+
+  return {
+    quote_key: quoteKey,
+    payload: {
+      route_points: [
+        buildYandexCheckPriceRoutePoint(1, "source", sourcePoint),
+        buildYandexCheckPriceRoutePoint(2, "destination", destinationPoint),
+      ],
+      items: buildYandexCheckPriceItems(input.items),
+      places: normalizeYandexPlaces(input.items),
+      billing_info: {
+        payment_method: "already_paid",
+      },
+    },
+  }
+}
+
+function requireYandexRoutePointAddress(
+  value: DeliveryHubRoutePointAddressInput | null | undefined,
+  field: string
+) {
+  const fullname = normalizeNullableText(value?.fullname)
+
+  if (!fullname) {
+    throw new DeliveryHubError({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      message: `Yandex Delivery check-price requires ${field}.fullname`,
+      status: 400,
+      details: {
+        field,
+        required_shape: "{ fullname, coordinates?, contact? }",
+      },
+    })
+  }
+
+  const coordinates = normalizeYandexCoordinates(value?.coordinates)
+  const contactName = normalizeNullableText(value?.contact?.name)
+  const contactPhone = normalizeNullableText(value?.contact?.phone)
+
+  return {
+    fullname,
+    coordinates,
+    contact: {
+      name: contactName ?? (field === "origin_address" ? "Seller" : "Recipient"),
+      phone: contactPhone ?? "+79990000000",
+    },
+  }
+}
+
+function buildYandexCheckPriceRoutePoint(
+  id: number,
+  type: "source" | "destination",
+  point: ReturnType<typeof requireYandexRoutePointAddress>
+) {
+  return {
+    id,
+    type,
+    ...(point.coordinates ? { coordinates: point.coordinates } : {}),
+    fullname: point.fullname,
+    contact: point.contact,
+  }
+}
+
+function buildYandexCheckPriceItems(items: YandexQuoteItemsInput) {
+  const sourceItems = Array.isArray(items) && items.length ? items : [{}]
+
+  return sourceItems.map((item, index) => ({
+    title: `Delivery Hub item ${index + 1}`,
+    quantity: normalizePositiveInteger(item.quantity, 1),
+    cost_currency: "RUB",
+    cost_value: String(normalizeNonNegativeInteger(item.price, 0)),
+    weight: normalizeWeightKg(item.weight_grams),
+    size: {
+      length: 0.1,
+      width: 0.1,
+      height: 0.1,
+    },
+  }))
+}
+
+function normalizeYandexCoordinates(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length !== 2) {
+    return null
+  }
+
+  const lng = normalizeFiniteNumber(value[0])
+  const lat = normalizeFiniteNumber(value[1])
+
+  return lng === null || lat === null ? null : [lng, lat]
+}
+
+function normalizeWeightKg(value: unknown) {
+  const grams = normalizeFiniteNumber(value)
+
+  if (grams === null || grams <= 0) {
+    return 1
+  }
+
+  return Math.max(0.001, grams / 1000)
+}
+
+function buildYandexCheckPriceQuoteKey(modeCode: string, destinationPointId: string) {
+  const fingerprint = crypto
+    .createHash("sha256")
+    .update(`${modeCode}:${destinationPointId}:${Date.now()}:${crypto.randomUUID()}`)
+    .digest("hex")
+    .slice(0, 32)
+
+  return `check_price_${fingerprint}`
 }
 
 function normalizeYandexPlaces(items: YandexQuoteItemsInput) {
@@ -307,6 +436,23 @@ function normalizePositiveInteger(value: unknown, fallback: number) {
     : fallback
 }
 
+function normalizeFiniteNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  return null
+}
+
+function normalizeNullableText(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
 function extractYandexArray<T>(response: unknown, key: "points" | "offers"): T[] {
   if (!response || typeof response !== "object") {
     throw createYandexProviderShapeError(key, response, "response_object_missing")
@@ -349,6 +495,9 @@ function createYandexProviderShapeError(
       expected_array: key,
       location: location ?? null,
       response_shape: describeYandexResponseShape(response),
+      operator_hint: key === "points"
+        ? "Yandex pickup-points/list returned a non-list response. Check provider route/contract availability; storefront price quote is skipped until a selectable PVZ is available."
+        : "Yandex offer response shape changed. Check provider contract availability before enabling quote flow.",
     },
   })
 }

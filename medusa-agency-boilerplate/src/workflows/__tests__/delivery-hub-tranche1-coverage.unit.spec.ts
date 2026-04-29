@@ -230,25 +230,19 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
     ])
   })
 
-  it("maps warehouse and dropoff quote payloads through mock adapter responses without live HTTP", async () => {
+  it("maps warehouse check-price and dropoff offer payloads through mock adapter responses without live HTTP", async () => {
     const adapter = createYandexDeliveryAdapter()
+    const postLegacySpy = jest
+      .spyOn(YandexDeliveryClient.prototype, "postLegacy")
+      .mockResolvedValueOnce({
+        price: "499",
+        currency_rules: {
+          code: "RUB",
+        },
+        eta: 2880,
+      })
     const postSpy = jest
       .spyOn(YandexDeliveryClient.prototype, "post")
-      .mockResolvedValueOnce({
-        offers: [
-          {
-            offer_id: "offer-warehouse-1",
-            price: {
-              amount: "499",
-              currency: "RUB",
-            },
-            eta: {
-              days_min: 1,
-              days_max: 2,
-            },
-          },
-        ],
-      })
       .mockResolvedValueOnce({
         offers: [
           {
@@ -268,6 +262,16 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
     const warehouseQuotes = await adapter.quoteWarehouseToPickupPoint(createAdapterContext(), {
       warehouse_id: "ya-wh-1",
       destination_point_id: "pvz_1",
+      origin_address: {
+        fullname: "RU, Москва, Склад 1",
+        coordinates: [37.62, 55.76],
+        contact: { name: "Seller", phone: "+79990000000" },
+      },
+      destination_address: {
+        fullname: "125009, Москва, Тверская 1",
+        coordinates: [37.61, 55.75],
+        contact: { name: "Buyer", phone: "+79990000001" },
+      },
       interval_utc: {
         from: "2026-04-22T07:00:00.000Z",
         to: "2026-04-22T11:00:00.000Z",
@@ -280,51 +284,46 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
       currency_code: "USD",
     })
 
-    expect(postSpy).toHaveBeenNthCalledWith(
-      1,
-      "/offers/create",
+    expect(postLegacySpy).toHaveBeenCalledWith(
+      "/check-price",
       expect.objectContaining({
-        source: {
-          platform_station: {
-            platform_id: "ya-wh-1",
-          },
-          interval_utc: {
-            from: "2026-04-22T07:00:00.000Z",
-            to: "2026-04-22T11:00:00.000Z",
-          },
+        route_points: [
+          expect.objectContaining({
+            id: 1,
+            type: "source",
+            fullname: "RU, Москва, Склад 1",
+            coordinates: [37.62, 55.76],
+          }),
+          expect.objectContaining({
+            id: 2,
+            type: "destination",
+            fullname: "125009, Москва, Тверская 1",
+            coordinates: [37.61, 55.75],
+          }),
+        ],
+        billing_info: {
+          payment_method: "already_paid",
         },
-        destination: {
-          type: "platform_station",
-          platform_station: {
-            platform_id: "pvz_1",
-          },
-          custom_location: null,
-          interval_utc: null,
-        },
-        last_mile_policy: "self_pickup",
       }),
       "corr_1"
     )
-    expect(postSpy.mock.calls[0][1]).toMatchObject({
+    expect(postLegacySpy.mock.calls[0][1]).toMatchObject({
       items: [
         {
-          count: 1,
-          place_barcode: "DH-DIAG-PLACE-1",
-          billing_details: {
-            unit_price: 0,
-            assessed_unit_price: 0,
-          },
-          physical_dims: {
-            dx: 1,
-            dy: 1,
-            dz: 1,
-            weight_gross: 1,
+          title: "Delivery Hub item 1",
+          quantity: 1,
+          cost_currency: "RUB",
+          cost_value: "0",
+          weight: 1,
+          size: {
+            length: 0.1,
+            width: 0.1,
+            height: 0.1,
           },
         },
       ],
       places: [
         {
-          barcode: "DH-DIAG-PLACE-1",
           physical_dims: {
             dx: 1,
             dy: 1,
@@ -335,11 +334,9 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
       ],
       billing_info: {
         payment_method: "already_paid",
-        delivery_cost: 0,
       },
     })
-    expect(postSpy).toHaveBeenNthCalledWith(
-      2,
+    expect(postSpy).toHaveBeenCalledWith(
       "/offers/create",
       expect.objectContaining({
         source: {
@@ -361,14 +358,13 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
     )
 
     expect(warehouseQuotes).toEqual([
-      {
+      expect.objectContaining({
         carrier_code: DELIVERY_HUB_PROVIDER_YANDEX,
         carrier_label: "Yandex Delivery",
         mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
-        quote_key: "offer-warehouse-1",
         amount: 499,
         currency_code: "rub",
-        delivery_eta_min: 1,
+        delivery_eta_min: 2,
         delivery_eta_max: 2,
         pickup_point_required: true,
         pickup_point_ids: ["pvz_1"],
@@ -376,10 +372,10 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
         pickup_window_required: false,
         pickup_window_options: [],
         raw_reference: {
-          provider_offer_id: "offer-warehouse-1",
+          provider_price_endpoint: "check-price",
           provider: DELIVERY_HUB_PROVIDER_YANDEX,
         },
-      },
+      }),
     ])
 
     expect(dropoffQuotes).toEqual([
@@ -537,8 +533,8 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
       ],
     })
 
-    const quotes = await adapter.quoteWarehouseToPickupPoint(createAdapterContext(), {
-      warehouse_id: "ya-wh-1",
+    const quotes = await adapter.quoteDropoffPointToPickupPoint(createAdapterContext(), {
+      origin_point_id: "dropoff_1",
       destination_point_id: "pvz_1",
       currency_code: "RUB",
     })
@@ -897,7 +893,7 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
     })
     expect(JSON.parse(String(eventLogCall?.params[7]))).toMatchObject({
       quotes_count: 1,
-      quote_keys: ["quote_dropoff_1"],
+      quote_key_present_count: 1,
       diagnostics_summary: {
         status: "ok",
         redacted: true,

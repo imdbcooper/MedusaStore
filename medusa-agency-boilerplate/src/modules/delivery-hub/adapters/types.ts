@@ -10,6 +10,15 @@ export type DeliveryHubAdapterContext = {
   correlation_id: string
 }
 
+export type DeliveryHubRoutePointAddressInput = {
+  fullname: string
+  coordinates?: [number, number] | null
+  contact?: {
+    name?: string | null
+    phone?: string | null
+  } | null
+}
+
 export type DeliveryHubListPickupPointsInput = {
   city?: string | null
   country_code?: string | null
@@ -38,6 +47,8 @@ export type DeliveryHubListPickupWindowsInput = {
 export type DeliveryHubQuoteWarehouseToPickupPointInput = {
   warehouse_id: string
   destination_point_id: string
+  origin_address?: DeliveryHubRoutePointAddressInput | null
+  destination_address?: DeliveryHubRoutePointAddressInput | null
   interval_utc?: {
     from: string
     to: string
@@ -53,6 +64,8 @@ export type DeliveryHubQuoteWarehouseToPickupPointInput = {
 export type DeliveryHubQuoteDropoffToPickupPointInput = {
   origin_point_id: string
   destination_point_id: string
+  origin_address?: DeliveryHubRoutePointAddressInput | null
+  destination_address?: DeliveryHubRoutePointAddressInput | null
   currency_code?: string
   items?: Array<{
     quantity?: number

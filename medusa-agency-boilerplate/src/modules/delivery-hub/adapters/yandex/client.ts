@@ -5,7 +5,10 @@ import {
 import { DeliveryHubError } from "../../errors"
 import { redactYandexHeaders, redactYandexPayload, redactYandexText } from "./redaction"
 import type { DeliveryConnectionRecord } from "../../domain/connection"
-import { resolveYandexDeliveryApiBaseUrl } from "./base-url"
+import {
+  resolveYandexDeliveryApiBaseUrl,
+  resolveYandexDeliveryLegacyApiBaseUrl,
+} from "./base-url"
 
 export class YandexDeliveryClient {
   constructor(private readonly connection: DeliveryConnectionRecord) {}
@@ -15,25 +18,58 @@ export class YandexDeliveryClient {
     payload: Record<string, unknown>,
     correlationId: string
   ): Promise<TResponse> {
+    return this.postToResolvedBaseUrl<TResponse>({
+      path,
+      payload,
+      correlationId,
+      baseUrl: resolveYandexDeliveryApiBaseUrl(this.connection),
+      headers: {},
+    })
+  }
+
+  async postLegacy<TResponse>(
+    path: string,
+    payload: Record<string, unknown>,
+    correlationId: string
+  ): Promise<TResponse> {
+    return this.postToResolvedBaseUrl<TResponse>({
+      path,
+      payload,
+      correlationId,
+      baseUrl: resolveYandexDeliveryLegacyApiBaseUrl(this.connection),
+      headers: {
+        Accept: "application/json",
+        "Accept-Language": "ru",
+      },
+    })
+  }
+
+  private async postToResolvedBaseUrl<TResponse>(input: {
+    path: string
+    payload: Record<string, unknown>
+    correlationId: string
+    baseUrl: ReturnType<typeof resolveYandexDeliveryApiBaseUrl>
+    headers: Record<string, string>
+  }): Promise<TResponse> {
     const credentials = decryptDeliveryHubCredentials(
       this.connection.credentials_envelope,
       getDeliveryHubEncryptionState()
     )
-    const baseUrl = resolveYandexDeliveryApiBaseUrl(this.connection)
 
     const headers = {
       Authorization: `Bearer ${credentials.token}`,
       "Content-Type": "application/json",
-      "X-Request-ID": correlationId,
+      "X-Request-ID": input.correlationId,
+      ...input.headers,
     }
 
     let response: Response
 
     try {
-      response = await fetch(`${baseUrl.base_url}${path}`, {
+      response = await fetch(`${input.baseUrl.base_url}${input.path}`, {
         method: "POST",
         headers,
-        body: JSON.stringify(payload),
+        body: JSON.stringify(input.payload),
       })
     } catch (error) {
       throw new DeliveryHubError({
@@ -43,14 +79,14 @@ export class YandexDeliveryClient {
         details: {
           provider_status: null,
           error_category: "transport",
-          correlation_id: correlationId,
+          correlation_id: input.correlationId,
           request: {
-            base_url: baseUrl.base_url,
-            base_url_source: baseUrl.source,
-            connection_mode: baseUrl.mode,
-            path,
+            base_url: input.baseUrl.base_url,
+            base_url_source: input.baseUrl.source,
+            connection_mode: input.baseUrl.mode,
+            path: input.path,
             headers: redactYandexHeaders(headers),
-            payload: redactYandexPayload(payload),
+            payload: redactYandexPayload(input.payload),
           },
           response: null,
           cause: error instanceof Error ? redactYandexText(error.message) : "Unknown transport error",
@@ -76,14 +112,14 @@ export class YandexDeliveryClient {
           provider_status: response.status,
           error_category: errorCategory,
           operator_hint: getYandexHttpErrorOperatorHint(response.status, errorCategory),
-          correlation_id: correlationId,
+          correlation_id: input.correlationId,
           request: {
-            base_url: baseUrl.base_url,
-            base_url_source: baseUrl.source,
-            connection_mode: baseUrl.mode,
-            path,
+            base_url: input.baseUrl.base_url,
+            base_url_source: input.baseUrl.source,
+            connection_mode: input.baseUrl.mode,
+            path: input.path,
             headers: redactYandexHeaders(headers),
-            payload: redactYandexPayload(payload),
+            payload: redactYandexPayload(input.payload),
           },
           response: sanitizeYandexErrorResponse(data, text),
         },

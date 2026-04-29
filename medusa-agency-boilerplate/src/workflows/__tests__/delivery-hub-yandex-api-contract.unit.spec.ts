@@ -4,11 +4,15 @@ import {
 } from "../../modules/delivery-hub/adapters/yandex"
 import {
   YANDEX_DELIVERY_API_PATH,
+  YANDEX_DELIVERY_LEGACY_API_PATH,
   YANDEX_DELIVERY_LEGACY_SANDBOX_API_BASE_URL,
   YANDEX_DELIVERY_PRODUCTION_API_BASE_URL,
   YANDEX_DELIVERY_SANDBOX_API_BASE_URL,
 } from "../../modules/delivery-hub/adapters/yandex/endpoints"
-import { resolveYandexDeliveryApiBaseUrl } from "../../modules/delivery-hub/adapters/yandex/base-url"
+import {
+  resolveYandexDeliveryApiBaseUrl,
+  resolveYandexDeliveryLegacyApiBaseUrl,
+} from "../../modules/delivery-hub/adapters/yandex/base-url"
 import { encryptDeliveryHubCredentials } from "../../modules/delivery-hub/security/encryption"
 import type { DeliveryConnectionRecord } from "../../modules/delivery-hub/domain/connection"
 
@@ -40,6 +44,13 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
       mode: "test",
       config: { api_base_url: YANDEX_DELIVERY_LEGACY_SANDBOX_API_BASE_URL },
     })).base_url).toBe(YANDEX_DELIVERY_SANDBOX_API_BASE_URL)
+  })
+
+  it("maps platform host overrides to documented legacy check-price host", () => {
+    expect(resolveYandexDeliveryLegacyApiBaseUrl(buildConnection({
+      mode: "test",
+      config: { api_base_url: YANDEX_DELIVERY_SANDBOX_API_BASE_URL },
+    })).base_url).toBe(YANDEX_DELIVERY_LEGACY_SANDBOX_API_BASE_URL)
   })
 
   it("uses documented pickup-points list path and empty body for connection test", async () => {
@@ -130,28 +141,21 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
     ])
   })
 
-  it("uses documented offers/create shape for warehouse to PVZ quote", async () => {
-    const calls: Array<{ url: string; body: any }> = []
+  it("uses documented check-price route-point shape for warehouse to PVZ quote", async () => {
+    const calls: Array<{ url: string; headers: Record<string, string>; body: any }> = []
     global.fetch = jest.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
       calls.push({
         url: String(url),
+        headers: init?.headers as Record<string, string>,
         body: init?.body ? JSON.parse(String(init.body)) : null,
       })
 
       return new Response(JSON.stringify({
-        offers: [
-          {
-            offer_id: "offer-docs-warehouse-1",
-            offer_details: {
-              delivery_interval: {
-                min: "2026-01-19T07:00:00.000000Z",
-                max: "2026-01-20T15:00:00.000000Z",
-                policy: "self_pickup",
-              },
-              pricing_total: "499.50 RUB",
-            },
-          },
-        ],
+        price: "499.50",
+        currency_rules: {
+          code: "RUB",
+        },
+        eta: 2880,
       }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -161,44 +165,75 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
     const quotes = await createYandexDeliveryAdapter().quoteWarehouseToPickupPoint(
       {
         connection: buildConnection({ mode: "test" }),
-        correlation_id: "corr-yandex-offer-test",
+        correlation_id: "corr-yandex-check-price-test",
       },
       {
         warehouse_id: "ya-wh-1",
         destination_point_id: "pvz_1",
+        origin_address: {
+          fullname: "RU, Москва, Склад 1",
+          coordinates: [37.62, 55.76],
+          contact: { name: "Seller", phone: "+79990000000" },
+        },
+        destination_address: {
+          fullname: "125009, Москва, Тверская 1",
+          coordinates: [37.61, 55.75],
+          contact: { name: "Buyer", phone: "+79990000001" },
+        },
+        interval_utc: {
+          from: "2026-01-18T07:00:00.000Z",
+          to: "2026-01-18T10:00:00.000Z",
+        },
         items: [{ weight_grams: 500, price: 100 }],
       }
     )
 
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe(`${YANDEX_DELIVERY_SANDBOX_API_BASE_URL}${YANDEX_DELIVERY_API_PATH.offersCreate}`)
+    expect(calls[0].url).toBe(`${YANDEX_DELIVERY_LEGACY_SANDBOX_API_BASE_URL}${YANDEX_DELIVERY_LEGACY_API_PATH.checkPrice}`)
+    expect(calls[0].headers).toMatchObject({
+      Accept: "application/json",
+      "Accept-Language": "ru",
+      "Content-Type": "application/json",
+    })
     expect(calls[0].body).toMatchObject({
-      source: {
-        platform_station: {
-          platform_id: "ya-wh-1",
+      route_points: [
+        {
+          id: 1,
+          type: "source",
+          fullname: "RU, Москва, Склад 1",
+          coordinates: [37.62, 55.76],
+          contact: {
+            name: "Seller",
+            phone: "+79990000000",
+          },
         },
-      },
-      destination: {
-        type: "platform_station",
-        platform_station: {
-          platform_id: "pvz_1",
+        {
+          id: 2,
+          type: "destination",
+          fullname: "125009, Москва, Тверская 1",
+          coordinates: [37.61, 55.75],
+          contact: {
+            name: "Buyer",
+            phone: "+79990000001",
+          },
         },
-        custom_location: null,
-        interval_utc: null,
-      },
+      ],
       items: [
         {
-          count: 1,
-          place_barcode: "DH-DIAG-PLACE-1",
-          billing_details: {
-            unit_price: 100,
-            assessed_unit_price: 100,
+          title: "Delivery Hub item 1",
+          quantity: 1,
+          cost_currency: "RUB",
+          cost_value: "100",
+          weight: 0.5,
+          size: {
+            length: 0.1,
+            width: 0.1,
+            height: 0.1,
           },
         },
       ],
       places: [
         {
-          barcode: "DH-DIAG-PLACE-1",
           physical_dims: {
             dx: 1,
             dy: 1,
@@ -209,71 +244,48 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
       ],
       billing_info: {
         payment_method: "already_paid",
-        delivery_cost: 0,
       },
-      recipient_info: {
-        first_name: "Delivery",
-        last_name: "Hub",
-        phone: "+79990000000",
-        email: "delivery-hub-quote@example.invalid",
-      },
-      last_mile_policy: "self_pickup",
     })
-    expect(calls[0].body.source).not.toHaveProperty("interval_utc")
-    expect(calls[0].body.items[0].place_barcode).toBe(calls[0].body.places[0].barcode)
-    expect(calls[0].body).not.toHaveProperty("tariff")
+    expect(calls[0].body).not.toHaveProperty("source")
+    expect(calls[0].body).not.toHaveProperty("destination")
+    expect(calls[0].body).not.toHaveProperty("last_mile_policy")
     expect(quotes).toEqual([
       expect.objectContaining({
-        quote_key: "offer-docs-warehouse-1",
         amount: 499.5,
         currency_code: "rub",
+        delivery_eta_min: 2,
+        delivery_eta_max: 2,
         pickup_window_required: false,
       }),
     ])
   })
 
-  it("adds source interval only when both from and to are provided", async () => {
-    const calls: Array<{ url: string; body: any }> = []
-    global.fetch = jest.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
-      calls.push({
-        url: String(url),
-        body: init?.body ? JSON.parse(String(init.body)) : null,
-      })
+  it("fails with validation error before provider call when check-price origin address is missing", async () => {
+    const fetchMock = jest.fn() as jest.MockedFunction<typeof fetch>
+    global.fetch = fetchMock
 
-      return new Response(JSON.stringify({
-        offers: [
-          {
-            offer_id: "offer-with-interval",
-            offer_details: {
-              pricing: "500 RUB",
-            },
-          },
-        ],
-      }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      })
-    }) as typeof fetch
-
-    await createYandexDeliveryAdapter().quoteWarehouseToPickupPoint(
+    await expect(createYandexDeliveryAdapter().quoteWarehouseToPickupPoint(
       {
         connection: buildConnection({ mode: "test" }),
-        correlation_id: "corr-yandex-offer-interval-test",
+        correlation_id: "corr-yandex-missing-origin-test",
       },
       {
         warehouse_id: "ya-wh-1",
         destination_point_id: "pvz_1",
-        interval_utc: {
-          from: "2026-01-18T07:00:00.000Z",
-          to: "2026-01-18T10:00:00.000Z",
+        destination_address: {
+          fullname: "125009, Москва, Тверская 1",
         },
+        items: [{ weight_grams: 500, price: 100 }],
       }
-    )
-
-    expect(calls[0].body.source.interval_utc).toEqual({
-      from: "2026-01-18T07:00:00.000Z",
-      to: "2026-01-18T10:00:00.000Z",
+    )).rejects.toMatchObject({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      status: 400,
+      details: {
+        field: "origin_address",
+      },
     })
+
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 

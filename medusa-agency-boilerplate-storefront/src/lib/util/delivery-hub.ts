@@ -397,12 +397,23 @@ export type DeliveryHubCutoverApprovalArtifactPreviewModel = {
   hint_messages: string[]
 }
 
+export type DeliveryHubRoutePointAddressInput = {
+  fullname: string
+  coordinates?: [number, number] | null
+  contact?: {
+    name?: string | null
+    phone?: string | null
+  } | null
+}
+
 export type DeliveryHubListQuotesInput = {
   connection_id?: string | null
   mode_code: DeliveryHubQuoteType
   currency_code?: string | null
   destination_point_id: string
+  destination_address?: DeliveryHubRoutePointAddressInput | null
   origin_point_id?: string | null
+  origin_address?: DeliveryHubRoutePointAddressInput | null
   warehouse_id?: string | null
   interval_utc?: DeliveryHubIntervalUtc | null
   items?: DeliveryHubQuoteRequestItem[] | null
@@ -659,6 +670,56 @@ function normalizeDeliveryHubIntervalUtc(
     from: readRequiredString(record.from, `${field}.from`),
     to: readRequiredString(record.to, `${field}.to`),
   }
+}
+
+function normalizeDeliveryHubRoutePointAddress(
+  value: unknown,
+  field: string
+): DeliveryHubRoutePointAddressInput | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+
+  const record = requireRecord(value, field)
+  const normalized: DeliveryHubRoutePointAddressInput = {
+    fullname: readRequiredString(record.fullname, `${field}.fullname`),
+  }
+  const coordinates = normalizeDeliveryHubRoutePointCoordinates(
+    record.coordinates,
+    `${field}.coordinates`
+  )
+
+  if (coordinates) {
+    normalized.coordinates = coordinates
+  }
+
+  if (record.contact !== null && record.contact !== undefined) {
+    const contact = requireRecord(record.contact, `${field}.contact`)
+    normalized.contact = {
+      name: readOptionalString(contact.name),
+      phone: readOptionalString(contact.phone),
+    }
+  }
+
+  return normalized
+}
+
+function normalizeDeliveryHubRoutePointCoordinates(
+  value: unknown,
+  field: string
+): [number, number] | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+
+  if (!Array.isArray(value) || value.length !== 2) {
+    throw new Error(`Delivery Hub payload field \"${field}\" must be [lng, lat]`)
+  }
+
+  return [
+    readFiniteNumber(value[0], `${field}.0`),
+    readFiniteNumber(value[1], `${field}.1`),
+  ]
 }
 
 function normalizeDeliveryHubQuoteReference(
@@ -1956,9 +2017,25 @@ export function shapeDeliveryHubQuotesPayload(
     payload.currency_code = currencyCode
   }
 
+  const destinationAddress = normalizeDeliveryHubRoutePointAddress(
+    record.destination_address,
+    "destination_address"
+  )
+  if (destinationAddress) {
+    payload.destination_address = destinationAddress
+  }
+
   const originPointId = readOptionalString(record.origin_point_id)
   if (originPointId) {
     payload.origin_point_id = originPointId
+  }
+
+  const originAddress = normalizeDeliveryHubRoutePointAddress(
+    record.origin_address,
+    "origin_address"
+  )
+  if (originAddress) {
+    payload.origin_address = originAddress
   }
 
   const warehouseId = readOptionalString(record.warehouse_id)

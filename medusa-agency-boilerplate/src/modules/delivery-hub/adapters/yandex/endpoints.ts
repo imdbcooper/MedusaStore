@@ -23,3 +23,8 @@ export const YANDEX_DELIVERY_API_PATH = {
   requestInfo: "/request/info",
   requestCancel: "/request/cancel",
 } as const
+
+export const YANDEX_DELIVERY_LEGACY_API_PATH = {
+  checkPrice: "/check-price",
+  offersCalculate: "/offers/calculate",
+} as const

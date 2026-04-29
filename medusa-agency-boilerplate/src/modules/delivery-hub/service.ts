@@ -62,6 +62,7 @@ import {
   createMissingDeliveryHubSelectionConnectionSummary,
 } from "./selection-readiness"
 import { getDeliveryHubAdapter, listDeliveryHubProviders } from "./registry"
+import { redactYandexPayload } from "./adapters/yandex/redaction"
 import {
   createCredentialsFingerprint,
   encryptDeliveryHubCredentials,
@@ -823,7 +824,7 @@ export class DeliveryHubService {
         }),
         response_summary: {
           quotes_count: quotes.length,
-          quote_keys: quotes.map((quote) => quote.quote_key),
+          quote_key_present_count: quotes.filter((quote) => !!quote.quote_key).length,
           diagnostics_summary: diagnosticsSummary,
         },
       })
@@ -1190,7 +1191,23 @@ export class DeliveryHubService {
     mode_code: string
     currency_code?: string | null
     destination_point_id: string
+    destination_address?: {
+      fullname: string
+      coordinates?: [number, number] | null
+      contact?: {
+        name?: string | null
+        phone?: string | null
+      } | null
+    } | null
     origin_point_id?: string | null
+    origin_address?: {
+      fullname: string
+      coordinates?: [number, number] | null
+      contact?: {
+        name?: string | null
+        phone?: string | null
+      } | null
+    } | null
     warehouse_id?: string | null
     interval_utc?: {
       from: string
@@ -1205,10 +1222,17 @@ export class DeliveryHubService {
     const connection = await this.resolveStoreConnection(input.connection_id)
     const adapter = getDeliveryHubAdapter(connection.provider_code)
     const correlationId = crypto.randomUUID()
+    const warehouse =
+      input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
+        ? await this.resolveWarehouseRecord(connection, input.warehouse_id)
+        : null
     const resolvedWarehouseId =
       input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
-        ? await this.resolveWarehouseProviderRef(connection, input.warehouse_id)
+        ? this.resolveWarehouseProviderRefFromRecord(connection, warehouse, input.warehouse_id)
         : null
+    const originAddress = input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
+      ? this.resolveWarehouseRoutePointAddress(warehouse)
+      : input.origin_address ?? null
 
     try {
       const quotes =
@@ -1218,6 +1242,8 @@ export class DeliveryHubService {
               {
                 warehouse_id: requireString(resolvedWarehouseId, "warehouse_id"),
                 destination_point_id: input.destination_point_id,
+                origin_address: originAddress,
+                destination_address: input.destination_address ?? null,
                 interval_utc: input.interval_utc ?? null,
                 currency_code: input.currency_code ?? undefined,
                 items: input.items,
@@ -1228,6 +1254,8 @@ export class DeliveryHubService {
               {
                 origin_point_id: requireString(input.origin_point_id, "origin_point_id"),
                 destination_point_id: input.destination_point_id,
+                origin_address: originAddress,
+                destination_address: input.destination_address ?? null,
                 currency_code: input.currency_code ?? undefined,
                 items: input.items,
               }
@@ -1241,14 +1269,18 @@ export class DeliveryHubService {
         request_summary: {
           mode_code: input.mode_code,
           destination_point_id: input.destination_point_id,
+          destination_address_present: !!input.destination_address,
+          destination_coordinates_present: !!input.destination_address?.coordinates,
           origin_point_id: input.origin_point_id ?? null,
+          origin_address_present: !!originAddress,
+          origin_coordinates_present: !!originAddress?.coordinates,
           warehouse_id: input.warehouse_id ?? null,
           provider_warehouse_id: resolvedWarehouseId,
           interval_utc: input.interval_utc ?? null,
         },
         response_summary: {
           quotes_count: quotes.length,
-          quote_keys: quotes.map((quote) => quote.quote_key),
+          quote_key_present_count: quotes.filter((quote) => !!quote.quote_key).length,
         },
       })
 
@@ -1273,6 +1305,7 @@ export class DeliveryHubService {
       }
     } catch (error) {
       const normalized = normalizeDeliveryHubError(error)
+      const correctedPayloadSummary = buildYandexCorrectedCheckPricePayloadSummary(normalized)
 
       await this.appendLog({
         connection,
@@ -1283,7 +1316,11 @@ export class DeliveryHubService {
         request_summary: {
           mode_code: input.mode_code,
           destination_point_id: input.destination_point_id,
+          destination_address_present: !!input.destination_address,
+          destination_coordinates_present: !!input.destination_address?.coordinates,
           origin_point_id: input.origin_point_id ?? null,
+          origin_address_present: !!originAddress,
+          origin_coordinates_present: !!originAddress?.coordinates,
           warehouse_id: input.warehouse_id ?? null,
           provider_warehouse_id: resolvedWarehouseId,
           interval_utc: input.interval_utc ?? null,
@@ -1291,6 +1328,7 @@ export class DeliveryHubService {
         response_summary: {
           message: normalized.message,
           details: normalized.details ?? {},
+          corrected_payload_summary: correctedPayloadSummary,
         },
       })
 
@@ -1830,6 +1868,39 @@ export class DeliveryHubService {
     connection: DeliveryConnectionRecord,
     warehouseId: string | null | undefined
   ) {
+    const warehouse = await this.resolveWarehouseRecord(connection, warehouseId)
+    return this.resolveWarehouseProviderRefFromRecord(connection, warehouse, warehouseId)
+  }
+
+  private resolveWarehouseProviderRefFromRecord(
+    connection: DeliveryConnectionRecord,
+    warehouse: DeliveryWarehouseRecord | null,
+    warehouseId: string | null | undefined
+  ) {
+    if (!warehouse) {
+      return null
+    }
+
+    if (connection.provider_code === DELIVERY_HUB_PROVIDER_YANDEX && !warehouse.provider_warehouse_id) {
+      const explicitWarehouseId = normalizeNullableText(warehouseId)
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: "Warehouse provider mapping is required for this connection",
+        status: 400,
+        details: {
+          field: explicitWarehouseId ? "warehouse_id" : "config.default_warehouse_id",
+          warehouse_id: warehouse.id,
+        },
+      })
+    }
+
+    return warehouse.provider_warehouse_id ?? warehouse.id
+  }
+
+  private async resolveWarehouseRecord(
+    connection: DeliveryConnectionRecord,
+    warehouseId: string | null | undefined
+  ) {
     const explicitWarehouseId = normalizeNullableText(warehouseId)
     const configDefaultWarehouseId = normalizeNullableText(connection.config.default_warehouse_id)
     const selectedWarehouseId = explicitWarehouseId ?? configDefaultWarehouseId
@@ -1866,19 +1937,47 @@ export class DeliveryHubService {
       })
     }
 
-    if (connection.provider_code === DELIVERY_HUB_PROVIDER_YANDEX && !warehouse.provider_warehouse_id) {
+    return warehouse
+  }
+
+  private resolveWarehouseRoutePointAddress(warehouse: DeliveryWarehouseRecord | null) {
+    if (!warehouse) {
+      return null
+    }
+
+    const metadata = warehouse.metadata ?? {}
+    const fullname = normalizeNullableText(metadata.fullname) ??
+      [warehouse.country_code, warehouse.city, warehouse.address_line_1]
+        .map((value) => normalizeNullableText(value))
+        .filter(Boolean)
+        .join(", ")
+    const coordinates = normalizeRoutePointCoordinates(
+      metadata.coordinates ??
+      (metadata.lng !== undefined || metadata.lat !== undefined
+        ? [metadata.lng, metadata.lat]
+        : null)
+    )
+
+    if (!fullname) {
       throw new DeliveryHubError({
         code: "DELIVERY_HUB_VALIDATION_ERROR",
-        message: "Warehouse provider mapping is required for this connection",
+        message: "Yandex Delivery check-price requires warehouse origin address",
         status: 400,
         details: {
-          field: explicitWarehouseId ? "warehouse_id" : "config.default_warehouse_id",
+          field: "warehouse.address_line_1|warehouse.metadata.fullname",
           warehouse_id: warehouse.id,
         },
       })
     }
 
-    return warehouse.provider_warehouse_id ?? warehouse.id
+    return {
+      fullname,
+      coordinates,
+      contact: {
+        name: warehouse.contact_name ?? "Seller",
+        phone: warehouse.contact_phone ?? "+79990000000",
+      },
+    }
   }
 
   private async getWarehouseMap() {
@@ -2033,6 +2132,35 @@ function buildTestQuoteInputEcho(input: DeliveryTestQuoteInput): DeliveryTestQuo
   }
 }
 
+function buildYandexCorrectedCheckPricePayloadSummary(error: DeliveryHubError) {
+  const request = asRecord(error.details?.request)
+  const payload = asRecord(request.payload)
+  const routePoints = Array.isArray(payload.route_points)
+    ? payload.route_points.map((point) => {
+        const routePoint = asRecord(point)
+        return {
+          type: normalizeNullableText(routePoint.type),
+          has_fullname: !!normalizeNullableText(routePoint.fullname),
+          has_coordinates: Array.isArray(routePoint.coordinates),
+          has_contact: !!routePoint.contact,
+        }
+      })
+    : []
+
+  if (!routePoints.length) {
+    return null
+  }
+
+  return redactYandexPayload({
+    endpoint_family: "legacy_check_price",
+    path: request.path ?? null,
+    route_points: routePoints,
+    item_count: Array.isArray(payload.items) ? payload.items.length : null,
+    place_count: Array.isArray(payload.places) ? payload.places.length : null,
+    billing_payment_method_present: !!asRecord(payload.billing_info).payment_method,
+  })
+}
+
 function sanitizeAdminQuote(quote: DeliveryQuote): DeliveryQuote {
   return {
     ...quote,
@@ -2104,6 +2232,36 @@ function requireString(value: string | null | undefined, field: string) {
 
 function normalizeNullableText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function normalizeFiniteNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  return null
+}
+
+function normalizeRoutePointCoordinates(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length !== 2) {
+    return null
+  }
+
+  const lng = normalizeFiniteNumber(value[0])
+  const lat = normalizeFiniteNumber(value[1])
+
+  return lng === null || lat === null ? null : [lng, lat]
 }
 
 function isStoreReadyConnection(connection: DeliveryConnectionRecord) {

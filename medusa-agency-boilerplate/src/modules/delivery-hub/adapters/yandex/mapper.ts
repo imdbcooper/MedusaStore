@@ -4,6 +4,7 @@ import type { DeliveryPickupPoint } from "../../domain/pickup-point"
 import { DeliveryHubError } from "../../errors"
 import type { DeliveryPickupWindow } from "../../domain/pickup-window"
 import type {
+  YandexCheckPriceDto,
   YandexPickupPointDto,
   YandexPickupWindowDto,
   YandexPricingOfferDto,
@@ -106,27 +107,59 @@ export function mapYandexQuote(
     throw createYandexOfferShapeError("offer_id", offer, "missing_or_invalid_offer_id")
   }
 
-  return {
-    carrier_code: DELIVERY_HUB_PROVIDER_YANDEX,
-    carrier_label: "Yandex Delivery",
+  return buildYandexQuote({
     mode_code: input.mode_code,
+    destination_point_id: input.destination_point_id,
     quote_key: quoteKey,
     amount,
-    currency_code: currency.toLowerCase(),
+    currency,
     delivery_eta_min: normalizeEtaDays(offer.eta?.days_min, offer.offer_details?.delivery_interval?.min),
     delivery_eta_max:
       normalizeEtaDays(offer.eta?.days_max, offer.offer_details?.delivery_interval?.max) ??
       normalizeEtaDays(offer.eta?.days_min, offer.offer_details?.delivery_interval?.min),
-    pickup_point_required: true,
-    pickup_point_ids: [input.destination_point_id],
-    pickup_points_embedded: [],
-    pickup_window_required: false,
     pickup_window_options: input.pickup_window_options ?? [],
     raw_reference: {
       provider_offer_id: quoteKey,
       provider: DELIVERY_HUB_PROVIDER_YANDEX,
     },
+  })
+}
+
+export function mapYandexCheckPriceQuote(
+  response: YandexCheckPriceDto,
+  input: {
+    mode_code: string
+    destination_point_id: string
+    quote_key: string
+    pickup_window_options?: DeliveryPickupWindow[]
   }
+): DeliveryQuote {
+  const amount = normalizeNumber(response.price)
+  const currency = normalizeNullableString(response.currency_rules?.code) ??
+    normalizeNullableString(response.currency)
+
+  if (amount === null || amount < 0) {
+    throw createYandexCheckPriceShapeError("price", response, "missing_or_invalid_amount")
+  }
+
+  if (!currency) {
+    throw createYandexCheckPriceShapeError("currency_rules.code|currency", response, "missing_or_invalid_currency")
+  }
+
+  return buildYandexQuote({
+    mode_code: input.mode_code,
+    destination_point_id: input.destination_point_id,
+    quote_key: input.quote_key,
+    amount,
+    currency,
+    delivery_eta_min: normalizeEtaMinutesToDays(response.eta),
+    delivery_eta_max: normalizeEtaMinutesToDays(response.eta),
+    pickup_window_options: input.pickup_window_options ?? [],
+    raw_reference: {
+      provider: DELIVERY_HUB_PROVIDER_YANDEX,
+      provider_price_endpoint: "check-price",
+    },
+  })
 }
 
 function buildYandexPickupPointAddressLabel(dto: YandexPickupPointDto) {
@@ -174,6 +207,35 @@ function normalizeNullableBoolean(value: unknown) {
   return typeof value === "boolean" ? value : null
 }
 
+function buildYandexQuote(input: {
+  mode_code: string
+  destination_point_id: string
+  quote_key: string
+  amount: number
+  currency: string
+  delivery_eta_min: number | null
+  delivery_eta_max: number | null
+  pickup_window_options?: DeliveryPickupWindow[]
+  raw_reference: Record<string, unknown>
+}): DeliveryQuote {
+  return {
+    carrier_code: DELIVERY_HUB_PROVIDER_YANDEX,
+    carrier_label: "Yandex Delivery",
+    mode_code: input.mode_code,
+    quote_key: input.quote_key,
+    amount: input.amount,
+    currency_code: input.currency.toLowerCase(),
+    delivery_eta_min: input.delivery_eta_min,
+    delivery_eta_max: input.delivery_eta_max,
+    pickup_point_required: true,
+    pickup_point_ids: [input.destination_point_id],
+    pickup_points_embedded: [],
+    pickup_window_required: false,
+    pickup_window_options: input.pickup_window_options ?? [],
+    raw_reference: input.raw_reference,
+  }
+}
+
 function createYandexOfferShapeError(
   field: string,
   offer: YandexPricingOfferDto,
@@ -207,6 +269,38 @@ function describeYandexOfferShape(offer: YandexPricingOfferDto): Record<string, 
       root.offer_details && typeof root.offer_details === "object"
         ? Object.keys(root.offer_details as Record<string, unknown>).sort()
         : null,
+  }
+}
+
+function createYandexCheckPriceShapeError(
+  field: string,
+  response: YandexCheckPriceDto,
+  reason: string
+) {
+  return new DeliveryHubError({
+    code: "DELIVERY_HUB_PROVIDER_ERROR",
+    message: `Yandex Delivery response shape drift: invalid check-price ${field}`,
+    status: 502,
+    details: {
+      provider_status: "ok",
+      error_category: "provider_shape",
+      reason,
+      expected_field: field,
+      response_shape: describeYandexCheckPriceShape(response),
+    },
+  })
+}
+
+function describeYandexCheckPriceShape(response: YandexCheckPriceDto): Record<string, unknown> {
+  const root = response && typeof response === "object" ? response as Record<string, unknown> : {}
+  const currencyRules = root.currency_rules && typeof root.currency_rules === "object"
+    ? root.currency_rules as Record<string, unknown>
+    : null
+
+  return {
+    type: response && typeof response === "object" ? "object" : typeof response,
+    keys: Object.keys(root).sort(),
+    currency_rules_keys: currencyRules ? Object.keys(currencyRules).sort() : null,
   }
 }
 
@@ -270,6 +364,16 @@ function normalizeEtaDays(value: unknown, intervalBoundary?: string | null) {
 
   const diffMs = parsed.getTime() - Date.now()
   return Math.max(0, Math.ceil(diffMs / 86_400_000))
+}
+
+function normalizeEtaMinutesToDays(value: unknown) {
+  const minutes = normalizeNumber(value)
+
+  if (minutes === null) {
+    return null
+  }
+
+  return Math.max(0, Math.ceil(minutes / 1440))
 }
 
 function buildPickupWindowLabel(dto: YandexPickupWindowDto) {
