@@ -296,6 +296,7 @@ describe("Delivery Hub storefront-neutral smoke harness", () => {
       stage: "quote",
       code: "not_allowed",
       message: expect.stringContaining("Publishable API key required"),
+      details: null,
     })
     const summaryJson = JSON.stringify(summary)
     expect(summaryJson).not.toContain("Bearer ")
@@ -366,6 +367,70 @@ describe("Delivery Hub storefront-neutral smoke harness", () => {
       selected_key_title: "Local Delivery Hub Store Smoke",
     }))
     expect(JSON.stringify(resolution.key_discovery)).not.toContain("pk_created_secret_like_value")
+  })
+
+  it("hydrates warehouse-to-PVZ quote address from a later safe coordinate-bearing pickup point", async () => {
+    const fetchMock = jest.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
+      const href = String(url)
+
+      if (href.includes("/store/delivery/pickup-points")) {
+        expect(href).toContain("limit=50")
+        return buildJsonResponse(200, {
+          ok: true,
+          points: [
+            {
+              provider_point_id: "pvz_without_coords",
+              name: "PVZ without coordinates",
+              address: "Moscow, no coordinates",
+              city: "Moscow",
+              lat: null,
+              lng: null,
+            },
+            {
+              provider_point_id: "pvz_coordinate_candidate",
+              name: "PVZ candidate",
+              address: "Moscow, coordinate candidate",
+              city: "Moscow",
+              lat: 55.76,
+              lng: 37.62,
+            },
+          ],
+        })
+      }
+
+      if (href.endsWith("/store/delivery/quotes")) {
+        const requestBody = JSON.parse(String(init?.body ?? "{}"))
+        expect(requestBody.destination_point_id).toBe("pvz_without_coords")
+        expect(requestBody.destination_address).toEqual({
+          fullname: "Moscow, Moscow, coordinate candidate",
+          coordinates: [37.62, 55.76],
+        })
+        return buildJsonResponse(200, buildQuoteResponse())
+      }
+
+      if (href.endsWith("/store/delivery/selection")) {
+        return buildJsonResponse(200, buildSelectionResponse())
+      }
+
+      throw new Error(`Unexpected URL: ${href}`)
+    }) as unknown as typeof fetch
+
+    global.fetch = fetchMock
+
+    const result = await runDeliveryHubStorefrontNeutralSmoke(
+      parseDeliveryHubStorefrontNeutralSmokeArgs([
+        "--backend-url=http://localhost:9000",
+        "--publishable-api-key=pk_test_secret_like_value",
+        "--connection-id=conn_1",
+        "--cart-id=cart_1",
+        "--mode=warehouse_to_pickup_point",
+        "--warehouse-id=wh_1",
+        "--destination-point-id=pvz_without_coords",
+      ])
+    )
+
+    expect(result.status).toBe("success")
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 })
 

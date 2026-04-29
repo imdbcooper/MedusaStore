@@ -265,7 +265,7 @@ describe("delivery admin settings page state", () => {
     );
 
     expect(getQuoteModeHint("warehouse_to_pickup_point")).toContain(
-      "Yandex /offers/calculate",
+      "Yandex /check-price",
     );
     expect(getQuoteModeHint("warehouse_to_pickup_point")).toContain(
       "platform_station_id не обязателен для цены",
@@ -303,15 +303,15 @@ describe("delivery admin settings page state", () => {
       "Обязательно при создании",
     );
     expect(getFieldRequirementText({ field: "warehouse" })).toContain(
-      "необязателен для расчёта цены",
+      "не отправляется в price preview /check-price",
     );
     expect(getFieldRequirementText({ field: "destination_point" })).toContain(
-      "destination.platform_station.platform_id",
+      "route_points[1].coordinates/fullname",
     );
     expect(getFieldRequirementText({ field: "interval" })).toContain(
       "Необязательно для /offers/create Test quote",
     );
-    expect(getFieldRequirementText({ field: "warehouse_origin_address" })).toContain("Yandex /offers/calculate");
+    expect(getFieldRequirementText({ field: "warehouse_origin_address" })).toContain("Yandex /check-price");
     expect(getFieldRequirementText({ field: "warehouse_coordinates" })).toContain("metadata.coordinates");
     expect(getFieldRequirementText({ field: "five_post" })).toContain("5 Post");
   });
@@ -3310,7 +3310,7 @@ describe("delivery admin settings page state", () => {
     expect(missing.blockingReasons).toEqual([
       "сохранённое Yandex-подключение",
       "destination PVZ id из поиска ПВЗ",
-      "склад с адресом origin для /offers/calculate",
+      "склад с адресом и координатами origin для /check-price",
     ]);
     expect(missing.errorMessage).toContain("сохранённое Yandex-подключение");
 

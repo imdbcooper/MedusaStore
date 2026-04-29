@@ -11,6 +11,7 @@ import { listDeliveryWarehousesReadOnly } from "../modules/delivery-hub/storage/
 const DELIVERY_HUB_STOREFRONT_NEUTRAL_SMOKE_VERSION = 1
 const DEFAULT_BACKEND_URL = "http://localhost:9000"
 const DEFAULT_CURRENCY_CODE = "RUB"
+const DEFAULT_PICKUP_POINTS_LIMIT = 50
 const DEFAULT_ITEMS = [
   {
     quantity: 1,
@@ -795,23 +796,9 @@ async function hydratePickupPointAddressForQuote(input: DeliveryHubStorefrontNeu
   }
 
   try {
-    const response = await fetch(
-      new URL(
-        `/store/delivery/pickup-points?connection_id=${encodeURIComponent(input.connection_id)}&country_code=RU`,
-        input.backend_url
-      ),
-      {
-        method: "GET",
-        headers: input.publishable_api_key
-          ? { "x-publishable-api-key": input.publishable_api_key }
-          : undefined,
-      }
-    )
-    const body = await parseResponseBody(response)
+    const body = await fetchStorePickupPointsForSmoke(input)
     const points = asRecord(body).points
-    const point = Array.isArray(points)
-      ? points.find((candidate) => asRecord(candidate).provider_point_id === input.destination_point_id)
-      : null
+    const point = selectStorePickupPointForSmoke(points, input.destination_point_id)
     const record = asRecord(point)
     const address = safeString(record.address)
     const name = safeString(record.name)
@@ -834,6 +821,49 @@ async function hydratePickupPointAddressForQuote(input: DeliveryHubStorefrontNeu
   } catch (_error) {
     return input
   }
+}
+
+async function fetchStorePickupPointsForSmoke(input: DeliveryHubStorefrontNeutralSmokeArgs) {
+  const url = new URL("/store/delivery/pickup-points", input.backend_url)
+  url.searchParams.set("connection_id", input.connection_id ?? "")
+  url.searchParams.set("country_code", "RU")
+  url.searchParams.set("limit", String(DEFAULT_PICKUP_POINTS_LIMIT))
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: input.publishable_api_key
+      ? { "x-publishable-api-key": input.publishable_api_key }
+      : undefined,
+  })
+
+  return parseResponseBody(response)
+}
+
+function selectStorePickupPointForSmoke(points: unknown, destinationPointId: string | null) {
+  if (!Array.isArray(points)) {
+    return null
+  }
+
+  const exact = points.find((candidate) => {
+    const record = asRecord(candidate)
+
+    return record.provider_point_id === destinationPointId &&
+      isCoordinateBearingPickupPointForSmoke(record)
+  })
+
+  if (exact) {
+    return exact
+  }
+
+  return points.find((candidate) => isCoordinateBearingPickupPointForSmoke(asRecord(candidate))) ?? null
+}
+
+function isCoordinateBearingPickupPointForSmoke(record: Record<string, unknown>) {
+  return !!safeString(record.address) &&
+    typeof record.lat === "number" &&
+    Number.isFinite(record.lat) &&
+    typeof record.lng === "number" &&
+    Number.isFinite(record.lng)
 }
 
 function selectPublishableKey<T extends { title?: string | null; token?: string | null }>(keys: T[]) {

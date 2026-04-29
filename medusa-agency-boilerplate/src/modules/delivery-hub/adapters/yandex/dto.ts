@@ -13,6 +13,10 @@ export type YandexPickupPointDto = {
     latitude?: number | string | null
     longitude?: number | string | null
   } | null
+  position?: {
+    latitude?: number | string | null
+    longitude?: number | string | null
+  } | null
   available_for_dropoff?: boolean | null
   is_yandex_branded?: boolean | null
   is_market_partner?: boolean | null

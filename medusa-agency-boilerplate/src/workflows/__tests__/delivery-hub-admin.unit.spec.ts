@@ -1186,6 +1186,46 @@ describe("Delivery Hub admin routes", () => {
     })
   })
 
+  it("deletes warehouse through admin route", async () => {
+    const warehouse = {
+      id: "wh_1",
+      name: "Warehouse",
+      enabled: true,
+      country_code: "RU",
+      city: "Москва",
+      address_line_1: "Льва Толстого, 16",
+      contact_name: null,
+      contact_phone: null,
+      provider_code: "yandex",
+      provider_warehouse_id: null,
+      metadata: {
+        coordinates: [37.588144, 55.733842],
+      },
+      created_at: "2026-04-20T00:00:00.000Z",
+      updated_at: "2026-04-20T00:00:00.000Z",
+    }
+    const deleteSpy = jest
+      .spyOn(DeliveryHubService.prototype, "deleteWarehouse")
+      .mockResolvedValue({ deleted: true, warehouse } as any)
+
+    const res = createMockResponse()
+
+    await deliveryWarehouseRoute.DELETE(
+      createMockRequest({
+        url: "/admin/delivery/warehouses/wh_1",
+      }) as any,
+      res as any
+    )
+
+    expect(deleteSpy).toHaveBeenCalledWith("wh_1")
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      deleted: true,
+      warehouse,
+    })
+  })
+
   it("rejects polluted warehouse update responses before they cross the boundary", async () => {
     jest.spyOn(DeliveryHubService.prototype, "updateWarehouse").mockResolvedValue({
       id: "wh_1",

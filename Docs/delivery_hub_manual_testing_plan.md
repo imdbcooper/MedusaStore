@@ -9,10 +9,11 @@
 3. Перейдите в **Settings → Delivery**.
 4. Пройдите основной русскоязычный путь на странице:
    - **1. Подключение Яндекс Доставки** — сохраните connection; token вводится только при создании/ротации, пустое поле на edit означает «оставить сохранённый sealed token»;
+   - **Адрес продавца / склада** — заполните city/address и координаты склада; для теста `Москва, Льва Толстого, 16` используйте longitude `37.588144`, latitude `55.733842`;
    - **2. Проверить подключение** — запустите safe **Test connection**;
-   - **3. Найти ПВЗ** — получите destination PVZ/platform station id и нажмите **Использовать как destination**;
+   - **3. Найти ПВЗ** — получите destination PVZ и убедитесь, что в lookup/Store response есть coordinates из Yandex `position.longitude/latitude`;
    - **4. Проверить стоимость доставки** — запустите Test quote.
-5. Для `warehouse_to_pickup_point` pickup windows больше не являются обязательным prereq: `/offers/create` использует warehouse `provider_warehouse_id` как `source.platform_station.platform_id`, а destination PVZ id как `destination.platform_station.platform_id`.
+5. Для `warehouse_to_pickup_point` простая цена считается через Yandex legacy cargo `POST /b2b/cargo/integration/v2/check-price`: backend отправляет flat `route_points[].fullname`, `route_points[].coordinates`, `contact`, `items`, `places`, `billing_info.payment_method=already_paid`; pickup windows не являются обязательным prereq для этого price preview.
 
 Если на шаге 1 снова белый экран — сразу переходите в раздел **«Если в Admin белый экран»** ниже.
 
@@ -42,8 +43,8 @@
 - ✅ Добавлен operator-friendly lookup для получения destination PVZ id перед ручным **Test quote**: admin-only route `GET /admin/delivery/pickup-points?connection_id=<id>&city=<optional>&limit=20` и UI-блок **Pickup point lookup** на **Settings → Delivery**. Он вызывает existing adapter `listPickupPoints` только по кнопке оператора, возвращает capped sanitized sample (`id/code/name/address/city/available_for_dropoff/coordinates`), не выводит raw credentials/provider body и позволяет кнопкой **Use as destination** заполнить поле **Destination point id**.
 - ✅ Добавлен safe fix для `warehouse_to_pickup_point` pickup windows: adapter больше не делает скрытый pre-call `/offers/info` с `places: []`; Admin получил operator-only блок **Pickup windows lookup** (`GET /admin/delivery/pickup-windows`) с sanitized/capped windows и кнопкой **Use interval**. После follow-up по docs pickup windows больше не являются обязательным prerequisite для sandbox **Test quote**.
 - ✅ Диагностика следующего provider `400` на **Pickup windows lookup** показала локальный request/response-contract drift, а не проблему disabled **Test quote**: safe log имел documented sandbox family `/api/b2b/platform`, path `/offers/info`, non-empty `places`, но не было `last_mile_policy=self_pickup`, поэтому Yandex применял default `time_interval` и вернул safe `no_delivery_options`. Adapter теперь вызывает `/offers/info?last_mile_policy=self_pickup` и маппит documented `offers[].from/to` в neutral windows.
-- ✅ Follow-up по Yandex docs подтвердил, что `platform_station_id` тестового склада нужно использовать как warehouse/source в documented `POST /offers/create`; это offer/quote endpoint, separate от `/request/create` и confirmation. Adapter `warehouse_to_pickup_point` теперь использует `/offers/create` с source warehouse `platform_station`, destination PVZ `platform_station`, `last_mile_policy=self_pickup`, package `places/items` и не требует pickup windows lookup для самого sandbox Test quote.
-- ✅ Ручной smoke baseline для `warehouse_to_pickup_point` подтверждён через прямой Yandex `/offers/create`: `quotes count=4`, currency `RUB`, first/UI price `181.9 rub`, pickup window required `no`, optional interval пустой/не передавался. Это quote/offer-only проверка без shipment/order/confirmation endpoint.
+- ✅ Follow-up по рабочему пользовательскому примеру подтвердил, что для простого warehouse → PVZ price preview нужен Yandex legacy cargo `POST /b2b/cargo/integration/v2/check-price`, а не platform `/offers/create` / `/offers/calculate`. Payload должен иметь flat `route_points` (`id`, `type`, `fullname`, `coordinates`, `contact`), `items`, `places`, `billing_info.payment_method=already_paid`; `merchant_id` и `platform_station_id` для этого price preview не передаются.
+- ✅ Ручной smoke baseline для `warehouse_to_pickup_point` теперь подтверждается через corrected `/check-price` contour: склад-источник должен иметь coordinates `[lng, lat]`, выбранный ПВЗ должен иметь coordinates из `pickup-points/list`, Store quote возвращает neutral price/ETA, а storefront показывает buyer-visible price. Это price-preview проверка без shipment/order/confirmation endpoint.
 - ✅ Свежий пользовательский screenshot подтвердил второй обязательный smoke baseline для `dropoff_point_to_pickup_point` через прямой Yandex `/offers/create`: connection `yandexTestname · test · active`, destination PVZ/platform station id `e1139f6d-e34f-47a9-a55f-31f032a861a6`, origin dropoff point id `019d2a9da5877011a771b75e903f3039`, currency `RUB`, quantity `1`, weight `500` grams, declared price `2000`, correlation id `a4adab14-ff1c-40da-a2cd-bfa0726e3be7`, `quotes count=13`, first offer price `181.9 rub`, visible ETA examples `3–4`, `4–5`, `5–6`, `6–7`, pickup window required `no`; provider reference intentionally redacted. Это закрывает оба обязательных first-tranche quote paths: warehouse → PVZ и dropoff point → PVZ.
 
 ---
@@ -319,8 +320,9 @@ User created successfully.
 | Данные | Куда вводить | Обязательно | Можно писать в docs/chat |
 |---|---|---|---|
 | Yandex API token | Поле token в **1. Подключение Яндекс Доставки** | Да при создании/ротации; необязательно при edit saved sealed connection | **Нет** |
-| `provider warehouse id` / `platform_station_id` склада | Advanced-блок складов/source mapping; затем выбор saved warehouse в **4. Проверить стоимость доставки** | Да для `warehouse_to_pickup_point` | Да, если не секрет |
-| Destination `pickup point id` / PVZ `platform_station_id` | **3. Найти ПВЗ** → **Использовать как destination** или вручную в **4. Проверить стоимость доставки** | Да для обоих Test quote сценариев | Да |
+| Склад-отправитель: `country_code`, city, address, longitude/latitude | **Адрес продавца / склада**; затем выбор saved warehouse в **4. Проверить стоимость доставки** | Да для `warehouse_to_pickup_point`; city должен быть городом (`Москва`), coordinates обязательны для live `/check-price` | Да, если не секрет |
+| `provider warehouse id` / `platform_station_id` склада | Advanced-блок складов/source mapping; для `check-price` price preview не отправляется, но может использоваться pickup windows/shipment diagnostics | Необязательно для `check-price`, может быть нужно для advanced операций | Да, если не секрет |
+| Destination `pickup point id` / PVZ `platform_station_id` + coordinates | **3. Найти ПВЗ** → **Использовать как destination** или storefront selector; coordinates берутся из `pickup-points/list position.longitude/latitude` | Да для обоих Test quote сценариев; для warehouse → PVZ live `/check-price` coordinates обязательны | Да |
 | Origin `dropoff point id` | **4. Проверить стоимость доставки** (`dropoff_point_to_pickup_point`) | Да для dropoff-сценария | Да |
 | `available_for_dropoff=true` | Проверка origin dropoff точки в **3. Найти ПВЗ** | Да для origin в dropoff-сценарии | Да |
 | `interval_utc` из pickup windows | Optional advanced diagnostics в **4. Проверить стоимость доставки** | Необязательно для sandbox `/offers/create`; используйте только если хотите interval-specific проверку или provider явно требует interval validation | Да |
@@ -438,17 +440,18 @@ GET /admin/delivery/pickup-windows?connection_id=<saved_connection_id>&warehouse
 4. Укажите:
    - saved warehouse из списка **Warehouse**;
    - destination `pickup point id` (PVZ) из **Pickup point lookup**;
-   - optional future `interval_utc` из **Pickup windows lookup**, если хотите ограничить pickup interval или Yandex явно требует interval validation.
+   - optional future `interval_utc` из **Pickup windows lookup**, если хотите отдельную interval-specific диагностику.
 5. Нажмите **Проверить стоимость** только вручную.
 6. Зафиксируйте PASS/FAIL.
 
 Критично:
 
 - **Test quote** должен быть disabled, пока нет saved connection, destination PVZ и required origin field для выбранного mode;
-- для `warehouse_to_pickup_point` **Test quote** больше не требует future interval как обязательный UI guard: documented sandbox quote идёт через `/offers/create` с source warehouse `platform_station_id`; pickup windows lookup остаётся optional diagnostic/helper;
-- после успешного **Test connection** минимальные ручные шаги: **Pickup point lookup** → **Use as destination** → **Test quote**; при interval-specific проверке добавьте **Pickup windows lookup** → **Use interval**;
-- для `warehouse_to_pickup_point` required origin field — saved warehouse, из которого backend возьмёт mapped provider warehouse reference;
-- случайный/устаревший `interval_utc` даёт ожидаемый FAIL как валидация входных данных;
+- для `warehouse_to_pickup_point` **Test quote** использует `/check-price`, а не `/offers/create`/`/offers/calculate`: required origin field — saved warehouse with city/address/coordinates; provider warehouse/platform station id не отправляется в simple price preview;
+- destination PVZ должен иметь coordinates; если `pickup-points/list` не вернул `position.longitude/latitude`, выберите другой ПВЗ или повторите lookup, иначе backend/storefront должны блокировать quote до provider call;
+- after successful **Test connection** minimal ручные шаги: **Адрес продавца / склада** → **Pickup point lookup** → **Use as destination** → **Test quote**; pickup windows остаётся optional diagnostic/helper;
+- city склада должен быть city (`Москва`), not country (`Russia` / `RU` / `Россия`); для тестового склада `Москва, Льва Толстого, 16` используйте longitude `37.588144`, latitude `55.733842`;
+- случайный/устаревший `interval_utc` не нужен для simple `/check-price` price preview;
 - shipment ids и реальные provider responses не публикуем в docs/chat.
 
 ### Шаг 7. Выполнить Test quote: dropoff point → PVZ

@@ -56,6 +56,7 @@ import {
   normalizeDeliveryHubQuotesResponse,
   normalizeDeliveryHubReadinessResponse,
   normalizeDeliveryHubSettingsResponse,
+  shapeDeliveryHubPickupPointsQuery,
   shapeDeliveryHubQuotesPayload,
   shapeDeliveryHubQuotesQuery,
   parseDeliveryHubCheckoutCutoverEnabledFlag,
@@ -606,6 +607,22 @@ test("shapeDeliveryHubQuotesQuery serializes interval and items for neutral stor
         price: 1500,
       },
     ]),
+  })
+})
+
+test("shapeDeliveryHubPickupPointsQuery serializes safe limit for coordinate-bearing PVZ hydration", () => {
+  const query = shapeDeliveryHubPickupPointsQuery({
+    connection_id: "conn_pickup_points",
+    city: "Москва",
+    country_code: "RU",
+    limit: 50,
+  })
+
+  assert.deepEqual(query, {
+    connection_id: "conn_pickup_points",
+    city: "Москва",
+    country_code: "RU",
+    limit: "50",
   })
 })
 
@@ -11875,6 +11892,8 @@ test("checkout shipping source exposes shopper pickup-point selector hooks and a
 
   assert.equal(shippingSource.includes("listDeliveryHubPickupWindows"), false)
   assert.equal(shippingSource.includes("selected_pickup_point_id"), true)
+  assert.equal(shippingSource.includes("listDeliveryHubPickupPoints({"), true)
+  assert.equal(shippingSource.includes("limit: 50"), true)
   assert.equal(shippingSource.includes("Стоимость временно недоступна для выбранного пункта"), true)
   assert.equal(shippingSource.includes("Повторить расчёт стоимости"), true)
 })

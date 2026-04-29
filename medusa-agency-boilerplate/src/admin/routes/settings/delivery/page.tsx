@@ -236,6 +236,7 @@ const DeliverySettingsPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeletingConnection, setIsDeletingConnection] = useState(false);
   const [isSavingWarehouse, setIsSavingWarehouse] = useState(false);
+  const [isDeletingWarehouse, setIsDeletingWarehouse] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeConnectionId, setActiveConnectionId] = useState<string | null>(
     null,
@@ -816,6 +817,58 @@ const DeliverySettingsPage = () => {
       setFormError(error as ApiErrorPayload);
     } finally {
       setIsDeletingConnection(false);
+    }
+  };
+
+  const handleDeleteWarehouse = async () => {
+    if (!activeWarehouseId || !activeWarehouse) {
+      setWarehouseFormError({
+        status: 400,
+        code: "DELIVERY_HUB_WAREHOUSE_REQUIRED",
+        message: "Выберите сохранённый склад перед удалением.",
+        details: null,
+      });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Удалить склад "${activeWarehouse.name}"? Если подключение использует его как default warehouse, backend безопасно заблокирует удаление.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingWarehouse(true);
+    setWarehouseFormError(null);
+    setWarehouseFormNotice(null);
+
+    try {
+      await requestJson<{ deleted: true; warehouse: DeliveryWarehouse }>(
+        `/admin/delivery/warehouses/${activeWarehouseId}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      setActiveWarehouseId(null);
+      setWarehouseForm(defaultWarehouseForm);
+      setTestQuoteForm((current) => ({
+        ...current,
+        warehouse_id:
+          current.warehouse_id === activeWarehouseId ? "" : current.warehouse_id,
+      }));
+      setPickupWindowLookupForm((current) => ({
+        ...current,
+        warehouse_id:
+          current.warehouse_id === activeWarehouseId ? "" : current.warehouse_id,
+      }));
+      setWarehouseFormNotice("Адрес продавца / склада удалён");
+      await loadData(true);
+    } catch (error) {
+      setWarehouseFormError(error as ApiErrorPayload);
+    } finally {
+      setIsDeletingWarehouse(false);
     }
   };
 
@@ -1803,10 +1856,11 @@ const DeliverySettingsPage = () => {
             <div>
               <Heading level="h2">Адрес продавца / склада</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Этот origin address используется backend для Yandex /offers/calculate
+                Этот origin address используется backend для Yandex /check-price
                 как адрес продавца/склада. Укажите город как город (Москва), не
-                страну (Russia/RU/Россия). Здесь нет токенов, auth headers или
-                raw provider DTO; storefront этот адрес не отправляет.
+                страну (Russia/RU/Россия). Для тестового адреса Москва, Льва Толстого, 16
+                используйте longitude 37.588144 и latitude 55.733842. Здесь нет токенов,
+                auth headers или raw provider DTO; storefront этот адрес не отправляет.
               </Text>
               {activeConnection?.config?.default_warehouse_id ? (
                 <Text className="text-ui-fg-subtle mt-2 text-sm">
@@ -1970,7 +2024,7 @@ const DeliverySettingsPage = () => {
               </div>
 
               <div>
-                <FieldLabel htmlFor="warehouse-latitude" required={false}>
+                <FieldLabel htmlFor="warehouse-latitude" required={true}>
                   Широта
                 </FieldLabel>
                 <Input
@@ -1979,12 +2033,12 @@ const DeliverySettingsPage = () => {
                   onChange={(event) =>
                     handleWarehouseField("latitude", event.target.value)
                   }
-                  placeholder="55.7558"
+                  placeholder="55.733842"
                 />
               </div>
 
               <div>
-                <FieldLabel htmlFor="warehouse-longitude" required={false}>
+                <FieldLabel htmlFor="warehouse-longitude" required={true}>
                   Долгота
                 </FieldLabel>
                 <Input
@@ -1993,7 +2047,7 @@ const DeliverySettingsPage = () => {
                   onChange={(event) =>
                     handleWarehouseField("longitude", event.target.value)
                   }
-                  placeholder="37.6173"
+                  placeholder="37.588144"
                 />
                 <Text className="text-ui-fg-subtle mt-2 text-sm">
                   {getFieldRequirementText({ field: "warehouse_coordinates" })}
@@ -2104,10 +2158,21 @@ const DeliverySettingsPage = () => {
                 type="button"
                 variant="secondary"
                 onClick={startCreateWarehouse}
-                disabled={isSavingWarehouse}
+                disabled={isSavingWarehouse || isDeletingWarehouse}
               >
                 Сбросить форму
               </Button>
+              {activeWarehouseId ? (
+                <Button
+                  type="button"
+                  variant="danger"
+                  onClick={() => void handleDeleteWarehouse()}
+                  isLoading={isDeletingWarehouse}
+                  disabled={isSavingWarehouse || isDeletingWarehouse || isLoading}
+                >
+                  Удалить склад
+                </Button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -3941,8 +4006,8 @@ const DeliverySettingsPage = () => {
               />
               <Text className="text-ui-fg-subtle mt-2 text-sm">
                 {testQuoteForm.destination_address
-                  ? "Destination address выбран из поиска ПВЗ и будет отправлен как safe /offers/calculate route point."
-                  : "Для Yandex /offers/calculate выберите ПВЗ через блок «Найти ПВЗ», чтобы backend получил destination address."}
+                  ? "Destination address выбран из поиска ПВЗ и будет отправлен как safe flat /check-price route point с coordinates."
+                  : "Для Yandex /check-price выберите ПВЗ через блок «Найти ПВЗ», чтобы backend получил destination address и coordinates из pickup-points/list."}
               </Text>
             </div>
 

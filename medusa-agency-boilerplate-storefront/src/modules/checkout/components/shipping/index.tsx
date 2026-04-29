@@ -487,6 +487,7 @@ const Shipping: React.FC<ShippingProps> = ({
       ? listDeliveryHubPickupPoints({
           city: deliveryHubAddressContext.city,
           country_code: deliveryHubAddressContext.country_code_upper,
+          limit: 50,
         })
       : Promise.resolve(null)
 
@@ -798,6 +799,22 @@ const Shipping: React.FC<ShippingProps> = ({
 
     const selectedDestinationPoint = getDeliveryHubDestinationPoints(deliveryHubPickupPointState.points)
       .find((point) => point.provider_point_id === destinationPointId) ?? null
+    const selectedDestinationPointHasCoordinates =
+      typeof selectedDestinationPoint?.lng === "number" &&
+      typeof selectedDestinationPoint?.lat === "number"
+
+    if (
+      deliveryHubNeutralPreviewForm.quote_type === "warehouse_to_pickup_point" &&
+      !selectedDestinationPointHasCoordinates
+    ) {
+      setDeliveryHubNeutralPreviewState((current) => ({
+        ...current,
+        status: "blocked",
+        message:
+          "Selected Yandex pickup point has no coordinates. Re-run pickup-points/list and choose a PVZ with position.longitude/latitude before requesting /check-price.",
+      }))
+      return null
+    }
 
     return {
       connection_id: connectionId || null,

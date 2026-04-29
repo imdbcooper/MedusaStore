@@ -348,7 +348,7 @@ function isYandexNoZoneOrNoOfferCode(providerSafeCode?: string | null) {
 }
 
 function isYandexSafeCalculateRouteRejection(path: string, _data: unknown) {
-  return path === "/offers/calculate"
+  return path === "/offers/calculate" || path === "/check-price"
 }
 
 function isYandexAccessBlockResponse(data: unknown) {

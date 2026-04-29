@@ -423,6 +423,7 @@ export type DeliveryHubListPickupPointsInput = {
   connection_id?: string | null
   city?: string | null
   country_code?: string | null
+  limit?: number | null
 }
 
 export type DeliveryHubListPickupWindowsInput = {
@@ -2091,6 +2092,10 @@ export function shapeDeliveryHubPickupPointsQuery(
   buildOptionalQueryField(query, "connection_id", readOptionalString(input.connection_id))
   buildOptionalQueryField(query, "city", readOptionalString(input.city))
   buildOptionalQueryField(query, "country_code", readOptionalString(input.country_code))
+
+  if (input.limit !== null && input.limit !== undefined) {
+    query.limit = String(readPositiveInteger(input.limit, "limit"))
+  }
 
   return query
 }

@@ -36,8 +36,8 @@ export function mapYandexPickupPoint(dto: YandexPickupPointDto): DeliveryPickupP
     city: normalizeNullableString(dto.address?.locality),
     region: normalizeNullableString(dto.address?.province),
     postal_code: normalizeNullableString(dto.address?.zip_code),
-    lat: normalizeNumber(dto.address?.latitude),
-    lng: normalizeNumber(dto.address?.longitude),
+    lat: normalizeNumber(dto.position?.latitude ?? dto.address?.latitude),
+    lng: normalizeNumber(dto.position?.longitude ?? dto.address?.longitude),
     is_origin_dropoff_allowed: !!dto.available_for_dropoff,
     is_destination_pickup_allowed: true,
     payment_methods: Array.isArray(dto.payment_methods) ? dto.payment_methods : [],
@@ -147,6 +147,8 @@ export function mapYandexCheckPriceQuote(
     throw createYandexCheckPriceShapeError("currency_rules.code|currency", response, "missing_or_invalid_currency")
   }
 
+  const distanceMeters = normalizeNumber(response.distance_meters)
+
   return buildYandexQuote({
     mode_code: input.mode_code,
     destination_point_id: input.destination_point_id,
@@ -159,6 +161,7 @@ export function mapYandexCheckPriceQuote(
     raw_reference: {
       provider: DELIVERY_HUB_PROVIDER_YANDEX,
       provider_price_endpoint: "check-price",
+      ...(distanceMeters !== null ? { distance_meters: distanceMeters } : {}),
     },
   })
 }

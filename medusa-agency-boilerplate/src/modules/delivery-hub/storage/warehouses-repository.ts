@@ -107,6 +107,26 @@ export async function getDeliveryWarehouseById(pg: DeliveryHubPgConnection, id: 
   return rows[0] ? normalizeDeliveryWarehouseRow(rows[0]) : null
 }
 
+export async function deleteDeliveryWarehouse(
+  pg: DeliveryHubPgConnection,
+  id: string
+) {
+  await ensureDeliveryWarehousesTable(pg)
+
+  const rows = getRawRows<DeliveryWarehouseRow>(
+    await pg.raw(
+      `
+        delete from ${DELIVERY_HUB_WAREHOUSES_TABLE}
+        where id = ?
+        returning *
+      `,
+      [id]
+    )
+  )
+
+  return rows[0] ? normalizeDeliveryWarehouseRow(rows[0]) : null
+}
+
 export async function upsertDeliveryWarehouse(
   pg: DeliveryHubPgConnection,
   input: DeliveryWarehouseUpsertInput

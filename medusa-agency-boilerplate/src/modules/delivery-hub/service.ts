@@ -105,6 +105,7 @@ import {
   serializeDeliveryWarehousePublic,
 } from "./storage/serializers"
 import {
+  deleteDeliveryWarehouse,
   getDeliveryWarehouseById,
   listDeliveryWarehouses,
   listDeliveryWarehousesReadOnly,
@@ -692,6 +693,45 @@ export class DeliveryHubService {
     })
   }
 
+  async deleteWarehouse(id: string) {
+    const current = await this.requireWarehouse(id)
+    const connections = await listDeliveryConnections(this.pg)
+    const referencingConnections = connections.filter(
+      (connection) => normalizeNullableText(connection.config.default_warehouse_id) === current.id
+    )
+
+    if (referencingConnections.length) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: "Cannot delete warehouse while a delivery connection uses it as default_warehouse_id",
+        status: 409,
+        details: {
+          field: "config.default_warehouse_id",
+          warehouse_id: current.id,
+          referencing_connection_count: referencingConnections.length,
+          referencing_connection_ids: referencingConnections.map((connection) => connection.id),
+          operator_hint:
+            "Сначала выберите другой склад по умолчанию у подключений Delivery Hub или очистите default warehouse, затем повторите удаление.",
+        },
+      })
+    }
+
+    const deleted = await deleteDeliveryWarehouse(this.pg, current.id)
+
+    if (!deleted) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_NOT_FOUND",
+        message: `Delivery Hub warehouse "${current.id}" was not found`,
+        status: 404,
+      })
+    }
+
+    return {
+      deleted: true,
+      warehouse: serializeDeliveryWarehousePublic(deleted),
+    }
+  }
+
   async testConnection(id: string, input?: { include_pickup_points?: boolean }) {
     const connection = await this.requireConnection(id)
     const adapter = getDeliveryHubAdapter(connection.provider_code)
@@ -1090,18 +1130,21 @@ export class DeliveryHubService {
     connection_id?: string | null
     city?: string | null
     country_code?: string | null
+    limit?: number | null
   }) {
     const connection = await this.resolveStoreConnection(input.connection_id)
     const adapter = getDeliveryHubAdapter(connection.provider_code)
     const correlationId = crypto.randomUUID()
     const countryCode = normalizeCountryCode(input.country_code ?? connection.country_code)
     const city = normalizeNullableText(input.city)
+    const limit = normalizeStorePickupPointLimit(input.limit)
 
     try {
       const points = await adapter.listPickupPoints(this.buildAdapterContext(connection, correlationId), {
         city,
         country_code: countryCode,
       })
+      const sampledPoints = points.slice(0, limit)
 
       await this.appendLog({
         connection,
@@ -1111,15 +1154,18 @@ export class DeliveryHubService {
         request_summary: {
           city,
           country_code: countryCode,
+          limit,
         },
         response_summary: {
           pickup_points_count: points.length,
+          returned_count: sampledPoints.length,
+          truncated: points.length > sampledPoints.length,
         },
       })
 
       return {
         ok: true,
-        points,
+        points: sampledPoints,
       }
     } catch (error) {
       const normalized = normalizeDeliveryHubError(error)
@@ -1133,6 +1179,7 @@ export class DeliveryHubService {
         request_summary: {
           city,
           country_code: countryCode,
+          limit,
         },
         response_summary: buildProviderErrorSummary(normalized, correlationId),
       })
@@ -1905,13 +1952,13 @@ export class DeliveryHubService {
       const explicitWarehouseId = normalizeNullableText(warehouseId)
       throw new DeliveryHubError({
         code: "DELIVERY_HUB_VALIDATION_ERROR",
-        message: "Warehouse platform station id is required for Yandex pickup windows or shipment operations, but not for price quotes via /offers/calculate",
+        message: "Warehouse platform station id is required for Yandex pickup windows or shipment operations, but not for price quotes via /check-price",
         status: 400,
         details: {
           field: explicitWarehouseId ? "warehouse_id" : "config.default_warehouse_id",
           warehouse_id: warehouse.id,
           operator_hint:
-            "Для расчёта цены Yandex /offers/calculate использует адрес/координаты склада. Заполните platform station id только для окон самопривоза/создания отправления.",
+            "Для расчёта цены Yandex /check-price использует адрес/координаты склада. Заполните platform station id только для окон самопривоза/создания отправления.",
         },
       })
     }
@@ -2006,7 +2053,7 @@ export class DeliveryHubService {
       throw new DeliveryHubError({
         code: "DELIVERY_HUB_VALIDATION_ERROR",
         message:
-          "Yandex Delivery /offers/calculate requires warehouse city to be a city, not a country. Use Москва, not Russia/RU/Россия.",
+          "Yandex Delivery /check-price requires warehouse city to be a city, not a country. Use Москва, not Russia/RU/Россия.",
         status: 409,
         details: {
           field: "warehouse.city",
@@ -2021,7 +2068,7 @@ export class DeliveryHubService {
       throw new DeliveryHubError({
         code: "DELIVERY_HUB_VALIDATION_ERROR",
         message:
-          "Yandex Delivery /offers/calculate requires warehouse coordinates to be numeric [lng, lat] when provided.",
+          "Yandex Delivery /check-price requires warehouse coordinates to be numeric [lng, lat].",
         status: 409,
         details: {
           field: "warehouse.metadata.coordinates",
@@ -2029,6 +2076,22 @@ export class DeliveryHubService {
           required_shape: "[lng, lat]",
           operator_hint:
             "Исправьте координаты склада: числовые longitude/latitude [lng, lat], соответствующие адресу склада.",
+        },
+      })
+    }
+
+    if (!coordinates) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message:
+          "Yandex Delivery /check-price requires warehouse coordinates [lng, lat] before provider call.",
+        status: 409,
+        details: {
+          field: "warehouse.metadata.coordinates",
+          warehouse_id: warehouse.id,
+          required_shape: "[lng, lat]",
+          operator_hint:
+            "Заполните координаты склада в Admin Settings → Delivery. Для теста Москва, Льва Толстого, 16 используйте longitude 37.588144, latitude 55.733842.",
         },
       })
     }
@@ -2041,7 +2104,7 @@ export class DeliveryHubService {
       throw new DeliveryHubError({
         code: "DELIVERY_HUB_VALIDATION_ERROR",
         message:
-          "Yandex Delivery /offers/calculate requires seller/warehouse origin address. Fill country, city and address in Admin Settings → Delivery → Адрес продавца / склада.",
+          "Yandex Delivery /check-price requires seller/warehouse origin address and coordinates. Fill country, city, address, longitude and latitude in Admin Settings → Delivery → Адрес продавца / склада.",
         status: 409,
         details: {
           field: "warehouse.origin_address",
@@ -2050,7 +2113,7 @@ export class DeliveryHubService {
             ? missingFields
             : ["warehouse.address_line_1"],
           operator_hint:
-            "Заполните адрес продавца/склада в Admin Settings → Delivery → Адрес продавца / склада, затем повторите расчёт.",
+            "Заполните адрес продавца/склада и координаты в Admin Settings → Delivery → Адрес продавца / склада, затем повторите расчёт.",
         },
       })
     }
@@ -2237,20 +2300,36 @@ function resolveQuoteRoutePointAddress(
   if (!fullname) {
     throw new DeliveryHubError({
       code: "DELIVERY_HUB_VALIDATION_ERROR",
-      message: `Yandex Delivery /offers/calculate requires ${field}.fullname. Select a pickup point with address in Admin/Store before requesting quote.`,
+      message: `Yandex Delivery /check-price requires ${field}.fullname and coordinates. Select a pickup point with address and coordinates in Admin/Store before requesting quote.`,
       status: 409,
       details: {
         field,
-        required_shape: "{ fullname, coordinates?, contact? }",
+        required_shape: "{ fullname, coordinates: [lng, lat], contact? }",
         operator_hint:
-          "Выберите ПВЗ через поиск, чтобы quote path получил destination address для Yandex /offers/calculate.",
+          "Выберите ПВЗ через поиск, чтобы quote path получил destination address и coordinates из Yandex pickup-points/list для /check-price.",
+      },
+    })
+  }
+
+  const coordinates = normalizeRoutePointCoordinates(value?.coordinates)
+
+  if (!coordinates) {
+    throw new DeliveryHubError({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      message: `Yandex Delivery /check-price requires ${field}.coordinates [lng, lat]. Select a pickup point with provider coordinates before requesting quote.`,
+      status: 409,
+      details: {
+        field,
+        required_shape: "{ fullname, coordinates: [lng, lat], contact? }",
+        operator_hint:
+          "Координаты ПВЗ должны прийти из Yandex pickup-points/list position.longitude/latitude и передаваться в selected-PVZ quote как [lng, lat].",
       },
     })
   }
 
   return {
     fullname,
-    coordinates: normalizeRoutePointCoordinates(value?.coordinates),
+    coordinates,
     contact: value?.contact ?? null,
   }
 }
@@ -2274,12 +2353,10 @@ function buildYandexCorrectedCheckPricePayloadSummary(error: DeliveryHubError) {
   const routePoints = Array.isArray(payload.route_points)
     ? payload.route_points.map((point) => {
         const routePoint = asRecord(point)
-        const address = asRecord(routePoint.address)
-
         return {
           type: normalizeNullableText(routePoint.type),
-          has_fullname: !!normalizeNullableText(address.fullname ?? routePoint.fullname),
-          has_address_fullname: !!normalizeNullableText(address.fullname),
+          has_fullname: !!normalizeNullableText(routePoint.fullname),
+          has_flat_fullname: !!normalizeNullableText(routePoint.fullname),
           has_coordinates: Array.isArray(routePoint.coordinates),
           has_contact: !!routePoint.contact,
         }
@@ -2291,7 +2368,7 @@ function buildYandexCorrectedCheckPricePayloadSummary(error: DeliveryHubError) {
   }
 
   return redactYandexPayload({
-    endpoint_family: "offers_calculate",
+    endpoint_family: "check_price",
     path: request.path ?? null,
     route_points: routePoints,
     item_count: Array.isArray(payload.items) ? payload.items.length : null,
@@ -2347,6 +2424,14 @@ function normalizePickupPointLookupLimit(value: number | null | undefined) {
   }
 
   return Math.max(1, Math.min(50, Math.floor(value)))
+}
+
+function normalizeStorePickupPointLimit(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 20
+  }
+
+  return Math.max(1, Math.min(100, Math.floor(value)))
 }
 
 function normalizePickupWindowLookupLimit(value: number | null | undefined) {

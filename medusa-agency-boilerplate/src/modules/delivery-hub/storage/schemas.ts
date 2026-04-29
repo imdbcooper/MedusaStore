@@ -159,6 +159,7 @@ export const DeliveryHubStorePickupPointsQuerySchema = z.object({
   connection_id: z.string().trim().min(1).optional(),
   city: z.string().trim().min(1).optional(),
   country_code: z.string().trim().min(2).max(2).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
 })
 
 export const DeliveryHubStorePickupWindowsQuerySchema = z.object({

@@ -313,7 +313,10 @@ describe("Delivery Hub service", () => {
       mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
       warehouse_id: warehouse.id,
       destination_point_id: "pvz_1",
-      destination_address: { fullname: "125009, Москва, Тверская 1" },
+      destination_address: {
+        fullname: "125009, Москва, Тверская 1",
+        coordinates: [37.61, 55.75],
+      },
       currency_code: "RUB",
     })
 
@@ -347,7 +350,12 @@ describe("Delivery Hub service", () => {
       country_code: "RU",
       city: "Москва",
       address_line_1: "Тверская 1",
-      metadata: { postal_code: "125009" },
+      metadata: {
+        postal_code: "125009",
+        coordinates: [37.588144, 55.733842],
+        lat: 55.733842,
+        lng: 37.588144,
+      },
     })
     const connection = createConnectionRecord({
       status: DELIVERY_HUB_CONNECTION_STATUS.active,
@@ -384,7 +392,11 @@ describe("Delivery Hub service", () => {
       provider_warehouse_id: "ya-wh-missing-origin",
       city: null,
       address_line_1: null,
-      metadata: {},
+      metadata: {
+        coordinates: [37.588144, 55.733842],
+        lat: 55.733842,
+        lng: 37.588144,
+      },
     })
     const connection = createConnectionRecord({
       status: DELIVERY_HUB_CONNECTION_STATUS.active,
@@ -847,6 +859,8 @@ describe("Delivery Hub service", () => {
       points: [
         expect.objectContaining({
           provider_point_id: "pvz_1",
+          lat: 55.75,
+          lng: 37.61,
         }),
       ],
     })
@@ -857,6 +871,35 @@ describe("Delivery Hub service", () => {
         country_code: "RU",
       }
     )
+  })
+
+  it("preserves safe store pickup point coordinates and honors requested store limit", async () => {
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+    })
+    const pg = createMockPg([connection])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+
+    jest.spyOn(adapter, "listPickupPoints").mockResolvedValue([
+      buildTestPickupPoint("pvz_1", { lat: 55.75, lng: 37.61 }),
+      buildTestPickupPoint("pvz_2", { lat: 55.76, lng: 37.62 }),
+      buildTestPickupPoint("pvz_3", { lat: null, lng: null }),
+    ])
+
+    const result = await service.listStorePickupPoints({
+      connection_id: connection.id,
+      country_code: "RU",
+      limit: 2,
+    })
+
+    expect(result.points).toEqual([
+      expect.objectContaining({ provider_point_id: "pvz_1", lat: 55.75, lng: 37.61 }),
+      expect.objectContaining({ provider_point_id: "pvz_2", lat: 55.76, lng: 37.62 }),
+    ])
+    expect(result.points).toHaveLength(2)
   })
 
   it("normalizes lowercase store pickup country codes before provider calls", async () => {
@@ -982,7 +1025,12 @@ describe("Delivery Hub service", () => {
       country_code: "RU",
       city: "Москва",
       address_line_1: "Тверская 1",
-      metadata: { postal_code: "125009" },
+      metadata: {
+        postal_code: "125009",
+        coordinates: [37.588144, 55.733842],
+        lat: 55.733842,
+        lng: 37.588144,
+      },
     })
     const connection = createConnectionRecord({
       enabled: true,
@@ -1802,7 +1850,10 @@ describe("Delivery Hub service", () => {
     const result = await service.listStoreQuotes({
       mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
       destination_point_id: "pvz_1",
-      destination_address: { fullname: "125009, Москва, Тверская 1" },
+      destination_address: {
+        fullname: "125009, Москва, Тверская 1",
+        coordinates: [37.61, 55.75],
+      },
       currency_code: "RUB",
     })
 
@@ -1969,8 +2020,14 @@ describe("Delivery Hub service", () => {
       mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
       origin_point_id: "dropoff_1",
       destination_point_id: "pvz_1",
-      destination_address: { fullname: "125009, Москва, Тверская 1" },
-      origin_address: { fullname: "125009, Москва, Тверская 2" },
+      destination_address: {
+        fullname: "125009, Москва, Тверская 1",
+        coordinates: [37.61, 55.75],
+      },
+      origin_address: {
+        fullname: "125009, Москва, Тверская 2",
+        coordinates: [37.62, 55.76],
+      },
       currency_code: "RUB",
       items: [{ quantity: 1, weight_grams: 500, price: 2000 }],
     })).rejects.toMatchObject({
@@ -2039,7 +2096,142 @@ describe("Delivery Hub service", () => {
     expect(settings.settings.status).toBe("available")
     expect(settings.settings.summary.ready_connection_count).toBe(1)
   })
+  it("deletes unused warehouse and blocks deleting referenced default warehouse", async () => {
+    const unusedWarehouse = createWarehouseRecord({ id: "wh_unused" })
+    const defaultWarehouse = createWarehouseRecord({ id: "wh_default" })
+    const connection = createConnectionRecord({
+      id: "conn_ref",
+      config: {
+        default_warehouse_id: defaultWarehouse.id,
+      },
+    })
+    const service = new DeliveryHubService(
+      createMockPg([connection], [], [unusedWarehouse, defaultWarehouse])
+    )
+
+    await expect(service.deleteWarehouse(defaultWarehouse.id)).rejects.toMatchObject({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      status: 409,
+      details: expect.objectContaining({
+        field: "config.default_warehouse_id",
+        warehouse_id: defaultWarehouse.id,
+        referencing_connection_count: 1,
+      }),
+    })
+
+    await expect(service.deleteWarehouse(unusedWarehouse.id)).resolves.toMatchObject({
+      deleted: true,
+      warehouse: expect.objectContaining({
+        id: unusedWarehouse.id,
+      }),
+    })
+
+    await expect(service.listWarehouses()).resolves.toHaveLength(1)
+  })
+
+  it("fails warehouse quote before provider call when warehouse coordinates are missing", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_no_coords",
+      metadata: {},
+    })
+    const connection = createConnectionRecord({
+      id: "conn_no_coords",
+      enabled: true,
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      config: {
+        default_warehouse_id: warehouse.id,
+      },
+    })
+    const adapter = getDeliveryHubAdapter(DELIVERY_HUB_PROVIDER_YANDEX)
+    const quoteSpy = jest.spyOn(adapter, "quoteWarehouseToPickupPoint")
+    const service = new DeliveryHubService(createMockPg([connection], [], [warehouse]))
+
+    await expect(service.listStoreQuotes({
+      mode_code: "warehouse_to_pickup_point",
+      destination_point_id: "pvz_1",
+      destination_address: {
+        fullname: "Москва, ПВЗ",
+        coordinates: [37.578, 55.798],
+      },
+      items: [{ quantity: 1, weight_grams: 500, price: 1000 }],
+    })).rejects.toMatchObject({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      status: 409,
+      details: expect.objectContaining({
+        field: "warehouse.metadata.coordinates",
+        required_shape: "[lng, lat]",
+      }),
+    })
+
+    expect(quoteSpy).not.toHaveBeenCalled()
+  })
+
+  it("fails warehouse quote before provider call when selected PVZ coordinates are missing", async () => {
+    const warehouse = createWarehouseRecord({ id: "wh_ready" })
+    const connection = createConnectionRecord({
+      id: "conn_ready",
+      enabled: true,
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      config: {
+        default_warehouse_id: warehouse.id,
+      },
+    })
+    const adapter = getDeliveryHubAdapter(DELIVERY_HUB_PROVIDER_YANDEX)
+    const quoteSpy = jest.spyOn(adapter, "quoteWarehouseToPickupPoint")
+    const service = new DeliveryHubService(createMockPg([connection], [], [warehouse]))
+
+    await expect(service.listStoreQuotes({
+      mode_code: "warehouse_to_pickup_point",
+      destination_point_id: "pvz_without_coords",
+      destination_address: {
+        fullname: "Москва, ПВЗ без координат",
+        coordinates: null,
+      },
+      items: [{ quantity: 1, weight_grams: 500, price: 1000 }],
+    })).rejects.toMatchObject({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      status: 409,
+      details: expect.objectContaining({
+        field: "destination_address",
+        required_shape: "{ fullname, coordinates: [lng, lat], contact? }",
+      }),
+    })
+
+    expect(quoteSpy).not.toHaveBeenCalled()
+  })
+
 })
+
+function buildTestPickupPoint(
+  id: string,
+  overrides: Partial<{
+    lat: number | null
+    lng: number | null
+  }> = {}
+) {
+  return {
+    provider_point_id: id,
+    provider_point_code: `${id}_code`,
+    provider_operator_id: "market_l4g",
+    network_label: "Яндекс Маркет",
+    is_yandex_branded: true,
+    is_market_partner: true,
+    station_type: "pickup_point",
+    name: `PVZ ${id}`,
+    address: "Tverskaya 1",
+    city: "Moscow",
+    region: "Moscow",
+    postal_code: "101000",
+    lat: overrides.lat ?? 55.75,
+    lng: overrides.lng ?? 37.61,
+    is_origin_dropoff_allowed: false,
+    is_destination_pickup_allowed: true,
+    payment_methods: ["card"],
+    metadata: {},
+  }
+}
 
 function expectDeliveryHubError(
   error: unknown,
@@ -2089,7 +2281,11 @@ function createWarehouseRecord(input?: Partial<any>) {
     contact_phone: null,
     provider_code: "yandex",
     provider_warehouse_id: "ya-wh-1",
-    metadata: {},
+    metadata: {
+      coordinates: [37.588144, 55.733842],
+      lat: 55.733842,
+      lng: 37.588144,
+    },
     created_at: "2026-04-20T00:00:00.000Z",
     updated_at: "2026-04-20T00:00:00.000Z",
     ...input,
@@ -2151,6 +2347,19 @@ function createMockPg(initialConnections: any[], initialEventLogs: any[] = [], i
       if (normalizedSql.includes("from delivery_warehouses order by created_at desc, id desc")) {
         return {
           rows: Array.from(warehouseState.values()),
+        }
+      }
+
+      if (normalizedSql.includes("delete from delivery_warehouses where id = ? returning *")) {
+        const id = String(normalizedParams[0] ?? "")
+        const row = warehouseState.get(id)
+
+        if (row) {
+          warehouseState.delete(id)
+        }
+
+        return {
+          rows: row ? [row] : [],
         }
       }
 

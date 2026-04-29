@@ -141,7 +141,7 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
     ])
   })
 
-  it("uses documented offers-calculate route-point shape for warehouse to PVZ quote", async () => {
+  it("uses documented check-price flat route-point shape for warehouse to PVZ quote", async () => {
     const calls: Array<{ url: string; headers: Record<string, string>; body: any }> = []
     global.fetch = jest.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
       calls.push({
@@ -151,15 +151,10 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
       })
 
       return new Response(JSON.stringify({
-        offers: [
-          {
-            pricing_total: "499.50 RUB",
-            delivery_interval: {
-              min: "2026-01-18T07:00:00.000000Z",
-              max: "2026-01-18T10:00:00.000000Z",
-            },
-          },
-        ],
+        price: 499.5,
+        currency_rules: { code: "RUB" },
+        distance_meters: 1500,
+        eta: 60,
       }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -193,7 +188,7 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
     )
 
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe(`${YANDEX_DELIVERY_LEGACY_SANDBOX_API_BASE_URL}${YANDEX_DELIVERY_LEGACY_API_PATH.offersCalculate}`)
+    expect(calls[0].url).toBe(`${YANDEX_DELIVERY_LEGACY_SANDBOX_API_BASE_URL}${YANDEX_DELIVERY_LEGACY_API_PATH.checkPrice}`)
     expect(calls[0].headers).toMatchObject({
       Accept: "application/json",
       "Accept-Language": "ru",
@@ -204,9 +199,7 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
         {
           id: 1,
           type: "source",
-          address: {
-            fullname: "RU, Москва, Склад 1",
-          },
+          fullname: "RU, Москва, Склад 1",
           coordinates: [37.62, 55.76],
           contact: {
             name: "Seller",
@@ -216,9 +209,7 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
         {
           id: 2,
           type: "destination",
-          address: {
-            fullname: "125009, Москва, Тверская 1",
-          },
+          fullname: "125009, Москва, Тверская 1",
           coordinates: [37.61, 55.75],
           contact: {
             name: "Buyer",
@@ -254,14 +245,12 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
         payment_method: "already_paid",
       },
     })
+    expect(calls[0].body.route_points[0]).not.toHaveProperty("address")
     expect(calls[0].body).not.toHaveProperty("source")
-    expect(calls[0].body.destination).toMatchObject({
-      type: "platform_station",
-      platform_station: {
-        platform_id: "pvz_1",
-      },
-    })
-    expect(calls[0].body.last_mile_policy).toBe("self_pickup")
+    expect(calls[0].body).not.toHaveProperty("destination")
+    expect(calls[0].body).not.toHaveProperty("merchant_id")
+    expect(calls[0].body).not.toHaveProperty("platform_station_id")
+    expect(calls[0].body).not.toHaveProperty("last_mile_policy")
     expect(quotes).toEqual([
       expect.objectContaining({
         amount: 499.5,
@@ -270,14 +259,15 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
         pickup_point_required: true,
         pickup_window_required: false,
         raw_reference: expect.objectContaining({
-          provider_price_endpoint: "offers-calculate",
+          provider_price_endpoint: "check-price",
+          distance_meters: 1500,
         }),
       }),
     ])
     expect(JSON.stringify(quotes[0].raw_reference)).not.toContain("offer_id")
   })
 
-  it("fails with validation error before provider call when offers-calculate origin address is missing", async () => {
+  it("fails with validation error before provider call when check-price origin address is missing", async () => {
     const fetchMock = jest.fn() as jest.MockedFunction<typeof fetch>
     global.fetch = fetchMock
 
@@ -305,7 +295,7 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it("surfaces safe provider 409 diagnostics from offers-calculate without raw provider body", async () => {
+  it("surfaces safe provider 409 diagnostics from check-price without raw provider body", async () => {
     global.fetch = jest.fn(async () => new Response(JSON.stringify({
       code: "estimating.claim.no_zone_id",
       message: "errors.suitable_offer_not_found",
@@ -352,7 +342,7 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
         customer_safe: true,
         operator_hint: expect.stringContaining("origin→PVZ route"),
         request: expect.objectContaining({
-          path: YANDEX_DELIVERY_LEGACY_API_PATH.offersCalculate,
+          path: YANDEX_DELIVERY_LEGACY_API_PATH.checkPrice,
         }),
         response: expect.objectContaining({
           body_type: "json",
@@ -366,7 +356,7 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
     expect(JSON.stringify(capturedError)).not.toContain("raw-quote-reference-should-not-leak")
   })
 
-  it("surfaces safe actionable diagnostics when offers-calculate rejects route shape with provider 400", async () => {
+  it("surfaces safe actionable diagnostics when check-price rejects route shape with provider 400", async () => {
     global.fetch = jest.fn(async () => new Response(JSON.stringify({
       message: "route_points are not serviceable for selected pickup station",
       raw_offer_id: "raw-offer-id-should-not-leak",
@@ -412,7 +402,7 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
         customer_safe: true,
         operator_hint: expect.stringContaining("origin→PVZ route"),
         request: expect.objectContaining({
-          path: YANDEX_DELIVERY_LEGACY_API_PATH.offersCalculate,
+          path: YANDEX_DELIVERY_LEGACY_API_PATH.checkPrice,
         }),
         response: expect.objectContaining({
           body_type: "json",

@@ -1,8 +1,7 @@
-import crypto from "node:crypto"
 import { DELIVERY_HUB_MODE_CODE } from "../../constants"
 import type { DeliveryConnectionTestResult } from "../../domain/test-dto"
 import { DeliveryHubError } from "../../errors"
-import type { DeliveryHubAdapter, DeliveryHubRoutePointAddressInput } from "../types"
+import type { DeliveryHubAdapter } from "../types"
 import { yandexAdapterDefinition } from "./capabilities"
 import { YandexDeliveryClient } from "./client"
 import {
@@ -10,17 +9,18 @@ import {
   YANDEX_DELIVERY_LEGACY_API_PATH,
 } from "./endpoints"
 import {
-  mapYandexCalculateQuote,
+  mapYandexCheckPriceQuote,
   mapYandexPickupPoint,
   mapYandexPickupWindow,
   mapYandexQuote,
 } from "./mapper"
 import type {
-  YandexCalculateOffersDto,
+  YandexCheckPriceDto,
   YandexPickupPointDto,
   YandexPickupWindowDto,
   YandexPricingOfferDto,
 } from "./dto"
+import { buildYandexCheckPriceQuoteInput } from "./price-preview"
 
 export function createYandexDeliveryAdapter(): DeliveryHubAdapter {
   return {
@@ -68,21 +68,21 @@ export function createYandexDeliveryAdapter(): DeliveryHubAdapter {
     },
     async quoteWarehouseToPickupPoint(context, input) {
       const client = new YandexDeliveryClient(context.connection)
-      const routeQuote = buildYandexCalculateRouteQuoteInput({
+      const routeQuote = buildYandexCheckPriceQuoteInput({
         mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
         source_address: input.origin_address,
         destination_address: input.destination_address,
         destination_point_id: input.destination_point_id,
         items: input.items,
       })
-      const response = await client.postLegacy<YandexCalculateOffersDto>(
-        YANDEX_DELIVERY_LEGACY_API_PATH.offersCalculate,
+      const response = await client.postLegacy<YandexCheckPriceDto>(
+        YANDEX_DELIVERY_LEGACY_API_PATH.checkPrice,
         routeQuote.payload,
         context.correlation_id
       )
 
       return [
-        mapYandexCalculateQuote(response, {
+        mapYandexCheckPriceQuote(response, {
           mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
           destination_point_id: input.destination_point_id,
           quote_key: routeQuote.quote_key,
@@ -198,140 +198,6 @@ function buildYandexPickupWindowsPayload(input: YandexPickupWindowsInput) {
   return payload
 }
 
-function buildYandexCalculateRouteQuoteInput(input: {
-  mode_code: string
-  source_address?: DeliveryHubRoutePointAddressInput | null
-  destination_address?: DeliveryHubRoutePointAddressInput | null
-  destination_point_id: string
-  items?: YandexQuoteItemsInput
-}) {
-  const sourcePoint = requireYandexRoutePointAddress(input.source_address, "origin_address")
-  const destinationPoint = requireYandexRoutePointAddress(input.destination_address, "destination_address")
-  const quoteKey = buildYandexCalculateQuoteKey(input.mode_code, input.destination_point_id)
-
-  return {
-    quote_key: quoteKey,
-    payload: {
-      route_points: [
-        buildYandexCalculateRoutePoint(1, "source", sourcePoint),
-        buildYandexCalculateRoutePoint(2, "destination", destinationPoint),
-      ],
-      items: buildYandexCalculateItems(input.items),
-      places: buildYandexCalculatePlaces(input.items),
-      billing_info: {
-        payment_method: "already_paid",
-      },
-      last_mile_policy: "self_pickup",
-      destination: buildYandexCalculatePlatformStationLocation(input.destination_point_id, destinationPoint),
-      recipient_info: {
-        first_name: "Delivery",
-        last_name: "Hub",
-        phone: destinationPoint.contact.phone,
-        email: "delivery-hub-quote@example.invalid",
-      },
-    },
-  }
-}
-
-function requireYandexRoutePointAddress(
-  value: DeliveryHubRoutePointAddressInput | null | undefined,
-  field: string
-) {
-  const fullname = normalizeNullableText(value?.fullname)
-
-  if (!fullname) {
-    throw new DeliveryHubError({
-      code: "DELIVERY_HUB_VALIDATION_ERROR",
-      message: `Yandex Delivery /offers/calculate requires ${field}.fullname`,
-      status: 400,
-      details: {
-        field,
-        required_shape: "{ fullname, coordinates?, contact? }",
-      },
-    })
-  }
-
-  const coordinates = normalizeYandexCoordinates(value?.coordinates)
-  const contactName = normalizeNullableText(value?.contact?.name)
-  const contactPhone = normalizeNullableText(value?.contact?.phone)
-
-  return {
-    fullname,
-    coordinates,
-    contact: {
-      name: contactName ?? (field === "origin_address" ? "Seller" : "Recipient"),
-      phone: contactPhone ?? "+79990000000",
-    },
-  }
-}
-
-function buildYandexCalculateRoutePoint(
-  id: number,
-  type: "source" | "destination",
-  point: ReturnType<typeof requireYandexRoutePointAddress>
-) {
-  return {
-    id,
-    type,
-    ...(point.coordinates ? { coordinates: point.coordinates } : {}),
-    address: {
-      fullname: point.fullname,
-    },
-    contact: point.contact,
-  }
-}
-
-function buildYandexCalculatePlatformStationLocation(
-  platformStationId: string,
-  point: ReturnType<typeof requireYandexRoutePointAddress>
-) {
-  return {
-    type: "platform_station",
-    platform_station: {
-      platform_id: platformStationId,
-    },
-    custom_location: {
-      ...(point.coordinates ? { coordinates: point.coordinates } : {}),
-      address: {
-        fullname: point.fullname,
-      },
-      contact: point.contact,
-    },
-    interval_utc: null,
-  }
-}
-
-function buildYandexCalculateItems(items: YandexQuoteItemsInput) {
-  const sourceItems = Array.isArray(items) && items.length ? items : [{}]
-
-  return sourceItems.map((item, index) => ({
-    title: `Delivery Hub item ${index + 1}`,
-    name: `Delivery Hub item ${index + 1}`,
-    quantity: normalizePositiveInteger(item.quantity, 1),
-    count: normalizePositiveInteger(item.quantity, 1),
-    cost_currency: "RUB",
-    cost_value: String(normalizeNonNegativeInteger(item.price, 0)),
-    billing_details: {
-      unit_price: normalizeNonNegativeInteger(item.price, 0),
-      assessed_unit_price: normalizeNonNegativeInteger(item.price, 0),
-    },
-    weight: normalizeWeightKg(item.weight_grams),
-    size: {
-      length: 0.1,
-      width: 0.1,
-      height: 0.1,
-    },
-    physical_dims: buildYandexPhysicalDims(item),
-  }))
-}
-
-function buildYandexCalculatePlaces(items: YandexQuoteItemsInput) {
-  return normalizeYandexPlaces(items).map((place, index) => ({
-    ...place,
-    barcode: buildYandexDiagnosticPlaceBarcode(index),
-  }))
-}
-
 function normalizeWeightKg(value: unknown) {
   const grams = normalizeFiniteNumber(value)
 
@@ -340,27 +206,6 @@ function normalizeWeightKg(value: unknown) {
   }
 
   return Math.max(0.001, grams / 1000)
-}
-
-function buildYandexCalculateQuoteKey(modeCode: string, destinationPointId: string) {
-  const fingerprint = crypto
-    .createHash("sha256")
-    .update(`${modeCode}:${destinationPointId}:${Date.now()}:${crypto.randomUUID()}`)
-    .digest("hex")
-    .slice(0, 32)
-
-  return `offers_calculate_${fingerprint}`
-}
-
-function normalizeYandexCoordinates(value: unknown): [number, number] | null {
-  if (!Array.isArray(value) || value.length !== 2) {
-    return null
-  }
-
-  const lng = normalizeFiniteNumber(value[0])
-  const lat = normalizeFiniteNumber(value[1])
-
-  return lng === null || lat === null ? null : [lng, lat]
 }
 
 function normalizeYandexPlaces(items: YandexQuoteItemsInput) {
