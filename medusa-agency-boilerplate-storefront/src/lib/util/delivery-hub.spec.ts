@@ -5,6 +5,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { readFileSync } from "node:fs"
 import {
+  buildDeliveryHubBuyerDeliveryCardModel,
   buildDeliveryHubCheckoutCutoverGateStatus,
   buildDeliveryHubCommitEligibilityModel,
   evaluateDeliveryHubCutoverCandidateCommitGuard,
@@ -11176,4 +11177,172 @@ test("delivery hub preview shadow UI exposes stable manual validation hooks and 
   assert.equal(previewBlockStart > -1, true)
   assert.equal(previewBlockEnd > previewBlockStart, true)
   assert.equal(/setShippingMethod\s*\(\s*\{/.test(previewBlockSource), false)
+})
+
+test("buildDeliveryHubBuyerDeliveryCardModel presents shopper copy for saveable and fallback states", () => {
+  const saveable = buildDeliveryHubBuyerDeliveryCardModel({
+    cart_id: "cart_buyer_ready",
+    settings: {
+      ok: true,
+      settings: {
+        enabled: true,
+        status: "available",
+        summary: {
+          enabled_connection_count: 1,
+          ready_connection_count: 1,
+          default_connection_label: "Delivery Hub",
+          modality_codes: ["warehouse_to_pickup_point"],
+          supports_pickup_points: true,
+          supports_pickup_windows: false,
+          supports_dropoff: false,
+        },
+        preview_visibility: {
+          shadow_settings: true,
+          readiness: true,
+          persisted_selection: true,
+          shadow_catalog: true,
+          shadow_pickup_points: true,
+          shadow_quotes: true,
+          shadow_pickup_windows: true,
+        },
+        hints: [],
+      },
+    },
+    catalog: {
+      ok: true,
+      default_connection_id: "conn_buyer_ready",
+      connections: [
+        {
+          connection_id: "conn_buyer_ready",
+          label: "Delivery Hub",
+          state: "ready",
+          ready: true,
+          quote_types: ["warehouse_to_pickup_point"],
+          supports_pickup_points: true,
+          supports_pickup_windows: false,
+          supports_dropoff: false,
+        },
+      ],
+    },
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: {
+            id: "dhsel_quote_buyer_ready",
+            version: 1,
+          },
+          amount: 100,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_point_ids: ["point_buyer_ready"],
+          pickup_window_required: false,
+        },
+      ],
+    },
+    pickup_points: {
+      ok: true,
+      points: [
+        {
+          provider_point_id: "point_buyer_ready",
+          provider_point_code: null,
+          name: "ПВЗ на Тверской",
+          address: "Москва, Тверская 1",
+          city: "Москва",
+          region: "Москва",
+          postal_code: "125009",
+          lat: 55.76,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      ],
+    },
+    readiness: {
+      ok: true,
+      cart_id: "cart_buyer_ready",
+      status: "missing_selection",
+      issues: [],
+      selection: null,
+      quote_context: null,
+    },
+  })
+
+  assert.deepEqual(
+    {
+      status: saveable.status,
+      method_label: saveable.method_label,
+      quote_amount: saveable.quote_amount,
+      currency_code: saveable.currency_code,
+      quote_eta_label: saveable.quote_eta_label,
+      pickup_point_label: saveable.pickup_point_label,
+      can_save_selection: saveable.can_save_selection,
+    },
+    {
+      status: "ready_to_save",
+      method_label: "Яндекс Доставка до ПВЗ",
+      quote_amount: 100,
+      currency_code: "RUB",
+      quote_eta_label: "1–2 дня",
+      pickup_point_label: "ПВЗ на Тверской",
+      can_save_selection: true,
+    }
+  )
+
+  const unavailable = buildDeliveryHubBuyerDeliveryCardModel({
+    cart_id: "cart_buyer_unavailable",
+    readiness: {
+      ok: true,
+      cart_id: "cart_buyer_unavailable",
+      status: "missing_selection",
+      issues: [],
+      selection: null,
+      quote_context: null,
+    },
+  })
+
+  assert.equal(unavailable.status, "unavailable")
+  assert.equal(unavailable.can_save_selection, false)
+  assert.equal(unavailable.detail_label.includes("не удалось получить безопасный вариант"), true)
+})
+
+test("checkout shipping source puts customer Delivery Hub card before collapsed dev diagnostics", () => {
+  const shippingSource = readFileSync(
+    new URL("../../modules/checkout/components/shipping/index.tsx", import.meta.url),
+    "utf8"
+  )
+  const customerCardIndex = shippingSource.indexOf(
+    'data-testid="delivery-hub-customer-delivery-card"'
+  )
+  const diagnosticsIndex = shippingSource.indexOf(
+    'data-testid="delivery-hub-dev-diagnostics"'
+  )
+
+  assert.equal(customerCardIndex > -1, true)
+  assert.equal(diagnosticsIndex > customerCardIndex, true)
+  assert.equal(shippingSource.includes("buildDeliveryHubBuyerDeliveryCardModel"), true)
+  assert.equal(
+    shippingSource.includes('data-testid="delivery-hub-customer-save-selection-button"'),
+    true
+  )
+  assert.equal(
+    shippingSource.includes('data-testid="delivery-hub-customer-payment-blocker"'),
+    true
+  )
+  assert.equal(
+    shippingSource.includes("Delivery Hub diagnostics / dev-only validation"),
+    true
+  )
+  assert.equal(
+    /\{DELIVERY_HUB_PREVIEW_ENABLED && \(\s*<details[\s\S]*data-testid="delivery-hub-dev-diagnostics"/.test(
+      shippingSource
+    ),
+    true
+  )
 })

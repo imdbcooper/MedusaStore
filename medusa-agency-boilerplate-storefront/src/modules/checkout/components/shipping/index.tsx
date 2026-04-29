@@ -28,6 +28,7 @@ import {
 } from "@lib/config"
 import { storefrontConfig } from "@lib/storefront-config"
 import {
+  buildDeliveryHubBuyerDeliveryCardModel,
   buildDeliveryHubCheckoutCutoverGateStatus,
   buildDeliveryHubCommitEligibilityModel,
   buildDeliveryHubCutoverApprovalArtifactPreviewModel,
@@ -955,6 +956,13 @@ const Shipping: React.FC<ShippingProps> = ({
   const deliveryHubSelectionMutationInFlight =
     deliveryHubSelectionCutInState.status === "saving" ||
     deliveryHubSelectionCutInState.status === "clearing"
+  const deliveryHubBuyerDeliveryCard = buildDeliveryHubBuyerDeliveryCardModel(
+    deliveryHubRehearsalState.preview_input,
+    {
+      is_loading: deliveryHubRehearsalState.status === "loading",
+      save_in_flight: deliveryHubSelectionMutationInFlight,
+    }
+  )
   const deliveryHubWriteIntentContractPreview =
     buildDeliveryHubWriteIntentContractPreviewModel(
       deliveryHubRehearsalState.preview_input
@@ -1084,6 +1092,175 @@ const Shipping: React.FC<ShippingProps> = ({
             </div>
           </div>
 
+          <div
+            className={clx(
+              "mb-6 rounded-rounded border px-5 py-4",
+              {
+                "border-ui-border-interactive bg-ui-bg-base":
+                  deliveryHubBuyerDeliveryCard.tone === "positive",
+                "border-ui-tag-orange-border bg-ui-tag-orange-bg":
+                  deliveryHubBuyerDeliveryCard.tone === "warning",
+                "border-ui-border-base bg-ui-bg-subtle":
+                  deliveryHubBuyerDeliveryCard.tone === "neutral",
+              }
+            )}
+            data-testid="delivery-hub-customer-delivery-card"
+          >
+            <div className="flex flex-col gap-y-4">
+              <div className="flex flex-col gap-y-2 small:flex-row small:items-start small:justify-between">
+                <div className="flex flex-col gap-y-1">
+                  <Text
+                    className="text-ui-fg-base txt-medium-plus"
+                    data-testid="delivery-hub-customer-method-label"
+                  >
+                    {deliveryHubBuyerDeliveryCard.method_label}
+                  </Text>
+                  <Text className="text-ui-fg-muted txt-small">
+                    {deliveryHubBuyerDeliveryCard.headline_label}
+                  </Text>
+                </div>
+                <span
+                  className="w-fit rounded-rounded border border-ui-border-base bg-ui-bg-base px-2 py-1 text-ui-fg-muted txt-compact-small"
+                  data-testid="delivery-hub-customer-selection-status"
+                >
+                  {deliveryHubBuyerDeliveryCard.status_label}
+                </span>
+              </div>
+
+              {deliveryHubBuyerDeliveryCard.status === "loading" ? (
+                <div className="flex items-center gap-x-2 text-ui-fg-muted txt-small">
+                  <Loader />
+                  <span>{deliveryHubBuyerDeliveryCard.detail_label}</span>
+                </div>
+              ) : (
+                <>
+                  <div className="grid gap-3 small:grid-cols-3">
+                    <div className="rounded-rounded border border-ui-border-base bg-ui-bg-base p-3">
+                      <Text className="text-ui-fg-muted txt-small">Стоимость</Text>
+                      <Text
+                        className="text-ui-fg-base txt-medium-plus"
+                        data-testid="delivery-hub-buyer-visible-delivery-cost"
+                      >
+                        {deliveryHubBuyerDeliveryCard.quote_amount !== null ?
+                          formatPrice(
+                            deliveryHubBuyerDeliveryCard.quote_amount,
+                            deliveryHubBuyerDeliveryCard.currency_code
+                          ) :
+                          "Уточняется"}
+                      </Text>
+                    </div>
+                    <div className="rounded-rounded border border-ui-border-base bg-ui-bg-base p-3">
+                      <Text className="text-ui-fg-muted txt-small">Срок</Text>
+                      <Text
+                        className="text-ui-fg-base txt-medium-plus"
+                        data-testid="delivery-hub-customer-eta"
+                      >
+                        {deliveryHubBuyerDeliveryCard.quote_eta_label ?? "Уточняется"}
+                      </Text>
+                    </div>
+                    <div className="rounded-rounded border border-ui-border-base bg-ui-bg-base p-3">
+                      <Text className="text-ui-fg-muted txt-small">Пункт выдачи</Text>
+                      <Text
+                        className="text-ui-fg-base txt-medium-plus"
+                        data-testid="delivery-hub-customer-pickup-point"
+                      >
+                        {deliveryHubBuyerDeliveryCard.pickup_point_label ?? "Подбирается"}
+                      </Text>
+                    </div>
+                  </div>
+
+                  {deliveryHubBuyerDeliveryCard.pickup_point_address_label && (
+                    <Text
+                      className="text-ui-fg-muted txt-small"
+                      data-testid="delivery-hub-customer-pickup-address"
+                    >
+                      Адрес ПВЗ: {deliveryHubBuyerDeliveryCard.pickup_point_address_label}
+                    </Text>
+                  )}
+                  {deliveryHubBuyerDeliveryCard.pickup_window_label && (
+                    <Text className="text-ui-fg-muted txt-small">
+                      Окно передачи: {deliveryHubBuyerDeliveryCard.pickup_window_label}
+                    </Text>
+                  )}
+                  <Text className="text-ui-fg-subtle txt-small">
+                    {deliveryHubBuyerDeliveryCard.detail_label}
+                  </Text>
+                  {deliveryHubBuyerDeliveryCard.unavailable_reason_label && (
+                    <Text
+                      className="text-ui-fg-muted txt-small"
+                      data-testid="delivery-hub-customer-unavailable-reason"
+                    >
+                      {deliveryHubBuyerDeliveryCard.unavailable_reason_label}
+                    </Text>
+                  )}
+                </>
+              )}
+
+              {deliveryHubSelectionCutInState.message && (
+                <Text
+                  className="text-ui-fg-muted txt-small"
+                  data-testid="delivery-hub-customer-save-message"
+                >
+                  {deliveryHubSelectionCutInState.message}
+                </Text>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="small"
+                  variant="secondary"
+                  type="button"
+                  disabled={!deliveryHubBuyerDeliveryCard.can_save_selection}
+                  onClick={() => {
+                    void handleSaveDeliveryHubSelectionCutIn()
+                  }}
+                  data-testid="delivery-hub-customer-save-selection-button"
+                >
+                  {deliveryHubSelectionCutInState.status === "saving" ? (
+                    <span className="flex items-center gap-x-2">
+                      <Loader /> Сохраняем доставку
+                    </span>
+                  ) : (
+                    deliveryHubBuyerDeliveryCard.action_label
+                  )}
+                </Button>
+                {hasPersistedDeliveryHubSelection && (
+                  <Button
+                    size="small"
+                    variant="transparent"
+                    type="button"
+                    disabled={deliveryHubSelectionMutationInFlight}
+                    onClick={() => {
+                      void handleClearDeliveryHubSelectionCutIn()
+                    }}
+                    data-testid="delivery-hub-customer-clear-selection-button"
+                  >
+                    {deliveryHubSelectionCutInState.status === "clearing" ?
+                      "Очищаем выбор" :
+                      "Изменить выбор"}
+                  </Button>
+                )}
+                {!deliveryHubCommitEligibility.canCommitShippingMethod && (
+                  <Text
+                    className="text-ui-fg-muted txt-small"
+                    data-testid="delivery-hub-customer-payment-blocker"
+                  >
+                    Переход к оплате остаётся закрыт до включения системного Delivery Hub shipping-method commit.
+                  </Text>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {DELIVERY_HUB_PREVIEW_ENABLED && (
+            <details
+              className="mb-6 rounded-rounded border border-ui-border-base bg-ui-bg-subtle px-5 py-4"
+              data-testid="delivery-hub-dev-diagnostics"
+            >
+              <summary className="cursor-pointer text-ui-fg-muted txt-small-plus">
+                Delivery Hub diagnostics / dev-only validation
+              </summary>
+              <div className="mt-4">
           <div className="mb-6 rounded-rounded border border-ui-border-base bg-ui-bg-subtle px-5 py-4">
             <div className="flex flex-col gap-y-4">
               <div className="flex flex-col gap-y-2">
@@ -2149,6 +2326,9 @@ const Shipping: React.FC<ShippingProps> = ({
               </div>
             </div>
           </div>
+              </div>
+            </details>
+          )}
 
           <div>
             <ErrorMessage

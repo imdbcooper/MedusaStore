@@ -1993,6 +1993,36 @@ export type DeliveryHubSavedSelectionSummaryModel = {
   action_label: string | null
 }
 
+export type DeliveryHubBuyerDeliveryCardStatus =
+  | "loading"
+  | "ready_to_save"
+  | "saved"
+  | "unavailable"
+
+export type DeliveryHubBuyerDeliveryCardModel = {
+  tone: "neutral" | "positive" | "warning"
+  status: DeliveryHubBuyerDeliveryCardStatus
+  method_label: string
+  headline_label: string
+  status_label: string
+  detail_label: string
+  action_label: string
+  can_save_selection: boolean
+  saved_selection_present: boolean
+  quote_amount: number | null
+  currency_code: string | null
+  quote_eta_label: string | null
+  pickup_point_label: string | null
+  pickup_point_address_label: string | null
+  pickup_window_label: string | null
+  unavailable_reason_label: string | null
+}
+
+export type DeliveryHubBuyerDeliveryCardOptions = {
+  is_loading?: boolean
+  save_in_flight?: boolean
+}
+
 export const DELIVERY_HUB_CUTOVER_PRECONDITION_CODES = [
   "store_quote_contract_ready",
   "neutral_selection_ready",
@@ -3667,6 +3697,48 @@ function formatDeliveryHubEtaLabel(
   return `ETA up to ${maxDays} day${maxDays === 1 ? "" : "s"}`
 }
 
+function formatDeliveryHubBuyerDayLabel(days: number) {
+  const normalized = Math.abs(days) % 100
+  const lastDigit = normalized % 10
+
+  if (normalized > 10 && normalized < 20) {
+    return "дней"
+  }
+
+  if (lastDigit === 1) {
+    return "день"
+  }
+
+  if (lastDigit >= 2 && lastDigit <= 4) {
+    return "дня"
+  }
+
+  return "дней"
+}
+
+function formatDeliveryHubBuyerEtaLabel(
+  minDays: number | null,
+  maxDays: number | null
+) {
+  if (minDays === null && maxDays === null) {
+    return null
+  }
+
+  if (minDays !== null && maxDays !== null) {
+    if (minDays === maxDays) {
+      return `${minDays} ${formatDeliveryHubBuyerDayLabel(minDays)}`
+    }
+
+    return `${minDays}–${maxDays} ${formatDeliveryHubBuyerDayLabel(maxDays)}`
+  }
+
+  if (minDays !== null) {
+    return `от ${minDays} ${formatDeliveryHubBuyerDayLabel(minDays)}`
+  }
+
+  return `до ${maxDays} ${formatDeliveryHubBuyerDayLabel(maxDays as number)}`
+}
+
 function buildDeliveryHubPersistedSelectionRelationHints(
   selection: DeliveryHubSelection | null,
   readiness: DeliveryHubReadinessResponse | null | undefined
@@ -3898,6 +3970,144 @@ export function buildDeliveryHubSavedSelectionSummaryModel(
     action_label: needsAttention
       ? "Clear the stale neutral selection or save again after choosing a fresh Delivery Hub candidate."
       : "Continue using the committed Medusa shipping method until Delivery Hub shipping-method commit is enabled separately.",
+  }
+}
+
+export function buildDeliveryHubBuyerDeliveryCardModel(
+  input: DeliveryHubNeutralSelectionRehearsalInput = {},
+  options: DeliveryHubBuyerDeliveryCardOptions = {}
+): DeliveryHubBuyerDeliveryCardModel {
+  const rehearsal = buildDeliveryHubNeutralSelectionRehearsalModel(input)
+  const savedSelection = buildDeliveryHubSavedSelectionSummaryModel(
+    input.persisted_selection,
+    input.readiness
+  )
+  const saveGuard = buildDeliveryHubSelectionSaveCutInPayload(input)
+  const savedSelectionPresent = savedSelection.state !== "missing"
+  const base = {
+    method_label: "Яндекс Доставка до ПВЗ",
+    headline_label: "Доставка до пункта выдачи",
+    saved_selection_present: savedSelectionPresent,
+  }
+
+  if (options.is_loading) {
+    return {
+      ...base,
+      tone: "neutral",
+      status: "loading",
+      status_label: "Получаем варианты доставки…",
+      detail_label: "Проверяем доступные пункты выдачи, стоимость и срок доставки.",
+      action_label: "Загрузка доставки",
+      can_save_selection: false,
+      quote_amount: null,
+      currency_code: null,
+      quote_eta_label: null,
+      pickup_point_label: null,
+      pickup_point_address_label: null,
+      pickup_window_label: null,
+      unavailable_reason_label: null,
+    }
+  }
+
+  if (savedSelection.state === "saved") {
+    return {
+      ...base,
+      tone: "positive",
+      status: "saved",
+      status_label: "Способ доставки сохранён",
+      detail_label:
+        "Выбранный вариант сохранён в корзине. Подключение финального shipping-method commit остаётся отдельным системным шагом.",
+      action_label: saveGuard.status === "ready" ? "Сохранить способ доставки" : "Способ сохранён",
+      can_save_selection: saveGuard.status === "ready" && !options.save_in_flight,
+      quote_amount: savedSelection.quote_amount,
+      currency_code: savedSelection.currency_code,
+      quote_eta_label:
+        input.persisted_selection?.selection
+          ? formatDeliveryHubBuyerEtaLabel(
+              input.persisted_selection.selection.quote.delivery_eta_min,
+              input.persisted_selection.selection.quote.delivery_eta_max
+            )
+          : savedSelection.quote_eta_label,
+      pickup_point_label: savedSelection.pickup_point_label,
+      pickup_point_address_label: savedSelection.pickup_point_address_label,
+      pickup_window_label: savedSelection.pickup_window_label,
+      unavailable_reason_label: null,
+    }
+  }
+
+  if (savedSelection.state === "stale_or_invalid") {
+    return {
+      ...base,
+      tone: "warning",
+      status: "unavailable",
+      status_label: "Сохранённый способ доставки нужно обновить",
+      detail_label:
+        "Показываем ранее сохранённые данные, но перед оплатой нужно заново сохранить актуальный вариант доставки.",
+      action_label: saveGuard.status === "ready" ? "Обновить способ доставки" : "Доставка временно недоступна",
+      can_save_selection: saveGuard.status === "ready" && !options.save_in_flight,
+      quote_amount: savedSelection.quote_amount,
+      currency_code: savedSelection.currency_code,
+      quote_eta_label:
+        input.persisted_selection?.selection
+          ? formatDeliveryHubBuyerEtaLabel(
+              input.persisted_selection.selection.quote.delivery_eta_min,
+              input.persisted_selection.selection.quote.delivery_eta_max
+            )
+          : savedSelection.quote_eta_label,
+      pickup_point_label: savedSelection.pickup_point_label,
+      pickup_point_address_label: savedSelection.pickup_point_address_label,
+      pickup_window_label: savedSelection.pickup_window_label,
+      unavailable_reason_label: savedSelection.reconciliation_messages[0] ?? null,
+    }
+  }
+
+  if (saveGuard.status === "ready") {
+    return {
+      ...base,
+      tone: "positive",
+      status: "ready_to_save",
+      status_label: "Доступен вариант доставки",
+      detail_label: "Проверьте пункт выдачи, стоимость и срок, затем сохраните способ доставки.",
+      action_label: "Сохранить способ доставки",
+      can_save_selection: !options.save_in_flight,
+      quote_amount: rehearsal.quote_amount,
+      currency_code: rehearsal.currency_code,
+      quote_eta_label:
+        saveGuard.payload.quote
+          ? formatDeliveryHubBuyerEtaLabel(
+              saveGuard.payload.quote.delivery_eta_min,
+              saveGuard.payload.quote.delivery_eta_max
+            )
+          : rehearsal.quote_eta_label,
+      pickup_point_label: rehearsal.pickup_point_label,
+      pickup_point_address_label: rehearsal.pickup_point_address_label,
+      pickup_window_label: rehearsal.pickup_window_label,
+      unavailable_reason_label: null,
+    }
+  }
+
+  const hasPricePreview = rehearsal.quote_amount !== null
+  const unavailableReason = saveGuard.message || rehearsal.hint_messages[0] || null
+
+  return {
+    ...base,
+    tone: hasPricePreview ? "warning" : "neutral",
+    status: "unavailable",
+    status_label: hasPricePreview
+      ? "Вариант доставки требует уточнения"
+      : "Доставка временно недоступна",
+    detail_label: hasPricePreview
+      ? "Стоимость получена, но для выбора доставки пока не хватает безопасных данных пункта выдачи или готовности провайдера. Попробуйте обновить оформление позже."
+      : "Сейчас не удалось получить безопасный вариант Delivery Hub. Если ранее был сохранён способ доставки, он будет показан после обновления корзины.",
+    action_label: "Доставка временно недоступна",
+    can_save_selection: false,
+    quote_amount: rehearsal.quote_amount,
+    currency_code: rehearsal.currency_code,
+    quote_eta_label: rehearsal.quote_eta_label,
+    pickup_point_label: rehearsal.pickup_point_label,
+    pickup_point_address_label: rehearsal.pickup_point_address_label,
+    pickup_window_label: rehearsal.pickup_window_label,
+    unavailable_reason_label: unavailableReason,
   }
 }
 
@@ -5577,6 +5787,21 @@ function getDeliveryHubNeutralCandidateConnectionSummary(
       connection_id: selection.connection_id,
       state: "ready" as DeliveryHubConnectionState,
       ready: true,
+    }
+  }
+
+  const catalogDefaultConnection = input.catalog?.connections.find(
+    (connection) =>
+      connection.connection_id === input.catalog?.default_connection_id && connection.ready
+  )
+  const catalogReadyConnection =
+    catalogDefaultConnection ?? input.catalog?.connections.find((connection) => connection.ready)
+
+  if (catalogReadyConnection) {
+    return {
+      connection_id: catalogReadyConnection.connection_id,
+      state: catalogReadyConnection.state,
+      ready: catalogReadyConnection.ready,
     }
   }
 
