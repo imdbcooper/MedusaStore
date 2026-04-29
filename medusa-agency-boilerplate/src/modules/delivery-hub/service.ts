@@ -17,6 +17,7 @@ import type {
   DeliveryConnectionRecord,
   DeliveryConnectionUpsertInput,
 } from "./domain/connection"
+import type { DeliveryHubRoutePointAddressInput } from "./adapters/types"
 import type { DeliveryQuote } from "./domain/quote"
 import type { DeliveryPickupPoint } from "./domain/pickup-point"
 import type { DeliveryPickupWindow } from "./domain/pickup-window"
@@ -191,6 +192,7 @@ export type DeliveryHubAdminPickupPointLookupPoint = {
   name: string
   address: string
   city: string | null
+  postal_code: string | null
   available_for_dropoff: boolean
   coordinates: {
     lat: number | null
@@ -778,9 +780,17 @@ export class DeliveryHubService {
     const connection = await this.requireConnection(input.connection_id)
     const adapter = getDeliveryHubAdapter(connection.provider_code)
     const correlationId = crypto.randomUUID()
+    const warehouse =
+      input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
+        ? await this.resolveWarehouseRecord(connection, input.warehouse_id)
+        : null
     const resolvedWarehouseId =
       input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
-        ? await this.resolveWarehouseProviderRef(connection, input.warehouse_id)
+        ? this.resolveWarehouseProviderRefFromRecord(connection, warehouse, input.warehouse_id)
+        : null
+    const originAddress =
+      input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
+        ? this.resolveWarehouseRoutePointAddress(warehouse)
         : null
 
     try {
@@ -791,6 +801,7 @@ export class DeliveryHubService {
               {
                 warehouse_id: requireString(resolvedWarehouseId, "warehouse_id"),
                 destination_point_id: input.destination_point_id,
+                origin_address: originAddress,
                 interval_utc: input.interval_utc ?? null,
                 currency_code: input.currency_code,
                 items: input.items,
@@ -1243,7 +1254,10 @@ export class DeliveryHubService {
                 warehouse_id: requireString(resolvedWarehouseId, "warehouse_id"),
                 destination_point_id: input.destination_point_id,
                 origin_address: originAddress,
-                destination_address: input.destination_address ?? null,
+                destination_address: resolveQuoteRoutePointAddress(
+                  input.destination_address ?? null,
+                  "destination_address"
+                ),
                 interval_utc: input.interval_utc ?? null,
                 currency_code: input.currency_code ?? undefined,
                 items: input.items,
@@ -1255,7 +1269,10 @@ export class DeliveryHubService {
                 origin_point_id: requireString(input.origin_point_id, "origin_point_id"),
                 destination_point_id: input.destination_point_id,
                 origin_address: originAddress,
-                destination_address: input.destination_address ?? null,
+                destination_address: resolveQuoteRoutePointAddress(
+                  input.destination_address ?? null,
+                  "destination_address"
+                ),
                 currency_code: input.currency_code ?? undefined,
                 items: input.items,
               }
@@ -1940,32 +1957,57 @@ export class DeliveryHubService {
     return warehouse
   }
 
-  private resolveWarehouseRoutePointAddress(warehouse: DeliveryWarehouseRecord | null) {
+  private resolveWarehouseRoutePointAddress(
+    warehouse: DeliveryWarehouseRecord | null
+  ): DeliveryHubRoutePointAddressInput | null {
     if (!warehouse) {
       return null
     }
 
     const metadata = warehouse.metadata ?? {}
-    const fullname = normalizeNullableText(metadata.fullname) ??
-      [warehouse.country_code, warehouse.city, warehouse.address_line_1]
-        .map((value) => normalizeNullableText(value))
-        .filter(Boolean)
+    const missingFields: string[] = []
+    const countryCode = normalizeNullableText(warehouse.country_code)
+    const city = normalizeNullableText(warehouse.city)
+    const addressLine = normalizeNullableText(warehouse.address_line_1)
+    const postalCode = normalizeNullableText(metadata.postal_code)
+    const fullname =
+      normalizeNullableText(metadata.fullname) ??
+      [countryCode, postalCode, city, addressLine]
+        .filter((value): value is string => !!value)
         .join(", ")
     const coordinates = normalizeRoutePointCoordinates(
       metadata.coordinates ??
-      (metadata.lng !== undefined || metadata.lat !== undefined
-        ? [metadata.lng, metadata.lat]
-        : null)
+        (metadata.lng !== undefined || metadata.lat !== undefined
+          ? [metadata.lng, metadata.lat]
+          : null)
     )
 
-    if (!fullname) {
+    if (!countryCode) {
+      missingFields.push("warehouse.country_code")
+    }
+
+    if (!city) {
+      missingFields.push("warehouse.city")
+    }
+
+    if (!addressLine && !normalizeNullableText(metadata.fullname)) {
+      missingFields.push("warehouse.address_line_1")
+    }
+
+    if (!fullname || missingFields.length) {
       throw new DeliveryHubError({
         code: "DELIVERY_HUB_VALIDATION_ERROR",
-        message: "Yandex Delivery check-price requires warehouse origin address",
-        status: 400,
+        message:
+          "Yandex Delivery check-price requires seller/warehouse origin address. Fill country, city and address in Admin Settings → Delivery → Адрес продавца / склада.",
+        status: 409,
         details: {
-          field: "warehouse.address_line_1|warehouse.metadata.fullname",
+          field: "warehouse.origin_address",
           warehouse_id: warehouse.id,
+          missing_fields: missingFields.length
+            ? missingFields
+            : ["warehouse.address_line_1"],
+          operator_hint:
+            "Заполните адрес продавца/склада в Admin Settings → Delivery → Адрес продавца / склада, затем повторите расчёт.",
         },
       })
     }
@@ -1974,8 +2016,8 @@ export class DeliveryHubService {
       fullname,
       coordinates,
       contact: {
-        name: warehouse.contact_name ?? "Seller",
-        phone: warehouse.contact_phone ?? "+79990000000",
+        name: normalizeNullableText(warehouse.contact_name) ?? "Seller",
+        phone: normalizeNullableText(warehouse.contact_phone) ?? "+79990000000",
       },
     }
   }
@@ -2119,6 +2161,34 @@ function normalizeProviderErrorCategory(error?: DeliveryHubError) {
   return error.status >= 500 ? "provider_error" : "validation"
 }
 
+
+function resolveQuoteRoutePointAddress(
+  value: DeliveryHubRoutePointAddressInput | null | undefined,
+  field: string
+): DeliveryHubRoutePointAddressInput {
+  const fullname = normalizeNullableText(value?.fullname)
+
+  if (!fullname) {
+    throw new DeliveryHubError({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      message: `Yandex Delivery check-price requires ${field}.fullname. Select a pickup point with address in Admin/Store before requesting quote.`,
+      status: 409,
+      details: {
+        field,
+        required_shape: "{ fullname, coordinates?, contact? }",
+        operator_hint:
+          "Выберите ПВЗ через поиск, чтобы quote path получил destination address для Yandex check-price.",
+      },
+    })
+  }
+
+  return {
+    fullname,
+    coordinates: normalizeRoutePointCoordinates(value?.coordinates),
+    contact: value?.contact ?? null,
+  }
+}
+
 function buildTestQuoteInputEcho(input: DeliveryTestQuoteInput): DeliveryTestQuoteEcho {
   return {
     connection_id: input.connection_id,
@@ -2180,6 +2250,7 @@ function sanitizeAdminPickupPoint(point: DeliveryPickupPoint): DeliveryHubAdminP
     name: point.name,
     address: point.address,
     city: point.city,
+    postal_code: point.postal_code,
     available_for_dropoff: point.is_origin_dropoff_allowed,
     coordinates: {
       lat: point.lat,

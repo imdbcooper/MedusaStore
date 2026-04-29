@@ -34,6 +34,8 @@ import {
   defaultPickupWindowLookupForm,
   defaultShipmentOperationsForm,
   defaultWarehouseForm,
+  buildWarehouseMetadataFromForm,
+  buildRoutePointAddressFromPickupPoint,
   deriveExecutionPlanObservabilityRenderState,
   deriveFulfillmentBridgePreviewRenderState,
   deriveShipmentOperationsRenderState,
@@ -77,6 +79,7 @@ import {
   type DeliveryHubExecutionPlanObservabilityReadModel,
   type DeliveryHubFulfillmentBridgeReadinessPreview,
   type DeliveryHubPickupPointLookupForm,
+  type DeliveryHubPickupPointLookupPoint,
   type DeliveryHubPickupPointLookupResponse,
   type DeliveryHubPickupWindowLookupForm,
   type DeliveryHubPickupWindowLookupResponse,
@@ -130,6 +133,10 @@ type DeliveryTestQuoteForm = {
   connection_id: string;
   mode_code: "warehouse_to_pickup_point" | "dropoff_point_to_pickup_point";
   destination_point_id: string;
+  destination_address: {
+    fullname: string;
+    coordinates?: [number, number];
+  } | null;
   origin_point_id: string;
   warehouse_id: string;
   currency_code: string;
@@ -144,6 +151,7 @@ const defaultTestQuoteForm: DeliveryTestQuoteForm = {
   connection_id: "",
   mode_code: "warehouse_to_pickup_point",
   destination_point_id: "",
+  destination_address: null,
   origin_point_id: "",
   warehouse_id: "",
   currency_code: "RUB",
@@ -818,16 +826,20 @@ const DeliverySettingsPage = () => {
 
     try {
       const payload = {
-        name: warehouseForm.name.trim(),
+        name: warehouseForm.name.trim() || "Адрес продавца / склада",
         enabled: warehouseForm.enabled,
         country_code: warehouseForm.country_code.trim().toUpperCase(),
-        city: warehouseForm.city.trim() || undefined,
-        address_line_1: warehouseForm.address_line_1.trim() || undefined,
+        city: warehouseForm.city.trim(),
+        address_line_1: warehouseForm.address_line_1.trim(),
         contact_name: warehouseForm.contact_name.trim() || undefined,
         contact_phone: warehouseForm.contact_phone.trim() || undefined,
         provider_code: warehouseForm.provider_code.trim() || undefined,
         provider_warehouse_id:
           warehouseForm.provider_warehouse_id.trim() || undefined,
+        metadata: buildWarehouseMetadataFromForm(
+          warehouseForm,
+          activeWarehouse?.metadata || {},
+        ),
       };
 
       const result = activeWarehouseId
@@ -849,7 +861,9 @@ const DeliverySettingsPage = () => {
       setActiveWarehouseId(result.warehouse.id);
       setWarehouseForm(warehouseToForm(result.warehouse));
       setWarehouseFormNotice(
-        activeWarehouseId ? "Warehouse updated" : "Warehouse created",
+        activeWarehouseId
+          ? "Адрес продавца / склада обновлён"
+          : "Адрес продавца / склада создан",
       );
       await loadData(true);
     } catch (error) {
@@ -926,8 +940,12 @@ const DeliverySettingsPage = () => {
     }
   };
 
-  const handleUsePickupPointAsDestination = (pointId: string) => {
+  const handleUsePickupPointAsDestination = (point: DeliveryHubPickupPointLookupPoint | string) => {
+    const pointId = typeof point === "string" ? point : point.id;
     handleQuoteField("destination_point_id", pointId);
+    if (typeof point !== "string") {
+      handleQuoteField("destination_address", buildRoutePointAddressFromPickupPoint(point));
+    }
     setPickupWindowLookupForm((current) => ({
       ...current,
       destination_point_id: pointId,
@@ -1038,6 +1056,7 @@ const DeliverySettingsPage = () => {
             connection_id: testQuoteForm.connection_id,
             mode_code: testQuoteForm.mode_code,
             destination_point_id: testQuoteForm.destination_point_id.trim(),
+            destination_address: testQuoteForm.destination_address ?? undefined,
             currency_code:
               testQuoteForm.currency_code.trim().toUpperCase() || undefined,
             warehouse_id:
@@ -1779,25 +1798,32 @@ const DeliverySettingsPage = () => {
           ) : null}
         </div>
 
-        <details className="rounded-lg border p-4">
-          <summary className="cursor-pointer text-base font-medium">
-            Расширенные настройки: склады/source platform_station_id
-          </summary>
-          <div className="mt-4 flex items-center justify-between gap-4">
+        <div className="rounded-lg border p-4">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <Heading level="h2">Склады Delivery Hub</Heading>
+              <Heading level="h2">Адрес продавца / склада</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Source records для warehouse_to_pickup_point. Поле
-                provider_warehouse_id должно содержать Yandex platform_station_id;
-                backend отправляет его как source.platform_station.platform_id.
+                Этот origin address используется backend для Yandex check-price
+                как адрес продавца/склада. Здесь нет токенов, auth headers или
+                raw provider DTO; storefront этот адрес не отправляет.
               </Text>
+              {activeConnection?.config?.default_warehouse_id ? (
+                <Text className="text-ui-fg-subtle mt-2 text-sm">
+                  Текущее подключение использует default warehouse: {String(activeConnection.config.default_warehouse_id)}
+                </Text>
+              ) : (
+                <Text className="text-ui-fg-subtle mt-2 text-sm">
+                  Выберите этот склад в поле «Склад по умолчанию» у подключения,
+                  чтобы Store/Admin quote использовали его как origin.
+                </Text>
+              )}
             </div>
             <Button
               type="button"
               variant="secondary"
               onClick={startCreateWarehouse}
             >
-              Новый склад
+              Новый адрес/склад
             </Button>
           </div>
 
@@ -1833,7 +1859,7 @@ const DeliverySettingsPage = () => {
               })
             ) : (
               <Text className="text-ui-fg-subtle">
-                No Yandex warehouses configured yet.
+                Адрес продавца/склада ещё не настроен. Создайте запись ниже и выберите её как склад по умолчанию у подключения.
               </Text>
             )}
           </div>
@@ -1841,9 +1867,12 @@ const DeliverySettingsPage = () => {
           <div className="mt-6 rounded-md border p-4">
             <Heading level="h3">
               {activeWarehouseId
-                ? "Редактировать выбранный склад"
-                : "Создать склад"}
+                ? "Редактировать адрес продавца / склада"
+                : "Создать адрес продавца / склада"}
             </Heading>
+            <Text className="text-ui-fg-subtle mt-2 text-sm">
+              {getFieldRequirementText({ field: "warehouse_origin_address" })}
+            </Text>
 
             {warehouseFormError ? (
               <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
@@ -1892,7 +1921,7 @@ const DeliverySettingsPage = () => {
               </div>
 
               <div>
-                <FieldLabel htmlFor="warehouse-city" required={false}>
+                <FieldLabel htmlFor="warehouse-city" required={true}>
                   Город
                 </FieldLabel>
                 <Input
@@ -1905,8 +1934,25 @@ const DeliverySettingsPage = () => {
               </div>
 
               <div>
-                <FieldLabel htmlFor="warehouse-address" required={false}>
-                  Адрес
+                <FieldLabel htmlFor="warehouse-postal-code" required={false}>
+                  Индекс
+                </FieldLabel>
+                <Input
+                  id="warehouse-postal-code"
+                  value={warehouseForm.postal_code}
+                  onChange={(event) =>
+                    handleWarehouseField("postal_code", event.target.value)
+                  }
+                  placeholder="125009"
+                />
+                <Text className="text-ui-fg-subtle mt-2 text-sm">
+                  {getFieldRequirementText({ field: "warehouse_postal_code" })}
+                </Text>
+              </div>
+
+              <div>
+                <FieldLabel htmlFor="warehouse-address" required={true}>
+                  Улица и дом
                 </FieldLabel>
                 <Input
                   id="warehouse-address"
@@ -1915,6 +1961,37 @@ const DeliverySettingsPage = () => {
                     handleWarehouseField("address_line_1", event.target.value)
                   }
                 />
+              </div>
+
+              <div>
+                <FieldLabel htmlFor="warehouse-latitude" required={false}>
+                  Широта
+                </FieldLabel>
+                <Input
+                  id="warehouse-latitude"
+                  value={warehouseForm.latitude}
+                  onChange={(event) =>
+                    handleWarehouseField("latitude", event.target.value)
+                  }
+                  placeholder="55.7558"
+                />
+              </div>
+
+              <div>
+                <FieldLabel htmlFor="warehouse-longitude" required={false}>
+                  Долгота
+                </FieldLabel>
+                <Input
+                  id="warehouse-longitude"
+                  value={warehouseForm.longitude}
+                  onChange={(event) =>
+                    handleWarehouseField("longitude", event.target.value)
+                  }
+                  placeholder="37.6173"
+                />
+                <Text className="text-ui-fg-subtle mt-2 text-sm">
+                  {getFieldRequirementText({ field: "warehouse_coordinates" })}
+                </Text>
               </div>
 
               <div>
@@ -1941,6 +2018,23 @@ const DeliverySettingsPage = () => {
                     handleWarehouseField("contact_phone", event.target.value)
                   }
                 />
+              </div>
+
+              <div>
+                <FieldLabel htmlFor="warehouse-contact-email" required={false}>
+                  Контактный email
+                </FieldLabel>
+                <Input
+                  id="warehouse-contact-email"
+                  type="email"
+                  value={warehouseForm.contact_email}
+                  onChange={(event) =>
+                    handleWarehouseField("contact_email", event.target.value)
+                  }
+                />
+                <Text className="text-ui-fg-subtle mt-2 text-sm">
+                  {getFieldRequirementText({ field: "warehouse_contact" })}
+                </Text>
               </div>
 
               <div>
@@ -1998,7 +2092,7 @@ const DeliverySettingsPage = () => {
                 isLoading={isSavingWarehouse}
                 disabled={isLoading}
               >
-                {activeWarehouseId ? "Сохранить склад" : "Создать склад"}
+                {activeWarehouseId ? "Сохранить адрес" : "Создать адрес"}
               </Button>
               <Button
                 type="button"
@@ -2010,7 +2104,7 @@ const DeliverySettingsPage = () => {
               </Button>
             </div>
           </div>
-        </details>
+        </div>
 
         <div className="rounded-lg border p-4">
           <Heading level="h2">3. Найти ПВЗ</Heading>
@@ -2245,7 +2339,7 @@ const DeliverySettingsPage = () => {
                       <Button
                         type="button"
                         variant="secondary"
-                        onClick={() => handleUsePickupPointAsDestination(point.id)}
+                        onClick={() => handleUsePickupPointAsDestination(point)}
                       >
                         Использовать как destination
                       </Button>
@@ -3834,10 +3928,16 @@ const DeliverySettingsPage = () => {
               <Input
                 id="quote-destination-point"
                 value={testQuoteForm.destination_point_id}
-                onChange={(event) =>
-                  handleQuoteField("destination_point_id", event.target.value)
-                }
+                onChange={(event) => {
+                  handleQuoteField("destination_point_id", event.target.value);
+                  handleQuoteField("destination_address", null);
+                }}
               />
+              <Text className="text-ui-fg-subtle mt-2 text-sm">
+                {testQuoteForm.destination_address
+                  ? "Destination address выбран из поиска ПВЗ и будет отправлен как safe check-price route point."
+                  : "Для Yandex check-price выберите ПВЗ через блок «Найти ПВЗ», чтобы backend получил destination address."}
+              </Text>
             </div>
 
             <div>

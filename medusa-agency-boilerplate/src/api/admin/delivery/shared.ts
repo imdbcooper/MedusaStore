@@ -15,6 +15,17 @@ import {
   redactSensitiveText,
 } from "../../../modules/delivery-hub/security/redaction"
 
+const AdminDeliveryWarehouseMetadataSchema = z
+  .object({
+    postal_code: z.string().optional(),
+    contact_email: z.string().email().optional(),
+    coordinates: z.tuple([z.number().finite(), z.number().finite()]).nullable().optional(),
+    lat: z.number().finite().optional(),
+    lng: z.number().finite().optional(),
+    fullname: z.string().optional(),
+  })
+  .strict()
+
 const AdminDeliveryWarehouseSchema = z
   .object({
     id: z.string(),
@@ -27,7 +38,7 @@ const AdminDeliveryWarehouseSchema = z
     contact_phone: z.string().nullable(),
     provider_code: z.string().nullable(),
     provider_warehouse_id: z.string().nullable(),
-    metadata: z.record(z.unknown()),
+    metadata: AdminDeliveryWarehouseMetadataSchema,
     created_at: z.string(),
     updated_at: z.string(),
   })
@@ -134,6 +145,7 @@ const AdminDeliveryPickupPointLookupPointSchema = z
     name: z.string(),
     address: z.string(),
     city: z.string().nullable(),
+    postal_code: z.string().nullable(),
     available_for_dropoff: z.boolean(),
     coordinates: z
       .object({

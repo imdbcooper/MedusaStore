@@ -1,3 +1,12 @@
+export type DeliveryWarehouseMetadata = Record<string, unknown> & {
+  postal_code?: string
+  contact_email?: string
+  coordinates?: [number, number] | null
+  lat?: number
+  lng?: number
+  fullname?: string
+}
+
 export type DeliveryWarehouseRecord = {
   id: string
   name: string
@@ -9,7 +18,7 @@ export type DeliveryWarehouseRecord = {
   contact_phone: string | null
   provider_code: string | null
   provider_warehouse_id: string | null
-  metadata: Record<string, unknown>
+  metadata: DeliveryWarehouseMetadata
   created_at: string
   updated_at: string
 }
@@ -25,7 +34,7 @@ export type DeliveryWarehouseUpsertInput = {
   contact_phone?: string | null
   provider_code?: string | null
   provider_warehouse_id?: string | null
-  metadata?: Record<string, unknown>
+  metadata?: DeliveryWarehouseMetadata
 }
 
 export type DeliveryWarehousePublic = {
@@ -39,7 +48,7 @@ export type DeliveryWarehousePublic = {
   contact_phone: string | null
   provider_code: string | null
   provider_warehouse_id: string | null
-  metadata: Record<string, unknown>
+  metadata: DeliveryWarehouseMetadata
   created_at: string
   updated_at: string
 }

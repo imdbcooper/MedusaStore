@@ -33,17 +33,28 @@ export const DeliveryHubUpdateConnectionSchema = DeliveryHubCreateConnectionSche
     name: z.string().min(1),
   })
 
+const DeliveryHubWarehouseMetadataSchema = z
+  .object({
+    postal_code: z.string().trim().min(1).optional(),
+    contact_email: z.string().trim().email().optional(),
+    coordinates: z.tuple([z.number().finite(), z.number().finite()]).nullable().optional(),
+    lat: z.number().finite().optional(),
+    lng: z.number().finite().optional(),
+    fullname: z.string().trim().min(1).optional(),
+  })
+  .passthrough()
+
 export const DeliveryHubCreateWarehouseSchema = z.object({
   name: z.string().min(1),
   enabled: z.boolean().optional(),
-  country_code: z.string().min(2).max(2).optional(),
-  city: z.string().optional(),
-  address_line_1: z.string().optional(),
+  country_code: z.string().trim().min(2).max(2),
+  city: z.string().trim().min(1),
+  address_line_1: z.string().trim().min(1),
   contact_name: z.string().optional(),
   contact_phone: z.string().optional(),
   provider_code: z.string().optional(),
   provider_warehouse_id: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: DeliveryHubWarehouseMetadataSchema.optional(),
 })
 
 export const DeliveryHubUpdateWarehouseSchema = DeliveryHubCreateWarehouseSchema.extend({
@@ -97,11 +108,21 @@ export const DeliveryHubIntervalUtcSchema = z
   })
   .optional()
 
+const DeliveryHubRoutePointAddressSchema = z.object({
+  fullname: z.string().trim().min(1),
+  coordinates: z.tuple([z.number().finite(), z.number().finite()]).nullable().optional(),
+  contact: z.object({
+    name: z.string().trim().min(1).nullable().optional(),
+    phone: z.string().trim().min(1).nullable().optional(),
+  }).nullable().optional(),
+}).strict()
+
 export const DeliveryHubTestQuoteSchema = z.object({
   connection_id: z.string().min(1),
   mode_code: z.enum(["warehouse_to_pickup_point", "dropoff_point_to_pickup_point"]),
   currency_code: z.string().min(3).max(3).optional(),
   destination_point_id: z.string().min(1),
+  destination_address: DeliveryHubRoutePointAddressSchema.optional(),
   origin_point_id: z.string().optional(),
   warehouse_id: z.string().optional(),
   interval_utc: DeliveryHubIntervalUtcSchema,
@@ -113,23 +134,14 @@ const DeliveryHubStoreQuoteModeSchema = z.enum([
   "dropoff_point_to_pickup_point",
 ])
 
-const DeliveryHubStoreQuoteRoutePointAddressSchema = z.object({
-  fullname: z.string().trim().min(1),
-  coordinates: z.tuple([z.number().finite(), z.number().finite()]).nullable().optional(),
-  contact: z.object({
-    name: z.string().trim().min(1).nullable().optional(),
-    phone: z.string().trim().min(1).nullable().optional(),
-  }).nullable().optional(),
-}).strict()
-
 const DeliveryHubStoreQuoteBaseSchema = z.object({
   connection_id: z.string().trim().min(1).optional(),
   mode_code: DeliveryHubStoreQuoteModeSchema,
   currency_code: z.string().trim().min(3).max(3).optional(),
   destination_point_id: z.string().trim().min(1),
-  destination_address: DeliveryHubStoreQuoteRoutePointAddressSchema.optional(),
+  destination_address: DeliveryHubRoutePointAddressSchema.optional(),
   origin_point_id: z.string().trim().min(1).optional(),
-  origin_address: DeliveryHubStoreQuoteRoutePointAddressSchema.optional(),
+  origin_address: DeliveryHubRoutePointAddressSchema.optional(),
   warehouse_id: z.string().trim().min(1).optional(),
 })
 

@@ -26,6 +26,15 @@ export type DeliveryConnection = {
   updated_at: string;
 };
 
+export type DeliveryWarehouseMetadata = Record<string, unknown> & {
+  postal_code?: string;
+  contact_email?: string;
+  coordinates?: [number, number] | null;
+  lat?: number;
+  lng?: number;
+  fullname?: string;
+};
+
 export type DeliveryWarehouse = {
   id: string;
   name: string;
@@ -37,7 +46,7 @@ export type DeliveryWarehouse = {
   contact_phone: string | null;
   provider_code: string | null;
   provider_warehouse_id: string | null;
-  metadata: Record<string, unknown>;
+  metadata: DeliveryWarehouseMetadata;
   created_at: string;
   updated_at: string;
 };
@@ -68,9 +77,13 @@ export type DeliveryWarehouseForm = {
   enabled: boolean;
   country_code: string;
   city: string;
+  postal_code: string;
   address_line_1: string;
+  latitude: string;
+  longitude: string;
   contact_name: string;
   contact_phone: string;
+  contact_email: string;
   provider_code: string;
   provider_warehouse_id: string;
 };
@@ -155,6 +168,10 @@ export function getFieldRequirementText(input: {
     | "connection"
     | "token"
     | "warehouse"
+    | "warehouse_origin_address"
+    | "warehouse_postal_code"
+    | "warehouse_coordinates"
+    | "warehouse_contact"
     | "destination_point"
     | "origin_dropoff_point"
     | "interval"
@@ -177,6 +194,14 @@ export function getFieldRequirementText(input: {
         : "Обязательно при создании: вставьте Yandex token один раз. После сохранения поле станет пустым и write-only.";
     case "warehouse":
       return "Обязательно для warehouse_to_pickup_point: выберите склад, у которого provider_warehouse_id заполнен Yandex platform_station_id. Он уйдёт в source.platform_station.platform_id.";
+    case "warehouse_origin_address":
+      return "Обязательно для Yandex check-price: страна, город и строка адреса продавца/склада. Этот адрес backend использует как origin route point; storefront его не отправляет и секретов здесь нет.";
+    case "warehouse_postal_code":
+      return "Необязательно, но полезно для точности check-price: индекс добавляется в origin fullname и хранится в metadata.postal_code.";
+    case "warehouse_coordinates":
+      return "Необязательно: долгота/широта склада для Yandex route point. Значения сохраняются как metadata.coordinates=[lng, lat].";
+    case "warehouse_contact":
+      return "Необязательно: контакт склада для provider route point. Токены, auth headers и provider DTO здесь не сохраняются.";
     case "destination_point":
       return "Обязательно: destination PVZ/platform station id из блока «3. Найти ПВЗ». Он уйдёт в destination.platform_station.platform_id.";
     case "origin_dropoff_point":
@@ -486,6 +511,7 @@ export type DeliveryHubPickupPointLookupPoint = {
   name: string;
   address: string;
   city: string | null;
+  postal_code: string | null;
   available_for_dropoff: boolean;
   coordinates: {
     lat: number | null;
@@ -746,6 +772,27 @@ export function getProviderCodeOperatorHint(providerCode: string | null | undefi
   }
 }
 
+
+export function buildRoutePointAddressFromPickupPoint(
+  point: DeliveryHubPickupPointLookupPoint,
+) {
+  const fullname = [point.postal_code, point.city, point.address]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim())
+    .join(", ");
+  const lat = Number.isFinite(point.coordinates.lat) ? point.coordinates.lat : null;
+  const lng = Number.isFinite(point.coordinates.lng) ? point.coordinates.lng : null;
+
+  if (!fullname) {
+    return null;
+  }
+
+  return {
+    fullname,
+    coordinates: lng !== null && lat !== null ? [lng, lat] as [number, number] : undefined,
+  };
+}
+
 export function getPickupPointOptionLabel(
   point: DeliveryHubPickupPointLookupPoint,
 ) {
@@ -878,13 +925,17 @@ export const defaultConnectionForm: DeliveryConnectionForm = {
 };
 
 export const defaultWarehouseForm: DeliveryWarehouseForm = {
-  name: "",
+  name: "Адрес продавца / склада",
   enabled: true,
   country_code: "RU",
   city: "",
+  postal_code: "",
   address_line_1: "",
+  latitude: "",
+  longitude: "",
   contact_name: "",
   contact_phone: "",
+  contact_email: "",
   provider_code: "yandex",
   provider_warehouse_id: "",
 };
@@ -2343,21 +2394,27 @@ export function connectionToForm(
 export function warehouseToForm(
   warehouse: DeliveryWarehouse,
 ): DeliveryWarehouseForm {
+  const coordinates = getWarehouseCoordinates(warehouse);
+
   return {
     name: warehouse.name,
     enabled: warehouse.enabled,
     country_code: warehouse.country_code,
     city: warehouse.city || "",
+    postal_code: getWarehousePostalCode(warehouse),
     address_line_1: warehouse.address_line_1 || "",
+    latitude: coordinates?.lat != null ? String(coordinates.lat) : "",
+    longitude: coordinates?.lng != null ? String(coordinates.lng) : "",
     contact_name: warehouse.contact_name || "",
     contact_phone: warehouse.contact_phone || "",
+    contact_email: getWarehouseContactEmail(warehouse),
     provider_code: warehouse.provider_code || "yandex",
     provider_warehouse_id: warehouse.provider_warehouse_id || "",
   };
 }
 
 export function getWarehouseOptionLabel(warehouse: DeliveryWarehouse) {
-  const location = [warehouse.city, warehouse.address_line_1]
+  const location = [getWarehousePostalCode(warehouse), warehouse.city, warehouse.address_line_1]
     .filter(Boolean)
     .join(", ");
   const providerRef = warehouse.provider_warehouse_id
@@ -2365,6 +2422,72 @@ export function getWarehouseOptionLabel(warehouse: DeliveryWarehouse) {
     : "";
 
   return `${warehouse.name}${location ? ` · ${location}` : ""}${providerRef}`;
+}
+
+export function getWarehousePostalCode(warehouse: DeliveryWarehouse) {
+  const value = warehouse.metadata?.postal_code;
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+export function getWarehouseContactEmail(warehouse: DeliveryWarehouse) {
+  const value = warehouse.metadata?.contact_email;
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+export function getWarehouseCoordinates(warehouse: DeliveryWarehouse) {
+  const coordinates = warehouse.metadata?.coordinates;
+
+  if (Array.isArray(coordinates) && coordinates.length === 2) {
+    const lng = Number(coordinates[0]);
+    const lat = Number(coordinates[1]);
+
+    if (Number.isFinite(lng) && Number.isFinite(lat)) {
+      return { lat, lng };
+    }
+  }
+
+  const lat = Number(warehouse.metadata?.lat);
+  const lng = Number(warehouse.metadata?.lng);
+
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return { lat, lng };
+  }
+
+  return null;
+}
+
+export function buildWarehouseMetadataFromForm(
+  form: DeliveryWarehouseForm,
+  current: DeliveryWarehouseMetadata = {},
+): DeliveryWarehouseMetadata {
+  const metadata: DeliveryWarehouseMetadata = { ...current };
+  const postalCode = form.postal_code.trim();
+  const contactEmail = form.contact_email.trim();
+  const lat = Number(form.latitude);
+  const lng = Number(form.longitude);
+
+  delete metadata.postal_code;
+  delete metadata.contact_email;
+  delete metadata.coordinates;
+  delete metadata.lat;
+  delete metadata.lng;
+  delete metadata.fullname;
+
+  if (postalCode) {
+    metadata.postal_code = postalCode;
+  }
+
+  if (contactEmail) {
+    metadata.contact_email = contactEmail;
+  }
+
+  if (form.latitude.trim() && form.longitude.trim() && Number.isFinite(lat) && Number.isFinite(lng)) {
+    metadata.lat = lat;
+    metadata.lng = lng;
+    metadata.coordinates = [lng, lat];
+  }
+
+  return metadata;
 }
 
 export function statusToneClass(value: string) {

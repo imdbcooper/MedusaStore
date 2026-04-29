@@ -36,6 +36,11 @@ import {
   normalizeConfig,
   normalizeYandexApiBaseUrlForForm,
   warehouseToForm,
+  buildRoutePointAddressFromPickupPoint,
+  buildWarehouseMetadataFromForm,
+  getWarehouseContactEmail,
+  getWarehouseCoordinates,
+  getWarehousePostalCode,
   YANDEX_VERIFIED_SANDBOX_PVZ,
   type DeliveryConnection,
   type DeliveryEventLog,
@@ -306,6 +311,8 @@ describe("delivery admin settings page state", () => {
     expect(getFieldRequirementText({ field: "interval" })).toContain(
       "Необязательно для /offers/create Test quote",
     );
+    expect(getFieldRequirementText({ field: "warehouse_origin_address" })).toContain("Yandex check-price");
+    expect(getFieldRequirementText({ field: "warehouse_coordinates" })).toContain("metadata.coordinates");
     expect(getFieldRequirementText({ field: "five_post" })).toContain("5 Post");
   });
 
@@ -352,6 +359,7 @@ describe("delivery admin settings page state", () => {
         name: "Пункт выдачи заказов Яндекс Маркета",
         address: "Москва Ленинградский проспект 27",
         city: "Москва",
+        postal_code: null,
         available_for_dropoff: true,
         coordinates: { lat: null, lng: null },
       }),
@@ -445,10 +453,32 @@ describe("delivery admin settings page state", () => {
         name: "5 Post (Пятерочка)",
         address: "Москва",
         city: "г.Москва",
+        postal_code: "125009",
         available_for_dropoff: false,
-        coordinates: { lat: null, lng: null },
+        coordinates: { lat: 55.7558, lng: 37.6173 },
       }),
     ).toContain("5 Post (Пятерочка)");
+
+    expect(
+      buildRoutePointAddressFromPickupPoint({
+        id: "pvz_5post",
+        code: null,
+        operator_id: "5post",
+        network_label: "5 Post",
+        station_type: "pickup_point",
+        is_yandex_branded: false,
+        is_market_partner: false,
+        name: "5 Post (Пятерочка)",
+        address: "Москва, Тверская 1",
+        city: "г.Москва",
+        postal_code: "125009",
+        available_for_dropoff: false,
+        coordinates: { lat: 55.7558, lng: 37.6173 },
+      }),
+    ).toEqual({
+      fullname: "125009, г.Москва, Москва, Тверская 1",
+      coordinates: [37.6173, 55.7558],
+    });
 
     expect(
       getPickupWindowOptionLabel({
@@ -478,25 +508,44 @@ describe("delivery admin settings page state", () => {
       contact_phone: "+79990000000",
       provider_code: "yandex",
       provider_warehouse_id: "YANDEX-01",
-      metadata: {},
+      metadata: {
+        postal_code: "125009",
+        contact_email: "operator@example.test",
+        coordinates: [37.6173, 55.7558],
+      },
       created_at: "2026-04-20T10:00:00.000Z",
       updated_at: "2026-04-21T10:00:00.000Z",
     };
 
     expect(getWarehouseOptionLabel(warehouse)).toBe(
-      "Main warehouse · Moscow, Tverskaya 1 · provider: YANDEX-01",
+      "Main warehouse · 125009, Moscow, Tverskaya 1 · provider: YANDEX-01",
     );
+    expect(getWarehousePostalCode(warehouse)).toBe("125009");
+    expect(getWarehouseContactEmail(warehouse)).toBe("operator@example.test");
+    expect(getWarehouseCoordinates(warehouse)).toEqual({ lat: 55.7558, lng: 37.6173 });
 
     expect(warehouseToForm(warehouse)).toEqual({
       name: "Main warehouse",
       enabled: true,
       country_code: "RU",
       city: "Moscow",
+      postal_code: "125009",
       address_line_1: "Tverskaya 1",
+      latitude: "55.7558",
+      longitude: "37.6173",
       contact_name: "Operator",
       contact_phone: "+79990000000",
+      contact_email: "operator@example.test",
       provider_code: "yandex",
       provider_warehouse_id: "YANDEX-01",
+    });
+
+    expect(buildWarehouseMetadataFromForm(warehouseToForm(warehouse))).toEqual({
+      postal_code: "125009",
+      contact_email: "operator@example.test",
+      lat: 55.7558,
+      lng: 37.6173,
+      coordinates: [37.6173, 55.7558],
     });
   });
 
@@ -3336,6 +3385,7 @@ describe("delivery admin settings page state", () => {
         name: "PVZ 1",
         address: "Tverskaya 1",
         city: "Moscow",
+        postal_code: null,
         available_for_dropoff: true,
         coordinates: { lat: 55.75, lng: 37.61 },
       }),

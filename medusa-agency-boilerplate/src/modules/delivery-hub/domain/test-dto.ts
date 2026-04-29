@@ -31,6 +31,14 @@ export type DeliveryTestQuoteInput = {
   mode_code: "warehouse_to_pickup_point" | "dropoff_point_to_pickup_point"
   currency_code?: string
   destination_point_id: string
+  destination_address?: {
+    fullname: string
+    coordinates?: [number, number] | null
+    contact?: {
+      name?: string | null
+      phone?: string | null
+    } | null
+  } | null
   origin_point_id?: string | null
   warehouse_id?: string | null
   interval_utc?: {

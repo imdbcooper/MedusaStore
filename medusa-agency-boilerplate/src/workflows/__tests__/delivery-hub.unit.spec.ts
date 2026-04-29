@@ -285,6 +285,15 @@ describe("Delivery Hub service", () => {
       id: "wh_1",
       provider_code: "yandex",
       provider_warehouse_id: "ya-wh-1",
+      country_code: "RU",
+      city: "Москва",
+      address_line_1: "Тверская 1",
+      contact_name: "Warehouse Operator",
+      contact_phone: "+79990000000",
+      metadata: {
+        postal_code: "125009",
+        coordinates: [37.6173, 55.7558],
+      },
     })
     const connection = createConnectionRecord({
       provider_code: "yandex",
@@ -304,6 +313,7 @@ describe("Delivery Hub service", () => {
       mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
       warehouse_id: warehouse.id,
       destination_point_id: "pvz_1",
+      destination_address: { fullname: "125009, Москва, Тверская 1" },
       currency_code: "RUB",
     })
 
@@ -315,10 +325,99 @@ describe("Delivery Hub service", () => {
       expect.objectContaining({
         warehouse_id: "ya-wh-1",
         destination_point_id: "pvz_1",
+        origin_address: expect.objectContaining({
+          fullname: "RU, 125009, Москва, Тверская 1",
+          coordinates: [37.6173, 55.7558],
+          contact: expect.objectContaining({
+            name: "Warehouse Operator",
+            phone: "+79990000000",
+          }),
+        }),
       })
     )
 
     quoteSpy.mockRestore()
+  })
+
+  it("rejects warehouse quote with clear validation when destination address is missing", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_origin_ready",
+      provider_code: "yandex",
+      provider_warehouse_id: "ya-wh-origin-ready",
+      country_code: "RU",
+      city: "Москва",
+      address_line_1: "Тверская 1",
+      metadata: { postal_code: "125009" },
+    })
+    const connection = createConnectionRecord({
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      enabled: true,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      config: {
+        default_warehouse_id: warehouse.id,
+      },
+    })
+    const pg = createMockPg([connection], [], [warehouse])
+    const service = new DeliveryHubService(pg as any)
+
+    await expect(
+      service.listStoreQuotes({
+        connection_id: connection.id,
+        mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+        destination_point_id: "pvz_1",
+        items: [{ quantity: 1, weight_grams: 500 }],
+      })
+    ).rejects.toMatchObject({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      status: 409,
+      message: expect.stringContaining("destination_address.fullname"),
+      details: expect.objectContaining({
+        field: "destination_address",
+      }),
+    })
+  })
+
+  it("rejects warehouse quote with clear validation when origin address is missing", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_missing_origin",
+      provider_code: "yandex",
+      provider_warehouse_id: "ya-wh-missing-origin",
+      city: null,
+      address_line_1: null,
+      metadata: {},
+    })
+    const connection = createConnectionRecord({
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      enabled: true,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      config: {
+        default_warehouse_id: warehouse.id,
+      },
+    })
+    const pg = createMockPg([connection], [], [warehouse])
+    const service = new DeliveryHubService(pg as any)
+
+    await expect(
+      service.listStoreQuotes({
+        connection_id: connection.id,
+        mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+        destination_point_id: "pvz_1",
+        destination_address: {
+          fullname: "125009, Москва, Тверская 1",
+          coordinates: [37.6173, 55.7558],
+        },
+        items: [{ quantity: 1, weight_grams: 500 }],
+      })
+    ).rejects.toMatchObject({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      status: 409,
+      message: expect.stringContaining("origin address"),
+      details: expect.objectContaining({
+        field: "warehouse.origin_address",
+        warehouse_id: warehouse.id,
+        missing_fields: expect.arrayContaining(["warehouse.city", "warehouse.address_line_1"]),
+      }),
+    })
   })
 
   it("rejects binding disabled warehouse as connection default", async () => {
@@ -850,6 +949,7 @@ describe("Delivery Hub service", () => {
           name: "PVZ 1",
           address: "Tverskaya 1",
           city: "Moscow",
+          postal_code: "101000",
           available_for_dropoff: true,
           coordinates: {
             lat: 55.75,
@@ -879,6 +979,10 @@ describe("Delivery Hub service", () => {
       id: "wh_1",
       provider_code: "yandex",
       provider_warehouse_id: "ya-wh-1",
+      country_code: "RU",
+      city: "Москва",
+      address_line_1: "Тверская 1",
+      metadata: { postal_code: "125009" },
     })
     const connection = createConnectionRecord({
       enabled: true,
@@ -1698,6 +1802,7 @@ describe("Delivery Hub service", () => {
     const result = await service.listStoreQuotes({
       mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
       destination_point_id: "pvz_1",
+      destination_address: { fullname: "125009, Москва, Тверская 1" },
       currency_code: "RUB",
     })
 
@@ -1756,6 +1861,8 @@ describe("Delivery Hub service", () => {
       mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
       origin_point_id: "dropoff_1",
       destination_point_id: "pvz_1",
+      destination_address: { fullname: "125009, Москва, Тверская 1" },
+      origin_address: { fullname: "125009, Москва, Тверская 2" },
       currency_code: "RUB",
       items: [{ quantity: 1, weight_grams: 500, price: 2000 }],
     })).rejects.toMatchObject({

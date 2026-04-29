@@ -514,6 +514,131 @@ describe("Delivery Hub admin routes", () => {
   })
 
 
+  it("creates and updates warehouse seller origin address through admin routes", async () => {
+    const warehouse = {
+      id: "wh_origin_1",
+      name: "Адрес продавца / склада",
+      enabled: true,
+      country_code: "RU",
+      city: "Москва",
+      address_line_1: "Тверская 1",
+      contact_name: "Оператор склада",
+      contact_phone: "+79990000000",
+      provider_code: "yandex",
+      provider_warehouse_id: "YANDEX-WH-01",
+      metadata: {
+        postal_code: "125009",
+        contact_email: "warehouse@example.test",
+        coordinates: [37.6173, 55.7558],
+      },
+      created_at: "2026-04-20T00:00:00.000Z",
+      updated_at: "2026-04-21T00:00:00.000Z",
+    }
+    const createBody = {
+      name: warehouse.name,
+      enabled: true,
+      country_code: "RU",
+      city: "Москва",
+      address_line_1: "Тверская 1",
+      contact_name: "Оператор склада",
+      contact_phone: "+79990000000",
+      provider_code: "yandex",
+      provider_warehouse_id: "YANDEX-WH-01",
+      metadata: warehouse.metadata,
+    }
+
+    const createSpy = jest
+      .spyOn(DeliveryHubService.prototype, "createWarehouse")
+      .mockResolvedValue(warehouse as any)
+    const updateSpy = jest
+      .spyOn(DeliveryHubService.prototype, "updateWarehouse")
+      .mockResolvedValue({
+        ...warehouse,
+        city: "Москва",
+        address_line_1: "Тверская 2",
+        updated_at: "2026-04-22T00:00:00.000Z",
+      } as any)
+
+    const createRes = createMockResponse()
+    await deliveryWarehousesRoute.POST(
+      createMockRequest({ validatedBody: createBody }) as any,
+      createRes as any
+    )
+
+    expect(createSpy).toHaveBeenCalledWith(createBody)
+    expect(createRes.status).toHaveBeenCalledWith(201)
+    expect(createRes.json).toHaveBeenCalledWith({ ok: true, warehouse })
+
+    const updateRes = createMockResponse()
+    await deliveryWarehouseRoute.PUT(
+      createMockRequest({
+        url: "/admin/delivery/warehouses/wh_origin_1",
+        validatedBody: {
+          ...createBody,
+          address_line_1: "Тверская 2",
+        },
+      }) as any,
+      updateRes as any
+    )
+
+    expect(updateSpy).toHaveBeenCalledWith("wh_origin_1", {
+      ...createBody,
+      address_line_1: "Тверская 2",
+    })
+    expect(updateRes.status).toHaveBeenCalledWith(200)
+    expect(updateRes.json).toHaveBeenCalledWith({
+      ok: true,
+      warehouse: {
+        ...warehouse,
+        city: "Москва",
+        address_line_1: "Тверская 2",
+        updated_at: "2026-04-22T00:00:00.000Z",
+      },
+    })
+  })
+
+  it("rejects warehouse admin response with secret-like fragments before boundary", async () => {
+    jest.spyOn(DeliveryHubService.prototype, "createWarehouse").mockResolvedValue({
+      id: "wh_leaky",
+      name: "Leaky warehouse",
+      enabled: true,
+      country_code: "RU",
+      city: "Москва",
+      address_line_1: "Тверская 1",
+      contact_name: null,
+      contact_phone: null,
+      provider_code: "yandex",
+      provider_warehouse_id: "YANDEX-WH-01",
+      metadata: {
+        postal_code: "125009",
+        token: "must-not-cross-boundary",
+      },
+      credentials: {
+        token: "must-not-cross-boundary",
+      },
+      created_at: "2026-04-20T00:00:00.000Z",
+      updated_at: "2026-04-21T00:00:00.000Z",
+    } as any)
+
+    const res = createMockResponse()
+    await deliveryWarehousesRoute.POST(
+      createMockRequest({
+        validatedBody: {
+          name: "Leaky warehouse",
+          country_code: "RU",
+          city: "Москва",
+          address_line_1: "Тверская 1",
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(res.status).toHaveBeenCalledWith(500)
+    const payload = (res.json as jest.Mock).mock.calls[0][0] as any
+    expect(payload.error.code).toBe("DELIVERY_HUB_UNEXPECTED_ERROR")
+    expect(payload.error.message).toContain("credentials")
+  })
+
   it("returns sanitized admin pickup point lookup payload without provider raw body", async () => {
     jest.spyOn(DeliveryHubService.prototype, "listAdminPickupPoints").mockResolvedValue({
       ok: true,
@@ -547,6 +672,7 @@ describe("Delivery Hub admin routes", () => {
           name: "PVZ 1",
           address: "Tverskaya 1",
           city: "Moscow",
+          postal_code: "125009",
           available_for_dropoff: true,
           coordinates: {
             lat: 55.75,
@@ -591,6 +717,7 @@ describe("Delivery Hub admin routes", () => {
           name: "PVZ 1",
           address: "Tverskaya 1",
           city: "Moscow",
+          postal_code: "125009",
           available_for_dropoff: true,
           coordinates: {
             lat: 55.75,
@@ -634,6 +761,7 @@ describe("Delivery Hub admin routes", () => {
           name: "PVZ 1",
           address: "Tverskaya 1",
           city: "Moscow",
+          postal_code: null,
           available_for_dropoff: false,
           coordinates: { lat: null, lng: null },
           raw_response: { token: "secret" },
