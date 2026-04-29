@@ -1832,6 +1832,114 @@ describe("Delivery Hub service", () => {
     )
   })
 
+  it("uses warehouse record id for Yandex price quote when platform station id is absent", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_without_station",
+      provider_code: DELIVERY_HUB_PROVIDER_YANDEX,
+      provider_warehouse_id: null,
+      city: "Москва",
+      address_line_1: "Льва Толстого 16",
+      metadata: { coordinates: [37.6173, 55.7558] },
+    })
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      config: {
+        default_warehouse_id: warehouse.id,
+      },
+    })
+    const pg = createMockPg([connection], [], [warehouse])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter(DELIVERY_HUB_PROVIDER_YANDEX)
+    const quoteSpy = jest.spyOn(adapter, "quoteWarehouseToPickupPoint").mockResolvedValue([
+      {
+        carrier_code: DELIVERY_HUB_PROVIDER_YANDEX,
+        carrier_label: "Yandex Delivery",
+        mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+        quote_key: "quote_1",
+        amount: 499,
+        currency_code: "RUB",
+        delivery_eta_min: 1,
+        delivery_eta_max: 2,
+        pickup_point_required: true,
+        pickup_point_ids: ["pvz_1"],
+        pickup_points_embedded: [],
+        pickup_window_required: false,
+        pickup_window_options: [],
+        raw_reference: {
+          provider_offer_id: "raw-offer-id-should-not-leak",
+          provider: DELIVERY_HUB_PROVIDER_YANDEX,
+        },
+      },
+    ])
+
+    const result = await service.listStoreQuotes({
+      connection_id: connection.id,
+      mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+      destination_point_id: "pvz_1",
+      destination_address: {
+        fullname: "125009, Москва, Тверская 1",
+        coordinates: [37.61, 55.75],
+      },
+      currency_code: "RUB",
+    })
+
+    expect(quoteSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ connection }),
+      expect.objectContaining({
+        warehouse_id: warehouse.id,
+        origin_address: expect.objectContaining({
+          fullname: expect.stringContaining("Москва"),
+          coordinates: [37.6173, 55.7558],
+        }),
+      })
+    )
+    expect(JSON.stringify(result)).not.toContain("raw-offer-id-should-not-leak")
+    expect(result.quotes[0].quote_reference.id).toMatch(/^dhsel_/)
+  })
+
+  it("fails invalid Yandex warehouse country-like city before provider quote call", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_country_city",
+      provider_code: DELIVERY_HUB_PROVIDER_YANDEX,
+      city: "Russia",
+      address_line_1: "Льва Толстого 16",
+    })
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      config: {
+        default_warehouse_id: warehouse.id,
+      },
+    })
+    const pg = createMockPg([connection], [], [warehouse])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter(DELIVERY_HUB_PROVIDER_YANDEX)
+    const quoteSpy = jest.spyOn(adapter, "quoteWarehouseToPickupPoint")
+
+    await expect(service.listStoreQuotes({
+      connection_id: connection.id,
+      mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+      destination_point_id: "pvz_1",
+      destination_address: {
+        fullname: "125009, Москва, Тверская 1",
+        coordinates: [37.61, 55.75],
+      },
+      currency_code: "RUB",
+    })).rejects.toMatchObject({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      status: 409,
+      details: expect.objectContaining({
+        field: "warehouse.city",
+        warehouse_id: warehouse.id,
+        operator_hint: expect.stringContaining("Укажите город склада"),
+      }),
+    })
+    expect(quoteSpy).not.toHaveBeenCalled()
+  })
+
   it("does not invalidate sealed credentials on provider access-block quote failure", async () => {
     const connection = createConnectionRecord({
       enabled: true,

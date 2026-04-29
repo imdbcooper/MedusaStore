@@ -143,7 +143,7 @@ export function getQuoteModeHint(
   modeCode: DeliveryHubTestQuoteInputEcho["mode_code"] | string,
 ) {
   if (modeCode === "warehouse_to_pickup_point") {
-    return "Основной сценарий warehouse_to_pickup_point: нужен сохранённый connection, выбранный склад Delivery Hub и destination PVZ id. Backend мапит provider_warehouse_id склада в source.platform_station.platform_id, PVZ id — в destination.platform_station.platform_id, last_mile_policy=self_pickup; pickup windows необязательны для /offers/create quote.";
+    return "Основной сценарий warehouse_to_pickup_point: нужен сохранённый connection, выбранный склад Delivery Hub и destination PVZ id. Для price quote backend отправляет Yandex /offers/calculate с address.fullname, координатами, items, places и billing_info; provider_warehouse_id/platform_station_id не обязателен для цены и нужен для pickup windows/создания отправления.";
   }
 
   if (modeCode === "dropoff_point_to_pickup_point") {
@@ -193,13 +193,13 @@ export function getFieldRequirementText(input: {
         ? "Необязательно при редактировании: оставьте поле пустым, чтобы сохранить текущий sealed token. Заполняйте только для создания или ротации токена."
         : "Обязательно при создании: вставьте Yandex token один раз. После сохранения поле станет пустым и write-only.";
     case "warehouse":
-      return "Обязательно для warehouse_to_pickup_point: выберите склад, у которого provider_warehouse_id заполнен Yandex platform_station_id. Он уйдёт в source.platform_station.platform_id.";
+      return "Обязательно выбрать склад для warehouse_to_pickup_point. provider_warehouse_id/platform_station_id необязателен для расчёта цены через Yandex /offers/calculate; заполняйте его для pickup windows/создания отправления, если Yandex выдал station id.";
     case "warehouse_origin_address":
-      return "Обязательно для Yandex check-price: страна, город и строка адреса продавца/склада. Этот адрес backend использует как origin route point; storefront его не отправляет и секретов здесь нет.";
+      return "Обязательно для Yandex /offers/calculate: страна, город и строка адреса продавца/склада. Город должен быть городом (например Москва), не страной (Russia/RU/Россия). Storefront этот адрес не отправляет и секретов здесь нет.";
     case "warehouse_postal_code":
-      return "Необязательно, но полезно для точности check-price: индекс добавляется в origin fullname и хранится в metadata.postal_code.";
+      return "Необязательно, но полезно для точности /offers/calculate: индекс добавляется в origin fullname и хранится в metadata.postal_code.";
     case "warehouse_coordinates":
-      return "Необязательно: долгота/широта склада для Yandex route point. Значения сохраняются как metadata.coordinates=[lng, lat].";
+      return "Необязательно: долгота/широта склада для Yandex route point. Если заполнены, должны быть числовыми и соответствовать адресу склада; сохраняются как metadata.coordinates=[lng, lat].";
     case "warehouse_contact":
       return "Необязательно: контакт склада для provider route point. Токены, auth headers и provider DTO здесь не сохраняются.";
     case "destination_point":
@@ -874,7 +874,7 @@ export function getTestQuoteCapability(
 
   if (input.mode_code === "warehouse_to_pickup_point") {
     if (!hasText(input.warehouse_id)) {
-      blockingReasons.push("склад с provider_warehouse_id/platform_station_id");
+      blockingReasons.push("склад с адресом origin для /offers/calculate");
     }
 
   }
@@ -2418,8 +2418,8 @@ export function getWarehouseOptionLabel(warehouse: DeliveryWarehouse) {
     .filter(Boolean)
     .join(", ");
   const providerRef = warehouse.provider_warehouse_id
-    ? ` · provider: ${warehouse.provider_warehouse_id}`
-    : "";
+    ? ` · station: ${warehouse.provider_warehouse_id}`
+    : " · station optional for price";
 
   return `${warehouse.name}${location ? ` · ${location}` : ""}${providerRef}`;
 }

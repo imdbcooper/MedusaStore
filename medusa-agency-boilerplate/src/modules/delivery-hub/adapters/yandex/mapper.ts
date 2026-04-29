@@ -4,6 +4,7 @@ import type { DeliveryPickupPoint } from "../../domain/pickup-point"
 import { DeliveryHubError } from "../../errors"
 import type { DeliveryPickupWindow } from "../../domain/pickup-window"
 import type {
+  YandexCalculateOffersDto,
   YandexCheckPriceDto,
   YandexPickupPointDto,
   YandexPickupWindowDto,
@@ -162,6 +163,62 @@ export function mapYandexCheckPriceQuote(
   })
 }
 
+export function mapYandexCalculateQuote(
+  response: YandexCalculateOffersDto,
+  input: {
+    mode_code: string
+    destination_point_id: string
+    quote_key: string
+    pickup_window_options?: DeliveryPickupWindow[]
+  }
+): DeliveryQuote {
+  const offers = extractYandexCalculateOffers(response)
+  const offer = selectBestYandexCalculateOffer(offers)
+
+  if (!offer) {
+    throw createYandexCalculateShapeError("offers", response, "missing_or_empty_offers")
+  }
+
+  const pricing = parseYandexPricing(offer)
+  const amount = pricing.amount
+  const currency = pricing.currency
+
+  if (amount === null || amount < 0) {
+    throw createYandexCalculateShapeError("price|pricing_total|pricing", response, "missing_or_invalid_amount")
+  }
+
+  if (!currency) {
+    throw createYandexCalculateShapeError("currency|pricing_total|pricing", response, "missing_or_invalid_currency")
+  }
+
+  return buildYandexQuote({
+    mode_code: input.mode_code,
+    destination_point_id: input.destination_point_id,
+    quote_key: input.quote_key,
+    amount,
+    currency,
+    delivery_eta_min: normalizeEtaDays(
+      offer.eta?.days_min,
+      offer.offer_details?.delivery_interval?.min ?? offer.delivery_interval?.min
+    ),
+    delivery_eta_max:
+      normalizeEtaDays(
+        offer.eta?.days_max,
+        offer.offer_details?.delivery_interval?.max ?? offer.delivery_interval?.max
+      ) ??
+      normalizeEtaDays(
+        offer.eta?.days_min,
+        offer.offer_details?.delivery_interval?.min ?? offer.delivery_interval?.min
+      ),
+    pickup_window_options: input.pickup_window_options ?? [],
+    raw_reference: {
+      provider: DELIVERY_HUB_PROVIDER_YANDEX,
+      provider_price_endpoint: "offers-calculate",
+      provider_offer_present: true,
+    },
+  })
+}
+
 function buildYandexPickupPointAddressLabel(dto: YandexPickupPointDto) {
   const address = dto.address ?? null
   const fullAddress = normalizeNullableString(address?.full_address)
@@ -255,6 +312,67 @@ function createYandexOfferShapeError(
   })
 }
 
+function extractYandexCalculateOffers(response: YandexCalculateOffersDto): YandexPricingOfferDto[] {
+  if (Array.isArray(response.offers)) {
+    return response.offers
+  }
+
+  if (Array.isArray(response.data?.offers)) {
+    return response.data.offers
+  }
+
+  return []
+}
+
+function selectBestYandexCalculateOffer(offers: YandexPricingOfferDto[]) {
+  return offers
+    .map((offer) => ({
+      offer,
+      amount: parseYandexPricing(offer).amount,
+    }))
+    .filter((entry): entry is { offer: YandexPricingOfferDto; amount: number } =>
+      entry.amount !== null && entry.amount >= 0
+    )
+    .sort((left, right) => left.amount - right.amount)[0]?.offer ?? offers[0] ?? null
+}
+
+function createYandexCalculateShapeError(
+  field: string,
+  response: YandexCalculateOffersDto,
+  reason: string
+) {
+  return new DeliveryHubError({
+    code: "DELIVERY_HUB_PROVIDER_ERROR",
+    message: `Yandex Delivery response shape drift: invalid offers-calculate ${field}`,
+    status: 502,
+    details: {
+      provider_status: "ok",
+      error_category: "provider_shape",
+      reason,
+      expected_field: field,
+      response_shape: describeYandexCalculateResponseShape(response),
+    },
+  })
+}
+
+function describeYandexCalculateResponseShape(response: YandexCalculateOffersDto): Record<string, unknown> {
+  const root = response && typeof response === "object" ? response as Record<string, unknown> : {}
+  const data = root.data && typeof root.data === "object" ? root.data as Record<string, unknown> : null
+  const offers = Array.isArray(root.offers)
+    ? root.offers
+    : Array.isArray(data?.offers)
+      ? data.offers
+      : []
+
+  return {
+    type: response && typeof response === "object" ? "object" : typeof response,
+    keys: Object.keys(root).sort(),
+    data_keys: data ? Object.keys(data).sort() : null,
+    offers_count: offers.length,
+    first_offer_shape: offers.length ? describeYandexOfferShape(offers[0] as YandexPricingOfferDto) : null,
+  }
+}
+
 function describeYandexOfferShape(offer: YandexPricingOfferDto): Record<string, unknown> {
   const root = offer && typeof offer === "object" ? offer as Record<string, unknown> : {}
   const price = root.price && typeof root.price === "object" ? root.price as Record<string, unknown> : null
@@ -316,11 +434,14 @@ function parseYandexPricing(offer: YandexPricingOfferDto) {
   }
 
   const parsedPricing = parseYandexMoney(offer.offer_details?.pricing_total) ??
-    parseYandexMoney(offer.offer_details?.pricing)
+    parseYandexMoney(offer.offer_details?.pricing) ??
+    parseYandexMoney(offer.pricing_total) ??
+    parseYandexMoney(offer.pricing)
+  const fallbackCurrency = normalizeNullableString(offer.currency)
 
   return {
     amount: parsedPricing?.amount ?? null,
-    currency: parsedPricing?.currency ?? null,
+    currency: parsedPricing?.currency ?? fallbackCurrency,
   }
 }
 

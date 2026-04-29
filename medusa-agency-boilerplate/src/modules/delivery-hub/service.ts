@@ -798,7 +798,7 @@ export class DeliveryHubService {
         : null
     const resolvedWarehouseId =
       input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
-        ? this.resolveWarehouseProviderRefFromRecord(connection, warehouse, input.warehouse_id)
+        ? this.resolveWarehouseQuoteRefFromRecord(warehouse)
         : null
     const originAddress =
       input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
@@ -1251,7 +1251,7 @@ export class DeliveryHubService {
         : null
     const resolvedWarehouseId =
       input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
-        ? this.resolveWarehouseProviderRefFromRecord(connection, warehouse, input.warehouse_id)
+        ? this.resolveWarehouseQuoteRefFromRecord(warehouse)
         : null
     const originAddress = input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
       ? this.resolveWarehouseRoutePointAddress(warehouse)
@@ -1641,6 +1641,22 @@ export class DeliveryHubService {
       getDeliveryHubAdapter(providerCode)
     }
 
+    const city = normalizeNullableText(input.city)
+
+    if (providerCode === DELIVERY_HUB_PROVIDER_YANDEX && city && isCountryLikeWarehouseCity(city)) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message:
+          "Yandex warehouse city must be a city, not a country. Use Москва, not Russia/RU/Россия.",
+        status: 400,
+        details: {
+          field: "warehouse.city",
+          operator_hint:
+            "Укажите город склада, например Москва. Страну храните в country_code, не в поле city.",
+        },
+      })
+    }
+
     const record = await upsertDeliveryWarehouse(this.pg, {
       id: input.id,
       name: input.name,
@@ -1889,13 +1905,23 @@ export class DeliveryHubService {
       const explicitWarehouseId = normalizeNullableText(warehouseId)
       throw new DeliveryHubError({
         code: "DELIVERY_HUB_VALIDATION_ERROR",
-        message: "Warehouse provider mapping is required for this connection",
+        message: "Warehouse platform station id is required for Yandex pickup windows or shipment operations, but not for price quotes via /offers/calculate",
         status: 400,
         details: {
           field: explicitWarehouseId ? "warehouse_id" : "config.default_warehouse_id",
           warehouse_id: warehouse.id,
+          operator_hint:
+            "Для расчёта цены Yandex /offers/calculate использует адрес/координаты склада. Заполните platform station id только для окон самопривоза/создания отправления.",
         },
       })
+    }
+
+    return warehouse.provider_warehouse_id ?? warehouse.id
+  }
+
+  private resolveWarehouseQuoteRefFromRecord(warehouse: DeliveryWarehouseRecord | null) {
+    if (!warehouse) {
+      return null
     }
 
     return warehouse.provider_warehouse_id ?? warehouse.id
@@ -1962,12 +1988,11 @@ export class DeliveryHubService {
       [countryCode, postalCode, city, addressLine]
         .filter((value): value is string => !!value)
         .join(", ")
-    const coordinates = normalizeRoutePointCoordinates(
-      metadata.coordinates ??
-        (metadata.lng !== undefined || metadata.lat !== undefined
-          ? [metadata.lng, metadata.lat]
-          : null)
-    )
+    const rawCoordinates = metadata.coordinates ??
+      (metadata.lng !== undefined || metadata.lat !== undefined
+        ? [metadata.lng, metadata.lat]
+        : null)
+    const coordinates = normalizeRoutePointCoordinates(rawCoordinates)
 
     if (!countryCode) {
       missingFields.push("warehouse.country_code")
@@ -1975,6 +2000,37 @@ export class DeliveryHubService {
 
     if (!city) {
       missingFields.push("warehouse.city")
+    }
+
+    if (city && isCountryLikeWarehouseCity(city)) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message:
+          "Yandex Delivery /offers/calculate requires warehouse city to be a city, not a country. Use Москва, not Russia/RU/Россия.",
+        status: 409,
+        details: {
+          field: "warehouse.city",
+          warehouse_id: warehouse.id,
+          operator_hint:
+            "Укажите город склада, например Москва. Страну храните в country_code, не в поле city.",
+        },
+      })
+    }
+
+    if (rawCoordinates !== null && rawCoordinates !== undefined && !coordinates) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message:
+          "Yandex Delivery /offers/calculate requires warehouse coordinates to be numeric [lng, lat] when provided.",
+        status: 409,
+        details: {
+          field: "warehouse.metadata.coordinates",
+          warehouse_id: warehouse.id,
+          required_shape: "[lng, lat]",
+          operator_hint:
+            "Исправьте координаты склада: числовые longitude/latitude [lng, lat], соответствующие адресу склада.",
+        },
+      })
     }
 
     if (!addressLine && !normalizeNullableText(metadata.fullname)) {
@@ -1985,7 +2041,7 @@ export class DeliveryHubService {
       throw new DeliveryHubError({
         code: "DELIVERY_HUB_VALIDATION_ERROR",
         message:
-          "Yandex Delivery check-price requires seller/warehouse origin address. Fill country, city and address in Admin Settings → Delivery → Адрес продавца / склада.",
+          "Yandex Delivery /offers/calculate requires seller/warehouse origin address. Fill country, city and address in Admin Settings → Delivery → Адрес продавца / склада.",
         status: 409,
         details: {
           field: "warehouse.origin_address",
@@ -2135,6 +2191,10 @@ function normalizeProviderErrorCategory(error?: DeliveryHubError) {
 
   const providerStatus = error.details?.provider_status
 
+  if (typeof error.details?.error_category === "string" && error.details.error_category.trim()) {
+    return error.details.error_category.trim()
+  }
+
   if (typeof providerStatus === "number") {
     if (providerStatus === 401) {
       return "auth"
@@ -2150,13 +2210,23 @@ function normalizeProviderErrorCategory(error?: DeliveryHubError) {
     }
   }
 
-  if (typeof error.details?.error_category === "string" && error.details.error_category.trim()) {
-    return error.details.error_category.trim()
-  }
-
   return error.status >= 500 ? "provider_error" : "validation"
 }
 
+
+function isCountryLikeWarehouseCity(value: string) {
+  const normalized = value.trim().toLocaleLowerCase("ru-RU")
+
+  return [
+    "russia",
+    "ru",
+    "rus",
+    "россия",
+    "рф",
+    "russian federation",
+    "российская федерация",
+  ].includes(normalized)
+}
 
 function resolveQuoteRoutePointAddress(
   value: DeliveryHubRoutePointAddressInput | null | undefined,
@@ -2167,13 +2237,13 @@ function resolveQuoteRoutePointAddress(
   if (!fullname) {
     throw new DeliveryHubError({
       code: "DELIVERY_HUB_VALIDATION_ERROR",
-      message: `Yandex Delivery check-price requires ${field}.fullname. Select a pickup point with address in Admin/Store before requesting quote.`,
+      message: `Yandex Delivery /offers/calculate requires ${field}.fullname. Select a pickup point with address in Admin/Store before requesting quote.`,
       status: 409,
       details: {
         field,
         required_shape: "{ fullname, coordinates?, contact? }",
         operator_hint:
-          "Выберите ПВЗ через поиск, чтобы quote path получил destination address для Yandex check-price.",
+          "Выберите ПВЗ через поиск, чтобы quote path получил destination address для Yandex /offers/calculate.",
       },
     })
   }
@@ -2204,9 +2274,12 @@ function buildYandexCorrectedCheckPricePayloadSummary(error: DeliveryHubError) {
   const routePoints = Array.isArray(payload.route_points)
     ? payload.route_points.map((point) => {
         const routePoint = asRecord(point)
+        const address = asRecord(routePoint.address)
+
         return {
           type: normalizeNullableText(routePoint.type),
-          has_fullname: !!normalizeNullableText(routePoint.fullname),
+          has_fullname: !!normalizeNullableText(address.fullname ?? routePoint.fullname),
+          has_address_fullname: !!normalizeNullableText(address.fullname),
           has_coordinates: Array.isArray(routePoint.coordinates),
           has_contact: !!routePoint.contact,
         }
@@ -2218,7 +2291,7 @@ function buildYandexCorrectedCheckPricePayloadSummary(error: DeliveryHubError) {
   }
 
   return redactYandexPayload({
-    endpoint_family: "legacy_check_price",
+    endpoint_family: "offers_calculate",
     path: request.path ?? null,
     route_points: routePoints,
     item_count: Array.isArray(payload.items) ? payload.items.length : null,

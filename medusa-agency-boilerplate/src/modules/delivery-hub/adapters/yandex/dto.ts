@@ -54,6 +54,25 @@ export type YandexPricingOfferDto = {
     pricing?: string | null
     pricing_total?: string | null
   } | null
+  pricing?: string | null
+  pricing_total?: string | null
+  delivery_interval?: {
+    min?: string | null
+    max?: string | null
+    policy?: string | null
+  } | null
+  pickup_interval?: {
+    min?: string | null
+    max?: string | null
+  } | null
+  currency?: string | null
+}
+
+export type YandexCalculateOffersDto = {
+  offers?: YandexPricingOfferDto[] | null
+  data?: {
+    offers?: YandexPricingOfferDto[] | null
+  } | null
 }
 
 export type YandexCheckPriceDto = {

@@ -1803,8 +1803,9 @@ const DeliverySettingsPage = () => {
             <div>
               <Heading level="h2">Адрес продавца / склада</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Этот origin address используется backend для Yandex check-price
-                как адрес продавца/склада. Здесь нет токенов, auth headers или
+                Этот origin address используется backend для Yandex /offers/calculate
+                как адрес продавца/склада. Укажите город как город (Москва), не
+                страну (Russia/RU/Россия). Здесь нет токенов, auth headers или
                 raw provider DTO; storefront этот адрес не отправляет.
               </Text>
               {activeConnection?.config?.default_warehouse_id ? (
@@ -1926,11 +1927,16 @@ const DeliverySettingsPage = () => {
                 </FieldLabel>
                 <Input
                   id="warehouse-city"
+                  placeholder="Москва, не Russia/RU/Россия"
                   value={warehouseForm.city}
                   onChange={(event) =>
                     handleWarehouseField("city", event.target.value)
                   }
                 />
+                <Text className="text-ui-fg-subtle mt-2 text-sm">
+                  Укажите город склада, например Москва; страну храните в поле
+                  «Код страны».
+                </Text>
               </div>
 
               <div>
@@ -2051,8 +2057,8 @@ const DeliverySettingsPage = () => {
               </div>
 
               <div>
-                <FieldLabel htmlFor="warehouse-provider-id" required={true}>
-                  Provider warehouse id / platform_station_id
+                <FieldLabel htmlFor="warehouse-provider-id" required={false}>
+                  Platform station id (optional for price quote)
                 </FieldLabel>
                 <Input
                   id="warehouse-provider-id"
@@ -3935,8 +3941,8 @@ const DeliverySettingsPage = () => {
               />
               <Text className="text-ui-fg-subtle mt-2 text-sm">
                 {testQuoteForm.destination_address
-                  ? "Destination address выбран из поиска ПВЗ и будет отправлен как safe check-price route point."
-                  : "Для Yandex check-price выберите ПВЗ через блок «Найти ПВЗ», чтобы backend получил destination address."}
+                  ? "Destination address выбран из поиска ПВЗ и будет отправлен как safe /offers/calculate route point."
+                  : "Для Yandex /offers/calculate выберите ПВЗ через блок «Найти ПВЗ», чтобы backend получил destination address."}
               </Text>
             </div>
 

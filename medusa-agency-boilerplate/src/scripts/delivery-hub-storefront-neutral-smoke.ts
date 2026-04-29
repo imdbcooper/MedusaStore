@@ -55,6 +55,8 @@ type DeliveryHubStorefrontNeutralSmokeArgs = {
   pickup_point_name: string | null
   pickup_point_address: string | null
   pickup_point_city: string | null
+  pickup_point_lat: number | null
+  pickup_point_lng: number | null
 }
 
 type DeliveryHubStorefrontNeutralSmokeKeyDiscovery = {
@@ -107,6 +109,7 @@ type DeliveryHubStorefrontNeutralSmokeRunResult = {
     code: string | null
     message: string
     type?: string | null
+    details?: unknown
   } | null
 }
 
@@ -213,6 +216,12 @@ export function parseDeliveryHubStorefrontNeutralSmokeArgs(
     pickup_point_city: normalizeNullableText(
       readArgOrEnv(parsed, env, "pickup-point-city", "DELIVERY_HUB_STORE_SMOKE_PICKUP_POINT_CITY")
     ),
+    pickup_point_lat: normalizeFiniteNumber(
+      readArgOrEnv(parsed, env, "pickup-point-lat", "DELIVERY_HUB_STORE_SMOKE_PICKUP_POINT_LAT")
+    ),
+    pickup_point_lng: normalizeFiniteNumber(
+      readArgOrEnv(parsed, env, "pickup-point-lng", "DELIVERY_HUB_STORE_SMOKE_PICKUP_POINT_LNG")
+    ),
   }
 }
 
@@ -264,13 +273,14 @@ export async function runDeliveryHubStorefrontNeutralSmoke(
   const generatedAt = new Date().toISOString()
 
   try {
-    const quoteRequestBody = buildQuoteRequestBody(input)
-    const quoteResponse = await postJson(input, QUOTE_ENDPOINT, quoteRequestBody)
+    const hydratedInput = await hydratePickupPointAddressForQuote(input)
+    const quoteRequestBody = buildQuoteRequestBody(hydratedInput)
+    const quoteResponse = await postJson(hydratedInput, QUOTE_ENDPOINT, quoteRequestBody)
 
     if (!isHttpSuccess(quoteResponse.http_status)) {
       return {
         generated_at: generatedAt,
-        input,
+        input: hydratedInput,
         key_discovery: keyDiscovery,
         input_discovery: inputDiscovery,
         quote_http_status: quoteResponse.http_status,
@@ -291,7 +301,7 @@ export async function runDeliveryHubStorefrontNeutralSmoke(
     if (!selectedQuote) {
       return {
         generated_at: generatedAt,
-        input,
+        input: hydratedInput,
         key_discovery: keyDiscovery,
         input_discovery: inputDiscovery,
         quote_http_status: quoteResponse.http_status,
@@ -309,15 +319,15 @@ export async function runDeliveryHubStorefrontNeutralSmoke(
     }
 
     const selectionResponse = await postJson(
-      input,
+      hydratedInput,
       SELECTION_ENDPOINT,
-      buildSelectionRequestBody(input, selectedQuote, quoteResponse.body)
+      buildSelectionRequestBody(hydratedInput, selectedQuote, quoteResponse.body)
     )
 
     if (!isHttpSuccess(selectionResponse.http_status)) {
       return {
         generated_at: generatedAt,
-        input,
+        input: hydratedInput,
         key_discovery: keyDiscovery,
         input_discovery: inputDiscovery,
         quote_http_status: quoteResponse.http_status,
@@ -335,7 +345,7 @@ export async function runDeliveryHubStorefrontNeutralSmoke(
 
     return {
       generated_at: generatedAt,
-      input,
+      input: hydratedInput,
       key_discovery: keyDiscovery,
       input_discovery: inputDiscovery,
       quote_http_status: quoteResponse.http_status,
@@ -452,6 +462,7 @@ export function buildDeliveryHubStorefrontNeutralSmokeSafeSummary(
           stage: result.error.stage,
           code: safeString(result.error.code),
           message: safeString(result.error.message),
+          details: buildSafeSmokeErrorDetails(result.error.details),
         }
       : null,
     safety: {
@@ -773,6 +784,58 @@ async function resolveOptionalSmokeInputs(
   }
 }
 
+async function hydratePickupPointAddressForQuote(input: DeliveryHubStorefrontNeutralSmokeArgs) {
+  if (
+    input.mode_code !== "warehouse_to_pickup_point" ||
+    input.pickup_point_address ||
+    !input.connection_id ||
+    !input.destination_point_id
+  ) {
+    return input
+  }
+
+  try {
+    const response = await fetch(
+      new URL(
+        `/store/delivery/pickup-points?connection_id=${encodeURIComponent(input.connection_id)}&country_code=RU`,
+        input.backend_url
+      ),
+      {
+        method: "GET",
+        headers: input.publishable_api_key
+          ? { "x-publishable-api-key": input.publishable_api_key }
+          : undefined,
+      }
+    )
+    const body = await parseResponseBody(response)
+    const points = asRecord(body).points
+    const point = Array.isArray(points)
+      ? points.find((candidate) => asRecord(candidate).provider_point_id === input.destination_point_id)
+      : null
+    const record = asRecord(point)
+    const address = safeString(record.address)
+    const name = safeString(record.name)
+    const city = safeString(record.city)
+    const lat = safeNumber(record.lat)
+    const lng = safeNumber(record.lng)
+
+    if (!address) {
+      return input
+    }
+
+    return {
+      ...input,
+      pickup_point_name: input.pickup_point_name ?? name,
+      pickup_point_address: address,
+      pickup_point_city: input.pickup_point_city ?? city,
+      pickup_point_lat: input.pickup_point_lat ?? lat,
+      pickup_point_lng: input.pickup_point_lng ?? lng,
+    }
+  } catch (_error) {
+    return input
+  }
+}
+
 function selectPublishableKey<T extends { title?: string | null; token?: string | null }>(keys: T[]) {
   return keys.find((candidate) => candidate.title === DEFAULT_PUBLISHABLE_KEY_TITLE && candidate.token) ??
     keys.find((candidate) => candidate.title === LOCAL_SMOKE_PUBLISHABLE_KEY_TITLE && candidate.token) ??
@@ -834,11 +897,24 @@ function omitPublishableKeyValue(
 }
 
 function buildQuoteRequestBody(input: DeliveryHubStorefrontNeutralSmokeArgs) {
+  const destinationFullname = [input.pickup_point_city, input.pickup_point_address]
+    .filter(Boolean)
+    .join(", ")
+  const destinationCoordinates = input.pickup_point_lng !== null && input.pickup_point_lat !== null
+    ? [input.pickup_point_lng, input.pickup_point_lat]
+    : null
+
   return {
     connection_id: input.connection_id,
     mode_code: input.mode_code,
     currency_code: input.currency_code,
     destination_point_id: input.destination_point_id,
+    destination_address: destinationFullname
+      ? {
+          fullname: destinationFullname,
+          coordinates: destinationCoordinates,
+        }
+      : undefined,
     origin_point_id:
       input.mode_code === "dropoff_point_to_pickup_point" ? input.origin_point_id : undefined,
     warehouse_id: input.mode_code === "warehouse_to_pickup_point" ? input.warehouse_id : undefined,
@@ -870,21 +946,21 @@ function buildSelectionRequestBody(
       pickup_point_required: selectedQuote.pickup_point_required,
       pickup_window_required: selectedQuote.pickup_window_required,
     },
-    pickup_point: {
-      provider_point_id: input.destination_point_id,
-      provider_point_code: null,
-      name: input.pickup_point_name ?? "Smoke selected pickup point",
-      address: input.pickup_point_address ?? "Smoke pickup point address placeholder",
-      city: input.pickup_point_city ?? null,
-      region: null,
-      postal_code: null,
-      lat: null,
-      lng: null,
-      is_origin_dropoff_allowed: false,
-      is_destination_pickup_allowed: true,
-      payment_methods: [],
-    },
-    pickup_window: null,
+      pickup_point: {
+        provider_point_id: input.destination_point_id,
+        provider_point_code: null,
+        name: input.pickup_point_name ?? "Smoke selected pickup point",
+        address: input.pickup_point_address ?? "Smoke pickup point address placeholder",
+        city: input.pickup_point_city ?? null,
+        region: null,
+        postal_code: null,
+        lat: input.pickup_point_lat,
+        lng: input.pickup_point_lng,
+        is_origin_dropoff_allowed: false,
+        is_destination_pickup_allowed: true,
+        payment_methods: [],
+      },
+pickup_window: null,
     correlation_id: safeString(quoteDiagnostics.correlation_id),
   }
 }
@@ -955,6 +1031,34 @@ function extractSafeError(body: unknown, fallbackMessage: string) {
     code: code ?? type,
     type,
     message,
+    details: error.details,
+  }
+}
+
+function buildSafeSmokeErrorDetails(value: unknown) {
+  const details = asRecord(value)
+
+  if (!Object.keys(details).length) {
+    return null
+  }
+
+  const response = asRecord(details.response)
+
+  return {
+    provider_status: safeString(details.provider_status),
+    error_category: safeString(details.error_category),
+    provider_code: safeString(details.provider_code),
+    customer_safe: details.customer_safe === true,
+    operator_hint: safeString(details.operator_hint),
+    path: safeString(asRecord(details.request).path),
+    response: Object.keys(response).length
+      ? {
+          body_type: safeString(response.body_type),
+          provider_code: safeString(response.provider_code),
+          redacted: response.redacted === true,
+          summary: safeString(response.summary),
+        }
+      : null,
   }
 }
 
@@ -1060,6 +1164,25 @@ function safeString(value: unknown): string | null {
 
 function safeNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+function normalizeFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null
+  }
+
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const trimmed = value.trim()
+
+  if (!trimmed) {
+    return null
+  }
+
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 function sanitizeText(value: string): string {

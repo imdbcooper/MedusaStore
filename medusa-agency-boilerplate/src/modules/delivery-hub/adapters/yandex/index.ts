@@ -10,13 +10,13 @@ import {
   YANDEX_DELIVERY_LEGACY_API_PATH,
 } from "./endpoints"
 import {
-  mapYandexCheckPriceQuote,
+  mapYandexCalculateQuote,
   mapYandexPickupPoint,
   mapYandexPickupWindow,
   mapYandexQuote,
 } from "./mapper"
 import type {
-  YandexCheckPriceDto,
+  YandexCalculateOffersDto,
   YandexPickupPointDto,
   YandexPickupWindowDto,
   YandexPricingOfferDto,
@@ -68,21 +68,21 @@ export function createYandexDeliveryAdapter(): DeliveryHubAdapter {
     },
     async quoteWarehouseToPickupPoint(context, input) {
       const client = new YandexDeliveryClient(context.connection)
-      const routeQuote = buildYandexCheckPriceRouteQuoteInput({
+      const routeQuote = buildYandexCalculateRouteQuoteInput({
         mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
         source_address: input.origin_address,
         destination_address: input.destination_address,
         destination_point_id: input.destination_point_id,
         items: input.items,
       })
-      const response = await client.postLegacy<YandexCheckPriceDto>(
-        YANDEX_DELIVERY_LEGACY_API_PATH.checkPrice,
+      const response = await client.postLegacy<YandexCalculateOffersDto>(
+        YANDEX_DELIVERY_LEGACY_API_PATH.offersCalculate,
         routeQuote.payload,
         context.correlation_id
       )
 
       return [
-        mapYandexCheckPriceQuote(response, {
+        mapYandexCalculateQuote(response, {
           mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
           destination_point_id: input.destination_point_id,
           quote_key: routeQuote.quote_key,
@@ -198,7 +198,7 @@ function buildYandexPickupWindowsPayload(input: YandexPickupWindowsInput) {
   return payload
 }
 
-function buildYandexCheckPriceRouteQuoteInput(input: {
+function buildYandexCalculateRouteQuoteInput(input: {
   mode_code: string
   source_address?: DeliveryHubRoutePointAddressInput | null
   destination_address?: DeliveryHubRoutePointAddressInput | null
@@ -207,19 +207,27 @@ function buildYandexCheckPriceRouteQuoteInput(input: {
 }) {
   const sourcePoint = requireYandexRoutePointAddress(input.source_address, "origin_address")
   const destinationPoint = requireYandexRoutePointAddress(input.destination_address, "destination_address")
-  const quoteKey = buildYandexCheckPriceQuoteKey(input.mode_code, input.destination_point_id)
+  const quoteKey = buildYandexCalculateQuoteKey(input.mode_code, input.destination_point_id)
 
   return {
     quote_key: quoteKey,
     payload: {
       route_points: [
-        buildYandexCheckPriceRoutePoint(1, "source", sourcePoint),
-        buildYandexCheckPriceRoutePoint(2, "destination", destinationPoint),
+        buildYandexCalculateRoutePoint(1, "source", sourcePoint),
+        buildYandexCalculateRoutePoint(2, "destination", destinationPoint),
       ],
-      items: buildYandexCheckPriceItems(input.items),
-      places: normalizeYandexPlaces(input.items),
+      items: buildYandexCalculateItems(input.items),
+      places: buildYandexCalculatePlaces(input.items),
       billing_info: {
         payment_method: "already_paid",
+      },
+      last_mile_policy: "self_pickup",
+      destination: buildYandexCalculatePlatformStationLocation(input.destination_point_id, destinationPoint),
+      recipient_info: {
+        first_name: "Delivery",
+        last_name: "Hub",
+        phone: destinationPoint.contact.phone,
+        email: "delivery-hub-quote@example.invalid",
       },
     },
   }
@@ -234,7 +242,7 @@ function requireYandexRoutePointAddress(
   if (!fullname) {
     throw new DeliveryHubError({
       code: "DELIVERY_HUB_VALIDATION_ERROR",
-      message: `Yandex Delivery check-price requires ${field}.fullname`,
+      message: `Yandex Delivery /offers/calculate requires ${field}.fullname`,
       status: 400,
       details: {
         field,
@@ -257,7 +265,7 @@ function requireYandexRoutePointAddress(
   }
 }
 
-function buildYandexCheckPriceRoutePoint(
+function buildYandexCalculateRoutePoint(
   id: number,
   type: "source" | "destination",
   point: ReturnType<typeof requireYandexRoutePointAddress>
@@ -266,25 +274,61 @@ function buildYandexCheckPriceRoutePoint(
     id,
     type,
     ...(point.coordinates ? { coordinates: point.coordinates } : {}),
-    fullname: point.fullname,
+    address: {
+      fullname: point.fullname,
+    },
     contact: point.contact,
   }
 }
 
-function buildYandexCheckPriceItems(items: YandexQuoteItemsInput) {
+function buildYandexCalculatePlatformStationLocation(
+  platformStationId: string,
+  point: ReturnType<typeof requireYandexRoutePointAddress>
+) {
+  return {
+    type: "platform_station",
+    platform_station: {
+      platform_id: platformStationId,
+    },
+    custom_location: {
+      ...(point.coordinates ? { coordinates: point.coordinates } : {}),
+      address: {
+        fullname: point.fullname,
+      },
+      contact: point.contact,
+    },
+    interval_utc: null,
+  }
+}
+
+function buildYandexCalculateItems(items: YandexQuoteItemsInput) {
   const sourceItems = Array.isArray(items) && items.length ? items : [{}]
 
   return sourceItems.map((item, index) => ({
     title: `Delivery Hub item ${index + 1}`,
+    name: `Delivery Hub item ${index + 1}`,
     quantity: normalizePositiveInteger(item.quantity, 1),
+    count: normalizePositiveInteger(item.quantity, 1),
     cost_currency: "RUB",
     cost_value: String(normalizeNonNegativeInteger(item.price, 0)),
+    billing_details: {
+      unit_price: normalizeNonNegativeInteger(item.price, 0),
+      assessed_unit_price: normalizeNonNegativeInteger(item.price, 0),
+    },
     weight: normalizeWeightKg(item.weight_grams),
     size: {
       length: 0.1,
       width: 0.1,
       height: 0.1,
     },
+    physical_dims: buildYandexPhysicalDims(item),
+  }))
+}
+
+function buildYandexCalculatePlaces(items: YandexQuoteItemsInput) {
+  return normalizeYandexPlaces(items).map((place, index) => ({
+    ...place,
+    barcode: buildYandexDiagnosticPlaceBarcode(index),
   }))
 }
 
@@ -298,14 +342,14 @@ function normalizeWeightKg(value: unknown) {
   return Math.max(0.001, grams / 1000)
 }
 
-function buildYandexCheckPriceQuoteKey(modeCode: string, destinationPointId: string) {
+function buildYandexCalculateQuoteKey(modeCode: string, destinationPointId: string) {
   const fingerprint = crypto
     .createHash("sha256")
     .update(`${modeCode}:${destinationPointId}:${Date.now()}:${crypto.randomUUID()}`)
     .digest("hex")
     .slice(0, 32)
 
-  return `check_price_${fingerprint}`
+  return `offers_calculate_${fingerprint}`
 }
 
 function normalizeYandexCoordinates(value: unknown): [number, number] | null {

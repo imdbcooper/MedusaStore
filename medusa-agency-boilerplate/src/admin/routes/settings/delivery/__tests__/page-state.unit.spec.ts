@@ -265,10 +265,10 @@ describe("delivery admin settings page state", () => {
     );
 
     expect(getQuoteModeHint("warehouse_to_pickup_point")).toContain(
-      "source.platform_station.platform_id",
+      "Yandex /offers/calculate",
     );
     expect(getQuoteModeHint("warehouse_to_pickup_point")).toContain(
-      "pickup windows необязательны",
+      "platform_station_id не обязателен для цены",
     );
     expect(getQuoteModeHint("dropoff_point_to_pickup_point")).toContain(
       "available_for_dropoff=true",
@@ -303,7 +303,7 @@ describe("delivery admin settings page state", () => {
       "Обязательно при создании",
     );
     expect(getFieldRequirementText({ field: "warehouse" })).toContain(
-      "source.platform_station.platform_id",
+      "необязателен для расчёта цены",
     );
     expect(getFieldRequirementText({ field: "destination_point" })).toContain(
       "destination.platform_station.platform_id",
@@ -311,7 +311,7 @@ describe("delivery admin settings page state", () => {
     expect(getFieldRequirementText({ field: "interval" })).toContain(
       "Необязательно для /offers/create Test quote",
     );
-    expect(getFieldRequirementText({ field: "warehouse_origin_address" })).toContain("Yandex check-price");
+    expect(getFieldRequirementText({ field: "warehouse_origin_address" })).toContain("Yandex /offers/calculate");
     expect(getFieldRequirementText({ field: "warehouse_coordinates" })).toContain("metadata.coordinates");
     expect(getFieldRequirementText({ field: "five_post" })).toContain("5 Post");
   });
@@ -518,7 +518,7 @@ describe("delivery admin settings page state", () => {
     };
 
     expect(getWarehouseOptionLabel(warehouse)).toBe(
-      "Main warehouse · 125009, Moscow, Tverskaya 1 · provider: YANDEX-01",
+      "Main warehouse · 125009, Moscow, Tverskaya 1 · station: YANDEX-01",
     );
     expect(getWarehousePostalCode(warehouse)).toBe("125009");
     expect(getWarehouseContactEmail(warehouse)).toBe("operator@example.test");
@@ -3310,7 +3310,7 @@ describe("delivery admin settings page state", () => {
     expect(missing.blockingReasons).toEqual([
       "сохранённое Yandex-подключение",
       "destination PVZ id из поиска ПВЗ",
-      "склад с provider_warehouse_id/platform_station_id",
+      "склад с адресом origin для /offers/calculate",
     ]);
     expect(missing.errorMessage).toContain("сохранённое Yandex-подключение");
 

@@ -141,7 +141,7 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
     ])
   })
 
-  it("uses documented check-price route-point shape for warehouse to PVZ quote", async () => {
+  it("uses documented offers-calculate route-point shape for warehouse to PVZ quote", async () => {
     const calls: Array<{ url: string; headers: Record<string, string>; body: any }> = []
     global.fetch = jest.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
       calls.push({
@@ -151,11 +151,15 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
       })
 
       return new Response(JSON.stringify({
-        price: "499.50",
-        currency_rules: {
-          code: "RUB",
-        },
-        eta: 2880,
+        offers: [
+          {
+            pricing_total: "499.50 RUB",
+            delivery_interval: {
+              min: "2026-01-18T07:00:00.000000Z",
+              max: "2026-01-18T10:00:00.000000Z",
+            },
+          },
+        ],
       }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -189,7 +193,7 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
     )
 
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe(`${YANDEX_DELIVERY_LEGACY_SANDBOX_API_BASE_URL}${YANDEX_DELIVERY_LEGACY_API_PATH.checkPrice}`)
+    expect(calls[0].url).toBe(`${YANDEX_DELIVERY_LEGACY_SANDBOX_API_BASE_URL}${YANDEX_DELIVERY_LEGACY_API_PATH.offersCalculate}`)
     expect(calls[0].headers).toMatchObject({
       Accept: "application/json",
       "Accept-Language": "ru",
@@ -200,7 +204,9 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
         {
           id: 1,
           type: "source",
-          fullname: "RU, Москва, Склад 1",
+          address: {
+            fullname: "RU, Москва, Склад 1",
+          },
           coordinates: [37.62, 55.76],
           contact: {
             name: "Seller",
@@ -210,7 +216,9 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
         {
           id: 2,
           type: "destination",
-          fullname: "125009, Москва, Тверская 1",
+          address: {
+            fullname: "125009, Москва, Тверская 1",
+          },
           coordinates: [37.61, 55.75],
           contact: {
             name: "Buyer",
@@ -247,20 +255,29 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
       },
     })
     expect(calls[0].body).not.toHaveProperty("source")
-    expect(calls[0].body).not.toHaveProperty("destination")
-    expect(calls[0].body).not.toHaveProperty("last_mile_policy")
+    expect(calls[0].body.destination).toMatchObject({
+      type: "platform_station",
+      platform_station: {
+        platform_id: "pvz_1",
+      },
+    })
+    expect(calls[0].body.last_mile_policy).toBe("self_pickup")
     expect(quotes).toEqual([
       expect.objectContaining({
         amount: 499.5,
         currency_code: "rub",
-        delivery_eta_min: 2,
-        delivery_eta_max: 2,
+        mode_code: "warehouse_to_pickup_point",
+        pickup_point_required: true,
         pickup_window_required: false,
+        raw_reference: expect.objectContaining({
+          provider_price_endpoint: "offers-calculate",
+        }),
       }),
     ])
+    expect(JSON.stringify(quotes[0].raw_reference)).not.toContain("offer_id")
   })
 
-  it("fails with validation error before provider call when check-price origin address is missing", async () => {
+  it("fails with validation error before provider call when offers-calculate origin address is missing", async () => {
     const fetchMock = jest.fn() as jest.MockedFunction<typeof fetch>
     global.fetch = fetchMock
 
@@ -286,6 +303,128 @@ describe("Delivery Hub Yandex documented Other-day API contract", () => {
     })
 
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("surfaces safe provider 409 diagnostics from offers-calculate without raw provider body", async () => {
+    global.fetch = jest.fn(async () => new Response(JSON.stringify({
+      code: "estimating.claim.no_zone_id",
+      message: "errors.suitable_offer_not_found",
+      raw_offer_id: "raw-offer-id-should-not-leak",
+      quote_reference: "raw-quote-reference-should-not-leak",
+    }), {
+      status: 409,
+      headers: { "content-type": "application/json" },
+    })) as typeof fetch
+
+    let capturedError: unknown = null
+
+    try {
+      await createYandexDeliveryAdapter().quoteWarehouseToPickupPoint(
+        {
+          connection: buildConnection({ mode: "test" }),
+          correlation_id: "corr-yandex-safe-409-test",
+        },
+        {
+          warehouse_id: "wh-internal-id",
+          destination_point_id: "pvz_1",
+          origin_address: {
+            fullname: "RU, Москва, Склад 1",
+            coordinates: [37.62, 55.76],
+          },
+          destination_address: {
+            fullname: "125009, Москва, Тверская 1",
+            coordinates: [37.61, 55.75],
+          },
+          items: [{ weight_grams: 500, price: 100 }],
+        }
+      )
+    } catch (error) {
+      capturedError = error
+    }
+
+    expect(capturedError).toMatchObject({
+      code: "DELIVERY_HUB_PROVIDER_ERROR",
+      status: 409,
+      details: expect.objectContaining({
+        provider_status: 409,
+        error_category: "provider_route_unavailable",
+        provider_code: "estimating.claim.no_zone_id",
+        customer_safe: true,
+        operator_hint: expect.stringContaining("origin→PVZ route"),
+        request: expect.objectContaining({
+          path: YANDEX_DELIVERY_LEGACY_API_PATH.offersCalculate,
+        }),
+        response: expect.objectContaining({
+          body_type: "json",
+          provider_code: "estimating.claim.no_zone_id",
+          redacted: true,
+          body: undefined,
+        }),
+      }),
+    })
+    expect(JSON.stringify(capturedError)).not.toContain("raw-offer-id-should-not-leak")
+    expect(JSON.stringify(capturedError)).not.toContain("raw-quote-reference-should-not-leak")
+  })
+
+  it("surfaces safe actionable diagnostics when offers-calculate rejects route shape with provider 400", async () => {
+    global.fetch = jest.fn(async () => new Response(JSON.stringify({
+      message: "route_points are not serviceable for selected pickup station",
+      raw_offer_id: "raw-offer-id-should-not-leak",
+      quote_reference: "raw-quote-reference-should-not-leak",
+    }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    })) as typeof fetch
+
+    let capturedError: unknown = null
+
+    try {
+      await createYandexDeliveryAdapter().quoteWarehouseToPickupPoint(
+        {
+          connection: buildConnection({ mode: "test" }),
+          correlation_id: "corr-yandex-safe-400-test",
+        },
+        {
+          warehouse_id: "wh-internal-id",
+          destination_point_id: "pvz_1",
+          origin_address: {
+            fullname: "RU, Москва, Склад 1",
+            coordinates: [37.62, 55.76],
+          },
+          destination_address: {
+            fullname: "125009, Москва, Тверская 1",
+            coordinates: [37.61, 55.75],
+          },
+          items: [{ weight_grams: 500, price: 100 }],
+        }
+      )
+    } catch (error) {
+      capturedError = error
+    }
+
+    expect(capturedError).toMatchObject({
+      code: "DELIVERY_HUB_PROVIDER_ERROR",
+      status: 409,
+      details: expect.objectContaining({
+        provider_status: 400,
+        error_category: "provider_route_unavailable",
+        provider_code: null,
+        customer_safe: true,
+        operator_hint: expect.stringContaining("origin→PVZ route"),
+        request: expect.objectContaining({
+          path: YANDEX_DELIVERY_LEGACY_API_PATH.offersCalculate,
+        }),
+        response: expect.objectContaining({
+          body_type: "json",
+          provider_code: null,
+          redacted: true,
+          body: undefined,
+        }),
+      }),
+    })
+    expect(JSON.stringify(capturedError)).not.toContain("route_points are not serviceable")
+    expect(JSON.stringify(capturedError)).not.toContain("raw-offer-id-should-not-leak")
+    expect(JSON.stringify(capturedError)).not.toContain("raw-quote-reference-should-not-leak")
   })
 })
 
