@@ -203,6 +203,11 @@ export type DeliveryHubQuotesResponse = {
 export type DeliveryHubPickupPoint = {
   provider_point_id: string
   provider_point_code: string | null
+  provider_operator_id?: string | null
+  network_label?: string | null
+  is_yandex_branded?: boolean | null
+  is_market_partner?: boolean | null
+  station_type?: string | null
   name: string
   address: string
   city: string | null
@@ -704,7 +709,7 @@ function normalizeDeliveryHubPickupPoint(
 ): DeliveryHubPickupPoint {
   const record = requireRecord(value, field)
 
-  return {
+  const point: DeliveryHubPickupPoint = {
     provider_point_id: readRequiredString(
       record.provider_point_id,
       `${field}.provider_point_id`
@@ -727,6 +732,27 @@ function normalizeDeliveryHubPickupPoint(
     ),
     payment_methods: readStringArray(record.payment_methods),
   }
+  const providerOperatorId = readOptionalString(record.provider_operator_id)
+  const networkLabel = readOptionalString(record.network_label)
+  const stationType = readOptionalString(record.station_type)
+
+  if (providerOperatorId) {
+    point.provider_operator_id = providerOperatorId
+  }
+  if (networkLabel) {
+    point.network_label = networkLabel
+  }
+  if (typeof record.is_yandex_branded === "boolean") {
+    point.is_yandex_branded = record.is_yandex_branded
+  }
+  if (typeof record.is_market_partner === "boolean") {
+    point.is_market_partner = record.is_market_partner
+  }
+  if (stationType) {
+    point.station_type = stationType
+  }
+
+  return point
 }
 
 function normalizeDeliveryHubPickupWindow(
@@ -2140,6 +2166,56 @@ export type DeliveryHubBuyerDeliveryCardOptions = {
   address_context?: DeliveryHubCheckoutAddressContext | null
 }
 
+export type DeliveryHubPickupPointSelectorStatus =
+  | "loading"
+  | "needs_address"
+  | "no_points"
+  | "no_search_results"
+  | "ready"
+
+export type DeliveryHubPickupPointSelectorQuoteStatus =
+  | "idle"
+  | "loading"
+  | "ready"
+  | "unavailable"
+  | "blocked"
+
+export type DeliveryHubPickupPointSelectorPoint = {
+  provider_point_id: string
+  name: string
+  address: string
+  city: string | null
+  provider_label: string
+  availability_label: string
+  quote_status_label: string | null
+  is_selected: boolean
+}
+
+export type DeliveryHubPickupPointSelectorModel = {
+  tone: "neutral" | "positive" | "warning"
+  status: DeliveryHubPickupPointSelectorStatus
+  status_label: string
+  detail_label: string
+  search_query: string
+  total_point_count: number
+  visible_point_count: number
+  selected_point: DeliveryHubPickupPointSelectorPoint | null
+  visible_points: DeliveryHubPickupPointSelectorPoint[]
+  quote_status: DeliveryHubPickupPointSelectorQuoteStatus
+  quote_status_label: string | null
+  hint_messages: string[]
+}
+
+export type DeliveryHubPickupPointSelectorInput = {
+  pickup_points?: DeliveryHubPickupPointsResponse | null
+  selected_pickup_point_id?: string | null
+  search_query?: string | null
+  address_context?: DeliveryHubCheckoutAddressContext | null
+  is_loading?: boolean
+  quote_status?: DeliveryHubPickupPointSelectorQuoteStatus | null
+  quote_message?: string | null
+}
+
 export const DELIVERY_HUB_CUTOVER_PRECONDITION_CODES = [
   "store_quote_contract_ready",
   "neutral_selection_ready",
@@ -2959,6 +3035,7 @@ export type DeliveryHubNeutralSelectionRehearsalInput = {
   catalog?: DeliveryHubCatalogResponse | null
   quotes?: DeliveryHubQuotesResponse | null
   pickup_points?: DeliveryHubPickupPointsResponse | null
+  selected_pickup_point_id?: string | null
   pickup_windows?: DeliveryHubPickupWindowsResponse | null
   persisted_selection?: DeliveryHubSelectionResponse | null
   readiness?: DeliveryHubReadinessResponse | null
@@ -4333,6 +4410,173 @@ function hasDeliveryHubPersistedSelectionMismatch(
 
 export function parseDeliveryHubCheckoutCutoverEnabledFlag(value: unknown): boolean {
   return value === true || value === "true"
+}
+
+export function buildDeliveryHubPickupPointSelectorModel(
+  input: DeliveryHubPickupPointSelectorInput = {}
+): DeliveryHubPickupPointSelectorModel {
+  const addressContext = input.address_context ?? null
+  const searchQuery = readOptionalString(input.search_query) ?? ""
+  const quoteStatus = input.quote_status ?? "idle"
+  const destinationPoints = (input.pickup_points?.points ?? []).filter(
+    (point) => point.is_destination_pickup_allowed
+  )
+  const normalizedSearch = normalizeDeliveryHubSearchText(searchQuery)
+  const selectedPointId = readOptionalString(input.selected_pickup_point_id)
+  const visibleSourcePoints = normalizedSearch
+    ? destinationPoints.filter((point) =>
+        normalizeDeliveryHubSearchText(
+          [point.name, point.address, point.city, point.region, point.postal_code, point.network_label]
+            .filter(Boolean)
+            .join(" ")
+        ).includes(normalizedSearch)
+      )
+    : destinationPoints
+
+  const selectedRawPoint =
+    (selectedPointId
+      ? destinationPoints.find((point) => point.provider_point_id === selectedPointId)
+      : null) ??
+    destinationPoints[0] ??
+    null
+  const selectedVisiblePointId = selectedRawPoint?.provider_point_id ?? null
+  const points = visibleSourcePoints.map((point) =>
+    buildDeliveryHubPickupPointSelectorPoint(
+      point,
+      point.provider_point_id === selectedVisiblePointId,
+      quoteStatus
+    )
+  )
+  const selectedPoint = selectedRawPoint
+    ? buildDeliveryHubPickupPointSelectorPoint(selectedRawPoint, true, quoteStatus)
+    : null
+
+  if (input.is_loading) {
+    return {
+      tone: "neutral",
+      status: "loading",
+      status_label: "Ищем пункты выдачи…",
+      detail_label: "Проверяем доступные ПВЗ для города и страны из адреса доставки.",
+      search_query: searchQuery,
+      total_point_count: destinationPoints.length,
+      visible_point_count: points.length,
+      selected_point: selectedPoint,
+      visible_points: points,
+      quote_status: quoteStatus,
+      quote_status_label: getDeliveryHubPickupPointQuoteStatusLabel(quoteStatus),
+      hint_messages: [],
+    }
+  }
+
+  if (addressContext && !addressContext.is_complete) {
+    return {
+      tone: "neutral",
+      status: "needs_address",
+      status_label: "Укажите город и страну для поиска ПВЗ",
+      detail_label: "Пункты выдачи ищутся по адресу доставки из checkout.",
+      search_query: searchQuery,
+      total_point_count: 0,
+      visible_point_count: 0,
+      selected_point: null,
+      visible_points: [],
+      quote_status: quoteStatus,
+      quote_status_label: getDeliveryHubPickupPointQuoteStatusLabel(quoteStatus),
+      hint_messages: addressContext.missing_fields.length
+        ? [`Не хватает данных адреса: ${addressContext.missing_fields.join(", ")}.`]
+        : [],
+    }
+  }
+
+  if (!destinationPoints.length) {
+    return {
+      tone: "warning",
+      status: "no_points",
+      status_label: "ПВЗ не найдены",
+      detail_label: "Для указанного города сейчас не вернулись доступные пункты выдачи.",
+      search_query: searchQuery,
+      total_point_count: 0,
+      visible_point_count: 0,
+      selected_point: null,
+      visible_points: [],
+      quote_status: quoteStatus,
+      quote_status_label: getDeliveryHubPickupPointQuoteStatusLabel(quoteStatus),
+      hint_messages: uniqueDeliveryHubMessages([input.quote_message]),
+    }
+  }
+
+  if (!points.length) {
+    return {
+      tone: "neutral",
+      status: "no_search_results",
+      status_label: "Поиск не нашёл ПВЗ",
+      detail_label: "Измените запрос или очистите поле поиска, чтобы увидеть все найденные пункты выдачи.",
+      search_query: searchQuery,
+      total_point_count: destinationPoints.length,
+      visible_point_count: 0,
+      selected_point: selectedPoint,
+      visible_points: [],
+      quote_status: quoteStatus,
+      quote_status_label: getDeliveryHubPickupPointQuoteStatusLabel(quoteStatus),
+      hint_messages: uniqueDeliveryHubMessages([input.quote_message]),
+    }
+  }
+
+  return {
+    tone: quoteStatus === "ready" ? "positive" : quoteStatus === "unavailable" ? "warning" : "neutral",
+    status: "ready",
+    status_label: `Найдено ПВЗ: ${destinationPoints.length}`,
+    detail_label: selectedPoint
+      ? "Выберите удобный пункт выдачи; стоимость рассчитывается для выбранного ПВЗ."
+      : "Выберите удобный пункт выдачи, чтобы запросить стоимость доставки.",
+    search_query: searchQuery,
+    total_point_count: destinationPoints.length,
+    visible_point_count: points.length,
+    selected_point: selectedPoint,
+    visible_points: points,
+    quote_status: quoteStatus,
+    quote_status_label: getDeliveryHubPickupPointQuoteStatusLabel(quoteStatus),
+    hint_messages: uniqueDeliveryHubMessages([input.quote_message]),
+  }
+}
+
+function buildDeliveryHubPickupPointSelectorPoint(
+  point: DeliveryHubPickupPoint,
+  selected: boolean,
+  quoteStatus: DeliveryHubPickupPointSelectorQuoteStatus
+): DeliveryHubPickupPointSelectorPoint {
+  return {
+    provider_point_id: point.provider_point_id,
+    name: point.name || "Пункт выдачи",
+    address: point.address,
+    city: point.city,
+    provider_label: point.network_label ?? (point.is_yandex_branded ? "Яндекс Доставка" : "Delivery Hub"),
+    availability_label: point.is_destination_pickup_allowed
+      ? "Доступен для получения заказа"
+      : "Недоступен для получения заказа",
+    quote_status_label: selected ? getDeliveryHubPickupPointQuoteStatusLabel(quoteStatus) : null,
+    is_selected: selected,
+  }
+}
+
+function getDeliveryHubPickupPointQuoteStatusLabel(
+  status: DeliveryHubPickupPointSelectorQuoteStatus
+) {
+  switch (status) {
+    case "loading":
+      return "Рассчитываем стоимость для выбранного ПВЗ…"
+    case "ready":
+      return "Стоимость получена для выбранного ПВЗ"
+    case "unavailable":
+      return "Для выбранного пункта доставка временно недоступна"
+    case "blocked":
+      return "Выберите ПВЗ для расчёта доставки"
+    case "idle":
+      return null
+  }
+}
+
+function normalizeDeliveryHubSearchText(value: string) {
+  return value.trim().toLocaleLowerCase("ru-RU")
 }
 
 export function buildDeliveryHubCheckoutCutoverGateStatus(input: {
@@ -5969,8 +6213,20 @@ function getDeliveryHubNeutralRehearsalCandidate(
   const selection =
     input.persisted_selection?.selection ?? input.readiness?.selection ?? null
   const quote = input.quotes?.quotes[0] ?? null
+  const selectedPickupPointId = readOptionalString(input.selected_pickup_point_id)
+  const quotedPickupPointIds = quote?.pickup_point_ids ?? []
   const pickupPoint =
     selection?.pickup_point ??
+    (selectedPickupPointId
+      ? input.pickup_points?.points.find(
+          (point) => point.provider_point_id === selectedPickupPointId
+        )
+      : null) ??
+    (quotedPickupPointIds.length
+      ? input.pickup_points?.points.find((point) =>
+          quotedPickupPointIds.includes(point.provider_point_id)
+        )
+      : null) ??
     input.pickup_points?.points.find((point) => point.is_destination_pickup_allowed) ??
     input.pickup_points?.points[0] ??
     null

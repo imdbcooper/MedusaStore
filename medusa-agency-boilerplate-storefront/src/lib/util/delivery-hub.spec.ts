@@ -8,6 +8,7 @@ import {
   buildDeliveryHubBuyerDeliveryCardModel,
   buildDeliveryHubCheckoutAddressContext,
   buildDeliveryHubCheckoutCutoverGateStatus,
+  buildDeliveryHubPickupPointSelectorModel,
   buildDeliveryHubCommitEligibilityModel,
   evaluateDeliveryHubCutoverCandidateCommitGuard,
   buildDeliveryHubCutoverApprovalArtifactPreviewModel,
@@ -11482,6 +11483,259 @@ test("buildDeliveryHubBuyerDeliveryCardModel presents shopper copy for saveable 
   assert.equal(unavailable.status, "unavailable")
   assert.equal(unavailable.can_save_selection, false)
   assert.equal(unavailable.detail_label.includes("не удалось получить безопасный вариант"), true)
+})
+
+test("delivery hub pickup point selector lists, filters and selects shopper-safe PVZ entries", () => {
+  const selector = buildDeliveryHubPickupPointSelectorModel({
+    pickup_points: {
+      ok: true,
+      points: [
+        {
+          provider_point_id: "point_hidden_1",
+          provider_point_code: null,
+          name: "Складской пункт",
+          address: "Москва, склад",
+          city: "Москва",
+          region: "Москва",
+          postal_code: "125000",
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: true,
+          is_destination_pickup_allowed: false,
+          payment_methods: [],
+        },
+        {
+          provider_point_id: "point_tverskaya",
+          provider_point_code: null,
+          network_label: "5 Post",
+          name: "5 Post (Пятерочка)",
+          address: "Москва, Тверская 1",
+          city: "Москва",
+          region: "Москва",
+          postal_code: "125009",
+          lat: 55.76,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+        {
+          provider_point_id: "point_arbat",
+          provider_point_code: null,
+          network_label: "ПВЗ",
+          name: "ПВЗ Арбат",
+          address: "Москва, Арбат 10",
+          city: "Москва",
+          region: "Москва",
+          postal_code: "119002",
+          lat: 55.75,
+          lng: 37.59,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      ],
+    },
+    selected_pickup_point_id: "point_arbat",
+    search_query: "арбат",
+    quote_status: "loading",
+    quote_message: "Рассчитываем стоимость для выбранного ПВЗ.",
+  })
+
+  assert.equal(selector.status, "ready")
+  assert.equal(selector.total_point_count, 2)
+  assert.equal(selector.visible_point_count, 1)
+  assert.equal(selector.visible_points[0].name, "ПВЗ Арбат")
+  assert.equal(selector.visible_points[0].is_selected, true)
+  assert.equal(selector.selected_point?.provider_point_id, "point_arbat")
+  assert.equal(selector.quote_status_label, "Рассчитываем стоимость для выбранного ПВЗ…")
+  assert.equal(JSON.stringify(selector).includes("point_hidden_1"), false)
+})
+
+test("delivery hub pickup point selector reports no points and no search results clearly", () => {
+  const noPoints = buildDeliveryHubPickupPointSelectorModel({
+    pickup_points: { ok: true, points: [] },
+    quote_message: "Провайдер не вернул ПВЗ для города покупателя.",
+  })
+  const noSearchResults = buildDeliveryHubPickupPointSelectorModel({
+    pickup_points: {
+      ok: true,
+      points: [
+        {
+          provider_point_id: "point_tverskaya",
+          provider_point_code: null,
+          name: "5 Post (Пятерочка)",
+          address: "Москва, Тверская 1",
+          city: "Москва",
+          region: "Москва",
+          postal_code: "125009",
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      ],
+    },
+    search_query: "несуществующий адрес",
+  })
+
+  assert.equal(noPoints.status, "no_points")
+  assert.equal(noPoints.status_label, "ПВЗ не найдены")
+  assert.equal(noPoints.hint_messages[0], "Провайдер не вернул ПВЗ для города покупателя.")
+  assert.equal(noSearchResults.status, "no_search_results")
+  assert.equal(noSearchResults.total_point_count, 1)
+  assert.equal(noSearchResults.visible_point_count, 0)
+})
+
+test("delivery hub buyer card and selector distinguish selected PVZ quote unavailable and success states", () => {
+  const settings = {
+    ok: true as const,
+    settings: {
+      enabled: true,
+      status: "available" as const,
+      summary: {
+        enabled_connection_count: 1,
+        ready_connection_count: 1,
+        default_connection_label: "Delivery Hub",
+        modality_codes: ["warehouse_to_pickup_point" as const],
+        supports_pickup_points: true,
+        supports_pickup_windows: false,
+        supports_dropoff: false,
+      },
+      preview_visibility: {
+        shadow_settings: true,
+        readiness: true,
+        persisted_selection: true,
+        shadow_catalog: true,
+        shadow_pickup_points: true,
+        shadow_quotes: true,
+        shadow_pickup_windows: true,
+      },
+      hints: [],
+    },
+  }
+  const catalog = {
+    ok: true as const,
+    default_connection_id: "conn_selected",
+    connections: [
+      {
+        connection_id: "conn_selected",
+        label: "Delivery Hub",
+        state: "ready" as const,
+        ready: true,
+        quote_types: ["warehouse_to_pickup_point" as const],
+        supports_pickup_points: true,
+        supports_pickup_windows: false,
+        supports_dropoff: false,
+      },
+    ],
+  }
+  const pickup_points = {
+    ok: true as const,
+    points: [
+      {
+        provider_point_id: "point_tverskaya",
+        provider_point_code: null,
+        network_label: "5 Post",
+        name: "5 Post (Пятерочка)",
+        address: "Москва, Тверская 1",
+        city: "Москва",
+        region: "Москва",
+        postal_code: "125009",
+        lat: null,
+        lng: null,
+        is_origin_dropoff_allowed: false,
+        is_destination_pickup_allowed: true,
+        payment_methods: [],
+      },
+    ],
+  }
+  const unavailableCard = buildDeliveryHubBuyerDeliveryCardModel({
+    cart_id: "cart_selected_unavailable",
+    settings,
+    catalog,
+    pickup_points,
+    selected_pickup_point_id: "point_tverskaya",
+    readiness: {
+      ok: true,
+      cart_id: "cart_selected_unavailable",
+      status: "missing_selection",
+      issues: [],
+      selection: null,
+      quote_context: null,
+    },
+  })
+  const unavailableSelector = buildDeliveryHubPickupPointSelectorModel({
+    pickup_points,
+    selected_pickup_point_id: "point_tverskaya",
+    quote_status: "unavailable",
+    quote_message: "Для выбранного пункта доставка временно недоступна.",
+  })
+  const successCard = buildDeliveryHubBuyerDeliveryCardModel({
+    cart_id: "cart_selected_success",
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "dhsel_quote_selected_success", version: 1 },
+          amount: 275,
+          currency_code: "RUB",
+          delivery_eta_min: 2,
+          delivery_eta_max: 3,
+          pickup_point_required: true,
+          pickup_point_ids: ["point_tverskaya"],
+          pickup_window_required: false,
+        },
+      ],
+    },
+    settings,
+    catalog,
+    pickup_points,
+    selected_pickup_point_id: "point_tverskaya",
+    readiness: {
+      ok: true,
+      cart_id: "cart_selected_success",
+      status: "missing_selection",
+      issues: [],
+      selection: null,
+      quote_context: null,
+    },
+  })
+
+  assert.equal(unavailableCard.pickup_point_label, "5 Post (Пятерочка)")
+  assert.equal(unavailableCard.status, "unavailable")
+  assert.equal(unavailableSelector.quote_status_label, "Для выбранного пункта доставка временно недоступна")
+  assert.equal(successCard.status, "ready_to_save")
+  assert.equal(successCard.quote_amount, 275)
+  assert.equal(successCard.pickup_point_label, "5 Post (Пятерочка)")
+})
+
+test("checkout shipping source exposes shopper pickup-point selector hooks and avoids pickup-window quote gating", () => {
+  const shippingSource = readFileSync(
+    new URL("../../modules/checkout/components/shipping/index.tsx", import.meta.url),
+    "utf8"
+  )
+
+  for (const testId of [
+    "delivery-hub-pickup-point-selector",
+    "delivery-hub-pickup-point-selector-status",
+    "delivery-hub-selected-pickup-point-quote-status",
+    "delivery-hub-pickup-point-search",
+    "delivery-hub-pickup-point-list",
+    "delivery-hub-pickup-point-option",
+    "delivery-hub-pickup-point-radio",
+    "delivery-hub-pickup-point-empty",
+  ]) {
+    assert.equal(shippingSource.includes(`data-testid="${testId}"`), true)
+  }
+
+  assert.equal(shippingSource.includes("listDeliveryHubPickupWindows"), false)
+  assert.equal(shippingSource.includes("selected_pickup_point_id"), true)
+  assert.equal(shippingSource.includes("Для выбранного пункта доставка временно недоступна"), true)
 })
 
 test("checkout shipping source puts customer Delivery Hub card before collapsed dev diagnostics", () => {

@@ -6,7 +6,6 @@ import {
   clearDeliveryHubSelection,
   listDeliveryHubCatalog,
   listDeliveryHubPickupPoints,
-  listDeliveryHubPickupWindows,
   previewDeliveryHubQuotes,
   retrieveDeliveryHubCutoverApprovalArtifact,
   retrieveDeliveryHubCutoverCandidate,
@@ -31,6 +30,7 @@ import {
   buildDeliveryHubBuyerDeliveryCardModel,
   buildDeliveryHubCheckoutAddressContext,
   buildDeliveryHubCheckoutCutoverGateStatus,
+  buildDeliveryHubPickupPointSelectorModel,
   buildDeliveryHubCommitEligibilityModel,
   buildDeliveryHubCutoverApprovalArtifactPreviewModel,
   buildDeliveryHubCutoverCandidatePreviewModel,
@@ -53,6 +53,9 @@ import {
   type DeliveryHubListQuotesInput,
   type DeliveryHubNeutralSelectionRehearsalInput,
   type DeliveryHubNeutralSelectionRehearsalModel,
+  type DeliveryHubPickupPoint,
+  type DeliveryHubPickupPointSelectorQuoteStatus,
+  type DeliveryHubPickupPointsResponse,
   type DeliveryHubQuote,
   type DeliveryHubQuoteType,
   type DeliveryHubQuotesResponse,
@@ -130,6 +133,77 @@ type DeliveryHubNeutralPreviewState = {
   selected_quote_reference_id: string | null
   selection: DeliveryHubSelectionResponse | null
   message: string | null
+}
+
+type DeliveryHubPickupPointState = {
+  status: "idle" | "loading" | "ready" | "error"
+  points: DeliveryHubPickupPointsResponse | null
+  selected_point_id: string | null
+  search_query: string
+  last_request_key: string | null
+}
+
+type DeliveryHubBuyerQuoteState = {
+  status: DeliveryHubPickupPointSelectorQuoteStatus
+  quotes: DeliveryHubQuotesResponse | null
+  message: string | null
+}
+
+function getDeliveryHubAddressRequestKey(
+  addressContext: ReturnType<typeof buildDeliveryHubCheckoutAddressContext>
+) {
+  if (!addressContext.is_complete) {
+    return null
+  }
+
+  return [
+    addressContext.country_code_upper,
+    addressContext.city,
+    addressContext.postal_code,
+    addressContext.address_1,
+  ]
+    .filter(Boolean)
+    .join("|")
+}
+
+function getDeliveryHubDestinationPoints(
+  points: DeliveryHubPickupPointsResponse | null | undefined
+) {
+  return (points?.points ?? []).filter((point) => point.is_destination_pickup_allowed)
+}
+
+function getDeliveryHubSelectedPickupPoint(
+  points: DeliveryHubPickupPointsResponse | null | undefined,
+  selectedPointId: string | null | undefined
+) {
+  const destinationPoints = getDeliveryHubDestinationPoints(points)
+
+  return (
+    destinationPoints.find((point) => point.provider_point_id === selectedPointId) ??
+    destinationPoints[0] ??
+    null
+  )
+}
+
+function getDeliveryHubSelectedPickupPointId(
+  points: DeliveryHubPickupPointsResponse | null | undefined,
+  currentPointId: string | null | undefined,
+  persistedPointId: string | null | undefined
+) {
+  const destinationPoints = getDeliveryHubDestinationPoints(points)
+
+  return (
+    destinationPoints.find((point) => point.provider_point_id === currentPointId)
+      ?.provider_point_id ??
+    destinationPoints.find((point) => point.provider_point_id === persistedPointId)
+      ?.provider_point_id ??
+    destinationPoints[0]?.provider_point_id ??
+    null
+  )
+}
+
+function getDeliveryHubPickupPointLabel(point: DeliveryHubPickupPoint) {
+  return [point.name, point.address].filter(Boolean).join(" · ")
 }
 
 function isCheckoutEligibleShippingOption(
@@ -229,6 +303,20 @@ const Shipping: React.FC<ShippingProps> = ({
       selection: null,
       message: null,
     })
+  const [deliveryHubPickupPointState, setDeliveryHubPickupPointState] =
+    useState<DeliveryHubPickupPointState>({
+      status: "idle",
+      points: null,
+      selected_point_id: null,
+      search_query: "",
+      last_request_key: null,
+    })
+  const [deliveryHubBuyerQuoteState, setDeliveryHubBuyerQuoteState] =
+    useState<DeliveryHubBuyerQuoteState>({
+      status: "idle",
+      quotes: null,
+      message: null,
+    })
   const [error, setError] = useState<string | null>(null)
 
   const searchParams = useSearchParams()
@@ -304,6 +392,7 @@ const Shipping: React.FC<ShippingProps> = ({
 
   useEffect(() => {
     let cancelled = false
+    const requestKey = getDeliveryHubAddressRequestKey(deliveryHubAddressContext)
 
     setDeliveryHubRehearsalState((current) => ({
       ...current,
@@ -326,6 +415,27 @@ const Shipping: React.FC<ShippingProps> = ({
       artifact: null,
     })
 
+    setDeliveryHubPickupPointState((current) => ({
+      ...current,
+      status: deliveryHubAddressContext.is_complete ? "loading" : "idle",
+      points:
+        deliveryHubAddressContext.is_complete && current.last_request_key === requestKey
+          ? current.points
+          : null,
+      selected_point_id:
+        deliveryHubAddressContext.is_complete && current.last_request_key === requestKey
+          ? current.selected_point_id
+          : null,
+      last_request_key: deliveryHubAddressContext.is_complete ? current.last_request_key : null,
+    }))
+    setDeliveryHubBuyerQuoteState({
+      status: deliveryHubAddressContext.is_complete ? "loading" : "blocked",
+      quotes: null,
+      message: deliveryHubAddressContext.is_complete
+        ? "Рассчитываем стоимость для выбранного ПВЗ."
+        : "Укажите город и страну, чтобы найти ПВЗ и рассчитать доставку.",
+    })
+
     const pickupPointsRequest = deliveryHubAddressContext.is_complete
       ? listDeliveryHubPickupPoints({
           city: deliveryHubAddressContext.city,
@@ -338,7 +448,6 @@ const Shipping: React.FC<ShippingProps> = ({
       retrieveDeliveryHubSelection(cart.id),
       retrieveDeliveryHubReadiness(cart.id),
       pickupPointsRequest,
-      listDeliveryHubPickupWindows(),
       retrieveDeliveryHubCutoverPreconditions(),
       retrieveDeliveryHubCutoverCandidate(cart.id),
       retrieveDeliveryHubCutoverApprovalArtifact(cart.id),
@@ -358,10 +467,9 @@ const Shipping: React.FC<ShippingProps> = ({
         const selection = results[1].status === "fulfilled" ? results[1].value : null
         const readiness = results[2].status === "fulfilled" ? results[2].value : null
         const pickupPoints = results[3].status === "fulfilled" ? results[3].value : null
-        const pickupWindows = results[4].status === "fulfilled" ? results[4].value : null
-        const cutoverPreconditions = results[5].status === "fulfilled" ? results[5].value : null
-        const cutoverCandidate = results[6].status === "fulfilled" ? results[6].value : null
-        const cutoverApprovalArtifact = results[7].status === "fulfilled" ? results[7].value : null
+        const cutoverPreconditions = results[4].status === "fulfilled" ? results[4].value : null
+        const cutoverCandidate = results[5].status === "fulfilled" ? results[5].value : null
+        const cutoverApprovalArtifact = results[6].status === "fulfilled" ? results[6].value : null
         setDeliveryHubCutoverPreconditionsState({
           status: cutoverPreconditions ? "ready" : "unavailable",
           preconditions: cutoverPreconditions,
@@ -374,11 +482,40 @@ const Shipping: React.FC<ShippingProps> = ({
           status: cutoverApprovalArtifact ? "ready" : "unavailable",
           artifact: cutoverApprovalArtifact,
         })
-        const destinationPoint = deliveryHubAddressContext.is_complete
-          ? pickupPoints?.points.find((point) => point.is_destination_pickup_allowed) ??
-            pickupPoints?.points[0] ??
-            null
-          : null
+        const selectedPointId = getDeliveryHubSelectedPickupPointId(
+          pickupPoints,
+          deliveryHubPickupPointState.selected_point_id,
+          selection?.selection?.pickup_point.provider_point_id
+        )
+        const destinationPoint = getDeliveryHubSelectedPickupPoint(
+          pickupPoints,
+          selectedPointId
+        )
+        setDeliveryHubPickupPointState((current) => ({
+          ...current,
+          status: pickupPoints
+            ? "ready"
+            : deliveryHubAddressContext.is_complete
+              ? current.points?.points.length && current.last_request_key === requestKey
+                ? "ready"
+                : "error"
+              : "idle",
+          points:
+            pickupPoints ??
+            (current.last_request_key === requestKey && deliveryHubAddressContext.is_complete
+              ? current.points
+              : null),
+          selected_point_id:
+            selectedPointId ??
+            (current.last_request_key === requestKey && deliveryHubAddressContext.is_complete
+              ? current.selected_point_id
+              : null),
+          last_request_key: pickupPoints
+            ? requestKey
+            : deliveryHubAddressContext.is_complete
+              ? current.last_request_key
+              : null,
+        }))
         const defaultConnection = catalog?.connections.find(
           (connection) => connection.connection_id === catalog.default_connection_id
         )
@@ -389,28 +526,34 @@ const Shipping: React.FC<ShippingProps> = ({
             ? "warehouse_to_pickup_point"
             : defaultConnection?.quote_types[0]) ??
           "warehouse_to_pickup_point"
+        const originPoint =
+          modeCode === "dropoff_point_to_pickup_point"
+            ? pickupPoints?.points.find(
+                (point) =>
+                  point.is_origin_dropoff_allowed &&
+                  point.provider_point_id !== destinationPoint?.provider_point_id
+              ) ?? null
+            : null
         const quoteInput: DeliveryHubListQuotesInput | null =
           deliveryHubAddressContext.is_complete && destinationPoint
             ? {
-              connection_id:
-                readiness?.quote_context?.connection.connection_id ??
-                selection?.selection?.connection_id ??
-                catalog?.default_connection_id ??
-                null,
-              mode_code: modeCode,
-              currency_code: cart.currency_code,
-              destination_point_id: destinationPoint.provider_point_id,
-              warehouse_id:
-                modeCode === "warehouse_to_pickup_point" &&
-                DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED &&
-                DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID
-                  ? DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID
-                  : null,
-              origin_point_id:
-                modeCode === "dropoff_point_to_pickup_point"
-                  ? pickupPoints?.points.find((point) => point.is_origin_dropoff_allowed)
-                      ?.provider_point_id ?? null
-                  : null,
+                connection_id:
+                  readiness?.quote_context?.connection.connection_id ??
+                  selection?.selection?.connection_id ??
+                  catalog?.default_connection_id ??
+                  null,
+                mode_code: modeCode,
+                currency_code: cart.currency_code,
+                destination_point_id: destinationPoint.provider_point_id,
+                warehouse_id:
+                  modeCode === "warehouse_to_pickup_point" &&
+                  DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID
+                    ? DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID
+                    : null,
+                origin_point_id:
+                  modeCode === "dropoff_point_to_pickup_point"
+                    ? originPoint?.provider_point_id ?? null
+                    : null,
                 items: [
                   {
                     quantity: 1,
@@ -420,9 +563,29 @@ const Shipping: React.FC<ShippingProps> = ({
                 ],
               }
             : null
-        const quotes = quoteInput
-          ? await previewDeliveryHubQuotes(quoteInput)
-          : null
+        const quotes =
+          quoteInput &&
+          (modeCode !== "dropoff_point_to_pickup_point" || quoteInput.origin_point_id)
+            ? await previewDeliveryHubQuotes(quoteInput)
+            : null
+        const quoteMessage = !destinationPoint
+          ? "Выберите ПВЗ, чтобы рассчитать доставку."
+          : !quoteInput
+            ? "Не хватает адреса доставки или выбранного ПВЗ для расчёта."
+            : modeCode === "dropoff_point_to_pickup_point" && !quoteInput.origin_point_id
+              ? "Для выбранного способа не найден безопасный пункт передачи отправления."
+              : quotes
+                ? `Стоимость получена для выбранного ПВЗ: ${getDeliveryHubPickupPointLabel(destinationPoint)}.`
+                : `Для выбранного пункта доставка временно недоступна: ${getDeliveryHubPickupPointLabel(destinationPoint)}.`
+        setDeliveryHubBuyerQuoteState({
+          status: quotes
+            ? "ready"
+            : destinationPoint && quoteInput
+              ? "unavailable"
+              : "blocked",
+          quotes,
+          message: quoteMessage,
+        })
 
         if (cancelled) {
           return
@@ -434,7 +597,8 @@ const Shipping: React.FC<ShippingProps> = ({
           catalog,
           quotes,
           pickup_points: pickupPoints,
-          pickup_windows: pickupWindows,
+          selected_pickup_point_id: selectedPointId,
+          pickup_windows: null,
           address_context: deliveryHubAddressContext,
           persisted_selection: selection,
           readiness,
@@ -497,6 +661,8 @@ const Shipping: React.FC<ShippingProps> = ({
     cart.subtotal,
     cartShippingMethod?.name,
     deliveryHubAddressContext,
+    deliveryHubPickupPointState.last_request_key,
+    deliveryHubPickupPointState.selected_point_id,
     preferredCartShippingMethodId,
   ])
 
@@ -1031,6 +1197,18 @@ const Shipping: React.FC<ShippingProps> = ({
     buildDeliveryHubCutoverApprovalArtifactPreviewModel(
       deliveryHubCutoverApprovalArtifactState.artifact
     )
+  const deliveryHubPickupPointSelector = buildDeliveryHubPickupPointSelectorModel({
+    pickup_points: deliveryHubPickupPointState.points,
+    selected_pickup_point_id: deliveryHubPickupPointState.selected_point_id,
+    search_query: deliveryHubPickupPointState.search_query,
+    address_context: deliveryHubAddressContext,
+    is_loading:
+      deliveryHubRehearsalState.status === "loading" ||
+      deliveryHubPickupPointState.status === "loading",
+    quote_status: deliveryHubBuyerQuoteState.status,
+    quote_message: deliveryHubBuyerQuoteState.message,
+  })
+  const deliveryHubDisplayedPickupPoints = deliveryHubPickupPointSelector.visible_points.slice(0, 12)
   const deliveryHubNeutralPreviewQuotes =
     deliveryHubNeutralPreviewState.quotes?.quotes ?? []
   const selectedDeliveryHubNeutralPreviewQuote =
@@ -1219,6 +1397,115 @@ const Shipping: React.FC<ShippingProps> = ({
                       Адрес ПВЗ: {deliveryHubBuyerDeliveryCard.pickup_point_address_label}
                     </Text>
                   )}
+
+                  <div
+                    className="rounded-rounded border border-ui-border-base bg-ui-bg-base p-4"
+                    data-testid="delivery-hub-pickup-point-selector"
+                  >
+                    <div className="flex flex-col gap-y-3">
+                      <div className="flex flex-col gap-y-1 small:flex-row small:items-start small:justify-between">
+                        <div className="flex flex-col gap-y-1">
+                          <Text className="text-ui-fg-base txt-medium-plus">
+                            Выберите пункт выдачи
+                          </Text>
+                          <Text
+                            className="text-ui-fg-muted txt-small"
+                            data-testid="delivery-hub-pickup-point-selector-status"
+                          >
+                            {deliveryHubPickupPointSelector.status_label}
+                          </Text>
+                        </div>
+                        {deliveryHubPickupPointSelector.quote_status_label && (
+                          <span
+                            className="w-fit rounded-rounded border border-ui-border-base bg-ui-bg-subtle px-2 py-1 text-ui-fg-muted txt-compact-small"
+                            data-testid="delivery-hub-selected-pickup-point-quote-status"
+                          >
+                            {deliveryHubPickupPointSelector.quote_status_label}
+                          </span>
+                        )}
+                      </div>
+
+                      <Text className="text-ui-fg-muted txt-small">
+                        {deliveryHubPickupPointSelector.detail_label}
+                      </Text>
+
+                      <input
+                        className="rounded-rounded border border-ui-border-base bg-ui-bg-base px-3 py-2 text-ui-fg-base txt-small"
+                        value={deliveryHubPickupPointState.search_query}
+                        onChange={(event) => {
+                          setDeliveryHubPickupPointState((current) => ({
+                            ...current,
+                            search_query: event.target.value,
+                          }))
+                        }}
+                        placeholder="Поиск по названию, адресу или району"
+                        data-testid="delivery-hub-pickup-point-search"
+                      />
+
+                      {deliveryHubDisplayedPickupPoints.length > 0 ? (
+                        <div className="grid gap-y-2" data-testid="delivery-hub-pickup-point-list">
+                          {deliveryHubDisplayedPickupPoints.map((point) => (
+                            <label
+                              key={point.provider_point_id}
+                              className={clx(
+                                "flex cursor-pointer flex-col gap-y-1 rounded-rounded border p-3 text-ui-fg-muted txt-small",
+                                point.is_selected
+                                  ? "border-ui-border-interactive bg-ui-bg-base"
+                                  : "border-ui-border-base bg-ui-bg-subtle"
+                              )}
+                              data-testid="delivery-hub-pickup-point-option"
+                            >
+                              <span className="flex items-start gap-x-2 text-ui-fg-base">
+                                <input
+                                  type="radio"
+                                  name="delivery-hub-pickup-point"
+                                  checked={point.is_selected}
+                                  onChange={() => {
+                                    setDeliveryHubPickupPointState((current) => ({
+                                      ...current,
+                                      selected_point_id: point.provider_point_id,
+                                    }))
+                                  }}
+                                  data-testid="delivery-hub-pickup-point-radio"
+                                />
+                                <span className="flex flex-col gap-y-1">
+                                  <span>{point.name}</span>
+                                  <span className="text-ui-fg-muted">{point.address}</span>
+                                </span>
+                              </span>
+                              <span>{point.provider_label}</span>
+                              <span>{point.availability_label}</span>
+                              {point.quote_status_label && (
+                                <span data-testid="delivery-hub-pickup-point-option-quote-status">
+                                  {point.quote_status_label}
+                                </span>
+                              )}
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        <Text
+                          className="text-ui-fg-muted txt-small"
+                          data-testid="delivery-hub-pickup-point-empty"
+                        >
+                          {deliveryHubPickupPointSelector.status === "no_search_results"
+                            ? "По вашему запросу ПВЗ не найдены."
+                            : "Для указанного адреса ПВЗ не найдены."}
+                        </Text>
+                      )}
+
+                      {deliveryHubPickupPointSelector.hint_messages.slice(0, 2).map((message) => (
+                        <Text
+                          key={message}
+                          className="text-ui-fg-muted txt-small"
+                          data-testid="delivery-hub-pickup-point-hint"
+                        >
+                          {message}
+                        </Text>
+                      ))}
+                    </div>
+                  </div>
+
                   {deliveryHubBuyerDeliveryCard.pickup_window_label && (
                     <Text className="text-ui-fg-muted txt-small">
                       Окно передачи: {deliveryHubBuyerDeliveryCard.pickup_window_label}
