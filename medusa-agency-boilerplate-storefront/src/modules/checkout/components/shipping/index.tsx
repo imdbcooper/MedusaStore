@@ -29,6 +29,7 @@ import {
 import { storefrontConfig } from "@lib/storefront-config"
 import {
   buildDeliveryHubBuyerDeliveryCardModel,
+  buildDeliveryHubCheckoutAddressContext,
   buildDeliveryHubCheckoutCutoverGateStatus,
   buildDeliveryHubCommitEligibilityModel,
   buildDeliveryHubCutoverApprovalArtifactPreviewModel,
@@ -238,6 +239,20 @@ const Shipping: React.FC<ShippingProps> = ({
   const checkoutCopy = storefrontConfig.copy.checkout
   const commonCopy = storefrontConfig.copy.common
   const cartShippingMethod = cart.shipping_methods?.at(-1)
+  const deliveryHubAddressContext = useMemo(
+    () => buildDeliveryHubCheckoutAddressContext(cart.shipping_address),
+    [
+      cart.shipping_address?.address_1,
+      cart.shipping_address?.address_2,
+      cart.shipping_address?.city,
+      cart.shipping_address?.country_code,
+      cart.shipping_address?.first_name,
+      cart.shipping_address?.last_name,
+      cart.shipping_address?.phone,
+      cart.shipping_address?.postal_code,
+      cart.shipping_address?.province,
+    ]
+  )
   const shippingMethods = useMemo(
     () => (availableShippingMethods ?? []).filter(isCheckoutEligibleShippingOption),
     [availableShippingMethods]
@@ -311,14 +326,18 @@ const Shipping: React.FC<ShippingProps> = ({
       artifact: null,
     })
 
+    const pickupPointsRequest = deliveryHubAddressContext.is_complete
+      ? listDeliveryHubPickupPoints({
+          city: deliveryHubAddressContext.city,
+          country_code: deliveryHubAddressContext.country_code_upper,
+        })
+      : Promise.resolve(null)
+
     Promise.allSettled([
       retrieveDeliveryHubSettings(),
       retrieveDeliveryHubSelection(cart.id),
       retrieveDeliveryHubReadiness(cart.id),
-      listDeliveryHubPickupPoints({
-        city: cart.shipping_address?.city,
-        country_code: cart.shipping_address?.country_code,
-      }),
+      pickupPointsRequest,
       listDeliveryHubPickupWindows(),
       retrieveDeliveryHubCutoverPreconditions(),
       retrieveDeliveryHubCutoverCandidate(cart.id),
@@ -355,10 +374,11 @@ const Shipping: React.FC<ShippingProps> = ({
           status: cutoverApprovalArtifact ? "ready" : "unavailable",
           artifact: cutoverApprovalArtifact,
         })
-        const destinationPoint =
-          pickupPoints?.points.find((point) => point.is_destination_pickup_allowed) ??
-          pickupPoints?.points[0] ??
-          null
+        const destinationPoint = deliveryHubAddressContext.is_complete
+          ? pickupPoints?.points.find((point) => point.is_destination_pickup_allowed) ??
+            pickupPoints?.points[0] ??
+            null
+          : null
         const defaultConnection = catalog?.connections.find(
           (connection) => connection.connection_id === catalog.default_connection_id
         )
@@ -369,8 +389,9 @@ const Shipping: React.FC<ShippingProps> = ({
             ? "warehouse_to_pickup_point"
             : defaultConnection?.quote_types[0]) ??
           "warehouse_to_pickup_point"
-        const quoteInput: DeliveryHubListQuotesInput | null = destinationPoint
-          ? {
+        const quoteInput: DeliveryHubListQuotesInput | null =
+          deliveryHubAddressContext.is_complete && destinationPoint
+            ? {
               connection_id:
                 readiness?.quote_context?.connection.connection_id ??
                 selection?.selection?.connection_id ??
@@ -390,15 +411,15 @@ const Shipping: React.FC<ShippingProps> = ({
                   ? pickupPoints?.points.find((point) => point.is_origin_dropoff_allowed)
                       ?.provider_point_id ?? null
                   : null,
-              items: [
-                {
-                  quantity: 1,
-                  weight_grams: 500,
-                  price: typeof cart.subtotal === "number" ? cart.subtotal : undefined,
-                },
-              ],
-            }
-          : null
+                items: [
+                  {
+                    quantity: 1,
+                    weight_grams: 500,
+                    price: typeof cart.subtotal === "number" ? cart.subtotal : undefined,
+                  },
+                ],
+              }
+            : null
         const quotes = quoteInput
           ? await previewDeliveryHubQuotes(quoteInput)
           : null
@@ -414,6 +435,7 @@ const Shipping: React.FC<ShippingProps> = ({
           quotes,
           pickup_points: pickupPoints,
           pickup_windows: pickupWindows,
+          address_context: deliveryHubAddressContext,
           persisted_selection: selection,
           readiness,
           legacy_context: {
@@ -448,6 +470,7 @@ const Shipping: React.FC<ShippingProps> = ({
 
         const previewInput: DeliveryHubNeutralSelectionRehearsalInput = {
           cart_id: cart.id,
+          address_context: deliveryHubAddressContext,
           legacy_context: {
             active_commit_path: "delivery_hub",
             legacy_is_committed: Boolean(preferredCartShippingMethodId),
@@ -471,9 +494,9 @@ const Shipping: React.FC<ShippingProps> = ({
   }, [
     cart.currency_code,
     cart.id,
-    cart.shipping_address?.city,
-    cart.shipping_address?.country_code,
+    cart.subtotal,
     cartShippingMethod?.name,
+    deliveryHubAddressContext,
     preferredCartShippingMethodId,
   ])
 
@@ -504,6 +527,16 @@ const Shipping: React.FC<ShippingProps> = ({
     const destinationPointId = deliveryHubNeutralPreviewForm.destination_point_id.trim()
     const originPointId = deliveryHubNeutralPreviewForm.origin_point_id.trim()
     const warehouseId = deliveryHubNeutralPreviewForm.warehouse_id.trim()
+
+    if (!deliveryHubAddressContext.is_complete) {
+      setDeliveryHubNeutralPreviewState((current) => ({
+        ...current,
+        status: "blocked",
+        message:
+          "Fill the checkout shipping address before requesting Delivery Hub preview quotes; hidden dev/default address values are not used.",
+      }))
+      return null
+    }
 
     if (!destinationPointId) {
       setDeliveryHubNeutralPreviewState((current) => ({
@@ -662,10 +695,10 @@ const Shipping: React.FC<ShippingProps> = ({
         provider_point_id: destinationPointId,
         provider_point_code: null,
         name: `Preview pickup point ${destinationPointId}`,
-        address: "Preview/sandbox pickup point id supplied by operator",
-        city: cart.shipping_address?.city ?? null,
-        region: cart.shipping_address?.province ?? null,
-        postal_code: cart.shipping_address?.postal_code ?? null,
+        address: deliveryHubAddressContext.address_label ?? "Preview/sandbox pickup point id supplied by operator",
+        city: deliveryHubAddressContext.city,
+        region: deliveryHubAddressContext.province,
+        postal_code: deliveryHubAddressContext.postal_code,
         lat: null,
         lng: null,
         is_origin_dropoff_allowed:
@@ -961,6 +994,7 @@ const Shipping: React.FC<ShippingProps> = ({
     {
       is_loading: deliveryHubRehearsalState.status === "loading",
       save_in_flight: deliveryHubSelectionMutationInFlight,
+      address_context: deliveryHubAddressContext,
     }
   )
   const deliveryHubWriteIntentContractPreview =
@@ -1169,6 +1203,14 @@ const Shipping: React.FC<ShippingProps> = ({
                     </div>
                   </div>
 
+                  {deliveryHubBuyerDeliveryCard.buyer_address_label && (
+                    <Text
+                      className="text-ui-fg-muted txt-small"
+                      data-testid="delivery-hub-customer-buyer-address-context"
+                    >
+                      Расчёт по адресу покупателя: {deliveryHubBuyerDeliveryCard.buyer_address_label}
+                    </Text>
+                  )}
                   {deliveryHubBuyerDeliveryCard.pickup_point_address_label && (
                     <Text
                       className="text-ui-fg-muted txt-small"

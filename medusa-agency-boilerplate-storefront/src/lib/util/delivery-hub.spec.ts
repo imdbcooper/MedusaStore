@@ -6,6 +6,7 @@ import test from "node:test"
 import { readFileSync } from "node:fs"
 import {
   buildDeliveryHubBuyerDeliveryCardModel,
+  buildDeliveryHubCheckoutAddressContext,
   buildDeliveryHubCheckoutCutoverGateStatus,
   buildDeliveryHubCommitEligibilityModel,
   evaluateDeliveryHubCutoverCandidateCommitGuard,
@@ -65,6 +66,177 @@ import {
   isDeliveryHubSelectionReady,
   type DeliveryHubReadinessResponse as DeliveryHubPreviewReadinessResponse,
 } from "./delivery-hub-preview.ts"
+
+test("buildDeliveryHubCheckoutAddressContext derives deterministic buyer address labels", () => {
+  const context = buildDeliveryHubCheckoutAddressContext({
+    city: "  Екатеринбург ",
+    country_code: " ru ",
+    postal_code: "620000",
+    province: "Свердловская область",
+    address_1: "ул. Ленина, 1",
+    address_2: "кв. 2",
+    first_name: "Анна",
+    last_name: "Иванова",
+    phone: "+70000000000",
+  })
+
+  assert.equal(context.status, "ready")
+  assert.equal(context.is_complete, true)
+  assert.equal(context.city, "Екатеринбург")
+  assert.equal(context.country_code, "ru")
+  assert.equal(context.country_code_upper, "RU")
+  assert.equal(
+    context.address_label,
+    "620000, RU, Свердловская область, Екатеринбург, ул. Ленина, 1, кв. 2"
+  )
+  assert.equal(context.buyer_context_label, "Адрес покупателя: Екатеринбург, RU")
+  assert.equal(context.recipient_label, "Анна Иванова")
+})
+
+test("buildDeliveryHubCheckoutAddressContext blocks missing buyer address fields instead of falling back", () => {
+  const missingAddress = buildDeliveryHubCheckoutAddressContext(null)
+  const missingCity = buildDeliveryHubCheckoutAddressContext({
+    country_code: "ru",
+    address_1: "ул. Ленина, 1",
+  })
+  const missingCountry = buildDeliveryHubCheckoutAddressContext({
+    city: "Казань",
+  })
+
+  assert.equal(missingAddress.status, "missing_address")
+  assert.deepEqual(missingAddress.missing_fields, ["shipping_address", "city", "country_code"])
+  assert.equal(missingCity.status, "missing_city")
+  assert.deepEqual(missingCity.missing_fields, ["city"])
+  assert.equal(missingCountry.status, "missing_country")
+  assert.deepEqual(missingCountry.missing_fields, ["country_code"])
+})
+
+test("buildDeliveryHubBuyerDeliveryCardModel asks for buyer address before preview defaults", () => {
+  const addressContext = buildDeliveryHubCheckoutAddressContext({ country_code: "ru" })
+  const card = buildDeliveryHubBuyerDeliveryCardModel(
+    {
+      address_context: addressContext,
+      legacy_context: {
+        active_commit_path: "delivery_hub",
+        legacy_is_committed: false,
+        legacy_flow_kind: null,
+        legacy_selection_fresh: false,
+        legacy_method_label: null,
+      },
+    },
+    { address_context: addressContext }
+  )
+
+  assert.equal(card.status, "needs_address")
+  assert.equal(card.can_save_selection, false)
+  assert.equal(card.unavailable_reason_label?.includes("city"), true)
+  assert.equal(card.detail_label.includes("checkout"), true)
+})
+
+test("buildDeliveryHubBuyerDeliveryCardModel surfaces buyer address context with visible quote", () => {
+  const addressContext = buildDeliveryHubCheckoutAddressContext({
+    city: "Казань",
+    country_code: "ru",
+    postal_code: "420000",
+    address_1: "ул. Баумана, 1",
+  })
+  const card = buildDeliveryHubBuyerDeliveryCardModel({
+    cart_id: "cart_visible_quote",
+    address_context: addressContext,
+    catalog: {
+      ok: true,
+      default_connection_id: "conn_visible",
+      connections: [
+        {
+          connection_id: "conn_visible",
+          label: "Delivery Hub",
+          state: "ready",
+          ready: true,
+          quote_types: ["warehouse_to_pickup_point"],
+          supports_pickup_points: true,
+          supports_pickup_windows: false,
+          supports_dropoff: false,
+        },
+      ],
+    },
+    settings: {
+      ok: true,
+      settings: {
+        enabled: true,
+        status: "available",
+        summary: {
+          enabled_connection_count: 1,
+          ready_connection_count: 1,
+          default_connection_label: "Delivery Hub",
+          modality_codes: ["warehouse_to_pickup_point"],
+          supports_pickup_points: true,
+          supports_pickup_windows: false,
+          supports_dropoff: false,
+        },
+        preview_visibility: {
+          shadow_settings: true,
+          readiness: true,
+          persisted_selection: true,
+          shadow_catalog: true,
+          shadow_pickup_points: true,
+          shadow_quotes: true,
+          shadow_pickup_windows: true,
+        },
+        hints: [],
+      },
+    },
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "neutral_carrier",
+          carrier_label: "Neutral Carrier",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "dhsel_quote_visible", version: 1 },
+          amount: 350,
+          currency_code: "RUB",
+          delivery_eta_min: 1,
+          delivery_eta_max: 3,
+          pickup_point_required: true,
+          pickup_point_ids: ["pvz_visible"],
+          pickup_window_required: false,
+        },
+      ],
+    },
+    pickup_points: {
+      ok: true,
+      points: [
+        {
+          provider_point_id: "pvz_visible",
+          provider_point_code: null,
+          name: "ПВЗ Казань",
+          address: "ул. Баумана, 1",
+          city: "Казань",
+          region: null,
+          postal_code: "420000",
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      ],
+    },
+    legacy_context: {
+      active_commit_path: "delivery_hub",
+      legacy_is_committed: false,
+      legacy_flow_kind: null,
+      legacy_selection_fresh: false,
+      legacy_method_label: null,
+    },
+  })
+
+  assert.equal(card.status, "ready_to_save")
+  assert.equal(card.quote_amount, 350)
+  assert.equal(card.buyer_context_label, "Адрес покупателя: Казань, RU")
+  assert.equal(card.buyer_address_label, "420000, RU, Казань, ул. Баумана, 1")
+  assert.equal(card.pickup_point_label, "ПВЗ Казань")
+})
 
 test("normalizeDeliveryHubQuotesResponse keeps neutral fields and rejects provider internals", () => {
   const response = normalizeDeliveryHubQuotesResponse({

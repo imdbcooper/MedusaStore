@@ -89,6 +89,35 @@ export type DeliveryHubQuoteRequestItem = {
   price?: number
 }
 
+export type DeliveryHubCheckoutAddressLike = {
+  city?: string | null
+  country_code?: string | null
+  postal_code?: string | null
+  address_1?: string | null
+  address_2?: string | null
+  province?: string | null
+  first_name?: string | null
+  last_name?: string | null
+  phone?: string | null
+}
+
+export type DeliveryHubCheckoutAddressContext = {
+  status: "ready" | "missing_address" | "missing_city" | "missing_country"
+  city: string | null
+  country_code: string | null
+  country_code_upper: string | null
+  postal_code: string | null
+  address_1: string | null
+  address_2: string | null
+  province: string | null
+  recipient_label: string | null
+  phone: string | null
+  address_label: string | null
+  buyer_context_label: string | null
+  missing_fields: string[]
+  is_complete: boolean
+}
+
 export type DeliveryHubCatalogConnection = {
   connection_id: string
   label: string
@@ -428,6 +457,90 @@ function readOptionalString(value: unknown) {
 
   const normalized = value.trim()
   return normalized || null
+}
+
+function normalizeDeliveryHubCheckoutText(value: unknown) {
+  return readOptionalString(value)
+}
+
+function normalizeDeliveryHubCheckoutCountryCode(value: unknown) {
+  const countryCode = normalizeDeliveryHubCheckoutText(value)
+
+  if (!countryCode) {
+    return null
+  }
+
+  return countryCode.slice(0, 2).toUpperCase()
+}
+
+function joinDeliveryHubCheckoutLabel(parts: Array<string | null | undefined>) {
+  const normalized = parts
+    .map((part) => normalizeDeliveryHubCheckoutText(part))
+    .filter((part): part is string => !!part)
+
+  return normalized.length ? normalized.join(", ") : null
+}
+
+export function buildDeliveryHubCheckoutAddressContext(
+  address?: DeliveryHubCheckoutAddressLike | null
+): DeliveryHubCheckoutAddressContext {
+  const city = normalizeDeliveryHubCheckoutText(address?.city)
+  const countryCode = normalizeDeliveryHubCheckoutCountryCode(address?.country_code)
+  const postalCode = normalizeDeliveryHubCheckoutText(address?.postal_code)
+  const address1 = normalizeDeliveryHubCheckoutText(address?.address_1)
+  const address2 = normalizeDeliveryHubCheckoutText(address?.address_2)
+  const province = normalizeDeliveryHubCheckoutText(address?.province)
+  const firstName = normalizeDeliveryHubCheckoutText(address?.first_name)
+  const lastName = normalizeDeliveryHubCheckoutText(address?.last_name)
+  const phone = normalizeDeliveryHubCheckoutText(address?.phone)
+  const recipientLabel = joinDeliveryHubCheckoutLabel([
+    [firstName, lastName].filter(Boolean).join(" "),
+  ])
+  const addressLabel = joinDeliveryHubCheckoutLabel([
+    postalCode,
+    countryCode,
+    province,
+    city,
+    address1,
+    address2,
+  ])
+  const buyerContextLabel = city && countryCode
+    ? `Адрес покупателя: ${city}, ${countryCode}`
+    : addressLabel
+      ? `Адрес покупателя: ${addressLabel}`
+      : null
+  const hasAnyAddress = Boolean(
+    city || countryCode || postalCode || address1 || address2 || province
+  )
+  const missingFields = [
+    hasAnyAddress ? null : "shipping_address",
+    city ? null : "city",
+    countryCode ? null : "country_code",
+  ].filter((field): field is string => !!field)
+  const status: DeliveryHubCheckoutAddressContext["status"] = !hasAnyAddress
+    ? "missing_address"
+    : !city
+      ? "missing_city"
+      : !countryCode
+        ? "missing_country"
+        : "ready"
+
+  return {
+    status,
+    city,
+    country_code: countryCode?.toLowerCase() ?? null,
+    country_code_upper: countryCode,
+    postal_code: postalCode,
+    address_1: address1,
+    address_2: address2,
+    province,
+    recipient_label: recipientLabel,
+    phone,
+    address_label: addressLabel,
+    buyer_context_label: buyerContextLabel,
+    missing_fields: missingFields,
+    is_complete: status === "ready",
+  }
 }
 
 function readBoolean(value: unknown, field: string) {
@@ -1997,6 +2110,7 @@ export type DeliveryHubBuyerDeliveryCardStatus =
   | "loading"
   | "ready_to_save"
   | "saved"
+  | "needs_address"
   | "unavailable"
 
 export type DeliveryHubBuyerDeliveryCardModel = {
@@ -2016,11 +2130,14 @@ export type DeliveryHubBuyerDeliveryCardModel = {
   pickup_point_address_label: string | null
   pickup_window_label: string | null
   unavailable_reason_label: string | null
+  buyer_address_label: string | null
+  buyer_context_label: string | null
 }
 
 export type DeliveryHubBuyerDeliveryCardOptions = {
   is_loading?: boolean
   save_in_flight?: boolean
+  address_context?: DeliveryHubCheckoutAddressContext | null
 }
 
 export const DELIVERY_HUB_CUTOVER_PRECONDITION_CODES = [
@@ -2820,6 +2937,7 @@ export type DeliveryHubNeutralSelectionRehearsalStatus =
 export type DeliveryHubNeutralSelectionRehearsalBlockerCode =
   | "settings_unavailable"
   | "readiness_blocked"
+  | "missing_buyer_address"
   | "missing_quote_reference"
   | "missing_quote"
   | "missing_pickup_point"
@@ -2844,6 +2962,7 @@ export type DeliveryHubNeutralSelectionRehearsalInput = {
   pickup_windows?: DeliveryHubPickupWindowsResponse | null
   persisted_selection?: DeliveryHubSelectionResponse | null
   readiness?: DeliveryHubReadinessResponse | null
+  address_context?: DeliveryHubCheckoutAddressContext | null
   shipping_option_parity?: DeliveryHubShadowShippingOptionParityPreviewModel | null
   selection_parity?: DeliveryHubShadowSelectionParityPreviewModel | null
   legacy_context?: DeliveryHubNeutralSelectionLegacyContext | null
@@ -3984,10 +4103,42 @@ export function buildDeliveryHubBuyerDeliveryCardModel(
   )
   const saveGuard = buildDeliveryHubSelectionSaveCutInPayload(input)
   const savedSelectionPresent = savedSelection.state !== "missing"
+  const addressContext = options.address_context ?? input.address_context ?? null
+  const buyerAddressLabel = addressContext?.address_label ?? null
+  const buyerContextLabel = addressContext?.buyer_context_label ?? null
   const base = {
     method_label: "Яндекс Доставка до ПВЗ",
-    headline_label: "Доставка до пункта выдачи",
+    headline_label: buyerContextLabel
+      ? `Доставка до пункта выдачи · ${buyerContextLabel}`
+      : "Доставка до пункта выдачи",
     saved_selection_present: savedSelectionPresent,
+    buyer_address_label: buyerAddressLabel,
+    buyer_context_label: buyerContextLabel,
+  }
+
+  if (
+    addressContext &&
+    !addressContext.is_complete &&
+    savedSelection.state !== "saved" &&
+    savedSelection.state !== "stale_or_invalid"
+  ) {
+    return {
+      ...base,
+      tone: "neutral",
+      status: "needs_address",
+      status_label: "Заполните адрес доставки",
+      detail_label:
+        "Стоимость и пункт выдачи рассчитываются по адресу доставки из checkout. Укажите город и страну в адресе покупателя, затем вернитесь к доставке.",
+      action_label: "Заполните адрес доставки",
+      can_save_selection: false,
+      quote_amount: null,
+      currency_code: null,
+      quote_eta_label: null,
+      pickup_point_label: null,
+      pickup_point_address_label: null,
+      pickup_window_label: null,
+      unavailable_reason_label: `Не хватает данных адреса: ${addressContext.missing_fields.join(", ")}`,
+    }
   }
 
   if (options.is_loading) {
@@ -5861,6 +6012,7 @@ function getDeliveryHubNeutralRehearsalBlockers(
   const readiness = input.readiness ?? null
   const settings = input.settings ?? null
   const legacyContext = input.legacy_context ?? null
+  const addressContext = input.address_context ?? null
   const parityMismatch =
     input.shipping_option_parity?.parity_state === "divergent" ||
     input.selection_parity?.parity_status === "modality_mismatch" ||
@@ -5879,6 +6031,10 @@ function getDeliveryHubNeutralRehearsalBlockers(
       settings.settings.summary.ready_connection_count === 0)
   ) {
     pushBlocker("settings_unavailable")
+  }
+
+  if (addressContext && !addressContext.is_complete) {
+    pushBlocker("missing_buyer_address")
   }
 
   if (
@@ -5928,10 +6084,12 @@ function getDeliveryHubNeutralRehearsalBlockerLabel(
       return "Neutral Delivery Hub settings do not expose a ready shopper path."
     case "readiness_blocked":
       return "Readiness currently blocks the neutral selection candidate."
+    case "missing_buyer_address":
+      return "Checkout shipping address is incomplete, so Delivery Hub waits for the buyer address instead of using hidden defaults."
     case "missing_quote_reference":
       return "Backend-issued quote reference is missing, so a future selection body cannot be shaped."
     case "missing_quote":
-      return "Neutral quote preview is missing."
+      return "Delivery quote for the current checkout address is missing or temporarily unavailable."
     case "missing_pickup_point":
       return "Pickup point is required but missing from the read-only preview context."
     case "missing_pickup_window":
