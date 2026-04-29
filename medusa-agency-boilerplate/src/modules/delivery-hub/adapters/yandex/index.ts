@@ -75,7 +75,6 @@ export function createYandexDeliveryAdapter(): DeliveryHubAdapter {
         destination_point_id: input.destination_point_id,
         items: input.items,
       })
-
       const response = await client.postLegacy<YandexCheckPriceDto>(
         YANDEX_DELIVERY_LEGACY_API_PATH.checkPrice,
         routeQuote.payload,
@@ -289,17 +288,6 @@ function buildYandexCheckPriceItems(items: YandexQuoteItemsInput) {
   }))
 }
 
-function normalizeYandexCoordinates(value: unknown): [number, number] | null {
-  if (!Array.isArray(value) || value.length !== 2) {
-    return null
-  }
-
-  const lng = normalizeFiniteNumber(value[0])
-  const lat = normalizeFiniteNumber(value[1])
-
-  return lng === null || lat === null ? null : [lng, lat]
-}
-
 function normalizeWeightKg(value: unknown) {
   const grams = normalizeFiniteNumber(value)
 
@@ -318,6 +306,17 @@ function buildYandexCheckPriceQuoteKey(modeCode: string, destinationPointId: str
     .slice(0, 32)
 
   return `check_price_${fingerprint}`
+}
+
+function normalizeYandexCoordinates(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length !== 2) {
+    return null
+  }
+
+  const lng = normalizeFiniteNumber(value[0])
+  const lat = normalizeFiniteNumber(value[1])
+
+  return lng === null || lat === null ? null : [lng, lat]
 }
 
 function normalizeYandexPlaces(items: YandexQuoteItemsInput) {

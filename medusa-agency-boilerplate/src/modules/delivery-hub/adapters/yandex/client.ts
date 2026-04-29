@@ -99,8 +99,7 @@ export class YandexDeliveryClient {
     const errorCategory = normalizeYandexHttpErrorCategory(response.status, data)
 
     if (!response.ok) {
-      const isAccessBlock = errorCategory === "provider_access_blocked"
-      const isAuthFailure = !isAccessBlock && (response.status === 401 || response.status === 403)
+      const isAuthFailure = response.status === 401
 
       throw new DeliveryHubError({
         code: isAuthFailure
@@ -135,8 +134,12 @@ function normalizeYandexHttpErrorCategory(status: number, data?: unknown) {
     return "provider_access_blocked"
   }
 
-  if (status === 401 || status === 403) {
+  if (status === 401) {
     return "auth"
+  }
+
+  if (status === 403) {
+    return "provider_permission_denied"
   }
 
   if (status === 404 && isYandexRouteMismatchResponse(data)) {
@@ -159,8 +162,12 @@ function getYandexHttpErrorOperatorHint(status: number, category: string) {
     return "Yandex returned an HTML access-block page before a normal API response. Check sandbox/API access, account permissions, and source network/IP reputation. No token or raw provider body is exposed."
   }
 
-  if (status === 401 || status === 403) {
-    return "Yandex rejected the credentials or account/API permission for this host and resource. Verify sandbox credentials, cabinet access, and that the token belongs to this API/account."
+  if (status === 403) {
+    return "Yandex denied this API resource for the current account, sandbox/live mode, host, or network. Verify cabinet/API access, account permissions, selected host/mode, and source IP reputation. No token or raw provider body is exposed."
+  }
+
+  if (status === 401) {
+    return "Yandex rejected the credentials for this host and resource. Verify sandbox credentials, cabinet access, and that the token belongs to this API/account."
   }
 
   if (status === 404 && category === "provider_route_mismatch") {

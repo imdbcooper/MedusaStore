@@ -287,6 +287,17 @@ type DeliveryHubStoreCatalogConnection = {
   supports_dropoff: boolean
 }
 
+type DeliveryHubStoreConnectionBlocker = {
+  code: string
+  message: string
+  connection_id: string | null
+  provider_code: string | null
+  status: DeliveryConnectionRecord["status"] | null
+  credentials_state: DeliveryConnectionRecord["credentials_state"] | null
+  last_error_code: string | null
+  operator_hint: string
+}
+
 export class DeliveryHubService {
   constructor(private readonly pg: DeliveryHubPgConnection) {}
 
@@ -753,6 +764,7 @@ export class DeliveryHubService {
     } catch (error) {
       const normalized = normalizeDeliveryHubError(error)
       const providerErrorSummary = buildProviderErrorSummary(normalized, correlationId)
+      const shouldFailConnectionClosed = shouldFailConnectionClosedForConnectionTestError(connection, normalized)
 
       await this.appendLog({
         connection,
@@ -767,7 +779,7 @@ export class DeliveryHubService {
       })
 
       await this.materializeConnectionFailure(connection, normalized, {
-        status: shouldFailConnectionClosedForConnectionTestError(connection, normalized)
+        status: shouldFailConnectionClosed
           ? DELIVERY_HUB_CONNECTION_STATUS.error
           : undefined,
       })
@@ -1662,45 +1674,20 @@ export class DeliveryHubService {
       return defaultConnection
     }
 
-    throw new DeliveryHubError({
-      code: "DELIVERY_HUB_NOT_FOUND",
-      message: "No active public delivery connection is available",
-      status: 404,
-    })
+    throw createStoreConnectionUnavailableError(connections)
   }
 
   private assertStoreConnectionReady(connection: DeliveryConnectionRecord) {
     if (!connection.enabled) {
-      throw new DeliveryHubError({
-        code: "DELIVERY_HUB_VALIDATION_ERROR",
-        message: "Delivery connection is disabled for store/public use",
-        status: 409,
-        details: {
-          field: "connection_id",
-        },
-      })
+      throw createStoreConnectionUnavailableError([connection], connection.id)
     }
 
     if (connection.status !== DELIVERY_HUB_CONNECTION_STATUS.active) {
-      throw new DeliveryHubError({
-        code: "DELIVERY_HUB_VALIDATION_ERROR",
-        message: "Delivery connection is not active for store/public use",
-        status: 409,
-        details: {
-          field: "connection_id",
-        },
-      })
+      throw createStoreConnectionUnavailableError([connection], connection.id)
     }
 
     if (connection.credentials_state !== DELIVERY_HUB_CREDENTIALS_STATE.sealed) {
-      throw new DeliveryHubError({
-        code: "DELIVERY_HUB_VALIDATION_ERROR",
-        message: "Delivery connection credentials are not ready for store/public use",
-        status: 409,
-        details: {
-          field: "connection_id",
-        },
-      })
+      throw createStoreConnectionUnavailableError([connection], connection.id)
     }
   }
 
@@ -2117,9 +2104,11 @@ function shouldFailConnectionClosedForProviderSurfaceError(
     return connection.credentials_state !== DELIVERY_HUB_CREDENTIALS_STATE.sealed
   }
 
+  const category = normalizeProviderErrorCategory(error)
+
   if (
     connection.credentials_state === DELIVERY_HUB_CREDENTIALS_STATE.sealed &&
-    normalizeProviderErrorCategory(error) === "provider_access_blocked"
+    (category === "provider_access_blocked" || category === "provider_permission_denied")
   ) {
     return false
   }
@@ -2147,8 +2136,11 @@ function normalizeProviderErrorCategory(error?: DeliveryHubError) {
   const providerStatus = error.details?.provider_status
 
   if (typeof providerStatus === "number") {
-    if (providerStatus === 401 || providerStatus === 403) {
+    if (providerStatus === 401) {
       return "auth"
+    }
+    if (providerStatus === 403) {
+      return "provider_permission_denied"
     }
     if (providerStatus === 408 || providerStatus === 429 || providerStatus >= 500) {
       return "provider_unavailable"
@@ -2156,6 +2148,10 @@ function normalizeProviderErrorCategory(error?: DeliveryHubError) {
     if (providerStatus >= 400) {
       return "provider_rejected"
     }
+  }
+
+  if (typeof error.details?.error_category === "string" && error.details.error_category.trim()) {
+    return error.details.error_category.trim()
   }
 
   return error.status >= 500 ? "provider_error" : "validation"
@@ -2333,6 +2329,113 @@ function normalizeRoutePointCoordinates(value: unknown): [number, number] | null
   const lat = normalizeFiniteNumber(value[1])
 
   return lng === null || lat === null ? null : [lng, lat]
+}
+
+function createStoreConnectionUnavailableError(
+  connections: DeliveryConnectionRecord[],
+  explicitConnectionId?: string | null
+) {
+  const enabledConnections = connections.filter((connection) => connection.enabled)
+  const relevantConnections = explicitConnectionId
+    ? connections.filter((connection) => connection.id === explicitConnectionId)
+    : enabledConnections
+  const blocker = buildStoreConnectionBlocker(
+    relevantConnections[0] ?? enabledConnections[0] ?? connections[0] ?? null,
+    explicitConnectionId
+  )
+
+  return new DeliveryHubError({
+    code: connections.length ? "DELIVERY_HUB_VALIDATION_ERROR" : "DELIVERY_HUB_NOT_FOUND",
+    message: connections.length
+      ? "Delivery Hub provider is configured but not ready for storefront quote requests"
+      : "No public delivery connection is configured for storefront quote requests",
+    status: connections.length ? 409 : 404,
+    details: {
+      reason: blocker.code,
+      connection_id: blocker.connection_id,
+      provider_code: blocker.provider_code,
+      connection_status: blocker.status,
+      credentials_state: blocker.credentials_state,
+      last_error_code: blocker.last_error_code,
+      operator_hint: blocker.operator_hint,
+    },
+  })
+}
+
+function buildStoreConnectionBlocker(
+  connection: DeliveryConnectionRecord | null,
+  explicitConnectionId?: string | null
+): DeliveryHubStoreConnectionBlocker {
+  if (!connection) {
+    return {
+      code: explicitConnectionId ? "connection_not_found" : "no_connection_configured",
+      message: explicitConnectionId
+        ? "Requested delivery connection was not found."
+        : "No delivery connection has been configured.",
+      connection_id: explicitConnectionId ?? null,
+      provider_code: null,
+      status: null,
+      credentials_state: null,
+      last_error_code: null,
+      operator_hint: explicitConnectionId
+        ? "Select an existing Delivery Hub connection in Admin Settings → Delivery, then retry storefront delivery lookup."
+        : "Create and validate a Delivery Hub provider connection in Admin Settings → Delivery before storefront delivery lookup.",
+    }
+  }
+
+  if (!connection.enabled) {
+    return {
+      code: "connection_disabled",
+      message: "Delivery connection is disabled for store/public use.",
+      connection_id: connection.id,
+      provider_code: connection.provider_code,
+      status: connection.status,
+      credentials_state: connection.credentials_state,
+      last_error_code: connection.credentials_last_error_code,
+      operator_hint: "Enable the Delivery Hub connection in Admin Settings → Delivery, then retry storefront delivery lookup.",
+    }
+  }
+
+  if (connection.status !== DELIVERY_HUB_CONNECTION_STATUS.active) {
+    return {
+      code: "connection_not_active",
+      message: "Delivery connection is not active for store/public use.",
+      connection_id: connection.id,
+      provider_code: connection.provider_code,
+      status: connection.status,
+      credentials_state: connection.credentials_state,
+      last_error_code: connection.credentials_last_error_code,
+      operator_hint: connection.status === DELIVERY_HUB_CONNECTION_STATUS.error
+        ? "The provider connection is in error state after a provider/account/API rejection. Re-test the connection in Admin Settings → Delivery after verifying Yandex sandbox/live access, host/mode, account permissions, and source IP/network access."
+        : "Activate the Delivery Hub connection in Admin Settings → Delivery, then retry storefront delivery lookup.",
+    }
+  }
+
+  if (connection.credentials_state !== DELIVERY_HUB_CREDENTIALS_STATE.sealed) {
+    return {
+      code: "credentials_not_ready",
+      message: "Delivery connection credentials are not ready for store/public use.",
+      connection_id: connection.id,
+      provider_code: connection.provider_code,
+      status: connection.status,
+      credentials_state: connection.credentials_state,
+      last_error_code: connection.credentials_last_error_code,
+      operator_hint: connection.credentials_state === DELIVERY_HUB_CREDENTIALS_STATE.invalid
+        ? "Re-enter and re-test Yandex credentials in Admin Settings → Delivery. If the latest provider status was 403, also verify Yandex account/API permissions, sandbox/live mode, host, and source IP/network access."
+        : "Seal and validate provider credentials in Admin Settings → Delivery, then retry storefront delivery lookup.",
+    }
+  }
+
+  return {
+    code: "connection_not_ready",
+    message: "Delivery connection is not ready for store/public use.",
+    connection_id: connection.id,
+    provider_code: connection.provider_code,
+    status: connection.status,
+    credentials_state: connection.credentials_state,
+    last_error_code: connection.credentials_last_error_code,
+    operator_hint: "Review Delivery Hub connection status and recent provider diagnostics in Admin Settings → Delivery, then retry storefront delivery lookup.",
+  }
 }
 
 function isStoreReadyConnection(connection: DeliveryConnectionRecord) {

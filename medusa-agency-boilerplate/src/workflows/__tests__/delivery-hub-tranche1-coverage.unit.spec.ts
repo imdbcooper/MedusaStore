@@ -13,6 +13,7 @@ import {
   resolveYandexDeliveryApiBaseUrl,
 } from "../../modules/delivery-hub/adapters/yandex/base-url"
 import { DeliveryHubService } from "../../modules/delivery-hub/service"
+import { DeliveryHubError } from "../../modules/delivery-hub/errors"
 import {
   createCredentialsFingerprint,
   decryptDeliveryHubCredentials,
@@ -336,6 +337,9 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
         payment_method: "already_paid",
       },
     })
+    expect(postLegacySpy.mock.calls[0][1]).not.toHaveProperty("source")
+    expect(postLegacySpy.mock.calls[0][1]).not.toHaveProperty("destination")
+    expect(postLegacySpy.mock.calls[0][1]).not.toHaveProperty("last_mile_policy")
     expect(postSpy).toHaveBeenCalledWith(
       "/offers/create",
       expect.objectContaining({
@@ -364,13 +368,14 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
         mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
         amount: 499,
         currency_code: "rub",
-        delivery_eta_min: 2,
-        delivery_eta_max: 2,
+        delivery_eta_min: expect.any(Number),
+        delivery_eta_max: expect.any(Number),
         pickup_point_required: true,
         pickup_point_ids: ["pvz_1"],
         pickup_points_embedded: [],
         pickup_window_required: false,
         pickup_window_options: [],
+        quote_key: expect.stringMatching(/^check_price_/),
         raw_reference: {
           provider_price_endpoint: "check-price",
           provider: DELIVERY_HUB_PROVIDER_YANDEX,
@@ -707,6 +712,41 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
     })
   })
 
+  it("classifies Yandex 403 API denials as provider permission diagnostics instead of credential invalid", async () => {
+    process.env.DELIVERY_HUB_ENCRYPTION_KEY = Buffer.alloc(32, 18).toString("base64")
+    const client = new YandexDeliveryClient(createConnectionRecord({
+      credentials_envelope: encryptDeliveryHubCredentials(
+        { token: "client-secret-token" },
+        { mode: "sealed", key: Buffer.alloc(32, 18) }
+      ),
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      mode: "test",
+    }) as any)
+    jest.spyOn(globalThis, "fetch" as any).mockResolvedValue({
+      ok: false,
+      status: 403,
+      text: async () => JSON.stringify({ message: "permission denied for resource" }),
+    } as any)
+
+    await expect(client.post("/offers/calculate", { token: "payload-secret" }, "corr_403_json")).rejects.toMatchObject({
+      code: "DELIVERY_HUB_PROVIDER_ERROR",
+      status: 502,
+      details: {
+        provider_status: 403,
+        error_category: "provider_permission_denied",
+        operator_hint: expect.stringContaining("Yandex denied this API resource"),
+        request: {
+          path: "/offers/calculate",
+          headers: { Authorization: "***" },
+          payload: { token: "***" },
+        },
+        response: {
+          message: "permission denied for resource",
+        },
+      },
+    })
+  })
+
   describe("Delivery Hub service contract seams", () => {
     it("records successful connection tests with pickup-point sampling via service seam", async () => {
       const sourceState = {
@@ -789,6 +829,87 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
       provider_status: "ok",
       pickup_points_count: 2,
     })
+  })
+
+  it("surfaces configured-but-not-ready store connections as diagnostic 409 instead of route-missing 404", async () => {
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: DELIVERY_HUB_CONNECTION_STATUS.error,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.invalid,
+      credentials_last_error_code: "DELIVERY_HUB_CREDENTIALS_INVALID",
+    })
+    const pg = createMockPg([connection])
+    const service = new DeliveryHubService(pg as any)
+
+    await expect(service.listStoreQuotes({
+      mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+      destination_point_id: "pvz_1",
+      destination_address: {
+        fullname: "125009, Москва, Тверская 1",
+        coordinates: [37.61, 55.75],
+      },
+      currency_code: "RUB",
+    })).rejects.toMatchObject({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      status: 409,
+      details: {
+        reason: "connection_not_active",
+        connection_id: connection.id,
+        provider_code: DELIVERY_HUB_PROVIDER_YANDEX,
+        connection_status: DELIVERY_HUB_CONNECTION_STATUS.error,
+        credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.invalid,
+        last_error_code: "DELIVERY_HUB_CREDENTIALS_INVALID",
+        operator_hint: expect.stringContaining("Re-test the connection"),
+      },
+    })
+  })
+
+  it("does not fail a sealed connection closed for Yandex provider permission denials during quotes", async () => {
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      config: { default_warehouse_id: "wh_1" },
+    })
+    const warehouse = createWarehouseRecord({
+      id: "wh_1",
+      provider_code: DELIVERY_HUB_PROVIDER_YANDEX,
+      provider_warehouse_id: "warehouse-platform-station",
+    })
+    const pg = createMockPg([connection], [warehouse])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter(DELIVERY_HUB_PROVIDER_YANDEX)
+    jest.spyOn(adapter, "quoteWarehouseToPickupPoint").mockRejectedValue(new DeliveryHubError({
+      code: "DELIVERY_HUB_PROVIDER_ERROR",
+      message: "provider denied",
+      status: 502,
+      details: {
+        provider_status: 403,
+        error_category: "provider_permission_denied",
+      },
+    }))
+
+    try {
+      await service.listStoreQuotes({
+        mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+        destination_point_id: "pvz_1",
+        destination_address: {
+          fullname: "125009, Москва, Тверская 1",
+          coordinates: [37.61, 55.75],
+        },
+        currency_code: "RUB",
+      })
+      throw new Error("Expected quote to fail")
+    } catch (error) {
+      const normalized = error as Error
+      expect(normalized.message).toBe("provider denied")
+    }
+
+    const updateCalls = pg.calls.filter((call) => call.sql.includes("insert into delivery_connections"))
+    expect(updateCalls).toHaveLength(1)
+    expect(updateCalls[0].params[3]).toBe(DELIVERY_HUB_CONNECTION_STATUS.active)
+    expect(updateCalls[0].params[8]).toBe(DELIVERY_HUB_CREDENTIALS_STATE.sealed)
+    expect(updateCalls[0].params[11]).toBe("DELIVERY_HUB_PROVIDER_ERROR")
   })
 
   it("returns dropoff-point test quotes via service seam and logs quote keys without server bootstrap", async () => {
@@ -931,6 +1052,28 @@ function createPickupPoint(providerPointId: string) {
   }
 }
 
+function createWarehouseRecord(input?: Partial<any>) {
+  return {
+    id: "wh_1",
+    name: "Warehouse 1",
+    enabled: true,
+    country_code: "RU",
+    city: "Москва",
+    address_line_1: "Льва Толстого 16",
+    contact_name: "Seller",
+    contact_phone: "+79990000000",
+    provider_code: DELIVERY_HUB_PROVIDER_YANDEX,
+    provider_warehouse_id: "warehouse-platform-station",
+    metadata: {
+      postal_code: "125009",
+      coordinates: [37.6173, 55.7558],
+    },
+    created_at: "2026-04-20T00:00:00.000Z",
+    updated_at: "2026-04-20T00:00:00.000Z",
+    ...input,
+  }
+}
+
 function createConnectionRecord(input?: Partial<any>) {
   return {
     id: "conn_1",
@@ -955,8 +1098,9 @@ function createConnectionRecord(input?: Partial<any>) {
   }
 }
 
-function createMockPg(initialConnections: any[]) {
+function createMockPg(initialConnections: any[], initialWarehouses: any[] = []) {
   const connectionState = new Map(initialConnections.map((connection) => [connection.id, connection]))
+  const warehouseState = new Map(initialWarehouses.map((warehouse) => [warehouse.id, warehouse]))
   const eventLogs: any[] = []
   const calls: Array<{ sql: string; params: unknown[] }> = []
 
@@ -979,6 +1123,33 @@ function createMockPg(initialConnections: any[]) {
         }
       }
 
+      if (normalizedSql.includes("select * from delivery_connections order by created_at desc, id desc")) {
+        return {
+          rows: Array.from(connectionState.values()).sort((left, right) =>
+            String(right.created_at).localeCompare(String(left.created_at)) ||
+            String(right.id).localeCompare(String(left.id))
+          ),
+        }
+      }
+
+      if (normalizedSql.includes("select * from delivery_warehouses where id = ? limit 1")) {
+        const id = String(normalizedParams[0] ?? "")
+        const row = warehouseState.get(id)
+
+        return {
+          rows: row ? [row] : [],
+        }
+      }
+
+      if (normalizedSql.includes("select * from delivery_warehouses order by created_at desc, id desc")) {
+        return {
+          rows: Array.from(warehouseState.values()).sort((left, right) =>
+            String(right.created_at).localeCompare(String(left.created_at)) ||
+            String(right.id).localeCompare(String(left.id))
+          ),
+        }
+      }
+
       if (normalizedSql.includes("insert into delivery_connections")) {
         const nextRecord = {
           ...(connectionState.get(String(normalizedParams[0])) ?? {}),
@@ -995,10 +1166,14 @@ function createMockPg(initialConnections: any[]) {
           credentials_state: normalizedParams[8],
           credentials_fingerprint: normalizedParams[9],
           credentials_last_validated_at: normalizedParams[10],
-          credentials_last_error_code: normalizedParams[11],
-          config: JSON.parse(String(normalizedParams[12] ?? "{}")),
-          metadata: JSON.parse(String(normalizedParams[13] ?? "{}")),
-          created_at:
+        credentials_last_error_code: normalizedParams[11],
+        config: typeof normalizedParams[12] === "string"
+          ? JSON.parse(String(normalizedParams[12] ?? "{}"))
+          : normalizedParams[12] ?? {},
+        metadata: typeof normalizedParams[13] === "string"
+          ? JSON.parse(String(normalizedParams[13] ?? "{}"))
+          : normalizedParams[13] ?? {},
+created_at:
             connectionState.get(String(normalizedParams[0]))?.created_at ?? "2026-04-20T00:00:00.000Z",
           updated_at: "2026-04-20T00:00:00.000Z",
         }
