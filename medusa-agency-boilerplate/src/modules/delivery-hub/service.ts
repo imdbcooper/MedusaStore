@@ -2,6 +2,7 @@ import crypto from "node:crypto"
 import {
   DELIVERY_HUB_CONNECTION_STATUS,
   DELIVERY_HUB_CREDENTIALS_STATE,
+  DELIVERY_HUB_DEFAULT_COUNTRY_CODE,
   DELIVERY_HUB_LOG_KIND,
   DELIVERY_HUB_MODE_CODE,
   DELIVERY_HUB_PROVIDER_YANDEX,
@@ -748,6 +749,7 @@ export class DeliveryHubService {
       }
     } catch (error) {
       const normalized = normalizeDeliveryHubError(error)
+      const providerErrorSummary = buildProviderErrorSummary(normalized, correlationId)
 
       await this.appendLog({
         connection,
@@ -758,13 +760,15 @@ export class DeliveryHubService {
         request_summary: {
           include_pickup_points: !!input?.include_pickup_points,
         },
-        response_summary: buildProviderErrorSummary(normalized, correlationId),
+        response_summary: providerErrorSummary,
       })
 
       await this.materializeConnectionFailure(connection, normalized, {
-        status: DELIVERY_HUB_CONNECTION_STATUS.error,
+        status: shouldFailConnectionClosedForConnectionTestError(connection, normalized)
+          ? DELIVERY_HUB_CONNECTION_STATUS.error
+          : undefined,
       })
-      normalized.details = buildProviderErrorSummary(normalized, correlationId)
+      normalized.details = providerErrorSummary
       throw normalized
     }
   }
@@ -848,7 +852,11 @@ export class DeliveryHubService {
         response_summary: buildProviderErrorSummary(normalized, correlationId),
       })
 
-      await this.materializeConnectionFailure(connection, normalized)
+      await this.materializeConnectionFailure(connection, normalized, {
+        status: shouldFailConnectionClosedForProviderSurfaceError(connection, normalized)
+          ? DELIVERY_HUB_CONNECTION_STATUS.error
+          : undefined,
+      })
       normalized.details = buildProviderErrorSummary(normalized, correlationId)
       throw normalized
     }
@@ -870,7 +878,7 @@ export class DeliveryHubService {
     const connection = await this.requireConnection(input.connection_id)
     const adapter = getDeliveryHubAdapter(connection.provider_code)
     const correlationId = crypto.randomUUID()
-    const countryCode = normalizeNullableText(input.country_code) ?? connection.country_code
+    const countryCode = normalizeCountryCode(input.country_code ?? connection.country_code)
     const city = normalizeNullableText(input.city)
     const geoId = Number.isInteger(input.geo_id) ? input.geo_id : null
     const pickupPointId = normalizeNullableText(input.pickup_point_id)
@@ -955,7 +963,11 @@ export class DeliveryHubService {
         response_summary: buildProviderErrorSummary(normalized, correlationId),
       })
 
-      await this.materializeConnectionFailure(connection, normalized)
+      await this.materializeConnectionFailure(connection, normalized, {
+        status: shouldFailConnectionClosedForProviderSurfaceError(connection, normalized)
+          ? DELIVERY_HUB_CONNECTION_STATUS.error
+          : undefined,
+      })
       normalized.details = buildProviderErrorSummary(normalized, correlationId)
       throw normalized
     }
@@ -1040,7 +1052,11 @@ export class DeliveryHubService {
         response_summary: buildProviderErrorSummary(normalized, correlationId),
       })
 
-      await this.materializeConnectionFailure(connection, normalized)
+      await this.materializeConnectionFailure(connection, normalized, {
+        status: shouldFailConnectionClosedForProviderSurfaceError(connection, normalized)
+          ? DELIVERY_HUB_CONNECTION_STATUS.error
+          : undefined,
+      })
       normalized.details = buildProviderErrorSummary(normalized, correlationId)
       throw normalized
     }
@@ -1054,7 +1070,7 @@ export class DeliveryHubService {
     const connection = await this.resolveStoreConnection(input.connection_id)
     const adapter = getDeliveryHubAdapter(connection.provider_code)
     const correlationId = crypto.randomUUID()
-    const countryCode = normalizeNullableText(input.country_code) ?? connection.country_code
+    const countryCode = normalizeCountryCode(input.country_code ?? connection.country_code)
     const city = normalizeNullableText(input.city)
 
     try {
@@ -1094,14 +1110,15 @@ export class DeliveryHubService {
           city,
           country_code: countryCode,
         },
-        response_summary: {
-          message: normalized.message,
-          details: normalized.details ?? {},
-        },
+        response_summary: buildProviderErrorSummary(normalized, correlationId),
       })
 
-      await this.materializeConnectionFailure(connection, normalized)
-
+      await this.materializeConnectionFailure(connection, normalized, {
+        status: shouldFailConnectionClosedForProviderSurfaceError(connection, normalized)
+          ? DELIVERY_HUB_CONNECTION_STATUS.error
+          : undefined,
+      })
+      normalized.details = buildProviderErrorSummary(normalized, correlationId)
       throw normalized
     }
   }
@@ -1158,7 +1175,11 @@ export class DeliveryHubService {
         },
       })
 
-      await this.materializeConnectionFailure(connection, normalized)
+      await this.materializeConnectionFailure(connection, normalized, {
+        status: shouldFailConnectionClosedForProviderSurfaceError(connection, normalized)
+          ? DELIVERY_HUB_CONNECTION_STATUS.error
+          : undefined,
+      })
 
       throw normalized
     }
@@ -1273,7 +1294,11 @@ export class DeliveryHubService {
         },
       })
 
-      await this.materializeConnectionFailure(connection, normalized)
+      await this.materializeConnectionFailure(connection, normalized, {
+        status: shouldFailConnectionClosedForProviderSurfaceError(connection, normalized)
+          ? DELIVERY_HUB_CONNECTION_STATUS.error
+          : undefined,
+      })
 
       throw normalized
     }
@@ -1932,6 +1957,39 @@ function normalizeProviderStatus(value: unknown) {
   return null
 }
 
+function shouldFailConnectionClosedForConnectionTestError(
+  connection: DeliveryConnectionRecord,
+  error: DeliveryHubError
+) {
+  return shouldFailConnectionClosedForProviderSurfaceError(connection, error)
+}
+
+function shouldFailConnectionClosedForProviderSurfaceError(
+  connection: DeliveryConnectionRecord,
+  error: DeliveryHubError
+) {
+  if (error.code === "DELIVERY_HUB_CREDENTIALS_INVALID") {
+    return true
+  }
+
+  if (error.code !== "DELIVERY_HUB_PROVIDER_ERROR") {
+    return connection.credentials_state !== DELIVERY_HUB_CREDENTIALS_STATE.sealed
+  }
+
+  if (
+    connection.credentials_state === DELIVERY_HUB_CREDENTIALS_STATE.sealed &&
+    normalizeProviderErrorCategory(error) === "provider_access_blocked"
+  ) {
+    return false
+  }
+
+  return connection.credentials_state !== DELIVERY_HUB_CREDENTIALS_STATE.sealed
+}
+
+function normalizeCountryCode(value?: string | null) {
+  return normalizeNullableText(value)?.toUpperCase() ?? DELIVERY_HUB_DEFAULT_COUNTRY_CODE
+}
+
 function normalizeProviderErrorCategory(error?: DeliveryHubError) {
   if (!error) {
     return null
@@ -1939,6 +1997,10 @@ function normalizeProviderErrorCategory(error?: DeliveryHubError) {
 
   if (error.code === "DELIVERY_HUB_CREDENTIALS_INVALID") {
     return "auth"
+  }
+
+  if (error.details?.error_category === "provider_access_blocked") {
+    return "provider_access_blocked"
   }
 
   const providerStatus = error.details?.provider_status

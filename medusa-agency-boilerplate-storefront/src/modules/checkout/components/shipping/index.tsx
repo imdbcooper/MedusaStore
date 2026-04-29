@@ -1173,8 +1173,8 @@ const Shipping: React.FC<ShippingProps> = ({
                     <span>Neutral modality: {deliveryHubRehearsalState.model.modality_label}</span>
                   )}
                   {deliveryHubRehearsalState.model.quote_amount !== null && (
-                    <span>
-                      Quote preview: {formatPrice(
+                    <span data-testid="delivery-hub-buyer-visible-delivery-cost">
+                      Delivery Hub delivery cost: {formatPrice(
                         deliveryHubRehearsalState.model.quote_amount,
                         deliveryHubRehearsalState.model.currency_code
                       )}

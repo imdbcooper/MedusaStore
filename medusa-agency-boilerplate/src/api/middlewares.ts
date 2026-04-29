@@ -30,6 +30,8 @@ import {
   StoreDeliveryQuotesBodySchema,
   StoreDeliveryQuotesQuerySchema,
 } from "./store/delivery/quotes/route"
+import { StoreDeliveryCutoverApprovalArtifactQuerySchema } from "./store/delivery/cutover-approval-template/route"
+import { StoreDeliveryCutoverCandidateQuerySchema } from "./store/delivery/cutover-candidate/route"
 import { StoreDeliveryCutoverPreconditionsQuerySchema } from "./store/delivery/cutover-preconditions/route"
 import { StoreDeliverySelectionReadinessQuerySchema } from "./store/delivery/readiness/route"
 import { StoreDeliverySettingsQuerySchema } from "./store/delivery/settings/route"
@@ -266,6 +268,26 @@ export default defineMiddlewares({
       methods: ["GET"],
       middlewares: [
         validateAndTransformQuery(StoreDeliveryCutoverPreconditionsQuerySchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/store/delivery/cutover-candidate",
+      methods: ["GET"],
+      middlewares: [
+        validateAndTransformQuery(StoreDeliveryCutoverCandidateQuerySchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/store/delivery/cutover-approval-template",
+      methods: ["GET"],
+      middlewares: [
+        validateAndTransformQuery(StoreDeliveryCutoverApprovalArtifactQuerySchema, {
           defaults: [],
           isList: false,
         }),

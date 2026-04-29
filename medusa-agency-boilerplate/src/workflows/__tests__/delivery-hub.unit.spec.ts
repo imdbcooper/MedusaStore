@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals"
 import {
+  DELIVERY_HUB_CONNECTION_STATUS,
   DELIVERY_HUB_CREDENTIALS_STATE,
   DELIVERY_HUB_MODE_CODE,
   DELIVERY_HUB_PROVIDER_YANDEX,
@@ -609,6 +610,7 @@ describe("Delivery Hub service", () => {
 
     const upsertCalls = pg.calls.filter((call) => call.sql.includes("insert into delivery_connections"))
     expect(upsertCalls).toHaveLength(1)
+    expect(upsertCalls[0].params[3]).toBe(DELIVERY_HUB_CONNECTION_STATUS.error)
     expect(upsertCalls[0].params[8]).toBe(DELIVERY_HUB_CREDENTIALS_STATE.invalid)
     expect(upsertCalls[0].params[10]).toBe(null)
     expect(upsertCalls[0].params[11]).toBe("DELIVERY_HUB_CREDENTIALS_INVALID")
@@ -623,6 +625,88 @@ describe("Delivery Hub service", () => {
     expect(responseSummary.message).toBe("Delivery Hub credentials cannot be decrypted")
     expect(responseSummary.details ?? {}).toEqual({})
   })
+
+  it("keeps sealed active connection shopper-ready when Test connection gets provider access-block", async () => {
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      credentials_last_validated_at: "2026-04-28T18:52:16.000Z",
+      credentials_last_error_code: null,
+    })
+    const pg = createMockPg([connection])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+    jest.spyOn(adapter, "testConnection").mockRejectedValue(
+      new DeliveryHubError({
+        code: "DELIVERY_HUB_PROVIDER_ERROR",
+        message: "Yandex Delivery request failed with status 403",
+        status: 502,
+        details: {
+          provider_status: 403,
+          error_category: "provider_access_blocked",
+          correlation_id: "corr_access_block",
+        },
+      })
+    )
+
+    await expect(service.testConnection(connection.id)).rejects.toMatchObject({
+      code: "DELIVERY_HUB_PROVIDER_ERROR",
+      status: 502,
+      details: expect.objectContaining({
+        provider_status: "403",
+        error_category: "provider_access_blocked",
+        diagnostics_summary: expect.objectContaining({
+          error_category: "provider_access_blocked",
+        }),
+      }),
+    })
+
+    const upsertCalls = pg.calls.filter((call) => call.sql.includes("insert into delivery_connections"))
+    expect(upsertCalls).toHaveLength(1)
+    expect(upsertCalls[0].params[3]).toBe(DELIVERY_HUB_CONNECTION_STATUS.active)
+    expect(upsertCalls[0].params[8]).toBe(DELIVERY_HUB_CREDENTIALS_STATE.sealed)
+    expect(upsertCalls[0].params[10]).toBe("2026-04-28T18:52:16.000Z")
+    expect(upsertCalls[0].params[11]).toBe("DELIVERY_HUB_PROVIDER_ERROR")
+
+    const settings = await service.getStoreSettings()
+    expect(settings.settings.status).toBe("available")
+    expect(settings.settings.summary.ready_connection_count).toBe(1)
+  })
+
+  it("keeps sealed active connection rollout-ready after provider access-block Test connection", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_1",
+      enabled: true,
+      provider_code: "yandex",
+      provider_warehouse_id: "ya-wh-1",
+    })
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      credentials_last_validated_at: "2026-04-28T18:52:16.000Z",
+      credentials_last_error_code: "DELIVERY_HUB_PROVIDER_ERROR",
+      config: {
+        default_warehouse_id: warehouse.id,
+      },
+    })
+    const pg = createMockPg([connection], [], [warehouse])
+    const service = new DeliveryHubService(pg as any)
+
+    const preview = await service.buildShippingOptionPreview([])
+
+    expect(preview.summary.desired_option_count).toBeGreaterThan(0)
+    expect(preview.summary.deferred_issue_count).toBe(0)
+    expect(preview.plan.connection_plans[0]).toMatchObject({
+      status: "projected",
+      projected_mode_codes: expect.arrayContaining([
+        DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+      ]),
+      issues: [],
+    })
+  })
+
   it("lists store pickup points through neutral public contract", async () => {
     const connection = createConnectionRecord({
       enabled: true,
@@ -667,6 +751,37 @@ describe("Delivery Hub service", () => {
         }),
       ],
     })
+    expect(pickupSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ connection }),
+      {
+        city: "Moscow",
+        country_code: "RU",
+      }
+    )
+  })
+
+  it("normalizes lowercase store pickup country codes before provider calls", async () => {
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      country_code: "RU",
+    })
+    const pg = createMockPg([connection])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+    const pickupSpy = jest.spyOn(adapter, "listPickupPoints").mockResolvedValue([])
+
+    await expect(
+      service.listStorePickupPoints({
+        city: "Moscow",
+        country_code: "ru",
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      points: [],
+    })
+
     expect(pickupSpy).toHaveBeenCalledWith(
       expect.objectContaining({ connection }),
       {
@@ -1663,6 +1778,51 @@ describe("Delivery Hub service", () => {
     expect(eventLogCall).toBeDefined()
     expect(eventLogCall?.params[5]).toBe(false)
     expect(eventLogCall?.params[8]).toBe("DELIVERY_HUB_PROVIDER_ERROR")
+  })
+
+  it("does not invalidate sealed credentials on provider access-block pickup point failure", async () => {
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      credentials_last_validated_at: "2026-04-28T18:52:16.000Z",
+      credentials_last_error_code: null,
+    })
+    const pg = createMockPg([connection])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+    jest.spyOn(adapter, "listPickupPoints").mockRejectedValue(
+      new DeliveryHubError({
+        code: "DELIVERY_HUB_PROVIDER_ERROR",
+        message: "Yandex Delivery request failed with status 403",
+        status: 502,
+        details: {
+          provider_status: 403,
+          error_category: "provider_access_blocked",
+          correlation_id: "corr_pickup_access_block",
+        },
+      })
+    )
+
+    await expect(service.listStorePickupPoints({
+      connection_id: connection.id,
+      city: "Moscow",
+      country_code: "RU",
+    })).rejects.toMatchObject({
+      code: "DELIVERY_HUB_PROVIDER_ERROR",
+      status: 502,
+    })
+
+    const upsertCalls = pg.calls.filter((call) => call.sql.includes("insert into delivery_connections"))
+    expect(upsertCalls).toHaveLength(1)
+    expect(upsertCalls[0].params[3]).toBe("active")
+    expect(upsertCalls[0].params[8]).toBe(DELIVERY_HUB_CREDENTIALS_STATE.sealed)
+    expect(upsertCalls[0].params[10]).toBe("2026-04-28T18:52:16.000Z")
+    expect(upsertCalls[0].params[11]).toBe("DELIVERY_HUB_PROVIDER_ERROR")
+
+    const settings = await service.getStoreSettings()
+    expect(settings.settings.status).toBe("available")
+    expect(settings.settings.summary.ready_connection_count).toBe(1)
   })
 })
 
