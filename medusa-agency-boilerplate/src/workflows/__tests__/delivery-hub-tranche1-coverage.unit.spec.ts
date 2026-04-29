@@ -159,7 +159,7 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
         is_market_partner: true,
         station_type: "pickup_point",
         name: "Main pickup point",
-        address: "Tverskaya 1",
+        address: "Moscow, Tverskaya 1",
         city: "Moscow",
         region: "Moscow",
         postal_code: "101000",

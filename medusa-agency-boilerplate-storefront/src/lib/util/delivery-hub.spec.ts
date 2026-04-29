@@ -9,6 +9,7 @@ import {
   buildDeliveryHubCheckoutAddressContext,
   buildDeliveryHubCheckoutCutoverGateStatus,
   buildDeliveryHubPickupPointSelectorModel,
+  classifyDeliveryHubPickupPoint,
   buildDeliveryHubCommitEligibilityModel,
   evaluateDeliveryHubCutoverCandidateCommitGuard,
   buildDeliveryHubCutoverApprovalArtifactPreviewModel,
@@ -858,6 +859,139 @@ test("normalizeDeliveryHubPickupPointsResponse strips metadata and readiness hel
   })
 
   assert.equal("metadata" in points.points[0], false)
+})
+
+test("classifyDeliveryHubPickupPoint separates Yandex, partner, and unknown safely", () => {
+  assert.equal(
+    classifyDeliveryHubPickupPoint({
+      provider_operator_id: "market_l4g",
+      network_label: "Яндекс Маркет",
+      is_yandex_branded: true,
+      is_market_partner: false,
+      name: "Пункт выдачи заказов Яндекс Маркета",
+    }),
+    "yandex"
+  )
+  assert.equal(
+    classifyDeliveryHubPickupPoint({
+      provider_operator_id: "5post",
+      network_label: "5 Post",
+      is_yandex_branded: false,
+      is_market_partner: true,
+      name: "5 Post (Пятерочка)",
+    }),
+    "partner"
+  )
+  assert.equal(
+    classifyDeliveryHubPickupPoint({
+      provider_operator_id: null,
+      network_label: null,
+      is_yandex_branded: null,
+      is_market_partner: null,
+      name: "Пункт выдачи",
+    }),
+    "unknown"
+  )
+})
+
+test("buildDeliveryHubPickupPointSelectorModel builds buyer tiles, counts, filtering, and search", () => {
+  const selector = buildDeliveryHubPickupPointSelectorModel({
+    selected_category: "partner",
+    search_query: "5 post партнёр",
+    selected_pickup_point_id: "pvz_partner",
+    quote_status: "unavailable",
+    pickup_points: {
+      ok: true,
+      points: [
+        {
+          provider_point_id: "pvz_yandex",
+          provider_point_code: null,
+          provider_operator_id: "market_l4g",
+          network_label: "Яндекс Маркет",
+          is_yandex_branded: true,
+          is_market_partner: false,
+          station_type: "pickup_point",
+          name: "Пункт выдачи заказов Яндекс Маркета",
+          address: "Тверская 1",
+          city: "Москва",
+          region: null,
+          postal_code: "125009",
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+        {
+          provider_point_id: "pvz_partner",
+          provider_point_code: null,
+          provider_operator_id: "5post",
+          network_label: "5 Post",
+          is_yandex_branded: false,
+          is_market_partner: true,
+          station_type: "pickup_point",
+          name: "5 Post (Пятерочка)",
+          address: "Никольская 1",
+          city: "Москва",
+          region: null,
+          postal_code: "109012",
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      ],
+    },
+  })
+
+  assert.equal(selector.selected_category, "partner")
+  assert.equal(selector.yandex_point_count, 1)
+  assert.equal(selector.partner_point_count, 1)
+  assert.equal(selector.category_point_count, 1)
+  assert.equal(selector.visible_point_count, 1)
+  assert.equal(selector.category_tiles[0].title, "Яндекс")
+  assert.equal(selector.category_tiles[0].count, 1)
+  assert.equal(selector.category_tiles[1].title, "Партнёры")
+  assert.equal(selector.category_tiles[1].selected, true)
+  assert.equal(selector.visible_points[0].category_label, "Партнёр")
+  assert.equal(selector.visible_points[0].network_label, "5 Post")
+  assert.equal(selector.visible_points[0].quote_status_label, "Стоимость временно недоступна для выбранного пункта")
+})
+
+test("buildDeliveryHubPickupPointSelectorModel explains empty Yandex category without hiding partners", () => {
+  const selector = buildDeliveryHubPickupPointSelectorModel({
+    selected_category: "yandex",
+    pickup_points: {
+      ok: true,
+      points: [
+        {
+          provider_point_id: "pvz_partner_only",
+          provider_point_code: null,
+          provider_operator_id: "5post",
+          network_label: "5 Post",
+          is_yandex_branded: false,
+          is_market_partner: true,
+          station_type: "pickup_point",
+          name: "5 Post (Пятерочка)",
+          address: "Тверская 1",
+          city: "Москва",
+          region: null,
+          postal_code: "125009",
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      ],
+    },
+  })
+
+  assert.equal(selector.status, "no_category_points")
+  assert.equal(selector.yandex_point_count, 0)
+  assert.equal(selector.partner_point_count, 1)
+  assert.equal(selector.detail_label.includes("Для этого адреса пункты Яндекс не найдены"), true)
 })
 
 test("delivery-hub preview-only helpers keep readiness and summary semantics for shipping summary", () => {
@@ -11708,7 +11842,10 @@ test("delivery hub buyer card and selector distinguish selected PVZ quote unavai
 
   assert.equal(unavailableCard.pickup_point_label, "5 Post (Пятерочка)")
   assert.equal(unavailableCard.status, "unavailable")
-  assert.equal(unavailableSelector.quote_status_label, "Для выбранного пункта доставка временно недоступна")
+  assert.equal(
+    unavailableSelector.quote_status_label,
+    "Стоимость временно недоступна для выбранного пункта"
+  )
   assert.equal(successCard.status, "ready_to_save")
   assert.equal(successCard.quote_amount, 275)
   assert.equal(successCard.pickup_point_label, "5 Post (Пятерочка)")
@@ -11724,18 +11861,22 @@ test("checkout shipping source exposes shopper pickup-point selector hooks and a
     "delivery-hub-pickup-point-selector",
     "delivery-hub-pickup-point-selector-status",
     "delivery-hub-selected-pickup-point-quote-status",
+    "delivery-hub-pickup-point-category-tiles",
+    "delivery-hub-pickup-point-category-tile",
     "delivery-hub-pickup-point-search",
     "delivery-hub-pickup-point-list",
     "delivery-hub-pickup-point-option",
     "delivery-hub-pickup-point-radio",
     "delivery-hub-pickup-point-empty",
+    "delivery-hub-pickup-point-retry-quote",
   ]) {
     assert.equal(shippingSource.includes(`data-testid="${testId}"`), true)
   }
 
   assert.equal(shippingSource.includes("listDeliveryHubPickupWindows"), false)
   assert.equal(shippingSource.includes("selected_pickup_point_id"), true)
-  assert.equal(shippingSource.includes("Для выбранного пункта доставка временно недоступна"), true)
+  assert.equal(shippingSource.includes("Стоимость временно недоступна для выбранного пункта"), true)
+  assert.equal(shippingSource.includes("Повторить расчёт стоимости"), true)
 })
 
 test("checkout shipping source puts customer Delivery Hub card before collapsed dev diagnostics", () => {

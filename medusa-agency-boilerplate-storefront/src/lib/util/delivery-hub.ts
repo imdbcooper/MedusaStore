@@ -2170,6 +2170,7 @@ export type DeliveryHubPickupPointSelectorStatus =
   | "loading"
   | "needs_address"
   | "no_points"
+  | "no_category_points"
   | "no_search_results"
   | "ready"
 
@@ -2180,15 +2181,32 @@ export type DeliveryHubPickupPointSelectorQuoteStatus =
   | "unavailable"
   | "blocked"
 
+export type DeliveryHubPickupPointClassification = "yandex" | "partner" | "unknown"
+
+export type DeliveryHubPickupPointBuyerCategory = "yandex" | "partner"
+
+export type DeliveryHubPickupPointSelectorTile = {
+  category: DeliveryHubPickupPointBuyerCategory
+  title: string
+  subtitle: string
+  logo_mark: string
+  count: number
+  selected: boolean
+  disabled: boolean
+}
+
 export type DeliveryHubPickupPointSelectorPoint = {
   provider_point_id: string
   name: string
   address: string
   city: string | null
   provider_label: string
+  category_label: string
+  network_label: string | null
   availability_label: string
   quote_status_label: string | null
   is_selected: boolean
+  is_quote_target: boolean
 }
 
 export type DeliveryHubPickupPointSelectorModel = {
@@ -2197,10 +2215,16 @@ export type DeliveryHubPickupPointSelectorModel = {
   status_label: string
   detail_label: string
   search_query: string
+  selected_category: DeliveryHubPickupPointBuyerCategory
   total_point_count: number
+  yandex_point_count: number
+  partner_point_count: number
+  unknown_point_count: number
+  category_point_count: number
   visible_point_count: number
   selected_point: DeliveryHubPickupPointSelectorPoint | null
   visible_points: DeliveryHubPickupPointSelectorPoint[]
+  category_tiles: DeliveryHubPickupPointSelectorTile[]
   quote_status: DeliveryHubPickupPointSelectorQuoteStatus
   quote_status_label: string | null
   hint_messages: string[]
@@ -2209,6 +2233,7 @@ export type DeliveryHubPickupPointSelectorModel = {
 export type DeliveryHubPickupPointSelectorInput = {
   pickup_points?: DeliveryHubPickupPointsResponse | null
   selected_pickup_point_id?: string | null
+  selected_category?: DeliveryHubPickupPointBuyerCategory | null
   search_query?: string | null
   address_context?: DeliveryHubCheckoutAddressContext | null
   is_loading?: boolean
@@ -4412,6 +4437,55 @@ export function parseDeliveryHubCheckoutCutoverEnabledFlag(value: unknown): bool
   return value === true || value === "true"
 }
 
+export function classifyDeliveryHubPickupPoint(
+  point: Pick<
+    DeliveryHubPickupPoint,
+    | "provider_operator_id"
+    | "network_label"
+    | "is_yandex_branded"
+    | "is_market_partner"
+    | "name"
+  >
+): DeliveryHubPickupPointClassification {
+  const operatorId = readOptionalString(point.provider_operator_id)?.toLocaleLowerCase("ru-RU") ?? null
+  const networkLabel = readOptionalString(point.network_label)
+  const searchable = normalizeDeliveryHubSearchText(
+    [operatorId, networkLabel, point.name].filter(Boolean).join(" ")
+  )
+
+  if (
+    point.is_yandex_branded === true ||
+    operatorId === "market_l4g" ||
+    /\bmarket_l4g\b|яндекс|yandex/.test(searchable)
+  ) {
+    return "yandex"
+  }
+
+  if (
+    point.is_market_partner === true ||
+    operatorId === "5post" ||
+    Boolean(operatorId) ||
+    Boolean(networkLabel)
+  ) {
+    return "partner"
+  }
+
+  return "unknown"
+}
+
+export function getDeliveryHubPickupPointBuyerCategory(
+  point: Pick<
+    DeliveryHubPickupPoint,
+    | "provider_operator_id"
+    | "network_label"
+    | "is_yandex_branded"
+    | "is_market_partner"
+    | "name"
+  >
+): DeliveryHubPickupPointBuyerCategory {
+  return classifyDeliveryHubPickupPoint(point) === "yandex" ? "yandex" : "partner"
+}
+
 export function buildDeliveryHubPickupPointSelectorModel(
   input: DeliveryHubPickupPointSelectorInput = {}
 ): DeliveryHubPickupPointSelectorModel {
@@ -4421,35 +4495,70 @@ export function buildDeliveryHubPickupPointSelectorModel(
   const destinationPoints = (input.pickup_points?.points ?? []).filter(
     (point) => point.is_destination_pickup_allowed
   )
+  const selectedCategory = input.selected_category ?? getDefaultDeliveryHubPickupPointCategory(destinationPoints)
+  const yandexPointCount = destinationPoints.filter(
+    (point) => getDeliveryHubPickupPointBuyerCategory(point) === "yandex"
+  ).length
+  const partnerPointCount = destinationPoints.filter(
+    (point) => getDeliveryHubPickupPointBuyerCategory(point) === "partner"
+  ).length
+  const unknownPointCount = destinationPoints.filter(
+    (point) => classifyDeliveryHubPickupPoint(point) === "unknown"
+  ).length
+  const categoryPoints = destinationPoints.filter(
+    (point) => getDeliveryHubPickupPointBuyerCategory(point) === selectedCategory
+  )
   const normalizedSearch = normalizeDeliveryHubSearchText(searchQuery)
   const selectedPointId = readOptionalString(input.selected_pickup_point_id)
   const visibleSourcePoints = normalizedSearch
-    ? destinationPoints.filter((point) =>
+    ? categoryPoints.filter((point) =>
         normalizeDeliveryHubSearchText(
-          [point.name, point.address, point.city, point.region, point.postal_code, point.network_label]
+          [
+            point.name,
+            point.address,
+            point.city,
+            point.region,
+            point.postal_code,
+            point.network_label,
+            getDeliveryHubPickupPointCategoryLabel(point),
+            getDeliveryHubPickupPointBuyerCategory(point) === "yandex" ? "Яндекс Yandex" : "Партнёр партнер partner",
+          ]
             .filter(Boolean)
             .join(" ")
         ).includes(normalizedSearch)
       )
-    : destinationPoints
+    : categoryPoints
 
   const selectedRawPoint =
-    (selectedPointId
-      ? destinationPoints.find((point) => point.provider_point_id === selectedPointId)
-      : null) ??
-    destinationPoints[0] ??
-    null
+    selectedPointId
+      ? categoryPoints.find((point) => point.provider_point_id === selectedPointId) ?? null
+      : null
   const selectedVisiblePointId = selectedRawPoint?.provider_point_id ?? null
   const points = visibleSourcePoints.map((point) =>
     buildDeliveryHubPickupPointSelectorPoint(
       point,
       point.provider_point_id === selectedVisiblePointId,
+      point.provider_point_id === selectedVisiblePointId,
       quoteStatus
     )
   )
   const selectedPoint = selectedRawPoint
-    ? buildDeliveryHubPickupPointSelectorPoint(selectedRawPoint, true, quoteStatus)
+    ? buildDeliveryHubPickupPointSelectorPoint(selectedRawPoint, true, true, quoteStatus)
     : null
+  const categoryTiles = buildDeliveryHubPickupPointCategoryTiles({
+    selected_category: selectedCategory,
+    yandex_point_count: yandexPointCount,
+    partner_point_count: partnerPointCount,
+  })
+  const baseCounts = {
+    selected_category: selectedCategory,
+    total_point_count: destinationPoints.length,
+    yandex_point_count: yandexPointCount,
+    partner_point_count: partnerPointCount,
+    unknown_point_count: unknownPointCount,
+    category_point_count: categoryPoints.length,
+    category_tiles: categoryTiles,
+  }
 
   if (input.is_loading) {
     return {
@@ -4458,7 +4567,7 @@ export function buildDeliveryHubPickupPointSelectorModel(
       status_label: "Ищем пункты выдачи…",
       detail_label: "Проверяем доступные ПВЗ для города и страны из адреса доставки.",
       search_query: searchQuery,
-      total_point_count: destinationPoints.length,
+      ...baseCounts,
       visible_point_count: points.length,
       selected_point: selectedPoint,
       visible_points: points,
@@ -4475,10 +4584,20 @@ export function buildDeliveryHubPickupPointSelectorModel(
       status_label: "Укажите город и страну для поиска ПВЗ",
       detail_label: "Пункты выдачи ищутся по адресу доставки из checkout.",
       search_query: searchQuery,
+      selected_category: selectedCategory,
       total_point_count: 0,
+      yandex_point_count: 0,
+      partner_point_count: 0,
+      unknown_point_count: 0,
+      category_point_count: 0,
       visible_point_count: 0,
       selected_point: null,
       visible_points: [],
+      category_tiles: buildDeliveryHubPickupPointCategoryTiles({
+        selected_category: selectedCategory,
+        yandex_point_count: 0,
+        partner_point_count: 0,
+      }),
       quote_status: quoteStatus,
       quote_status_label: getDeliveryHubPickupPointQuoteStatusLabel(quoteStatus),
       hint_messages: addressContext.missing_fields.length
@@ -4494,7 +4613,26 @@ export function buildDeliveryHubPickupPointSelectorModel(
       status_label: "ПВЗ не найдены",
       detail_label: "Для указанного города сейчас не вернулись доступные пункты выдачи.",
       search_query: searchQuery,
-      total_point_count: 0,
+      ...baseCounts,
+      visible_point_count: 0,
+      selected_point: null,
+      visible_points: [],
+      quote_status: quoteStatus,
+      quote_status_label: getDeliveryHubPickupPointQuoteStatusLabel(quoteStatus),
+      hint_messages: uniqueDeliveryHubMessages([input.quote_message]),
+    }
+  }
+
+  if (!categoryPoints.length) {
+    return {
+      tone: "warning",
+      status: "no_category_points",
+      status_label: selectedCategory === "yandex" ? "Пункты Яндекс не найдены" : "Партнёрские ПВЗ не найдены",
+      detail_label: selectedCategory === "yandex"
+        ? "Для этого адреса пункты Яндекс не найдены. Партнёрские ПВЗ остаются доступны во вкладке «Партнёры»."
+        : "Для этого адреса партнёрские ПВЗ не найдены. Проверьте вкладку «Яндекс» или измените адрес.",
+      search_query: searchQuery,
+      ...baseCounts,
       visible_point_count: 0,
       selected_point: null,
       visible_points: [],
@@ -4509,9 +4647,9 @@ export function buildDeliveryHubPickupPointSelectorModel(
       tone: "neutral",
       status: "no_search_results",
       status_label: "Поиск не нашёл ПВЗ",
-      detail_label: "Измените запрос или очистите поле поиска, чтобы увидеть все найденные пункты выдачи.",
+      detail_label: "Измените запрос или очистите поле поиска, чтобы увидеть все найденные пункты в выбранной категории.",
       search_query: searchQuery,
-      total_point_count: destinationPoints.length,
+      ...baseCounts,
       visible_point_count: 0,
       selected_point: selectedPoint,
       visible_points: [],
@@ -4524,12 +4662,12 @@ export function buildDeliveryHubPickupPointSelectorModel(
   return {
     tone: quoteStatus === "ready" ? "positive" : quoteStatus === "unavailable" ? "warning" : "neutral",
     status: "ready",
-    status_label: `Найдено ПВЗ: ${destinationPoints.length}`,
+    status_label: `Найдено ПВЗ: ${destinationPoints.length} · Яндекс: ${yandexPointCount} · Партнёры: ${partnerPointCount}`,
     detail_label: selectedPoint
       ? "Выберите удобный пункт выдачи; стоимость рассчитывается для выбранного ПВЗ."
       : "Выберите удобный пункт выдачи, чтобы запросить стоимость доставки.",
     search_query: searchQuery,
-    total_point_count: destinationPoints.length,
+    ...baseCounts,
     visible_point_count: points.length,
     selected_point: selectedPoint,
     visible_points: points,
@@ -4539,23 +4677,81 @@ export function buildDeliveryHubPickupPointSelectorModel(
   }
 }
 
+function buildDeliveryHubPickupPointCategoryTiles(input: {
+  selected_category: DeliveryHubPickupPointBuyerCategory
+  yandex_point_count: number
+  partner_point_count: number
+}): DeliveryHubPickupPointSelectorTile[] {
+  return [
+    {
+      category: "yandex",
+      title: "Яндекс",
+      subtitle: input.yandex_point_count > 0
+        ? "Пункты выдачи Яндекс"
+        : "Для этого адреса пункты Яндекс не найдены",
+      logo_mark: "Я",
+      count: input.yandex_point_count,
+      selected: input.selected_category === "yandex",
+      disabled: false,
+    },
+    {
+      category: "partner",
+      title: "Партнёры",
+      subtitle: "5 Post и другие партнёрские сети",
+      logo_mark: "••",
+      count: input.partner_point_count,
+      selected: input.selected_category === "partner",
+      disabled: false,
+    },
+  ]
+}
+
+function getDefaultDeliveryHubPickupPointCategory(
+  points: DeliveryHubPickupPoint[]
+): DeliveryHubPickupPointBuyerCategory {
+  return points.some((point) => getDeliveryHubPickupPointBuyerCategory(point) === "yandex")
+    ? "yandex"
+    : "partner"
+}
+
 function buildDeliveryHubPickupPointSelectorPoint(
   point: DeliveryHubPickupPoint,
   selected: boolean,
+  quoteTarget: boolean,
   quoteStatus: DeliveryHubPickupPointSelectorQuoteStatus
 ): DeliveryHubPickupPointSelectorPoint {
+  const category = getDeliveryHubPickupPointBuyerCategory(point)
+  const networkLabel = getDeliveryHubPickupPointNetworkLabel(point)
+  const categoryLabel = getDeliveryHubPickupPointCategoryLabel(point)
+
   return {
     provider_point_id: point.provider_point_id,
     name: point.name || "Пункт выдачи",
     address: point.address,
     city: point.city,
-    provider_label: point.network_label ?? (point.is_yandex_branded ? "Яндекс Доставка" : "Delivery Hub"),
+    provider_label: networkLabel ? `${categoryLabel} · ${networkLabel}` : categoryLabel,
+    category_label: categoryLabel,
+    network_label: networkLabel,
     availability_label: point.is_destination_pickup_allowed
       ? "Доступен для получения заказа"
       : "Недоступен для получения заказа",
-    quote_status_label: selected ? getDeliveryHubPickupPointQuoteStatusLabel(quoteStatus) : null,
+    quote_status_label: quoteTarget ? getDeliveryHubPickupPointQuoteStatusLabel(quoteStatus) : null,
     is_selected: selected,
+    is_quote_target: quoteTarget,
   }
+}
+
+function getDeliveryHubPickupPointCategoryLabel(point: DeliveryHubPickupPoint) {
+  return getDeliveryHubPickupPointBuyerCategory(point) === "yandex" ? "Яндекс" : "Партнёр"
+}
+
+function getDeliveryHubPickupPointNetworkLabel(point: DeliveryHubPickupPoint) {
+  const networkLabel = readOptionalString(point.network_label)
+  if (networkLabel) {
+    return networkLabel
+  }
+
+  return getDeliveryHubPickupPointBuyerCategory(point) === "yandex" ? "Яндекс" : null
 }
 
 function getDeliveryHubPickupPointQuoteStatusLabel(
@@ -4567,7 +4763,7 @@ function getDeliveryHubPickupPointQuoteStatusLabel(
     case "ready":
       return "Стоимость получена для выбранного ПВЗ"
     case "unavailable":
-      return "Для выбранного пункта доставка временно недоступна"
+      return "Стоимость временно недоступна для выбранного пункта"
     case "blocked":
       return "Выберите ПВЗ для расчёта доставки"
     case "idle":

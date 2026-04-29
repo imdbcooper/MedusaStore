@@ -30,7 +30,7 @@ export function mapYandexPickupPoint(dto: YandexPickupPointDto): DeliveryPickupP
     is_market_partner: isMarketPartner,
     station_type: normalizeNullableString(dto.type),
     name,
-    address: normalizeString(dto.address?.full_address, ""),
+    address: buildYandexPickupPointAddressLabel(dto),
     city: normalizeNullableString(dto.address?.locality),
     region: normalizeNullableString(dto.address?.province),
     postal_code: normalizeNullableString(dto.address?.zip_code),
@@ -127,6 +127,22 @@ export function mapYandexQuote(
       provider: DELIVERY_HUB_PROVIDER_YANDEX,
     },
   }
+}
+
+function buildYandexPickupPointAddressLabel(dto: YandexPickupPointDto) {
+  const address = dto.address ?? null
+  const fullAddress = normalizeNullableString(address?.full_address)
+  const locality = normalizeNullableString(address?.locality)
+
+  if (!fullAddress) {
+    return ""
+  }
+
+  if (!locality || fullAddress.toLocaleLowerCase("ru-RU").includes(locality.toLocaleLowerCase("ru-RU"))) {
+    return fullAddress
+  }
+
+  return `${locality}, ${fullAddress}`
 }
 
 function buildYandexPickupPointNetworkLabel(input: {
