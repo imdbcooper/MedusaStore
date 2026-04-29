@@ -6,6 +6,7 @@ import {
   getStoreDeliveryHubService,
   getStoreQuery,
   handleStoreDeliveryHubError,
+  readCartShippingMethodOptions,
   sanitizeStoreDeliveryCutoverCandidateResponse,
 } from "../shared"
 
@@ -29,6 +30,19 @@ type StoreDeliveryCutoverCandidateShippingOptionSnapshot = {
   name?: string | null
   provider_id?: string | null
   data?: Record<string, unknown> | null
+}
+
+function mergeShippingOptionSnapshots(
+  left: StoreDeliveryCutoverCandidateShippingOptionSnapshot[],
+  right: StoreDeliveryCutoverCandidateShippingOptionSnapshot[]
+) {
+  const snapshots = new Map<string, StoreDeliveryCutoverCandidateShippingOptionSnapshot>()
+
+  for (const option of [...left, ...right]) {
+    snapshots.set(option.id, option)
+  }
+
+  return Array.from(snapshots.values())
 }
 
 export type StoreDeliveryCutoverCandidateDeps = {
@@ -63,14 +77,20 @@ export async function GET(
       entity: "shipping_option",
       fields: ["id", "name", "provider_id", "data"],
     })
+    const currentShippingOptions = data ?? []
+    const existingShippingMethodOptions = readCartShippingMethodOptions(existingCart)
     const service = getStoreDeliveryHubService(req)
     const result = sanitizeStoreDeliveryCutoverCandidateResponse(
       await service.getStoreCutoverCandidate({
         cart_id: existingCart.id,
         metadata: existingCart.metadata,
-        current_shipping_options: data ?? [],
+        current_shipping_options: mergeShippingOptionSnapshots(
+          currentShippingOptions,
+          existingShippingMethodOptions
+        ),
       })
     )
+
 
     res.status(200).json(result)
   } catch (error) {

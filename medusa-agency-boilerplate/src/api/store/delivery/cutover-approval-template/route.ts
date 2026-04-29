@@ -6,6 +6,7 @@ import {
   getStoreDeliveryHubService,
   getStoreQuery,
   handleStoreDeliveryHubError,
+  readCartShippingMethodOptions,
   sanitizeStoreDeliveryCutoverApprovalArtifactResponse,
 } from "../shared"
 
@@ -29,6 +30,19 @@ type StoreDeliveryCutoverApprovalShippingOptionSnapshot = {
   name?: string | null
   provider_id?: string | null
   data?: Record<string, unknown> | null
+}
+
+function mergeShippingOptionSnapshots(
+  left: StoreDeliveryCutoverApprovalShippingOptionSnapshot[],
+  right: StoreDeliveryCutoverApprovalShippingOptionSnapshot[]
+) {
+  const snapshots = new Map<string, StoreDeliveryCutoverApprovalShippingOptionSnapshot>()
+
+  for (const option of [...left, ...right]) {
+    snapshots.set(option.id, option)
+  }
+
+  return Array.from(snapshots.values())
 }
 
 export type StoreDeliveryCutoverApprovalArtifactDeps = {
@@ -72,7 +86,10 @@ export async function GET(
 
       cartId = existingCart.id
       metadata = existingCart.metadata
-      currentShippingOptions = data ?? []
+      currentShippingOptions = mergeShippingOptionSnapshots(
+        data ?? [],
+        readCartShippingMethodOptions(existingCart)
+      )
     }
 
     const result = sanitizeStoreDeliveryCutoverApprovalArtifactResponse(

@@ -226,6 +226,7 @@ const DeliverySettingsPage = () => {
   const [warehouses, setWarehouses] = useState<DeliveryWarehouse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeletingConnection, setIsDeletingConnection] = useState(false);
   const [isSavingWarehouse, setIsSavingWarehouse] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeConnectionId, setActiveConnectionId] = useState<string | null>(
@@ -748,6 +749,65 @@ const DeliverySettingsPage = () => {
       setFormError(error as ApiErrorPayload);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDeleteConnection = async () => {
+    if (!activeConnectionId || !activeConnection) {
+      setFormError({
+        status: 400,
+        code: "DELIVERY_HUB_CONNECTION_REQUIRED",
+        message: "Выберите сохранённое подключение перед удалением.",
+        details: null,
+      });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Удалить подключение "${activeConnection.name}"? Audit event logs останутся в backend, но само подключение исчезнет из admin/storefront selection.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingConnection(true);
+    setFormError(null);
+    setFormNotice(null);
+    setTestConnectionError(null);
+    setTestConnectionResult(null);
+
+    try {
+      await requestJson<{ deleted: true; connection: DeliveryConnection }>(
+        `/admin/delivery/connections/${activeConnectionId}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      setActiveConnectionId(null);
+      setConnectionForm(defaultConnectionForm);
+      setTestQuoteForm((current) => ({
+        ...current,
+        connection_id:
+          current.connection_id === activeConnectionId ? "" : current.connection_id,
+      }));
+      setPickupPointLookupForm((current) => ({
+        ...current,
+        connection_id:
+          current.connection_id === activeConnectionId ? "" : current.connection_id,
+      }));
+      setPickupWindowLookupForm((current) => ({
+        ...current,
+        connection_id:
+          current.connection_id === activeConnectionId ? "" : current.connection_id,
+      }));
+      setFormNotice("Yandex connection deleted");
+      await loadData(true);
+    } catch (error) {
+      setFormError(error as ApiErrorPayload);
+    } finally {
+      setIsDeletingConnection(false);
     }
   };
 
@@ -1615,11 +1675,25 @@ const DeliverySettingsPage = () => {
                 type="button"
                 variant="secondary"
                 onClick={startCreate}
-                disabled={isSaving}
+                disabled={isSaving || isDeletingConnection}
               >
                 Сбросить форму
               </Button>
+              {activeConnectionId ? (
+                <Button
+                  type="button"
+                  variant="danger"
+                  onClick={() => void handleDeleteConnection()}
+                  isLoading={isDeletingConnection}
+                  disabled={isSaving || isTestingConnection}
+                >
+                  Удалить подключение
+                </Button>
+              ) : null}
             </div>
+            <Text className="text-ui-fg-subtle mt-2 text-sm">
+              Удаление убирает connection из активного Delivery Hub выбора и storefront-каталога; event logs остаются для audit trail и не показывают секреты.
+            </Text>
             <Text className="text-ui-fg-subtle mt-2 text-sm">
               {testConnectionCapability.helperText}
             </Text>

@@ -496,6 +496,27 @@ export function getStoreQuery(req: MedusaRequest) {
   return req.scope.resolve(ContainerRegistrationKeys.QUERY)
 }
 
+export function readCartShippingMethodOptions(cartOrMetadata: unknown) {
+  const root = cartOrMetadata && typeof cartOrMetadata === "object" && !Array.isArray(cartOrMetadata)
+    ? (cartOrMetadata as Record<string, unknown>)
+    : {}
+  const shippingMethods = Array.isArray(root.shipping_methods)
+    ? root.shipping_methods
+    : []
+  const metadataShippingOptions = Array.isArray(root.shipping_options)
+    ? root.shipping_options
+    : []
+
+  return [...shippingMethods, ...metadataShippingOptions]
+    .map((option) => normalizeCartShippingMethodOption(option))
+    .filter((option): option is {
+      id: string
+      name: string | null
+      provider_id: string | null
+      data: Record<string, unknown> | null
+    } => option !== null)
+}
+
 export function handleStoreDeliveryHubError(res: MedusaResponse, error: unknown) {
   if (error instanceof z.ZodError) {
     respondWithStoreDeliveryHubError(
@@ -610,6 +631,38 @@ export function parseStoreDeliveryInterval(rawInterval: string | undefined) {
   return parsed as {
     from: string
     to: string
+  }
+}
+
+function normalizeCartShippingMethodOption(option: unknown) {
+  if (!option || typeof option !== "object" || Array.isArray(option)) {
+    return null
+  }
+
+  const record = option as Record<string, unknown>
+  const shippingOption = record.shipping_option && typeof record.shipping_option === "object" && !Array.isArray(record.shipping_option)
+    ? (record.shipping_option as Record<string, unknown>)
+    : null
+  const source = shippingOption ?? record
+  const id = typeof source.id === "string" && source.id.trim() ? source.id.trim() : null
+
+  if (!id) {
+    return null
+  }
+
+  const rawData = source.data
+  const data = rawData && typeof rawData === "object" && !Array.isArray(rawData)
+    ? (rawData as Record<string, unknown>)
+    : null
+
+  return {
+    id,
+    name: typeof source.name === "string" && source.name.trim() ? source.name.trim() : null,
+    provider_id:
+      typeof source.provider_id === "string" && source.provider_id.trim()
+        ? source.provider_id.trim()
+        : null,
+    data,
   }
 }
 

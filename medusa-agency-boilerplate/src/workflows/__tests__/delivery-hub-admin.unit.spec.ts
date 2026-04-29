@@ -280,6 +280,48 @@ describe("Delivery Hub admin routes", () => {
     })
   })
 
+  it("deletes connection using route id and returns deleted admin contract payload", async () => {
+    const connection = {
+      id: "conn_1",
+      provider_code: "yandex",
+      name: "Yandex deleted",
+      status: "error",
+      mode: "test",
+      enabled: true,
+      country_code: "RU",
+      credentials_state: "sealed",
+      credentials_fingerprint: "fingerprint",
+      credentials_last_validated_at: "2026-04-21T00:00:00.000Z",
+      credentials_last_error_code: "PROVIDER_ERROR",
+      credentials_present: true,
+      config: {},
+      metadata: {},
+      created_at: "2026-04-20T00:00:00.000Z",
+      updated_at: "2026-04-21T00:00:00.000Z",
+    }
+
+    const deleteSpy = jest
+      .spyOn(DeliveryHubService.prototype, "deleteConnection")
+      .mockResolvedValue({ deleted: true, connection } as any)
+
+    const res = createMockResponse()
+
+    await deliveryConnectionRoute.DELETE(
+      createMockRequest({
+        url: "/admin/delivery/connections/conn_1",
+      }) as any,
+      res as any
+    )
+
+    expect(deleteSpy).toHaveBeenCalledWith("conn_1")
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      deleted: true,
+      connection,
+    })
+  })
+
   it("normalizes legacy Yandex base URL in admin connection response", async () => {
     const connection = {
       id: "conn_1",
@@ -4319,6 +4361,26 @@ describe("Delivery Hub admin routes", () => {
         },
       },
     })
+  })
+
+  it("wires admin auth middleware for connection DELETE route", () => {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs")
+    const { resolve } = require("node:path") as typeof import("node:path")
+    const middlewaresSource = readFileSync(
+      resolve(process.cwd(), "src/api/middlewares.ts"),
+      "utf8"
+    )
+    const adminPageSource = readFileSync(
+      resolve(process.cwd(), "src/admin/routes/settings/delivery/page.tsx"),
+      "utf8"
+    )
+
+    expect(middlewaresSource).toContain('matcher: "/admin/delivery/connections/:id"')
+    expect(middlewaresSource).toContain('methods: ["DELETE"]')
+    expect(adminPageSource).toContain("handleDeleteConnection")
+    expect(adminPageSource).toContain('method: "DELETE"')
+    expect(adminPageSource).toContain('variant="danger"')
+    expect(adminPageSource).toContain("window.confirm")
   })
 
   it("wires admin auth middleware and query validation for pickup point lookup route", () => {

@@ -1441,6 +1441,61 @@ describe("Delivery Hub store routes", () => {
     )
   })
 
+  it("passes current cart shipping-method options into cutover candidate planner", async () => {
+    const result = buildCutoverCandidateResult()
+    const candidateSpy = jest
+      .spyOn(DeliveryHubService.prototype, "getStoreCutoverCandidate")
+      .mockResolvedValue(result as any)
+    deliveryCutoverCandidateRoute.storeDeliveryCutoverCandidateDeps.getDeliveryHubCartById =
+      jest.fn(async () => ({
+        id: "cart_1",
+        metadata: {},
+        shipping_methods: [
+          {
+            shipping_option: {
+              id: "deliveryhub:warehouse_to_pickup_point",
+              name: "Delivery Hub Pickup",
+              provider_id: "deliveryhub_deliveryhub",
+              data: {
+                provider_code: "deliveryhub",
+                mode_code: "warehouse_to_pickup_point",
+              },
+            },
+          },
+        ],
+      })) as any
+    deliveryCutoverCandidateRoute.storeDeliveryCutoverCandidateDeps.requireDeliveryHubCart =
+      jest.fn((cart) => cart) as any
+    const res = createMockResponse()
+
+    await deliveryCutoverCandidateRoute.GET(
+      createMockRequest({
+        validatedQuery: {
+          cart_id: "cart_1",
+        },
+        shippingOptions: [],
+      }) as any,
+      res as any
+    )
+
+    expect(candidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        current_shipping_options: [
+          {
+            id: "deliveryhub:warehouse_to_pickup_point",
+            name: "Delivery Hub Pickup",
+            provider_id: "deliveryhub_deliveryhub",
+            data: {
+              provider_code: "deliveryhub",
+              mode_code: "warehouse_to_pickup_point",
+            },
+          },
+        ],
+      })
+    )
+    expect(res.status).toHaveBeenCalledWith(200)
+  })
+
   it("rejects cutover candidate payloads that try to enable commit or leak provider fragments", async () => {
     jest.spyOn(DeliveryHubService.prototype, "getStoreCutoverCandidate").mockResolvedValue({
       ...buildCutoverCandidateResult(),

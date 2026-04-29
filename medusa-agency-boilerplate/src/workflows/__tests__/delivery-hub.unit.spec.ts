@@ -808,34 +808,81 @@ describe("Delivery Hub service", () => {
     )
   })
 
-  it("requires explicit connection_id when multiple public connections are active", async () => {
-    const first = createConnectionRecord({
-      id: "conn_1",
+  it("selects the latest validated ready store connection when duplicates are active", async () => {
+    const stale = createConnectionRecord({
+      id: "conn_stale",
       enabled: true,
       status: "active",
       credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      credentials_last_validated_at: "2026-04-20T00:00:00.000Z",
+      updated_at: "2026-04-20T00:00:00.000Z",
     })
-    const second = createConnectionRecord({
-      id: "conn_2",
-      name: "Second connection",
+    const latest = createConnectionRecord({
+      id: "conn_latest",
+      name: "Latest connection",
       enabled: true,
       status: "active",
       credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      credentials_last_validated_at: "2026-04-21T00:00:00.000Z",
+      updated_at: "2026-04-21T00:00:00.000Z",
     })
-    const pg = createMockPg([first, second])
+    const pg = createMockPg([stale, latest])
     const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+    const pickupSpy = jest.spyOn(adapter, "listPickupPoints").mockResolvedValue([])
 
     await expect(
       service.listStorePickupPoints({
         city: "Moscow",
       })
-    ).rejects.toMatchObject({
-      code: "DELIVERY_HUB_VALIDATION_ERROR",
-      status: 400,
-      details: {
-        field: "connection_id",
+    ).resolves.toMatchObject({
+      ok: true,
+      points: [],
+    })
+
+    expect(pickupSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ connection: latest }),
+      {
+        city: "Moscow",
+        country_code: "RU",
+      }
+    )
+  })
+
+  it("deletes only the connection row while leaving event logs available for audit", async () => {
+    const connection = createConnectionRecord({
+      id: "conn_delete",
+      enabled: true,
+      status: "error",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+    })
+    const pg = createMockPg([connection], [
+      {
+        id: "log_keep",
+        connection_id: "conn_delete",
+        provider_code: "yandex",
+        kind: "connection_test",
+        correlation_id: "corr_keep",
+        success: false,
+        request_summary: {},
+        response_summary: {},
+        error_code: "PROVIDER_ERROR",
+        created_at: "2026-04-21T00:00:00.000Z",
+      },
+    ])
+    const service = new DeliveryHubService(pg as any)
+
+    const result = await service.deleteConnection("conn_delete")
+
+    expect(result).toMatchObject({
+      deleted: true,
+      connection: {
+        id: "conn_delete",
+        status: "error",
       },
     })
+    await expect(service.listConnections()).resolves.toEqual([])
+    await expect(service.listEventLogs({ connection_id: "conn_delete" })).resolves.toHaveLength(1)
   })
 
   it("returns neutral selection readiness from cart metadata and connection state", async () => {
@@ -1760,6 +1807,19 @@ function createMockPg(initialConnections: any[], initialEventLogs: any[] = [], i
 
         return {
           rows: [nextRecord],
+        }
+      }
+
+      if (normalizedSql.includes("delete from delivery_connections where id = ? returning *")) {
+        const id = String(normalizedParams[0] ?? "")
+        const row = connectionState.get(id)
+
+        if (row) {
+          connectionState.delete(id)
+        }
+
+        return {
+          rows: row ? [row] : [],
         }
       }
 

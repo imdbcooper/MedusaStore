@@ -34,3 +34,23 @@ export async function PUT(
     handleDeliveryHubError(res, error)
   }
 }
+
+export async function DELETE(
+  req: AuthenticatedMedusaRequest,
+  res: MedusaResponse
+) {
+  try {
+    const id = getRouteParam(req, "id")
+    const service = getDeliveryHubService(req)
+    const result = await service.deleteConnection(id)
+    const connection = sanitizeAdminDeliveryConnection(result.connection)
+
+    res.status(200).json({
+      ok: true,
+      deleted: true,
+      connection,
+    })
+  } catch (error) {
+    handleDeliveryHubError(res, error)
+  }
+}

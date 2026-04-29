@@ -4,6 +4,7 @@ import { Radio, RadioGroup } from "@headlessui/react"
 import { setShippingMethod } from "@lib/data/cart"
 import {
   clearDeliveryHubSelection,
+  listDeliveryHubCatalog,
   listDeliveryHubPickupPoints,
   listDeliveryHubPickupWindows,
   previewDeliveryHubQuotes,
@@ -328,6 +329,12 @@ const Shipping: React.FC<ShippingProps> = ({
         }
 
         const settings = results[0].status === "fulfilled" ? results[0].value : null
+        const catalog = await listDeliveryHubCatalog()
+
+        if (cancelled) {
+          return
+        }
+
         const selection = results[1].status === "fulfilled" ? results[1].value : null
         const readiness = results[2].status === "fulfilled" ? results[2].value : null
         const pickupPoints = results[3].status === "fulfilled" ? results[3].value : null
@@ -351,16 +358,48 @@ const Shipping: React.FC<ShippingProps> = ({
           pickupPoints?.points.find((point) => point.is_destination_pickup_allowed) ??
           pickupPoints?.points[0] ??
           null
+        const defaultConnection = catalog?.connections.find(
+          (connection) => connection.connection_id === catalog.default_connection_id
+        )
         const modeCode =
           readiness?.quote_context?.quote_type ??
           selection?.selection?.quote_type ??
+          (defaultConnection?.quote_types.includes("warehouse_to_pickup_point")
+            ? "warehouse_to_pickup_point"
+            : defaultConnection?.quote_types[0]) ??
           "warehouse_to_pickup_point"
-        const quotes = destinationPoint
-          ? await previewDeliveryHubQuotes({
+        const quoteInput: DeliveryHubListQuotesInput | null = destinationPoint
+          ? {
+              connection_id:
+                readiness?.quote_context?.connection.connection_id ??
+                selection?.selection?.connection_id ??
+                catalog?.default_connection_id ??
+                null,
               mode_code: modeCode,
               currency_code: cart.currency_code,
               destination_point_id: destinationPoint.provider_point_id,
-            })
+              warehouse_id:
+                modeCode === "warehouse_to_pickup_point" &&
+                DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED &&
+                DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID
+                  ? DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID
+                  : null,
+              origin_point_id:
+                modeCode === "dropoff_point_to_pickup_point"
+                  ? pickupPoints?.points.find((point) => point.is_origin_dropoff_allowed)
+                      ?.provider_point_id ?? null
+                  : null,
+              items: [
+                {
+                  quantity: 1,
+                  weight_grams: 500,
+                  price: typeof cart.subtotal === "number" ? cart.subtotal : undefined,
+                },
+              ],
+            }
+          : null
+        const quotes = quoteInput
+          ? await previewDeliveryHubQuotes(quoteInput)
           : null
 
         if (cancelled) {
@@ -370,6 +409,7 @@ const Shipping: React.FC<ShippingProps> = ({
         const previewInput: DeliveryHubNeutralSelectionRehearsalInput = {
           cart_id: cart.id,
           settings,
+          catalog,
           quotes,
           pickup_points: pickupPoints,
           pickup_windows: pickupWindows,

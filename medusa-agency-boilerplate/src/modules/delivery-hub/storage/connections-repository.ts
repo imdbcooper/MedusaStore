@@ -218,6 +218,26 @@ export async function upsertDeliveryConnection(
   return normalizeDeliveryConnectionRow(rows[0])
 }
 
+export async function deleteDeliveryConnection(
+  pg: DeliveryHubPgConnection,
+  id: string
+) {
+  await ensureDeliveryConnectionsTable(pg)
+
+  const rows = getRawRows<DeliveryConnectionRow>(
+    await pg.raw(
+      `
+        delete from ${DELIVERY_HUB_CONNECTIONS_TABLE}
+        where id = ?
+        returning *
+      `,
+      [id]
+    )
+  )
+
+  return rows[0] ? normalizeDeliveryConnectionRow(rows[0]) : null
+}
+
 function normalizeDeliveryConnectionRow(row: DeliveryConnectionRow): DeliveryConnectionRecord {
   return {
     id: row.id,

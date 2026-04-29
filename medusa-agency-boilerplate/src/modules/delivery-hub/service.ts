@@ -83,6 +83,7 @@ import { cancelDeliveryHubAcceptedShipment } from "./shipment-cancel-policy"
 import { requestDeliveryHubShipmentManualRetry } from "./shipment-retry-policy"
 import { redactRecord } from "./security/redaction"
 import {
+  deleteDeliveryConnection,
   getDeliveryConnectionById,
   getDeliveryConnectionByIdReadOnly,
   listDeliveryConnections,
@@ -634,6 +635,24 @@ export class DeliveryHubService {
       },
       current
     )
+  }
+
+  async deleteConnection(id: string) {
+    const current = await this.requireConnection(id)
+    const deleted = await deleteDeliveryConnection(this.pg, current.id)
+
+    if (!deleted) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_NOT_FOUND",
+        message: `Delivery Hub connection "${current.id}" was not found`,
+        status: 404,
+      })
+    }
+
+    return {
+      deleted: true,
+      connection: serializeDeliveryConnectionPublic(deleted),
+    }
   }
 
   async createWarehouse(input: DeliveryWarehouseUpsertInput) {
@@ -1429,6 +1448,7 @@ export class DeliveryHubService {
     defaultConnectionId: string | null
   }> {
     const records = await listDeliveryConnections(this.pg)
+    const defaultConnection = selectDefaultStoreConnection(records)
     const connections: DeliveryHubStoreCatalogConnection[] = records
       .filter((connection) => connection.enabled)
       .map((connection) => {
@@ -1448,11 +1468,10 @@ export class DeliveryHubService {
           ...capabilities,
         }
       })
-    const readyConnections = connections.filter((connection) => connection.ready)
 
     return {
       connections,
-      defaultConnectionId: readyConnections.length === 1 ? readyConnections[0].connection_id : null,
+      defaultConnectionId: defaultConnection?.id ?? null,
     }
   }
 
@@ -1557,32 +1576,16 @@ export class DeliveryHubService {
     }
 
     const connections = await listDeliveryConnections(this.pg)
-    const activeConnections = connections.filter(
-      (connection) =>
-        connection.enabled &&
-        connection.status === DELIVERY_HUB_CONNECTION_STATUS.active &&
-        connection.credentials_state === DELIVERY_HUB_CREDENTIALS_STATE.sealed
-    )
+    const defaultConnection = selectDefaultStoreConnection(connections)
 
-    if (activeConnections.length === 1) {
-      return activeConnections[0]
-    }
-
-    if (!activeConnections.length) {
-      throw new DeliveryHubError({
-        code: "DELIVERY_HUB_NOT_FOUND",
-        message: "No active public delivery connection is available",
-        status: 404,
-      })
+    if (defaultConnection) {
+      return defaultConnection
     }
 
     throw new DeliveryHubError({
-      code: "DELIVERY_HUB_VALIDATION_ERROR",
-      message: 'Field "connection_id" is required',
-      status: 400,
-      details: {
-        field: "connection_id",
-      },
+      code: "DELIVERY_HUB_NOT_FOUND",
+      message: "No active public delivery connection is available",
+      status: 404,
     })
   }
 
@@ -2039,6 +2042,53 @@ function requireString(value: string | null | undefined, field: string) {
 
 function normalizeNullableText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
+function isStoreReadyConnection(connection: DeliveryConnectionRecord) {
+  return (
+    connection.enabled &&
+    connection.status === DELIVERY_HUB_CONNECTION_STATUS.active &&
+    connection.credentials_state === DELIVERY_HUB_CREDENTIALS_STATE.sealed
+  )
+}
+
+function selectDefaultStoreConnection(connections: DeliveryConnectionRecord[]) {
+  const readyConnections = connections.filter(isStoreReadyConnection)
+
+  return readyConnections.sort((left, right) => {
+    const validationDelta =
+      getConnectionValidationTimestamp(right) - getConnectionValidationTimestamp(left)
+
+    if (validationDelta !== 0) {
+      return validationDelta
+    }
+
+    const updatedDelta =
+      getConnectionUpdatedTimestamp(right) - getConnectionUpdatedTimestamp(left)
+
+    if (updatedDelta !== 0) {
+      return updatedDelta
+    }
+
+    return right.id.localeCompare(left.id)
+  })[0] ?? null
+}
+
+function getConnectionValidationTimestamp(connection: DeliveryConnectionRecord) {
+  return toTimestamp(connection.credentials_last_validated_at)
+}
+
+function getConnectionUpdatedTimestamp(connection: DeliveryConnectionRecord) {
+  return toTimestamp(connection.updated_at)
+}
+
+function toTimestamp(value: string | null | undefined) {
+  if (!value) {
+    return 0
+  }
+
+  const timestamp = new Date(value).getTime()
+  return Number.isFinite(timestamp) ? timestamp : 0
 }
 
 function buildStoreCatalogCapabilities(

@@ -108,6 +108,11 @@ export default defineMiddlewares({
       middlewares: [adminAuth, validateAndTransformBody(AdminUpdateDeliveryConnectionSchema)],
     },
     {
+      matcher: "/admin/delivery/connections/:id",
+      methods: ["DELETE"],
+      middlewares: [adminAuth],
+    },
+    {
       matcher: "/admin/delivery/connections/:id/test",
       methods: ["POST"],
       middlewares: [adminAuth, validateAndTransformBody(AdminDeliveryConnectionTestSchema)],

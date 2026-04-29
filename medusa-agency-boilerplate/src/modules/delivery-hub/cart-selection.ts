@@ -104,6 +104,14 @@ export type DeliveryHubQueryGraphLike = {
 export type DeliveryHubCartSelectionRecord = {
   id: string
   metadata?: unknown
+  shipping_methods?: Array<{
+    shipping_option?: {
+      id?: string | null
+      name?: string | null
+      provider_id?: string | null
+      data?: Record<string, unknown> | null
+    } | null
+  }> | null
 }
 
 type DeliveryHubCartSelectionPersisted = DeliveryHubCartSelectionPublic & {
@@ -117,7 +125,7 @@ export async function getDeliveryHubCartById(
   const normalizedCartId = requireNonEmptyString(cartId, "cart_id")
   const { data } = await query.graph<DeliveryHubCartSelectionRecord>({
     entity: "cart",
-    fields: ["id", "metadata"],
+    fields: ["id", "metadata", "shipping_methods.shipping_option.id", "shipping_methods.shipping_option.name", "shipping_methods.shipping_option.provider_id", "shipping_methods.shipping_option.data"],
     filters: {
       id: normalizedCartId,
     },
