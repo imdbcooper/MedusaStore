@@ -71,6 +71,7 @@
 - пригодность для российского рынка важнее, чем наличие у Medusa более подробно задокументированного или более удобного first-party примера;
 - для payment track текущим направлением v1 считается **YooKassa-first path**;
 - исторический `historical provider-aware` slice остается подтвержденным промежуточным результатом, но для долгосрочного shipping track целевым следующим направлением теперь считается **собственный `delivery-hub` с первым adapter `Yandex Delivery`**;
+- принятое направление Delivery Hub rework `2026-04-30` зафиксировано в [`delivery_hub_rework_plan.md`](./delivery_hub_rework_plan.md): default shopper path = `warehouse_to_pickup_point`, customer-facing shipping price must be separated from provider operational quote, warehouse resolution belongs to backend/admin settings, and order shipment processing must move to order admin instead of living only in delivery settings diagnostics;
 - нецелевые для РФ решения можно изучать как reference pattern для архитектуры Medusa, но нельзя выбирать как `default v1 choice`, если пользователь явно не сменил рынок проекта.
 
 ---

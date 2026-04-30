@@ -1,5 +1,8 @@
 # Delivery Hub checkout cutover readiness plan and approval gate
 
+
+> Phase 0 reconciliation note (2026-04-30): this cutover/governance contour is now historical/diagnostic relative to the accepted Delivery Hub rework plan in [`delivery_hub_rework_plan.md`](delivery_hub_rework_plan.md). Use it as evidence and rollback context only; Phase 1 source-of-truth is customer pricing policy plus backend warehouse-origin resolution, and shipment execution remains gated.
+
 > Status: formal readiness/approval gate plus default-off implementation status for the first controlled checkout commit path.
 >
 > Current decision: **NO-GO for production checkout source-of-truth cutover** until explicit operator/technical approvals and rollout review pass. A storefront commit path now exists only behind `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` and ready-candidate guardrails.

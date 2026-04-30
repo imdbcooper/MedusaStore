@@ -1,5 +1,8 @@
 # Delivery Hub — дружелюбный пошаговый план ручного тестирования
 
+
+> Phase 0 reconciliation note (2026-04-30): this manual testing plan documents historical/diagnostic cutover surfaces. The accepted Delivery Hub rework plan in [`delivery_hub_rework_plan.md`](delivery_hub_rework_plan.md) is now authoritative for Phase 1: shopper quotes use `customer_price`, real checkout resolves warehouse origin on the backend, and shipment execution remains gated. Public preview warehouse env values are diagnostic/dev-only.
+
 ## 0) Быстрый маршрут (2 минуты)
 
 Если нужно быстро проверить, что Admin и Delivery Hub доступны локально:

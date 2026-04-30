@@ -1,5 +1,8 @@
 # Delivery Hub checkout cutover go/no-go review index
 
+
+> Phase 0 reconciliation note (2026-04-30): this go/no-go index is retained as historical/diagnostic evidence relative to the accepted Delivery Hub rework plan in [`delivery_hub_rework_plan.md`](delivery_hub_rework_plan.md). It must not be treated as the active approval contour for Phase 1 pricing separation, backend warehouse-origin resolution, or shipment execution readiness.
+
 > Operator-facing index for the final Delivery Hub checkout cutover review chain.
 >
 > Current verdict: **NO-GO for production checkout source-of-truth cutover** until the new default-off implementation receives separate review plus explicit operator/technical approvals.

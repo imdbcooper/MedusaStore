@@ -2,6 +2,9 @@
 
 > Cleanup status: legacy provider/runtime routes have been removed from the master template. Delivery Hub/direct Yandex is the selected delivery contour; first real direct Yandex runtime dispatch now exists only behind a strict gate and only on a fully ready supported contour; backend startup must not require new delivery env secrets. Existing old databases may still contain obsolete delivery rows/provider ids and require separate operator-approved cleanup if relevant.
 
+> Phase 0/Phase 1 reconciliation note (2026-04-30): buyer-facing Delivery Hub card/save/clear UX is already materialized, but the previous public quote `amount` was effectively the provider operational quote. Phase 1 introduces a customer pricing policy layer: public/store quote and persisted selection buyer price are `customer_price`, while provider quote amount remains backend/internal evidence only. Real checkout warehouse origin for `warehouse_to_pickup_point` is resolved from backend connection settings rather than public storefront warehouse env; shipment execution remains gated.
+>
+
 > Статус документа: проектная спецификация на первую реализацию собственного слоя доставки.
 >
 > Дата первой редакции: `2026-04-21`.
