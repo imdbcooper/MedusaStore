@@ -2,6 +2,7 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "@medusajs/framework/zod"
 import * as deliveryHub from "../../../../modules/delivery-hub"
 import {
+  getStoreDeliveryHubService,
   getStoreQuery,
   handleStoreDeliveryHubError,
   sanitizeStoreDeliverySelectionResponse,
@@ -70,6 +71,7 @@ export async function POST(
       cart,
       validatedBody.cart_id
     )
+    const service = getStoreDeliveryHubService(req)
     const selection = await storeDeliverySelectionDeps.upsertDeliveryHubCartSelection(
       req.scope,
       existingCart,
@@ -104,6 +106,9 @@ export async function POST(
             }
           : null,
         correlation_id: validatedBody.correlation_id ?? null,
+        validation_context: service.buildStoreSelectionValidationContext({
+          cart: existingCart,
+        }),
       }
     )
 

@@ -285,6 +285,8 @@ const StoreDeliveryCutoverCandidateStatusSchema = z.enum([
   "shipping_option_missing",
 ])
 
+const StoreDeliveryCheckoutSourceOfTruthSchema = z.enum(["unchanged", "delivery_hub"])
+
 const StoreDeliveryCutoverCandidateResponseSchema = z
   .object({
     ok: z.literal(true),
@@ -300,15 +302,15 @@ const StoreDeliveryCutoverCandidateResponseSchema = z
     candidate_pickup_point_id: z.string().nullable(),
     required_preconditions: z.array(z.string()),
     blocked_reasons: z.array(z.string()),
-    can_commit_shipping_method: z.literal(false),
-    checkout_source_of_truth: z.literal("unchanged"),
+    can_commit_shipping_method: z.boolean(),
+    checkout_source_of_truth: StoreDeliveryCheckoutSourceOfTruthSchema,
     guardrails: z
       .object({
         no_network_calls: z.literal(true),
         no_provider_payloads: z.literal(true),
         no_secret_material: z.literal(true),
         shipment_lifecycle_not_enabled: z.literal(true),
-        can_commit_shipping_method: z.literal(false),
+        can_commit_shipping_method: z.boolean(),
       })
       .strict(),
   })

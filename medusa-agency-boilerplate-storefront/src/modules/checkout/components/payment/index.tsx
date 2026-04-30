@@ -8,7 +8,9 @@ import {
   paymentInfoMap,
 } from "@lib/constants"
 import { initiatePaymentSession } from "@lib/data/cart"
+import { retrieveDeliveryHubReadiness } from "@lib/data/delivery-hub"
 import { storefrontConfig } from "@lib/storefront-config"
+import { buildDeliveryHubPaymentBlockerModel } from "@lib/util/delivery-hub"
 import { CheckCircleSolid, CreditCard } from "@medusajs/icons"
 import { Button, Container, Heading, Text, clx } from "@medusajs/ui"
 import ErrorMessage from "@modules/checkout/components/error-message"
@@ -81,6 +83,14 @@ const Payment = ({
     setIsLoading(true)
 
     try {
+      const readiness = await retrieveDeliveryHubReadiness(cart.id)
+      const deliveryBlocker = buildDeliveryHubPaymentBlockerModel({ readiness, cart })
+
+      if (deliveryBlocker.blocked) {
+        setError(deliveryBlocker.message)
+        return
+      }
+
       const shouldInputCard =
         isStripeLike(selectedPaymentMethod) && !activeSession
 

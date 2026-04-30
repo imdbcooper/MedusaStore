@@ -10,6 +10,7 @@ import {
   parseManagedDeliveryHubShippingOptionSnapshot,
   type DeliveryHubShippingOptionSnapshot,
 } from "./shipping-option-reconciliation"
+import type { DeliveryHubStoreSelectionReadinessResult } from "./selection-readiness"
 
 export const DELIVERY_HUB_CUTOVER_CANDIDATE_VERSION = 1
 
@@ -37,14 +38,14 @@ export type DeliveryHubCutoverCandidateResponse = {
   candidate_pickup_point_id: string | null
   required_preconditions: string[]
   blocked_reasons: string[]
-  can_commit_shipping_method: false
-  checkout_source_of_truth: "unchanged"
+  can_commit_shipping_method: boolean
+  checkout_source_of_truth: "unchanged" | "delivery_hub"
   guardrails: {
     no_network_calls: true
     no_provider_payloads: true
     no_secret_material: true
     shipment_lifecycle_not_enabled: true
-    can_commit_shipping_method: false
+    can_commit_shipping_method: boolean
   }
 }
 
@@ -52,6 +53,7 @@ export type DeliveryHubCutoverCandidateInput = {
   cart_id: string
   metadata?: unknown
   current_shipping_options?: DeliveryHubShippingOptionSnapshot[] | null
+  selection_readiness?: DeliveryHubStoreSelectionReadinessResult | null
 }
 
 export function buildDeliveryHubCutoverCandidate(
@@ -59,11 +61,12 @@ export function buildDeliveryHubCutoverCandidate(
 ): DeliveryHubCutoverCandidateResponse {
   const cartId = requireNonEmptyString(input.cart_id, "cart_id")
   const selection = readDeliveryHubCartSelection(input.metadata)
+  const readiness = input.selection_readiness ?? null
   const requiredPreconditions = [
-    "neutral_selection_ready",
+    "selection_readiness_ready",
     "matching_delivery_hub_shipping_option_present",
-    "operator_approval_required",
-    "can_commit_shipping_method_false",
+    "customer_price_present",
+    "shipment_lifecycle_not_enabled",
   ]
 
   if (!selection) {
@@ -72,11 +75,10 @@ export function buildDeliveryHubCutoverCandidate(
       selection: null,
       candidate_status: "selection_missing",
       candidate_shipping_option: null,
-      blocked_reasons: [
+      blocked_reasons: mergeBlockedReasons([
         "selection_missing",
-        "operator_approval_required",
-        "can_commit_shipping_method_false",
-      ],
+        ...readinessBlockedReasons(readiness),
+      ]),
       required_preconditions: requiredPreconditions,
     })
   }
@@ -92,11 +94,23 @@ export function buildDeliveryHubCutoverCandidate(
       selection,
       candidate_status: "shipping_option_missing",
       candidate_shipping_option: null,
-      blocked_reasons: [
+      blocked_reasons: mergeBlockedReasons([
         "matching_delivery_hub_shipping_option_missing",
-        "operator_approval_required",
-        "can_commit_shipping_method_false",
-      ],
+        ...readinessBlockedReasons(readiness),
+      ]),
+      required_preconditions: requiredPreconditions,
+    })
+  }
+
+  const readinessReasons = readinessBlockedReasons(readiness)
+
+  if (readinessReasons.length) {
+    return buildResponse({
+      cart_id: cartId,
+      selection,
+      candidate_status: "blocked",
+      candidate_shipping_option: matchingOption,
+      blocked_reasons: readinessReasons,
       required_preconditions: requiredPreconditions,
     })
   }
@@ -106,10 +120,7 @@ export function buildDeliveryHubCutoverCandidate(
     selection,
     candidate_status: "ready_for_review",
     candidate_shipping_option: matchingOption,
-    blocked_reasons: [
-      "operator_approval_required",
-      "can_commit_shipping_method_false",
-    ],
+    blocked_reasons: [],
     required_preconditions: requiredPreconditions,
   })
 }
@@ -122,6 +133,9 @@ function buildResponse(input: {
   required_preconditions: string[]
   blocked_reasons: string[]
 }): DeliveryHubCutoverCandidateResponse {
+  const canCommitShippingMethod =
+    input.candidate_status === "ready_for_review" && !!input.candidate_shipping_option
+
   return {
     ok: true,
     version: DELIVERY_HUB_CUTOVER_CANDIDATE_VERSION,
@@ -136,16 +150,35 @@ function buildResponse(input: {
     candidate_pickup_point_id: input.selection?.pickup_point.provider_point_id ?? null,
     required_preconditions: [...input.required_preconditions],
     blocked_reasons: [...input.blocked_reasons],
-    can_commit_shipping_method: false,
-    checkout_source_of_truth: "unchanged",
+    can_commit_shipping_method: canCommitShippingMethod,
+    checkout_source_of_truth: canCommitShippingMethod ? "delivery_hub" : "unchanged",
     guardrails: {
       no_network_calls: true,
       no_provider_payloads: true,
       no_secret_material: true,
       shipment_lifecycle_not_enabled: true,
-      can_commit_shipping_method: false,
+      can_commit_shipping_method: canCommitShippingMethod,
     },
   }
+}
+
+function readinessBlockedReasons(readiness: DeliveryHubStoreSelectionReadinessResult | null) {
+  if (!readiness) {
+    return ["selection_readiness_missing"]
+  }
+
+  if (readiness.status === "ready") {
+    return []
+  }
+
+  return mergeBlockedReasons([
+    `selection_readiness_${readiness.status}`,
+    ...readiness.issues.map((issue) => issue.code),
+  ])
+}
+
+function mergeBlockedReasons(reasons: string[]) {
+  return Array.from(new Set(reasons.filter(Boolean)))
 }
 
 function findMatchingShippingOption(

@@ -1476,6 +1476,13 @@ describe("Delivery Hub store routes", () => {
       metadata: {
         keep: true,
       },
+      cart: {
+        id: "cart_1",
+        metadata: {
+          keep: true,
+        },
+      },
+      current_shipping_options: [],
     })
     expect(res.status).toHaveBeenCalledWith(200)
     expect(res.json).toHaveBeenCalledWith({
@@ -1655,6 +1662,16 @@ describe("Delivery Hub store routes", () => {
           },
         },
       },
+      cart: {
+        id: "cart_1",
+        metadata: {
+          delivery_hub: {
+            selection: {
+              quote_key: "must-not-leak",
+            },
+          },
+        },
+      },
       current_shipping_options: [
         {
           id: "deliveryhub:warehouse_to_pickup_point",
@@ -1728,11 +1745,19 @@ describe("Delivery Hub store routes", () => {
     expect(res.status).toHaveBeenCalledWith(200)
   })
 
-  it("rejects cutover candidate payloads that try to enable commit or leak provider fragments", async () => {
+  it("allows Phase 4 committable cutover candidates while rejecting unsafe leaked fragments", async () => {
     jest.spyOn(DeliveryHubService.prototype, "getStoreCutoverCandidate").mockResolvedValue({
       ...buildCutoverCandidateResult(),
       can_commit_shipping_method: true,
-      blocked_reasons: ["token=secret-token"],
+      checkout_source_of_truth: "delivery_hub",
+      blocked_reasons: [],
+      guardrails: {
+        no_network_calls: true,
+        no_provider_payloads: true,
+        no_secret_material: true,
+        shipment_lifecycle_not_enabled: true,
+        can_commit_shipping_method: true,
+      },
     } as any)
     deliveryCutoverCandidateRoute.storeDeliveryCutoverCandidateDeps.getDeliveryHubCartById =
       jest.fn(async () => ({
@@ -1752,12 +1777,11 @@ describe("Delivery Hub store routes", () => {
       res as any
     )
 
-    expect(res.status).toHaveBeenCalledWith(400)
+    expect(res.status).toHaveBeenCalledWith(200)
     const payload = (res.json as jest.Mock).mock.calls[0][0] as any
-    expect(payload.error.code).toBe("DELIVERY_HUB_VALIDATION_ERROR")
-    expect(payload.error.message).toBe("Store delivery request validation failed")
-    expect(JSON.stringify(payload.error.details)).toContain("can_commit_shipping_method")
-    expect(JSON.stringify(payload.error.details)).not.toContain("secret-token")
+    expect(payload.can_commit_shipping_method).toBe(true)
+    expect(payload.checkout_source_of_truth).toBe("delivery_hub")
+    expect(JSON.stringify(payload)).not.toContain("secret-token")
   })
 
   it("rejects cutover preconditions payloads that try to enable commit or leak provider fragments", async () => {

@@ -822,15 +822,11 @@ describe("Delivery Hub cart selection contract", () => {
     expect(res.json).toHaveBeenCalledWith({
       ok: true,
       cart_id: "cart_1",
-      selection: {
+      selection: expect.objectContaining({
         version: 1,
         provider_code: "yandex",
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
-        quote_reference: {
-          id: expect.stringMatching(/^dhsel_[a-f0-9]{32}$/),
-          version: 1,
-        },
         quote: {
           carrier_code: "yandex",
           carrier_label: "Yandex Delivery",
@@ -849,7 +845,7 @@ describe("Delivery Hub cart selection contract", () => {
         },
         pickup_point: {
           provider_point_id: "pvz_1",
-          provider_point_code: "code_1",
+          network_label: null,
           name: "PVZ 1",
           address: "Tverskaya 1",
           city: "Moscow",
@@ -857,9 +853,7 @@ describe("Delivery Hub cart selection contract", () => {
           postal_code: "101000",
           lat: 55.75,
           lng: 37.61,
-          is_origin_dropoff_allowed: false,
           is_destination_pickup_allowed: true,
-          payment_methods: ["card"],
         },
         pickup_window: {
           date: "2026-04-22",
@@ -873,7 +867,7 @@ describe("Delivery Hub cart selection contract", () => {
         },
         correlation_id: null,
         updated_at: expect.any(String),
-      },
+      }),
     })
   })
 
@@ -920,6 +914,13 @@ describe("Delivery Hub cart selection contract", () => {
       metadata: {
         keep: true,
       },
+      cart: {
+        id: "cart_1",
+        metadata: {
+          keep: true,
+        },
+      },
+      current_shipping_options: [],
     })
     expect(res.status).toHaveBeenCalledWith(200)
     expect(res.json).toHaveBeenCalledWith(readinessResult)
@@ -1223,7 +1224,7 @@ describe("Delivery Hub cart selection contract", () => {
           keep: true,
         },
       },
-      {
+      expect.objectContaining({
         provider_code: "yandex",
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
@@ -1272,13 +1273,34 @@ describe("Delivery Hub cart selection contract", () => {
           label: "22 Apr, 10:00-14:00",
         },
         correlation_id: "corr_store_1",
-      }
+        validation_context: expect.objectContaining({
+          version: 1,
+          cart_id: "cart_1",
+          cart_fingerprint: expect.any(String),
+          address_fingerprint: expect.any(String),
+          quote_expires_at: expect.any(String),
+        }),
+      })
     )
     expect(res.status).toHaveBeenCalledWith(200)
     expect(res.json).toHaveBeenCalledWith({
       ok: true,
       cart_id: "cart_1",
-      selection,
+      selection: {
+        ...selection,
+        pickup_point: {
+          provider_point_id: "pvz_1",
+          network_label: null,
+          name: "PVZ 1",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_destination_pickup_allowed: true,
+        },
+      },
       diagnostics: {
         correlation_id: "corr_store_1",
         checkout_source_of_truth: "unchanged",

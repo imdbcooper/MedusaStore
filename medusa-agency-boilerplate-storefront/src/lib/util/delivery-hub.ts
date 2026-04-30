@@ -29,6 +29,16 @@ export const DELIVERY_HUB_SELECTION_READINESS_ISSUE_CODES = [
   "connection_disabled",
   "connection_inactive",
   "connection_credentials_not_ready",
+  "unsupported_checkout_mode",
+  "customer_price_missing",
+  "quote_expired",
+  "cart_context_missing",
+  "cart_context_mismatch",
+  "address_context_missing",
+  "address_context_mismatch",
+  "pickup_point_mismatch",
+  "shipping_option_missing",
+  "shipping_option_mismatch",
 ] as const
 
 export const DELIVERY_HUB_CUTOVER_CANDIDATE_STATUSES = [
@@ -62,15 +72,7 @@ export type DeliveryHubSelectionReadinessStatus =
   | "ready"
 
 export type DeliveryHubSelectionReadinessIssueCode =
-  | "selection_missing"
-  | "selection_invalid"
-  | "pickup_point_missing"
-  | "pickup_window_missing"
-  | "connection_missing"
-  | "connection_not_found"
-  | "connection_disabled"
-  | "connection_inactive"
-  | "connection_credentials_not_ready"
+  (typeof DELIVERY_HUB_SELECTION_READINESS_ISSUE_CODES)[number]
 
 export type DeliveryHubCutoverCandidateStatus =
   (typeof DELIVERY_HUB_CUTOVER_CANDIDATE_STATUSES)[number]
@@ -1474,12 +1476,12 @@ export function normalizeDeliveryHubCutoverCandidateResponse(
     "checkout_source_of_truth"
   )
 
-  if (canCommit || guardrailCanCommit) {
-    throw new Error("Delivery Hub cutover candidate cannot enable shipping-method commit")
+  if (canCommit !== guardrailCanCommit) {
+    throw new Error("Delivery Hub cutover candidate commit guardrail must match root commit flag")
   }
 
-  if (checkoutSourceOfTruth !== "unchanged") {
-    throw new Error('Delivery Hub payload field "checkout_source_of_truth" must be unchanged')
+  if (checkoutSourceOfTruth !== "unchanged" && checkoutSourceOfTruth !== "delivery_hub") {
+    throw new Error('Delivery Hub payload field "checkout_source_of_truth" must be supported')
   }
 
   return {
@@ -1504,8 +1506,8 @@ export function normalizeDeliveryHubCutoverCandidateResponse(
       record.blocked_reasons,
       "blocked_reasons"
     ),
-    can_commit_shipping_method: false,
-    checkout_source_of_truth: "unchanged",
+    can_commit_shipping_method: canCommit,
+    checkout_source_of_truth: checkoutSourceOfTruth,
     guardrails: {
       no_network_calls: readBoolean(guardrails.no_network_calls, "guardrails.no_network_calls")
         ? true
@@ -1528,7 +1530,7 @@ export function normalizeDeliveryHubCutoverCandidateResponse(
       )
         ? true
         : failDeliveryHubBooleanGuardrail("guardrails.shipment_lifecycle_not_enabled"),
-      can_commit_shipping_method: false,
+      can_commit_shipping_method: guardrailCanCommit,
     },
   }
 }
@@ -2216,6 +2218,57 @@ export function isDeliveryHubSelectionReady(
   return readiness?.status === "ready"
 }
 
+export function isDeliveryHubCommittedCart(cart: {
+  shipping_methods?: Array<{
+    shipping_option_id?: string | null
+    shipping_option?: {
+      id?: string | null
+      provider_id?: string | null
+      data?: Record<string, unknown> | null
+    } | null
+  }> | null
+} | null | undefined) {
+  const shippingMethod = cart?.shipping_methods?.at(-1)
+  const optionId = readOptionalString(
+    shippingMethod?.shipping_option_id ?? shippingMethod?.shipping_option?.id
+  )
+  const optionData = shippingMethod?.shipping_option?.data ?? null
+
+  return Boolean(
+    optionId?.startsWith("deliveryhub:warehouse_to_pickup_point") ||
+      shippingMethod?.shipping_option?.provider_id === "deliveryhub_deliveryhub" ||
+      optionData?.provider_code === "deliveryhub"
+  )
+}
+
+export function buildDeliveryHubPaymentBlockerModel(input: {
+  readiness?: DeliveryHubReadinessResponse | null
+  cart?: {
+    shipping_methods?: Array<{
+      shipping_option_id?: string | null
+      shipping_option?: {
+        id?: string | null
+        provider_id?: string | null
+        data?: Record<string, unknown> | null
+      } | null
+    }> | null
+  } | null
+} = {}) {
+  const readiness = input.readiness ?? null
+  const selectionPresent = Boolean(readiness?.selection)
+  const committed = isDeliveryHubCommittedCart(input.cart)
+  const blocked = selectionPresent && (readiness?.status !== "ready" || !committed)
+
+  return {
+    blocked,
+    committed,
+    selection_present: selectionPresent,
+    message: blocked
+      ? "Сохраните способ доставки перед оплатой."
+      : null,
+  }
+}
+
 export function hasDeliveryHubSelectionIssues(
   readiness: Pick<DeliveryHubReadinessResponse, "issues"> | null | undefined
 ) {
@@ -2461,14 +2514,14 @@ export type DeliveryHubCutoverCandidateResponse = {
   candidate_pickup_point_id: string | null
   required_preconditions: string[]
   blocked_reasons: string[]
-  can_commit_shipping_method: false
-  checkout_source_of_truth: "unchanged"
+  can_commit_shipping_method: boolean
+  checkout_source_of_truth: "unchanged" | "delivery_hub"
   guardrails: {
     no_network_calls: true
     no_provider_payloads: true
     no_secret_material: true
     shipment_lifecycle_not_enabled: true
-    can_commit_shipping_method: false
+    can_commit_shipping_method: boolean
   }
 }
 
@@ -4422,7 +4475,7 @@ export function buildDeliveryHubBuyerDeliveryCardModel(
       status: "ready_to_save",
       status_label: "Доступен вариант доставки",
       detail_label: "Проверьте пункт выдачи, стоимость и срок, затем сохраните выбранную доставку.",
-      action_label: savedSelectionPresent ? "Обновить доставку" : "Сохранить доставку",
+      action_label: savedSelectionPresent ? "Обновить способ доставки" : "Сохранить способ доставки",
       can_save_selection: !options.save_in_flight,
       quote_amount: rehearsal.quote_amount,
       currency_code: rehearsal.currency_code,
@@ -5046,14 +5099,14 @@ export function evaluateDeliveryHubCutoverCandidateCommitGuard(input: {
     candidate.selection_present &&
     candidate.candidate_status === "ready_for_review" &&
     !!candidateShippingOptionId &&
-    candidate.checkout_source_of_truth === "unchanged" &&
     candidate.guardrails.no_network_calls &&
     candidate.guardrails.no_provider_payloads &&
     candidate.guardrails.no_secret_material &&
     candidate.guardrails.shipment_lifecycle_not_enabled &&
-    candidate.guardrails.can_commit_shipping_method === false &&
-    candidate.can_commit_shipping_method === false &&
-    isDeliveryHubQuoteType(candidateModeCode)
+    candidate.guardrails.can_commit_shipping_method === true &&
+    candidate.can_commit_shipping_method === true &&
+    candidate.checkout_source_of_truth === "delivery_hub" &&
+    candidateModeCode === "warehouse_to_pickup_point"
 
   if (!candidateReady) {
     pushReason("cutover_candidate_not_ready")

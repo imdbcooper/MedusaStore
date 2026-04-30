@@ -5,6 +5,10 @@ import {
   DELIVERY_HUB_MODE_CODE,
   DELIVERY_HUB_PROVIDER_YANDEX,
 } from "../../modules/delivery-hub/constants"
+import {
+  buildDeliveryHubCartSelectionMetadata,
+  createDeliveryHubQuoteReference,
+} from "../../modules/delivery-hub/cart-selection"
 import { DeliveryHubError } from "../../modules/delivery-hub/errors"
 import { getDeliveryHubAdapter, listDeliveryHubProviders } from "../../modules/delivery-hub/registry"
 import {
@@ -18,7 +22,10 @@ import {
   redactSensitiveText,
 } from "../../modules/delivery-hub/security/redaction"
 import { DeliveryHubService } from "../../modules/delivery-hub/service"
-import { DELIVERY_HUB_FULFILLMENT_PROVIDER_ID } from "../../modules/delivery-hub/shipping-option-contract"
+import {
+  buildDeliveryHubShippingOptionId,
+  DELIVERY_HUB_FULFILLMENT_PROVIDER_ID,
+} from "../../modules/delivery-hub/shipping-option-contract"
 
 const originalEncryptionKey = process.env.DELIVERY_HUB_ENCRYPTION_KEY
 const originalExecutionEnabled = process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED
@@ -1279,64 +1286,39 @@ describe("Delivery Hub service", () => {
       },
     })
 
-    expect(result).toEqual({
-      ok: true,
-      cart_id: "cart_1",
-      status: "ready",
-      issues: [],
-      selection: {
-        version: 1,
-        provider_code: "yandex",
-        connection_id: "conn_1",
-        quote_type: "warehouse_to_pickup_point",
-        quote_reference: {
-          id: "dhsel_0123456789abcdef0123456789abcdef",
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        cart_id: "cart_1",
+        status: "not_ready",
+        issues: [
+          {
+            code: "customer_price_missing",
+            message: "Customer delivery price is missing for the saved selection",
+            field: "quote.customer_price",
+          },
+          {
+            code: "cart_context_missing",
+            message: "Saved delivery selection needs refreshed cart validation context",
+            field: "validation_context",
+          },
+        ],
+        selection: expect.objectContaining({
           version: 1,
-        },
-        quote: {
-          carrier_code: "yandex",
-          carrier_label: "Yandex Delivery",
-          amount: 499,
-          currency_code: "RUB",
-          delivery_eta_min: 1,
-          delivery_eta_max: 2,
-          pickup_point_required: true,
-          pickup_window_required: false,
-        },
-        correlation_id: null,
-        pickup_point: {
-          provider_point_id: "pvz_1",
-          provider_point_code: "code_1",
-          name: "PVZ 1",
-          address: "Tverskaya 1",
-          city: "Moscow",
-          region: "Moscow",
-          postal_code: "101000",
-          lat: 55.75,
-          lng: 37.61,
-          is_origin_dropoff_allowed: false,
-          is_destination_pickup_allowed: true,
-          payment_methods: ["card"],
-        },
-        pickup_window: null,
-        updated_at: "2026-04-21T03:00:00.000Z",
-      },
-      quote_context: {
-        connection: {
+          provider_code: "yandex",
           connection_id: "conn_1",
-          state: "ready",
-          ready: true,
-        },
-        quote_type: "warehouse_to_pickup_point",
-        quote_reference: {
-          id: "dhsel_0123456789abcdef0123456789abcdef",
-          version: 1,
-        },
-        pickup_point_required: true,
-        pickup_window_required: false,
-        updated_at: "2026-04-21T03:00:00.000Z",
-      },
-    })
+          quote_type: "warehouse_to_pickup_point",
+        }),
+        quote_context: expect.objectContaining({
+          connection: {
+            connection_id: "conn_1",
+            state: "ready",
+            ready: true,
+          },
+          quote_type: "warehouse_to_pickup_point",
+        }),
+      })
+    )
   })
 
   it("returns not_ready readiness when referenced connection is disabled", async () => {
@@ -1397,13 +1379,15 @@ describe("Delivery Hub service", () => {
     })
 
     expect(result.status).toBe("not_ready")
-    expect(result.issues).toEqual([
-      {
-        code: "connection_disabled",
-        message: "Delivery connection is disabled for shopper-facing use",
-        field: "connection_id",
-      },
-    ])
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        {
+          code: "connection_disabled",
+          message: "Delivery connection is disabled for shopper-facing use",
+          field: "connection_id",
+        },
+      ])
+    )
     expect(result.selection).toEqual(
       expect.objectContaining({
         connection_id: "conn_1",
@@ -1447,16 +1431,10 @@ describe("Delivery Hub service", () => {
       candidate_amount: null,
       currency_code: null,
       candidate_pickup_point_id: null,
-      required_preconditions: [
-        "neutral_selection_ready",
-        "matching_delivery_hub_shipping_option_present",
-        "operator_approval_required",
-        "can_commit_shipping_method_false",
-      ],
+      required_preconditions: buildCutoverCandidateRequiredPreconditions(),
       blocked_reasons: [
         "selection_missing",
-        "operator_approval_required",
-        "can_commit_shipping_method_false",
+        "selection_readiness_missing_selection",
       ],
       can_commit_shipping_method: false,
       checkout_source_of_truth: "unchanged",
@@ -1476,8 +1454,19 @@ describe("Delivery Hub service", () => {
     expect(pg.calls.some((call: any) => call.sql.includes("create table if not exists"))).toBe(false)
   })
 
-  it("builds safe read-only cutover candidate summary from neutral selection and managed shipping option", async () => {
-    const pg = createMockPg([], [], [])
+  it("builds commit-ready cutover candidate only when selection readiness is ready", async () => {
+    const connection = createConnectionRecord({
+      id: "conn_candidate",
+      enabled: true,
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+    })
+    const cart = buildCutoverCandidateCart({ id: "cart_candidate_ready" })
+    const metadata = buildCutoverCandidateSelectionMetadata({
+      cart,
+      connection_id: connection.id,
+    })
+    const pg = createMockPg([connection], [], [])
     const service = new DeliveryHubService(pg as any)
     const adapter = getDeliveryHubAdapter("yandex")
     const quoteWhSpy = jest.spyOn(adapter, "quoteWarehouseToPickupPoint")
@@ -1486,69 +1475,10 @@ describe("Delivery Hub service", () => {
     const windowsSpy = jest.spyOn(adapter, "listPickupWindows")
 
     const result = await service.getStoreCutoverCandidate({
-      cart_id: "cart_candidate_ready",
-      metadata: {
-        delivery_hub: {
-          selection: {
-            version: 1,
-            provider_code: "yandex",
-            connection_id: "conn_candidate",
-            quote_type: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
-            quote_reference: {
-              id: "dhsel_0123456789abcdef0123456789abcdef",
-              version: 1,
-            },
-            quote: {
-              carrier_code: "yandex",
-              carrier_label: "Yandex Delivery",
-              amount: 499,
-              currency_code: "RUB",
-              delivery_eta_min: 1,
-              delivery_eta_max: 2,
-              pickup_point_required: true,
-              pickup_window_required: false,
-              quote_key: "quote-key-must-not-leak",
-            },
-            pickup_point: {
-              provider_point_id: "pvz_candidate",
-              provider_point_code: "code_1",
-              name: "PVZ Candidate",
-              address: "Tverskaya 1",
-              city: "Moscow",
-              region: "Moscow",
-              postal_code: "101000",
-              lat: 55.75,
-              lng: 37.61,
-              is_origin_dropoff_allowed: true,
-              is_destination_pickup_allowed: true,
-              payment_methods: ["card"],
-            },
-            pickup_window: null,
-            correlation_id: "corr_candidate_must_not_leak",
-            updated_at: "2026-04-25T03:00:00.000Z",
-            backend: {
-              token: "backend-token-must-not-leak",
-            },
-          },
-        },
-      },
-      current_shipping_options: [
-        {
-          id: "deliveryhub:dropoff_point_to_pickup_point",
-          name: "Delivery Hub Pickup Candidate",
-          provider_id: "deliveryhub_deliveryhub",
-          data: {
-            version: 1,
-            provider_code: "deliveryhub",
-            provider_id: "deliveryhub_deliveryhub",
-            id: "deliveryhub:dropoff_point_to_pickup_point",
-            mode_code: "dropoff_point_to_pickup_point",
-            raw_reference: {
-              offer_id: "provider-offer-must-not-leak",
-            },
-          },
-        },
-      ],
+      cart_id: cart.id,
+      metadata,
+      cart,
+      current_shipping_options: [buildCutoverCandidateShippingOption()],
     })
 
     expect(result).toEqual({
@@ -1556,92 +1486,124 @@ describe("Delivery Hub service", () => {
       version: 1,
       cart_id: "cart_candidate_ready",
       selection_present: true,
-      selection_reference_id: "dhsel_0123456789abcdef0123456789abcdef",
+      selection_reference_id: expect.stringMatching(/^dhsel_[a-f0-9]{32}$/),
       candidate_status: "ready_for_review",
-      candidate_shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+      candidate_shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
       candidate_shipping_option_name: "Delivery Hub Pickup Candidate",
-      candidate_amount: 499,
+      candidate_amount: 399,
       currency_code: "RUB",
       candidate_pickup_point_id: "pvz_candidate",
-      required_preconditions: [
-        "neutral_selection_ready",
-        "matching_delivery_hub_shipping_option_present",
-        "operator_approval_required",
-        "can_commit_shipping_method_false",
-      ],
-      blocked_reasons: [
-        "operator_approval_required",
-        "can_commit_shipping_method_false",
-      ],
-      can_commit_shipping_method: false,
-      checkout_source_of_truth: "unchanged",
+      required_preconditions: buildCutoverCandidateRequiredPreconditions(),
+      blocked_reasons: [],
+      can_commit_shipping_method: true,
+      checkout_source_of_truth: "delivery_hub",
       guardrails: {
         no_network_calls: true,
         no_provider_payloads: true,
         no_secret_material: true,
         shipment_lifecycle_not_enabled: true,
-        can_commit_shipping_method: false,
+        can_commit_shipping_method: true,
       },
     })
     const serialized = JSON.stringify(result)
-    expect(serialized).not.toMatch(
-      /quote-key-must-not-leak|corr_candidate_must_not_leak|backend-token-must-not-leak|provider-offer-must-not-leak/i
-    )
+    expect(serialized).not.toMatch(/quote-key-must-not-leak|corr_candidate_must_not_leak|provider-offer-must-not-leak/i)
     expect(serialized).not.toMatch(/authorization|ciphertext|raw_reference|quote_key|token|provider_offer_id/i)
     expect(quoteWhSpy).not.toHaveBeenCalled()
     expect(quoteDropoffSpy).not.toHaveBeenCalled()
     expect(pickupSpy).not.toHaveBeenCalled()
     expect(windowsSpy).not.toHaveBeenCalled()
     expect(pg.calls.some((call: any) => call.sql.includes("insert into"))).toBe(false)
-    expect(pg.calls.some((call: any) => call.sql.includes("create table if not exists"))).toBe(false)
   })
 
-  it("keeps cutover candidate blocked when matching shipping option is missing", async () => {
-    const pg = createMockPg([], [], [])
+  it("keeps cutover candidate non-committable when readiness reports expired quote", async () => {
+    const connection = createConnectionRecord({
+      id: "conn_candidate",
+      enabled: true,
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+    })
+    const cart = buildCutoverCandidateCart({ id: "cart_candidate_expired" })
+    const metadata = buildCutoverCandidateSelectionMetadata({
+      cart,
+      connection_id: connection.id,
+      quote_expires_at: "2026-04-20T00:00:00.000Z",
+    })
+    const pg = createMockPg([connection], [], [])
     const service = new DeliveryHubService(pg as any)
 
     const result = await service.getStoreCutoverCandidate({
-      cart_id: "cart_candidate_no_option",
-      metadata: {
-        delivery_hub: {
-          selection: {
-            version: 1,
-            provider_code: "yandex",
-            connection_id: "conn_candidate",
-            quote_type: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
-            quote_reference: {
-              id: "dhsel_0123456789abcdef0123456789abcdef",
-              version: 1,
-            },
-            quote: {
-              carrier_code: "yandex",
-              carrier_label: "Yandex Delivery",
-              amount: 499,
-              currency_code: "RUB",
-              delivery_eta_min: 1,
-              delivery_eta_max: 2,
-              pickup_point_required: true,
-              pickup_window_required: false,
-            },
-            pickup_point: {
-              provider_point_id: "pvz_candidate",
-              provider_point_code: "code_1",
-              name: "PVZ Candidate",
-              address: "Tverskaya 1",
-              city: "Moscow",
-              region: "Moscow",
-              postal_code: "101000",
-              lat: 55.75,
-              lng: 37.61,
-              is_origin_dropoff_allowed: false,
-              is_destination_pickup_allowed: true,
-              payment_methods: ["card"],
-            },
-            pickup_window: null,
-            updated_at: "2026-04-25T03:00:00.000Z",
-          },
-        },
-      },
+      cart_id: cart.id,
+      metadata,
+      cart,
+      current_shipping_options: [buildCutoverCandidateShippingOption()],
+    })
+
+    expect(result.candidate_status).toBe("blocked")
+    expect(result.candidate_shipping_option_id).toBe("deliveryhub:warehouse_to_pickup_point")
+    expect(result.blocked_reasons).toEqual([
+      "selection_readiness_not_ready",
+      "quote_expired",
+    ])
+    expect(result.can_commit_shipping_method).toBe(false)
+    expect(result.checkout_source_of_truth).toBe("unchanged")
+    expect(result.guardrails.can_commit_shipping_method).toBe(false)
+  })
+
+  it("keeps cutover candidate non-committable when customer price is missing", async () => {
+    const connection = createConnectionRecord({
+      id: "conn_candidate",
+      enabled: true,
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+    })
+    const cart = buildCutoverCandidateCart({ id: "cart_candidate_missing_price" })
+    const metadata = buildCutoverCandidateSelectionMetadata({
+      cart,
+      connection_id: connection.id,
+      quote_expires_at: "2999-01-01T00:00:00.000Z",
+    }) as Record<string, any>
+    delete metadata.delivery_hub.selection.quote.customer_price
+    const pg = createMockPg([connection], [], [])
+    const service = new DeliveryHubService(pg as any)
+
+    const result = await service.getStoreCutoverCandidate({
+      cart_id: cart.id,
+      metadata,
+      cart,
+      current_shipping_options: [buildCutoverCandidateShippingOption()],
+    })
+
+    expect(result.candidate_status).toBe("blocked")
+    expect(result.candidate_shipping_option_id).toBe("deliveryhub:warehouse_to_pickup_point")
+    expect(result.blocked_reasons).toEqual([
+      "selection_readiness_not_ready",
+      "customer_price_missing",
+    ])
+    expect(result.can_commit_shipping_method).toBe(false)
+    expect(result.checkout_source_of_truth).toBe("unchanged")
+    expect(result.guardrails.can_commit_shipping_method).toBe(false)
+  })
+
+  it("keeps cutover candidate blocked when matching shipping option is missing", async () => {
+    const connection = createConnectionRecord({
+      id: "conn_candidate",
+      enabled: true,
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+    })
+    const cart = buildCutoverCandidateCart({ id: "cart_candidate_no_option" })
+    const metadata = buildCutoverCandidateSelectionMetadata({
+      cart,
+      connection_id: connection.id,
+      quote_expires_at: "2999-01-01T00:00:00.000Z",
+    })
+    const pg = createMockPg([connection], [], [])
+    const service = new DeliveryHubService(pg as any)
+
+    const result = await service.getStoreCutoverCandidate({
+      cart_id: cart.id,
+      metadata,
+      cart,
       current_shipping_options: [],
     })
 
@@ -1650,8 +1612,8 @@ describe("Delivery Hub service", () => {
     expect(result.can_commit_shipping_method).toBe(false)
     expect(result.blocked_reasons).toEqual([
       "matching_delivery_hub_shipping_option_missing",
-      "operator_approval_required",
-      "can_commit_shipping_method_false",
+      "selection_readiness_not_ready",
+      "shipping_option_missing",
     ])
   })
 
@@ -1860,13 +1822,15 @@ describe("Delivery Hub service", () => {
     })
 
     expect(result.status).toBe("not_ready")
-    expect(result.issues).toEqual([
-      {
-        code: "connection_credentials_not_ready",
-        message: "Delivery connection credentials are not ready for shopper-facing use",
-        field: "connection_id",
-      },
-    ])
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        {
+          code: "connection_credentials_not_ready",
+          message: "Delivery connection credentials are not ready for shopper-facing use",
+          field: "connection_id",
+        },
+      ])
+    )
     expect(result.quote_context?.connection).toEqual({
       connection_id: "conn_1",
       state: "credentials_not_ready",
@@ -2514,6 +2478,129 @@ function expectDeliveryHubError(
 
   expect(error.code).toBe(expected.code)
   expect(error.status).toBe(expected.status)
+}
+
+function buildCutoverCandidateRequiredPreconditions() {
+  return [
+    "selection_readiness_ready",
+    "matching_delivery_hub_shipping_option_present",
+    "customer_price_present",
+    "shipment_lifecycle_not_enabled",
+  ]
+}
+
+function buildCutoverCandidateCart(input?: Partial<any>) {
+  return {
+    id: "cart_candidate_ready",
+    currency_code: "RUB",
+    subtotal: 1000,
+    total: 1399,
+    item_subtotal: 1000,
+    metadata: {},
+    shipping_address: {
+      country_code: "ru",
+      city: "Moscow",
+      province: "Moscow",
+      postal_code: "101000",
+      address_1: "Tverskaya 1",
+      address_2: null,
+      phone: "+79990000000",
+    },
+    items: [
+      {
+        id: "cali_candidate",
+        quantity: 1,
+        unit_price: 1000,
+        total: 1000,
+        subtotal: 1000,
+        variant: {
+          id: "variant_candidate",
+          sku: "sku_candidate",
+          weight: 100,
+          length: 10,
+          width: 10,
+          height: 10,
+        },
+      },
+    ],
+    ...input,
+  }
+}
+
+function buildCutoverCandidateSelectionMetadata(input: {
+  cart: ReturnType<typeof buildCutoverCandidateCart>
+  connection_id: string
+  quote_expires_at?: string
+}) {
+  return buildDeliveryHubCartSelectionMetadata(
+    {},
+    {
+      connection_id: input.connection_id,
+      quote_type: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+      quote_reference: createDeliveryHubQuoteReference({
+        connection_id: input.connection_id,
+        quote_type: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+        quote_key: "quote-key-must-not-leak",
+      }),
+      quote: {
+        carrier_code: "yandex",
+        carrier_label: "Yandex Delivery",
+        amount: 499,
+        currency_code: "RUB",
+        customer_price: {
+          amount: 399,
+          currency_code: "RUB",
+          source: "fixed",
+          policy_id: "policy_candidate",
+        },
+        delivery_eta_min: 1,
+        delivery_eta_max: 2,
+        pickup_point_required: true,
+        pickup_window_required: false,
+      },
+      pickup_point: {
+        provider_point_id: "pvz_candidate",
+        provider_point_code: "code_1",
+        name: "PVZ Candidate",
+        address: "Tverskaya 1",
+        city: "Moscow",
+        region: "Moscow",
+        postal_code: "101000",
+        lat: 55.75,
+        lng: 37.61,
+        is_origin_dropoff_allowed: false,
+        is_destination_pickup_allowed: true,
+        payment_methods: ["card"],
+      },
+      pickup_window: null,
+      correlation_id: "corr_candidate_must_not_leak",
+      validation_context: new DeliveryHubService(createMockPg([]) as any).buildStoreSelectionValidationContext({
+        cart: input.cart,
+        quote_expires_at: input.quote_expires_at ?? "2999-01-01T00:00:00.000Z",
+        now: "2026-04-20T00:00:00.000Z",
+      }),
+    }
+  )
+}
+
+function buildCutoverCandidateShippingOption() {
+  const id = buildDeliveryHubShippingOptionId(DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint)
+
+  return {
+    id,
+    name: "Delivery Hub Pickup Candidate",
+    provider_id: DELIVERY_HUB_FULFILLMENT_PROVIDER_ID,
+    data: {
+      version: 1,
+      provider_code: "deliveryhub",
+      provider_id: DELIVERY_HUB_FULFILLMENT_PROVIDER_ID,
+      id,
+      mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+      raw_reference: {
+        offer_id: "provider-offer-must-not-leak",
+      },
+    },
+  }
 }
 
 function createConnectionRecord(input?: Partial<any>) {

@@ -84,13 +84,13 @@ export async function GET(
       await service.getStoreCutoverCandidate({
         cart_id: existingCart.id,
         metadata: existingCart.metadata,
+        cart: existingCart,
         current_shipping_options: mergeShippingOptionSnapshots(
           currentShippingOptions,
           existingShippingMethodOptions
         ),
       })
     )
-
 
     res.status(200).json(result)
   } catch (error) {

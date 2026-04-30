@@ -64,6 +64,7 @@ export async function GET(
     const service = getStoreDeliveryHubService(req)
     let metadata: unknown = undefined
     let cartId = validatedQuery.cart_id ?? null
+    let cartRecord: deliveryHub.DeliveryHubCartSelectionRecord | null = null
     let currentShippingOptions: StoreDeliveryCutoverApprovalShippingOptionSnapshot[] = []
 
     if (cartId) {
@@ -86,6 +87,7 @@ export async function GET(
 
       cartId = existingCart.id
       metadata = existingCart.metadata
+      cartRecord = existingCart
       currentShippingOptions = mergeShippingOptionSnapshots(
         data ?? [],
         readCartShippingMethodOptions(existingCart)
@@ -96,6 +98,7 @@ export async function GET(
       await service.getStoreCutoverApprovalArtifact({
         cart_id: cartId,
         metadata,
+        cart: cartRecord,
         current_shipping_options: currentShippingOptions,
       })
     )

@@ -11,6 +11,7 @@ import {
   createDeliveryHubQuoteReference,
   readDeliveryHubCartSelection,
   type DeliveryHubCartSelectionRecord,
+  type DeliveryHubCartSelectionValidationContext,
   type DeliveryHubQuoteReference,
 } from "./cart-selection"
 import type {
@@ -60,6 +61,7 @@ import {
   type DeliveryHubCutoverApprovalArtifact,
 } from "./cutover-approval-artifact"
 import {
+  buildDeliveryHubCartSelectionValidationContext,
   buildDeliveryHubStoreSelectionConnectionSummary,
   buildDeliveryHubStoreSelectionReadiness,
   createMissingDeliveryHubSelectionConnectionSummary,
@@ -1495,9 +1497,12 @@ export class DeliveryHubService {
   async getStoreSelectionReadiness(input: {
     cart_id: string
     metadata?: unknown
+    cart?: DeliveryHubCartSelectionRecord | null
+    current_shipping_options?: DeliveryHubShippingOptionSnapshot[] | null
   }) {
     const cartId = requireString(input.cart_id, "cart_id")
     const selection = readDeliveryHubCartSelection(input.metadata)
+    const cartContext = input.cart ? buildStoreSelectionReadinessCartContext(input.cart) : null
 
     if (!selection) {
       return {
@@ -1505,6 +1510,8 @@ export class DeliveryHubService {
         cart_id: cartId,
         ...buildDeliveryHubStoreSelectionReadiness({
           metadata: input.metadata,
+          cart: cartContext,
+          current_shipping_options: input.current_shipping_options ?? null,
         }),
       }
     }
@@ -1517,8 +1524,22 @@ export class DeliveryHubService {
       ...buildDeliveryHubStoreSelectionReadiness({
         metadata: input.metadata,
         connection,
+        cart: cartContext,
+        current_shipping_options: input.current_shipping_options ?? null,
       }),
     }
+  }
+
+  buildStoreSelectionValidationContext(input: {
+    cart: DeliveryHubCartSelectionRecord
+    quote_expires_at?: string | Date | null
+    now?: Date | string | number | null
+  }): DeliveryHubCartSelectionValidationContext {
+    return buildDeliveryHubCartSelectionValidationContext({
+      cart: buildStoreSelectionReadinessCartContext(input.cart),
+      quote_expires_at: input.quote_expires_at ?? null,
+      now: input.now ?? null,
+    })
   }
 
   async listStoreCatalog() {
@@ -1534,12 +1555,22 @@ export class DeliveryHubService {
   async getStoreCutoverCandidate(input: {
     cart_id: string
     metadata?: unknown
+    cart?: DeliveryHubCartSelectionRecord | null
     current_shipping_options?: DeliveryHubShippingOptionSnapshot[] | null
   }): Promise<DeliveryHubCutoverCandidateResponse> {
+    const currentShippingOptions = input.current_shipping_options ?? []
+    const readiness = await this.getStoreSelectionReadiness({
+      cart_id: input.cart_id,
+      metadata: input.metadata,
+      cart: input.cart ?? null,
+      current_shipping_options: currentShippingOptions,
+    })
+
     return buildDeliveryHubCutoverCandidate({
       cart_id: input.cart_id,
       metadata: input.metadata,
-      current_shipping_options: input.current_shipping_options ?? [],
+      current_shipping_options: currentShippingOptions,
+      selection_readiness: readiness,
     })
   }
 
@@ -1550,13 +1581,15 @@ export class DeliveryHubService {
   async getStoreCutoverApprovalArtifact(input: {
     cart_id?: string | null
     metadata?: unknown
+    cart?: DeliveryHubCartSelectionRecord | null
     current_shipping_options?: DeliveryHubShippingOptionSnapshot[] | null
   }): Promise<DeliveryHubCutoverApprovalArtifact> {
     const preconditions = await this.buildStoreCutoverPreconditionsSnapshot()
     const candidate = input.cart_id
-      ? buildDeliveryHubCutoverCandidate({
+      ? await this.getStoreCutoverCandidate({
           cart_id: input.cart_id,
           metadata: input.metadata,
+          cart: input.cart ?? null,
           current_shipping_options: input.current_shipping_options ?? [],
         })
       : null
@@ -2436,6 +2469,18 @@ function mergeCheckoutDestinationAddress(
   return {
     ...destinationAddress,
     contact: destinationAddress.contact ?? shippingAddress?.contact ?? null,
+  }
+}
+
+function buildStoreSelectionReadinessCartContext(cart: DeliveryHubCartSelectionRecord) {
+  return {
+    cart_id: cart.id,
+    currency_code: cart.currency_code ?? null,
+    subtotal: cart.subtotal ?? null,
+    total: cart.total ?? null,
+    item_subtotal: cart.item_subtotal ?? null,
+    items: cart.items ?? null,
+    shipping_address: cart.shipping_address ?? null,
   }
 }
 

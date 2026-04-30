@@ -23,6 +23,7 @@ import {
   buildDeliveryHubProjectedCommitParityPreviewModel,
   buildDeliveryHubSavedSelectionSummaryModel,
   buildDeliveryHubReadinessPreviewModel,
+  buildDeliveryHubPaymentBlockerModel,
   buildDeliveryHubSelectionPayloadParityPreviewModel,
   buildDeliveryHubSelectionSaveCutInPayload,
   buildDeliveryHubSelectionWriteSeamPreviewModel,
@@ -486,33 +487,49 @@ test("normalizeDeliveryHubCutoverCandidateResponse keeps candidate safe and inva
   assert.equal(serialized.includes("unsafe-quote-key"), false)
 })
 
-test("normalizeDeliveryHubCutoverCandidateResponse rejects commit true and unsafe labels", () => {
+test("normalizeDeliveryHubCutoverCandidateResponse accepts Phase 4 commit booleans and rejects unsafe labels", () => {
+  const committable = normalizeDeliveryHubCutoverCandidateResponse({
+    ok: true,
+    version: 1,
+    cart_id: "cart_candidate",
+    selection_present: true,
+    selection_reference_id: "dhsel_0123456789abcdef0123456789abcdef",
+    candidate_status: "ready_for_review",
+    candidate_shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
+    candidate_shipping_option_name: "Delivery Hub Pickup",
+    candidate_amount: 499,
+    currency_code: "RUB",
+    candidate_pickup_point_id: "pvz_candidate",
+    required_preconditions: [
+      "selection_ready",
+      "matching_delivery_hub_shipping_option_present",
+      "customer_price_present",
+      "shipment_lifecycle_not_enabled",
+    ],
+    blocked_reasons: [],
+    can_commit_shipping_method: true,
+    checkout_source_of_truth: "delivery_hub",
+    guardrails: {
+      no_network_calls: true,
+      no_provider_payloads: true,
+      no_secret_material: true,
+      shipment_lifecycle_not_enabled: true,
+      can_commit_shipping_method: true,
+    },
+  })
+
+  assert.equal(committable.can_commit_shipping_method, true)
+  assert.equal(committable.checkout_source_of_truth, "delivery_hub")
+
   assert.throws(
     () => normalizeDeliveryHubCutoverCandidateResponse({
-      ok: true,
-      version: 1,
-      cart_id: "cart_candidate",
-      selection_present: true,
-      selection_reference_id: "dhsel_0123456789abcdef0123456789abcdef",
-      candidate_status: "ready_for_review",
-      candidate_shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
-      candidate_shipping_option_name: "Delivery Hub Pickup",
-      candidate_amount: 499,
-      currency_code: "RUB",
-      candidate_pickup_point_id: "pvz_candidate",
-      required_preconditions: [],
-      blocked_reasons: [],
-      can_commit_shipping_method: true,
-      checkout_source_of_truth: "unchanged",
+      ...committable,
       guardrails: {
-        no_network_calls: true,
-        no_provider_payloads: true,
-        no_secret_material: true,
-        shipment_lifecycle_not_enabled: true,
+        ...committable.guardrails,
         can_commit_shipping_method: false,
       },
     }),
-    /cannot enable shipping-method commit/
+    /commit guardrail must match root commit flag/
   )
 
   assert.throws(
@@ -963,11 +980,7 @@ test("normalizeDeliveryHubPickupPointsResponse preserves safe category fields an
   assert.deepEqual(points.points[0], {
     provider_point_id: "pvz_yandex_coords",
     provider_point_code: "code_yandex_coords",
-    provider_operator_id: "market_l4g",
     network_label: "Яндекс Маркет",
-    is_yandex_branded: true,
-    is_market_partner: false,
-    station_type: "pickup_point",
     name: "Пункт выдачи заказов Яндекс Маркета",
     address: "Тверская 1",
     city: "Москва",
@@ -1513,7 +1526,7 @@ test("buildDeliveryHubBuyerDeliveryCardModel prefers freshly selected PVZ quote 
   assert.equal(card.quote_eta_label, "1–2 дня")
   assert.equal(card.pickup_point_label, "Новый пункт выдачи")
   assert.equal(card.pickup_point_address_label, "Новая 1")
-  assert.equal(card.action_label, "Обновить доставку")
+  assert.equal(card.action_label, "Обновить способ доставки")
   assert.equal(JSON.stringify(card).includes("Старый пункт выдачи"), false)
 })
 
@@ -1532,12 +1545,12 @@ test("buildDeliveryHubCheckoutCutoverGateStatus is default-off and only enables 
   const readyCandidate = buildCutoverCandidateFixture()
   const availableShippingOptions = [
     {
-      id: "deliveryhub:dropoff_point_to_pickup_point",
+      id: "deliveryhub:warehouse_to_pickup_point",
       name: "Delivery Hub Pickup Candidate",
       provider_id: "deliveryhub_deliveryhub",
       data: {
         provider_code: "deliveryhub",
-        mode_code: "dropoff_point_to_pickup_point",
+        mode_code: "warehouse_to_pickup_point",
       },
     },
   ]
@@ -1553,7 +1566,16 @@ test("buildDeliveryHubCheckoutCutoverGateStatus is default-off and only enables 
   })
   const badCandidate = buildDeliveryHubCheckoutCutoverGateStatus({
     enabled: true,
-    candidate: { ...readyCandidate, candidate_status: "blocked" },
+    candidate: {
+      ...readyCandidate,
+      candidate_status: "blocked",
+      can_commit_shipping_method: false,
+      checkout_source_of_truth: "unchanged",
+      guardrails: {
+        ...readyCandidate.guardrails,
+        can_commit_shipping_method: false,
+      },
+    },
     available_shipping_options: availableShippingOptions,
   })
 
@@ -1667,21 +1689,26 @@ function buildCutoverCandidateFixture(overrides: Record<string, unknown> = {}) {
     selection_present: true,
     selection_reference_id: "dhsel_0123456789abcdef0123456789abcdef",
     candidate_status: "ready_for_review" as const,
-    candidate_shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+    candidate_shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
     candidate_shipping_option_name: "Delivery Hub Pickup Candidate",
     candidate_amount: 749,
     currency_code: "RUB",
     candidate_pickup_point_id: "pvz_decision",
-    required_preconditions: ["neutral_selection_ready"],
+    required_preconditions: [
+      "selection_ready",
+      "matching_delivery_hub_shipping_option_present",
+      "customer_price_present",
+      "shipment_lifecycle_not_enabled",
+    ],
     blocked_reasons: [],
-    can_commit_shipping_method: false as const,
-    checkout_source_of_truth: "unchanged" as const,
+    can_commit_shipping_method: true as const,
+    checkout_source_of_truth: "delivery_hub" as const,
     guardrails: {
       no_network_calls: true as const,
       no_provider_payloads: true as const,
       no_secret_material: true as const,
       shipment_lifecycle_not_enabled: true as const,
-      can_commit_shipping_method: false as const,
+      can_commit_shipping_method: true as const,
     },
     ...overrides,
   }
@@ -2026,10 +2053,10 @@ test("evaluateDeliveryHubCutoverCandidateCommitGuard blocks flag off and bad can
   const readyCandidate = buildCutoverCandidateFixture()
   const availableShippingOptions = [
     {
-      id: "deliveryhub:dropoff_point_to_pickup_point",
+      id: "deliveryhub:warehouse_to_pickup_point",
       name: "Delivery Hub Pickup Candidate",
       provider_id: "deliveryhub_deliveryhub",
-      data: { provider_code: "deliveryhub", mode_code: "dropoff_point_to_pickup_point" },
+      data: { provider_code: "deliveryhub", mode_code: "warehouse_to_pickup_point" },
     },
   ]
 
@@ -2050,8 +2077,42 @@ test("evaluateDeliveryHubCutoverCandidateCommitGuard blocks flag off and bad can
   })
   const badCandidate = evaluateDeliveryHubCutoverCandidateCommitGuard({
     enabled: true,
-    candidate: buildCutoverCandidateFixture({ candidate_status: "blocked" }),
+    candidate: buildCutoverCandidateFixture({
+      candidate_status: "blocked",
+      can_commit_shipping_method: false,
+      checkout_source_of_truth: "unchanged",
+      guardrails: {
+        no_network_calls: true,
+        no_provider_payloads: true,
+        no_secret_material: true,
+        shipment_lifecycle_not_enabled: true,
+        can_commit_shipping_method: false,
+      },
+    }),
     available_shipping_options: availableShippingOptions,
+  })
+  const dropoffCandidate = evaluateDeliveryHubCutoverCandidateCommitGuard({
+    enabled: true,
+    candidate: buildCutoverCandidateFixture({
+      candidate_shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+      checkout_source_of_truth: "delivery_hub",
+      can_commit_shipping_method: true,
+      guardrails: {
+        no_network_calls: true,
+        no_provider_payloads: true,
+        no_secret_material: true,
+        shipment_lifecycle_not_enabled: true,
+        can_commit_shipping_method: true,
+      },
+    }),
+    available_shipping_options: [
+      {
+        id: "deliveryhub:dropoff_point_to_pickup_point",
+        name: "Delivery Hub Dropoff Pickup Candidate",
+        provider_id: "deliveryhub_deliveryhub",
+        data: { provider_code: "deliveryhub", mode_code: "dropoff_point_to_pickup_point" },
+      },
+    ],
   })
   const missingOption = evaluateDeliveryHubCutoverCandidateCommitGuard({
     enabled: true,
@@ -2062,8 +2123,10 @@ test("evaluateDeliveryHubCutoverCandidateCommitGuard blocks flag off and bad can
   assert.equal(flagOff.canCommitShippingMethod, false)
   assert.equal(flagOff.reason_codes.includes("cutover_flag_disabled"), true)
   assert.equal(ready.canCommitShippingMethod, true)
-  assert.equal(ready.shipping_option_id, "deliveryhub:dropoff_point_to_pickup_point")
+  assert.equal(ready.shipping_option_id, "deliveryhub:warehouse_to_pickup_point")
   assert.deepEqual(ready.reason_codes, [])
+  assert.equal(dropoffCandidate.canCommitShippingMethod, false)
+  assert.equal(dropoffCandidate.reason_codes.includes("cutover_candidate_not_ready"), true)
   assert.equal(missingCandidate.canCommitShippingMethod, false)
   assert.equal(missingCandidate.reason_codes.includes("missing_cutover_candidate"), true)
   assert.equal(badCandidate.canCommitShippingMethod, false)
@@ -2515,6 +2578,104 @@ test("buildDeliveryHubCommitEligibilityModel degrades stale committed snapshot t
   assert.equal(model.current_shipping_option_id, "deliveryhub:warehouse_to_pickup_point")
   assert.equal(model.expected_shipping_option_id, "deliveryhub:warehouse_to_pickup_point")
   assert.equal(model.shipping_option_id, null)
+})
+
+test("buildDeliveryHubPaymentBlockerModel blocks payment until a ready Delivery Hub selection is committed", () => {
+  const readiness = {
+    ok: true as const,
+    cart_id: "cart_payment_guard",
+    status: "ready" as const,
+    issues: [],
+    selection: {
+      version: 1,
+      provider_code: "yandex",
+      connection_id: "conn_payment_guard",
+      quote_type: "warehouse_to_pickup_point" as const,
+      quote_reference: {
+        id: "dhsel_payment_guard",
+        version: 1,
+      },
+      quote: {
+        carrier_code: "yandex",
+        carrier_label: "Yandex Delivery",
+        amount: 499,
+        currency_code: "RUB",
+        customer_price: {
+          amount: 499,
+          currency_code: "RUB",
+          source: "provider_quote" as const,
+          policy_id: null,
+        },
+        delivery_eta_min: 1,
+        delivery_eta_max: 2,
+        pickup_point_required: true,
+        pickup_window_required: false,
+      },
+      pickup_point: {
+        provider_point_id: "pvz_payment_guard",
+        provider_point_code: null,
+        name: "Payment guard PVZ",
+        address: "Tverskaya 1",
+        city: "Moscow",
+        region: "Moscow",
+        postal_code: "101000",
+        lat: 55.75,
+        lng: 37.61,
+        is_origin_dropoff_allowed: false,
+        is_destination_pickup_allowed: true,
+        payment_methods: [],
+      },
+      pickup_window: null,
+      updated_at: "2026-04-30T12:00:00.000Z",
+    },
+    quote_context: null,
+  }
+
+  const notCommitted = buildDeliveryHubPaymentBlockerModel({
+    readiness,
+    cart: {
+      shipping_methods: [
+        {
+          shipping_option_id: "manual-flat-rate",
+        },
+      ],
+    },
+  })
+  const committed = buildDeliveryHubPaymentBlockerModel({
+    readiness,
+    cart: {
+      shipping_methods: [
+        {
+          shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
+        },
+      ],
+    },
+  })
+  const stale = buildDeliveryHubPaymentBlockerModel({
+    readiness: {
+      ...readiness,
+      status: "not_ready",
+      issues: [
+        {
+          code: "quote_expired",
+          message: "Saved delivery price has expired and must be refreshed",
+          field: "validation_context.quote_expires_at",
+        },
+      ],
+    },
+    cart: {
+      shipping_methods: [
+        {
+          shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
+        },
+      ],
+    },
+  })
+
+  assert.equal(notCommitted.blocked, true)
+  assert.equal(notCommitted.message, "Сохраните способ доставки перед оплатой.")
+  assert.equal(committed.blocked, false)
+  assert.equal(stale.blocked, true)
 })
 
 test("normalizeDeliveryHubReadinessResponse preserves neutral readiness summary only", () => {

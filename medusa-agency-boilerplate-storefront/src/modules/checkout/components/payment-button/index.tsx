@@ -2,8 +2,10 @@
 
 import { isManual, isStripeLike, isYooKassa } from "@lib/constants"
 import { placeOrder } from "@lib/data/cart"
+import { retrieveDeliveryHubReadiness } from "@lib/data/delivery-hub"
 import { getYooKassaPaymentStatus } from "@lib/data/payment"
 import { storefrontConfig } from "@lib/storefront-config"
+import { buildDeliveryHubPaymentBlockerModel } from "@lib/util/delivery-hub"
 import {
   getYooKassaConfirmationUrl,
   getYooKassaPaymentId,
@@ -52,7 +54,7 @@ const PaymentButton: React.FC<PaymentButtonProps> = ({
       )
     case isManual(paymentSession?.provider_id):
       return (
-        <ManualTestPaymentButton notReady={notReady} data-testid={dataTestId} />
+        <ManualTestPaymentButton cart={cart} notReady={notReady} data-testid={dataTestId} />
       )
     default:
       return <Button disabled>{checkoutCopy.selectPaymentMethod}</Button>
@@ -77,6 +79,13 @@ const YooKassaPaymentButton = ({
     setErrorMessage(null)
 
     try {
+      const readiness = await retrieveDeliveryHubReadiness(cart.id)
+      const deliveryBlocker = buildDeliveryHubPaymentBlockerModel({ readiness, cart })
+
+      if (deliveryBlocker.blocked) {
+        throw new Error(deliveryBlocker.message ?? "Сохраните способ доставки перед оплатой.")
+      }
+
       const paymentId = getYooKassaPaymentId(cart)
 
       if (!paymentId) {
@@ -184,6 +193,16 @@ const StripePaymentButton = ({
 
   const handlePayment = async () => {
     setSubmitting(true)
+    setErrorMessage(null)
+
+    const readiness = await retrieveDeliveryHubReadiness(cart.id)
+    const deliveryBlocker = buildDeliveryHubPaymentBlockerModel({ readiness, cart })
+
+    if (deliveryBlocker.blocked) {
+      setErrorMessage(deliveryBlocker.message)
+      setSubmitting(false)
+      return
+    }
 
     if (!stripe || !elements || !card || !cart) {
       setSubmitting(false)
@@ -257,7 +276,13 @@ const StripePaymentButton = ({
   )
 }
 
-const ManualTestPaymentButton = ({ notReady }: { notReady: boolean }) => {
+const ManualTestPaymentButton = ({
+  cart,
+  notReady,
+}: {
+  cart: HttpTypes.StoreCart
+  notReady: boolean
+}) => {
   const [submitting, setSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const checkoutCopy = storefrontConfig.copy.checkout
@@ -272,8 +297,18 @@ const ManualTestPaymentButton = ({ notReady }: { notReady: boolean }) => {
       })
   }
 
-  const handlePayment = () => {
+  const handlePayment = async () => {
     setSubmitting(true)
+    setErrorMessage(null)
+
+    const readiness = await retrieveDeliveryHubReadiness(cart.id)
+    const deliveryBlocker = buildDeliveryHubPaymentBlockerModel({ readiness, cart })
+
+    if (deliveryBlocker.blocked) {
+      setErrorMessage(deliveryBlocker.message)
+      setSubmitting(false)
+      return
+    }
 
     onPaymentCompleted()
   }

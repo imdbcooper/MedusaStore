@@ -64,12 +64,26 @@ describe("Delivery Hub cutover approval artifact", () => {
           },
         },
       ],
+      selection_readiness: {
+        status: "ready",
+        issues: [],
+        selection: null,
+        quote_context: null,
+      },
     })
 
     const artifact = buildDeliveryHubCutoverApprovalArtifact({
       cart_id: "cart_cutover_decision",
       preconditions,
-      candidate,
+      candidate: {
+        ...candidate,
+        can_commit_shipping_method: false,
+        checkout_source_of_truth: "unchanged",
+        guardrails: {
+          ...candidate.guardrails,
+          can_commit_shipping_method: false,
+        },
+      },
       generated_at: "2026-04-28T06:30:00.000Z",
     })
 

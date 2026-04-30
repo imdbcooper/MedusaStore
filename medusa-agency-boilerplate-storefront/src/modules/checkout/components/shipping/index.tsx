@@ -1082,10 +1082,36 @@ const Shipping: React.FC<ShippingProps> = ({
     })
 
     await saveDeliveryHubSelection(guard.payload)
-      .then(() => {
+      .then(async () => {
+        const [readiness, candidate] = await Promise.all([
+          retrieveDeliveryHubReadiness(cart.id),
+          retrieveDeliveryHubCutoverCandidate(cart.id),
+        ])
+        const commitEligibility = buildDeliveryHubCommitEligibilityModel({
+          cutover_enabled: DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED,
+          cutover_candidate: candidate,
+          persisted_selection: await retrieveDeliveryHubSelection(cart.id),
+          readiness,
+          available_shipping_options: shippingMethods,
+          current_shipping_method: cartShippingMethod,
+        })
+
+        if (!commitEligibility.canCommitShippingMethod || !commitEligibility.shipping_option_id) {
+          setDeliveryHubSelectionCutInState({
+            status: "blocked",
+            message: "Нужно обновить доставку. Выберите пункт выдачи ещё раз или попробуйте позже.",
+          })
+          router.refresh()
+          return
+        }
+
+        const committed = await commitShippingMethod(commitEligibility.shipping_option_id)
+
         setDeliveryHubSelectionCutInState({
-          status: "saved",
-          message: "Пункт выдачи сохранён. Стоимость и срок обновлены для выбранного адреса.",
+          status: committed ? "committed" : "error",
+          message: committed
+            ? "Способ доставки сохранён."
+            : "Не удалось сохранить способ доставки. Попробуйте ещё раз.",
         })
         router.refresh()
       })

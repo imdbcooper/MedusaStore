@@ -73,6 +73,14 @@ export type DeliveryHubCartSelectionPublic = {
   updated_at: string
 }
 
+export type DeliveryHubCartSelectionValidationContext = {
+  version: number
+  cart_id: string
+  cart_fingerprint: string
+  address_fingerprint: string
+  quote_expires_at: string
+}
+
 export type DeliveryHubCartSelectionWriteInput = {
   provider_code?: string | null
   connection_id: string
@@ -81,6 +89,7 @@ export type DeliveryHubCartSelectionWriteInput = {
   pickup_point: DeliveryHubCartSelectionPickupPoint
   pickup_window?: DeliveryHubCartSelectionPickupWindow | null
   correlation_id?: string | null
+  validation_context?: DeliveryHubCartSelectionValidationContext | null
   provider_execution_reference?: DeliveryHubProviderExecutionReference | null
   provider_origin_dispatch_context?: DeliveryHubProviderOriginDispatchContext | null
 } & ({
@@ -128,6 +137,7 @@ export type DeliveryHubCartSelectionRecord = {
       height?: number | null
     } | null
   }> | null
+  shipping_address?: unknown
   shipping_methods?: Array<{
     shipping_option?: {
       id?: string | null
@@ -139,6 +149,7 @@ export type DeliveryHubCartSelectionRecord = {
 }
 
 type DeliveryHubCartSelectionPersisted = DeliveryHubCartSelectionPublic & {
+  validation_context?: DeliveryHubCartSelectionValidationContext
   backend_execution_reference?: DeliveryHubProviderExecutionReference
 }
 
@@ -170,6 +181,7 @@ export async function getDeliveryHubCartById(
       "items.variant.length",
       "items.variant.width",
       "items.variant.height",
+      "shipping_address.*",
       "shipping_methods.shipping_option.id",
       "shipping_methods.shipping_option.name",
       "shipping_methods.shipping_option.provider_id",
@@ -211,6 +223,12 @@ export function readDeliveryHubCartSelection(
   }
 
   return stripBackendOnlyCartSelectionFields(selection)
+}
+
+export function readDeliveryHubCartSelectionValidationContext(
+  metadata?: unknown
+): DeliveryHubCartSelectionValidationContext | null {
+  return readPersistedDeliveryHubCartSelection(metadata)?.validation_context ?? null
 }
 
 export function readDeliveryHubCartSelectionBackendExecutionReference(
@@ -295,6 +313,7 @@ function readPersistedDeliveryHubCartSelection(metadata?: unknown) {
   const quoteReferenceVersion = readNumber(quoteReference.version)
   const correlationId = readNullableString(selection.correlation_id)
   const updatedAt = readString(selection.updated_at)
+  const validationContext = readSelectionValidationContext(selection.validation_context)
 
   if (
     version !== DELIVERY_HUB_CART_SELECTION_VERSION ||
@@ -371,6 +390,11 @@ function readPersistedDeliveryHubCartSelection(metadata?: unknown) {
     pickup_window: pickupWindow,
     correlation_id: correlationId,
     updated_at: updatedAt,
+    ...(validationContext
+      ? {
+          validation_context: validationContext,
+        }
+      : {}),
     ...(backendExecutionReference
       ? {
           backend_execution_reference: backendExecutionReference,
@@ -416,6 +440,11 @@ function buildPersistedDeliveryHubCartSelection(input: DeliveryHubCartSelectionW
     pickup_window: input.pickup_window ? normalizePickupWindow(input.pickup_window) : null,
     correlation_id: normalizeNullableString(input.correlation_id),
     updated_at: updatedAt,
+    ...(input.validation_context
+      ? {
+          validation_context: normalizeSelectionValidationContext(input.validation_context),
+        }
+      : {}),
     ...(providerExecutionReference
       ? {
           backend_execution_reference: providerExecutionReference,
@@ -786,9 +815,60 @@ function readProviderExecutionReference(
 function stripBackendOnlyCartSelectionFields(
   selection: DeliveryHubCartSelectionPersisted
 ): DeliveryHubCartSelectionPublic {
-  const { backend_execution_reference: _backendExecutionReference, ...publicSelection } = selection
+  const {
+    backend_execution_reference: _backendExecutionReference,
+    validation_context: _validationContext,
+    ...publicSelection
+  } = selection
 
   return publicSelection
+}
+
+function normalizeSelectionValidationContext(
+  value: DeliveryHubCartSelectionValidationContext
+): DeliveryHubCartSelectionValidationContext {
+  const context = asRecord(value)
+  const version = requireFiniteNumber(context.version, "validation_context.version")
+
+  if (version !== DELIVERY_HUB_CART_SELECTION_VERSION) {
+    throw new DeliveryHubError({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      message: `Field "validation_context.version" must equal ${DELIVERY_HUB_CART_SELECTION_VERSION}`,
+      status: 400,
+      details: {
+        field: "validation_context.version",
+      },
+    })
+  }
+
+  return {
+    version,
+    cart_id: requireNonEmptyString(context.cart_id, "validation_context.cart_id"),
+    cart_fingerprint: requireNonEmptyString(
+      context.cart_fingerprint,
+      "validation_context.cart_fingerprint"
+    ),
+    address_fingerprint: requireNonEmptyString(
+      context.address_fingerprint,
+      "validation_context.address_fingerprint"
+    ),
+    quote_expires_at: requireNonEmptyString(
+      context.quote_expires_at,
+      "validation_context.quote_expires_at"
+    ),
+  }
+}
+
+function readSelectionValidationContext(value: unknown): DeliveryHubCartSelectionValidationContext | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null
+  }
+
+  try {
+    return normalizeSelectionValidationContext(value as DeliveryHubCartSelectionValidationContext)
+  } catch {
+    return null
+  }
 }
 
 function requireQuoteReference(value: unknown): DeliveryHubQuoteReference {
