@@ -4,6 +4,7 @@ import { DeliveryHubFulfillmentProvider } from "../../modules/deliveryhub"
 import { YandexDeliveryClient } from "../../modules/delivery-hub/adapters/yandex/client"
 import { DELIVERY_HUB_MODE_CODE } from "../../modules/delivery-hub/constants"
 import { DELIVERY_HUB_EXECUTION_STATE } from "../../modules/delivery-hub/shipment-execution-contract"
+import { cancelDeliveryHubAcceptedShipment } from "../../modules/delivery-hub/shipment-cancel-policy"
 import {
   createDeliveryHubProviderExecutionReference,
   createDeliveryHubQuoteReference,
@@ -147,7 +148,7 @@ describe("Delivery Hub provider validation seam", () => {
     expect(String(controlledExecutionLog?.[0])).not.toContain("secret-token")
     expect(String(controlledExecutionLog?.[0])).not.toContain("raw-offer-id")
   })
- 
+
   it("blocks missing required fulfillment fragment through the same validation verdict", async () => {
     const provider = buildProvider()
     const optionData = buildValidOptionData()
@@ -841,13 +842,18 @@ describe("Delivery Hub provider validation seam", () => {
     expect(rawExecutionFingerprint).toEqual(expect.stringMatching(/^[a-f0-9]{64}$/))
     expect(rawIdempotencyKey).toContain(String(rawExecutionFingerprint))
 
-    expect(postSpy).toHaveBeenCalledTimes(1)
+    expect(postSpy).toHaveBeenCalledTimes(2)
     expect(postSpy.mock.calls[0]).toEqual([
       "/shipments/create",
       expect.objectContaining({
         source: expect.objectContaining({ pickup_point_id: "origin_dropoff_1" }),
         destination: expect.objectContaining({ pickup_point_id: "pvz_2" }),
       }),
+      "corr_enabled_boundary",
+    ])
+    expect(postSpy.mock.calls[1]).toEqual([
+      "/shipments/info",
+      { shipment_id: "shipment_dropoff_123456" },
       "corr_enabled_boundary",
     ])
     expect(result).toEqual(
@@ -993,9 +999,10 @@ describe("Delivery Hub provider validation seam", () => {
   it("refreshes accepted persisted shipment status once from backend-only provider shipment reference and persists a safe normalized summary", async () => {
     process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
 
+    const backendOnlyProviderShipmentReference = "provider_status_refresh_backend_only_ref_123"
     const postSpy = jest.spyOn(YandexDeliveryClient.prototype, "post")
       .mockResolvedValueOnce({
-        shipment_id: "shipment_status_acceptance_should_not_leak",
+        shipment_id: backendOnlyProviderShipmentReference,
         request_id: "provider_status_corr_should_not_leak",
         labels: [{ url: "https://example.test/dropoff-label.pdf" }],
       })
@@ -1007,12 +1014,9 @@ describe("Delivery Hub provider validation seam", () => {
         quote_key: "status_quote_key_should_not_leak",
         raw_response: "Authorization: Bearer status-auth-should-not-leak",
       })
-    const backendOnlyProviderShipmentReference = "provider_status_refresh_backend_only_ref_123"
 
     const provider = buildProvider({
-      resolvedPgConnection: buildReadOnlyLookupPgConnection([buildConnectionRow()], {
-        backendOnlyProviderShipmentReference,
-      }),
+      resolvedPgConnection: buildReadOnlyLookupPgConnection([buildConnectionRow()]),
       carts: [buildDropoffCartSelection("cart_1", "corr_status_refresh")],
     })
 
@@ -1071,8 +1075,12 @@ describe("Delivery Hub provider validation seam", () => {
       })
     )
 
+    const controlledExecutionJson = JSON.stringify(result.data.controlled_execution)
+    const lifecycleJson = JSON.stringify(result.data.accepted_shipment_lifecycle)
     const statusJson = JSON.stringify(result.data.accepted_shipment_status_refresh)
-    expect(statusJson).not.toContain("shipment_status_acceptance_should_not_leak")
+    expect(controlledExecutionJson).not.toContain(backendOnlyProviderShipmentReference)
+    expect(lifecycleJson).not.toContain(backendOnlyProviderShipmentReference)
+    expect(statusJson).not.toContain(backendOnlyProviderShipmentReference)
     expect(statusJson).not.toContain("provider_status_corr_should_not_leak")
     expect(statusJson).not.toContain("shipment_status_poll_should_not_leak")
     expect(statusJson).not.toContain("provider_status_poll_corr_should_not_leak")
@@ -1082,7 +1090,87 @@ describe("Delivery Hub provider validation seam", () => {
     expect(statusJson).not.toContain("status-auth-should-not-leak")
   })
 
-  it("blocks accepted shipment status polling before provider status call when only provider reference presence flag exists", async () => {
+  it("cancels accepted persisted shipment once from backend-only provider shipment reference without exposing raw provider ids", async () => {
+    process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
+
+    const backendOnlyProviderShipmentReference = "provider_cancel_backend_only_ref_123"
+    const postSpy = jest.spyOn(YandexDeliveryClient.prototype, "post")
+      .mockResolvedValueOnce({
+        shipment_id: backendOnlyProviderShipmentReference,
+        request_id: "provider_cancel_create_corr_should_not_leak",
+      })
+      .mockResolvedValueOnce({
+        status: "delivering",
+        shipment_id: "provider_cancel_refresh_raw_id_should_not_leak",
+        request_id: "provider_cancel_refresh_corr_should_not_leak",
+      })
+      .mockResolvedValueOnce({
+        status: "cancelled",
+        shipment_id: "provider_cancel_response_raw_id_should_not_leak",
+        request_id: "provider_cancel_response_corr_should_not_leak",
+      })
+
+    const provider = buildProvider({
+      resolvedPgConnection: buildReadOnlyLookupPgConnection([buildConnectionRow()]),
+      carts: [buildDropoffCartSelection("cart_1", "corr_cancel_from_backend_ref")],
+    })
+
+    const createResult = await provider.createFulfillment(
+      {
+        ...buildValidFulfillmentData(),
+        cart_id: "cart_1",
+        shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+        shipping_option_type_id: "deliveryhub_deliveryhub",
+        correlation_id: "corr_cancel_from_backend_ref",
+        updated_at: "2026-04-23T07:00:00.000Z",
+      },
+      [{ line_item_id: "item_1", quantity: 1 }],
+      { id: "order_1", display_id: 42, currency_code: "RUB" },
+      { id: "ful_1", location_id: "sloc_1" }
+    )
+    const lifecycle = createResult.data.accepted_shipment_lifecycle as any
+    const persistedShipment = (createResult.data.shipment_persistence as any)
+    const cancel = await cancelDeliveryHubAcceptedShipment({
+      lifecycle,
+      shipment: {
+        ...persistedShipment,
+        metadata: {
+          provider_shipment_reference: backendOnlyProviderShipmentReference,
+          redacted: true,
+        },
+        request_summary: {},
+        response_summary: {},
+      },
+      connection: buildConnectionRow() as any,
+      correlation_id: "corr_cancel_manual",
+    })
+
+    expect(postSpy).toHaveBeenCalledWith(
+      "/request/cancel",
+      { shipment_id: backendOnlyProviderShipmentReference },
+      "corr_cancel_manual"
+    )
+    expect(cancel).toEqual(expect.objectContaining({
+      status: "already_cancelled",
+      provider_call_attempted: true,
+      provider_cancel: expect.objectContaining({
+        operation: "cancel_shipment",
+        provider_shipment_reference_present: true,
+        redacted: true,
+      }),
+    }))
+
+    const createJson = JSON.stringify(createResult)
+    const cancelJson = JSON.stringify(cancel)
+    expect(createJson).not.toContain(backendOnlyProviderShipmentReference)
+    expect(cancelJson).not.toContain(backendOnlyProviderShipmentReference)
+    expect(cancelJson).not.toContain("provider_cancel_refresh_raw_id_should_not_leak")
+    expect(cancelJson).not.toContain("provider_cancel_refresh_corr_should_not_leak")
+    expect(cancelJson).not.toContain("provider_cancel_response_raw_id_should_not_leak")
+    expect(cancelJson).not.toContain("provider_cancel_response_corr_should_not_leak")
+  })
+
+  it("refreshes accepted shipment status when create persists the backend-only provider reference", async () => {
     process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
 
     const postSpy = jest.spyOn(YandexDeliveryClient.prototype, "post").mockResolvedValue({
@@ -1110,9 +1198,13 @@ describe("Delivery Hub provider validation seam", () => {
       { id: "ful_1", location_id: "sloc_1" }
     )
 
-    expect(postSpy).toHaveBeenCalledTimes(1)
+    expect(postSpy).toHaveBeenCalledTimes(2)
     expect(postSpy.mock.calls[0]?.[0]).toBe("/shipments/create")
-    expect(postSpy.mock.calls.some((call) => call[0] === "/shipments/info")).toBe(false)
+    expect(postSpy.mock.calls[1]).toEqual([
+      "/shipments/info",
+      { shipment_id: "shipment_missing_raw_reference_should_not_be_reused" },
+      "corr_status_missing_provider_reference",
+    ])
     expect(result.data.accepted_shipment_lifecycle).toEqual(
       expect.objectContaining({ classification: "accepted_shipment", accepted: true })
     )
@@ -1127,13 +1219,20 @@ describe("Delivery Hub provider validation seam", () => {
     )
     expect(result.data.accepted_shipment_status_refresh).toEqual(
       expect.objectContaining({
-        status: "blocked",
-        provider_call_attempted: false,
-        blocked_reason_code: "provider_shipment_reference_required",
+        status: "refreshed",
+        provider_call_attempted: true,
+        blocked_reason_code: null,
         lifecycle_classification: "accepted_shipment",
-        accepted: false,
-        provider_status: null,
-        persistence: { attempted: false, performed: false, outcome: "not_refreshed" },
+        accepted: true,
+        provider_status: expect.objectContaining({
+          provider_shipment_reference_present: true,
+          redacted: true,
+        }),
+        persistence: expect.objectContaining({
+          attempted: true,
+          performed: true,
+          outcome: "refreshed",
+        }),
       })
     )
 
@@ -1533,7 +1632,7 @@ describe("Delivery Hub provider validation seam", () => {
       { id: "ful_1", location_id: "sloc_1" }
     )
 
-    expect(postSpy).toHaveBeenCalledTimes(1)
+    expect(postSpy).toHaveBeenCalledTimes(2)
     expect(postSpy.mock.calls[0]).toEqual([
       "/shipments/create",
       expect.objectContaining({
@@ -1546,6 +1645,11 @@ describe("Delivery Hub provider validation seam", () => {
         }),
         destination: expect.objectContaining({ pickup_point_id: "pvz_2" }),
       }),
+      "corr_enabled_boundary_wh_live",
+    ])
+    expect(postSpy.mock.calls[1]).toEqual([
+      "/shipments/info",
+      { shipment_id: "shipment_warehouse_123456" },
       "corr_enabled_boundary_wh_live",
     ])
     expect(result).toEqual(
@@ -1600,7 +1704,7 @@ describe("Delivery Hub provider validation seam", () => {
     expect(controlledExecutionJson).not.toContain("shipment_warehouse_123456")
     expect(controlledExecutionJson).not.toContain("provider_warehouse_corr_987654")
   })
- 
+
   it("does not falsely shift the direct Yandex blocker for mismatched provider-origin context", async () => {
     process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
 
@@ -2583,6 +2687,125 @@ describe("Delivery Hub provider validation seam", () => {
     )
   })
 
+  it("proves accepted replay and drift are zero-call even when a provider would otherwise accept", async () => {
+    process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
+
+    const postSpy = jest.spyOn(YandexDeliveryClient.prototype, "post").mockResolvedValue({
+      shipment_id: "zero_call_provider_id_should_not_be_created",
+      request_id: "zero_call_provider_corr_should_not_leak",
+    })
+
+    const completedProvider = buildProvider({
+      resolvedPgConnection: buildReadOnlyLookupPgConnection([buildConnectionRow()], {
+        existingLedgerState: DELIVERY_HUB_EXECUTION_STATE.completed,
+      }),
+      carts: [buildDropoffCartSelection("cart_completed_zero_call", "corr_completed_zero_call")],
+    })
+    const driftProvider = buildProvider({
+      resolvedPgConnection: buildReadOnlyLookupPgConnection([buildConnectionRow()], {
+        forceReserveDrift: true,
+      }),
+      carts: [buildDropoffCartSelection("cart_drift_zero_call", "corr_drift_zero_call")],
+    })
+
+    const replayResult = await completedProvider.createFulfillment(
+      {
+        ...buildValidFulfillmentData(),
+        cart_id: "cart_completed_zero_call",
+        shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+        shipping_option_type_id: "deliveryhub_deliveryhub",
+        correlation_id: "corr_completed_zero_call",
+        updated_at: "2026-04-23T07:00:00.000Z",
+      },
+      [{ line_item_id: "item_1", quantity: 1 }],
+      { id: "order_1", display_id: 42, currency_code: "RUB" },
+      { id: "ful_1", location_id: "sloc_1" }
+    )
+    const driftResult = await driftProvider.createFulfillment(
+      {
+        ...buildValidFulfillmentData(),
+        cart_id: "cart_drift_zero_call",
+        shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+        shipping_option_type_id: "deliveryhub_deliveryhub",
+        correlation_id: "corr_drift_zero_call",
+        updated_at: "2026-04-23T07:00:00.000Z",
+      },
+      [{ line_item_id: "item_1", quantity: 1 }],
+      { id: "order_1", display_id: 42, currency_code: "RUB" },
+      { id: "ful_1", location_id: "sloc_1" }
+    )
+
+    expect(postSpy).not.toHaveBeenCalled()
+    expect(replayResult.data.controlled_execution).toEqual(
+      expect.objectContaining({
+        blocked_reason_code: "execution_ledger_replay_blocked",
+        provider_dispatch_result: null,
+        dispatch_result: expect.objectContaining({
+          attempted: false,
+          performed: false,
+          outcome: "not_attempted",
+          persistence_performed: false,
+        }),
+      })
+    )
+    expect(driftResult.data.controlled_execution).toEqual(
+      expect.objectContaining({
+        blocked_reason_code: "execution_ledger_drift_detected",
+        provider_dispatch_result: null,
+        dispatch_result: expect.objectContaining({
+          attempted: false,
+          performed: false,
+          outcome: "not_attempted",
+          persistence_performed: false,
+        }),
+      })
+    )
+    expect(JSON.stringify([replayResult, driftResult])).not.toContain("zero_call_provider_id_should_not_be_created")
+    expect(JSON.stringify([replayResult, driftResult])).not.toContain("zero_call_provider_corr_should_not_leak")
+  })
+
+  it("fails closed with zero provider calls when the enabled ready contour has no ledger runtime", async () => {
+    process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED = "true"
+    const postSpy = jest.spyOn(YandexDeliveryClient.prototype, "post").mockResolvedValue({
+      shipment_id: "missing_ledger_runtime_provider_id_should_not_be_created",
+    })
+    const provider = buildProvider({
+      resolvedPgConnection: buildReadOnlyLookupPgConnection([buildConnectionRow()], {
+        disableLedgerTables: true,
+      }),
+      carts: [buildDropoffCartSelection("cart_missing_ledger_runtime", "corr_missing_ledger_runtime")],
+    })
+
+    const result = await provider.createFulfillment(
+      {
+        ...buildValidFulfillmentData(),
+        cart_id: "cart_missing_ledger_runtime",
+        shipping_option_id: "deliveryhub:dropoff_point_to_pickup_point",
+        shipping_option_type_id: "deliveryhub_deliveryhub",
+        correlation_id: "corr_missing_ledger_runtime",
+        updated_at: "2026-04-23T07:00:00.000Z",
+      },
+      [{ line_item_id: "item_1", quantity: 1 }],
+      { id: "order_1", display_id: 42, currency_code: "RUB" },
+      { id: "ful_1", location_id: "sloc_1" }
+    )
+
+    expect(postSpy).not.toHaveBeenCalled()
+    expect(result.data.controlled_execution).toEqual(expect.objectContaining({
+      status: "dispatch_prepared",
+      blocking_stage: "provider_dispatch_execution",
+      blocked_reason_code: "execution_ledger_runtime_missing",
+      provider_dispatch_result: null,
+      dispatch_result: expect.objectContaining({
+        attempted: false,
+        performed: false,
+        outcome: "not_attempted",
+        execution_ledger_persistence_performed: false,
+      }),
+    }))
+    expect(JSON.stringify(result)).not.toContain("missing_ledger_runtime_provider_id_should_not_be_created")
+  })
+
   it("keeps the old blocker when backend execution reference cannot materialize without encryption key", async () => {
     delete process.env.DELIVERY_HUB_ENCRYPTION_KEY
 
@@ -3037,6 +3260,7 @@ function buildReadOnlyLookupPgConnection(
     existingLedgerState?: (typeof DELIVERY_HUB_EXECUTION_STATE)[keyof typeof DELIVERY_HUB_EXECUTION_STATE]
     seedAcceptedShipmentForExistingLedger?: boolean
     backendOnlyProviderShipmentReference?: string
+    disableLedgerTables?: boolean
   }
 ) {
   const state = {
@@ -3067,11 +3291,15 @@ function buildReadOnlyLookupPgConnection(
         }
 
         if (sql.includes("deliveryhub_execution_ledger")) {
+          if (options?.disableLedgerTables) {
+            throw new Error("execution ledger table unavailable")
+          }
+
           return {
             rows: [{ table_name: "deliveryhub_execution_ledger" }],
           }
         }
- 
+
         return {
           rows: [{ table_name: "delivery_connections" }],
         }
@@ -3109,6 +3337,10 @@ function buildReadOnlyLookupPgConnection(
       }
 
       if (sql.includes("insert into deliveryhub_execution_ledger") && sql.includes("on conflict")) {
+        if (options?.disableLedgerTables) {
+          throw new Error("execution ledger table unavailable")
+        }
+
         const executionReference = typeof bindings?.[0] === "string" ? bindings[0] : "dhprev_test"
         const idempotencyKey = typeof bindings?.[1] === "string" ? bindings[1] : "deliveryhub:test"
         const executionPayload = typeof bindings?.[2] === "string" ? bindings[2] : "{}"
@@ -3190,7 +3422,7 @@ function buildReadOnlyLookupPgConnection(
         if (state.executionLedgerReferenceByIdempotencyKey.has(idempotencyKey)) {
           return { rowCount: 0, rows: [] }
         }
- 
+
         const row = {
           execution_reference: executionReference,
           idempotency_key: idempotencyKey,
@@ -3232,7 +3464,7 @@ function buildReadOnlyLookupPgConnection(
 
         return { rowCount: existing ? 1 : 0, rows: [] }
       }
- 
+
       if (sql.includes("insert into delivery_shipments")) {
         state.shipmentInsertCount += 1
         const row = {

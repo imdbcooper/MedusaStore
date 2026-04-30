@@ -14,6 +14,7 @@ import * as orderDeliveryHubRoute from "../../api/admin/orders/[id]/delivery-hub
 import * as orderDeliveryHubShipmentsRoute from "../../api/admin/orders/[id]/delivery-hub/shipments/route"
 import * as orderDeliveryHubShipmentRefreshRoute from "../../api/admin/orders/[id]/delivery-hub/shipments/[shipment_id]/refresh/route"
 import * as orderDeliveryHubShipmentCancelRoute from "../../api/admin/orders/[id]/delivery-hub/shipments/[shipment_id]/cancel/route"
+import * as orderDeliveryHubShipmentRetryRoute from "../../api/admin/orders/[id]/delivery-hub/shipments/[shipment_id]/retry/route"
 import * as deliveryPickupPointsRoute from "../../api/admin/delivery/pickup-points/route"
 import * as deliveryPickupWindowsRoute from "../../api/admin/delivery/pickup-windows/route"
 import * as deliveryTestQuoteRoute from "../../api/admin/delivery/test-quote/route"
@@ -1381,6 +1382,15 @@ describe("Delivery Hub admin routes", () => {
           blocked_reason_code: "shipment_already_created",
           safe_message: "Duplicate shipment creation is blocked.",
           redacted: true,
+          provider_call_attempted: false,
+          shipment_id: null,
+          raw_provider_payload: {
+            shipment_id: "provider_action_raw_shipment_id_should_not_leak",
+            quote_key: "provider_action_quote_key_should_not_leak",
+            Authorization: "Bearer provider-action-auth-should-not-leak",
+          },
+          raw_yandex_dto: { offer_id: "provider_action_offer_id_should_not_leak" },
+          execution_secret: "provider_action_execution_secret_should_not_leak",
         },
       } as any)
     const res = createMockResponse()
@@ -1400,12 +1410,28 @@ describe("Delivery Hub admin routes", () => {
     })
     expect(res.status).toHaveBeenCalledWith(202)
     const payload = (res.json as jest.Mock).mock.calls[0][0] as any
-    expect(payload.action).toEqual(expect.objectContaining({ redacted: true }))
+    expect(payload.action).toEqual({
+      type: "create_shipment",
+      status: "blocked",
+      blocked_reason_code: "shipment_already_created",
+      safe_message: "Duplicate shipment creation is blocked.",
+      redacted: true,
+      provider_call_attempted: false,
+      shipment_id: null,
+    })
+    expect(payload.action).not.toHaveProperty("raw_provider_payload")
+    expect(payload.action).not.toHaveProperty("raw_yandex_dto")
+    expect(payload.action).not.toHaveProperty("execution_secret")
     expect(JSON.stringify(payload)).not.toContain("execution_reference_raw_value")
     expect(JSON.stringify(payload)).not.toContain("leaked_quote_key")
+    expect(JSON.stringify(payload)).not.toContain("provider_action_raw_shipment_id_should_not_leak")
+    expect(JSON.stringify(payload)).not.toContain("provider_action_quote_key_should_not_leak")
+    expect(JSON.stringify(payload)).not.toContain("provider_action_auth-should-not-leak")
+    expect(JSON.stringify(payload)).not.toContain("provider_action_offer_id_should_not_leak")
+    expect(JSON.stringify(payload)).not.toContain("provider_action_execution_secret_should_not_leak")
   })
 
-  it("refreshes and cancels order-scoped shipments by shipment id only", async () => {
+  it("refreshes, cancels and retries order-scoped shipments by shipment id only", async () => {
     const operations = buildShipmentOperationsPayload()
     const refreshSpy = jest
       .spyOn(DeliveryHubService.prototype, "refreshAdminOrderDeliveryHubShipment")
@@ -1413,6 +1439,9 @@ describe("Delivery Hub admin routes", () => {
     const cancelSpy = jest
       .spyOn(DeliveryHubService.prototype, "cancelAdminOrderDeliveryHubShipment")
       .mockResolvedValue({ ok: true, operations, cancel: { status: "blocked", redacted: true } } as any)
+    const retrySpy = jest
+      .spyOn(DeliveryHubService.prototype, "retryAdminOrderDeliveryHubShipment")
+      .mockResolvedValue({ ok: true, operations, retry: { status: "blocked", redacted: true } } as any)
 
     const refreshRes = createMockResponse()
     await orderDeliveryHubShipmentRefreshRoute.POST(
@@ -1445,6 +1474,22 @@ describe("Delivery Hub admin routes", () => {
       correlation_id: "corr-cancel",
     })
     expect(cancelRes.status).toHaveBeenCalledWith(200)
+
+    const retryRes = createMockResponse()
+    await orderDeliveryHubShipmentRetryRoute.POST(
+      createOrderDeliveryHubRequest({
+        url: "/admin/orders/order_1/delivery-hub/shipments/shipment_1/retry",
+        validatedBody: { correlation_id: "corr-retry" },
+      }) as any,
+      retryRes as any
+    )
+
+    expect(retrySpy).toHaveBeenCalledWith({
+      order_id: "order_1",
+      shipment_id: "shipment_1",
+      correlation_id: "corr-retry",
+    })
+    expect(retryRes.status).toHaveBeenCalledWith(200)
   })
 
   it("returns admin delivery logs list payload", async () => {

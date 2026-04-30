@@ -143,6 +143,14 @@ export type YandexCreateShipmentDispatchStatusCategory =
   | "provider_error"
   | "unknown"
 
+const YANDEX_CREATE_SHIPMENT_BACKEND_REFERENCE_SYMBOL = Symbol(
+  "deliveryHubYandexCreateShipmentBackendProviderReference"
+)
+
+type YandexCreateShipmentDispatchResultWithBackendReference = YandexCreateShipmentDispatchResult & {
+  [YANDEX_CREATE_SHIPMENT_BACKEND_REFERENCE_SYMBOL]?: string | null
+}
+
 export type YandexCreateShipmentDispatchResult = {
   version: typeof YANDEX_CREATE_SHIPMENT_DISPATCH_PORT_VERSION
   provider_code: typeof DELIVERY_HUB_PROVIDER_YANDEX
@@ -168,6 +176,16 @@ export type YandexCreateShipmentDispatchResult = {
   raw_provider_response_included: false
   raw_execution_token_included: false
   raw_quote_key_included: false
+}
+
+export function readYandexCreateShipmentDispatchBackendProviderShipmentReference(
+  result: YandexCreateShipmentDispatchResult | null | undefined
+): string | null {
+  return normalizeString(
+    (result as YandexCreateShipmentDispatchResultWithBackendReference | null | undefined)?.[
+      YANDEX_CREATE_SHIPMENT_BACKEND_REFERENCE_SYMBOL
+    ]
+  )
 }
 
 export function buildYandexCreateShipmentDispatchPortContract(input: {
@@ -403,8 +421,7 @@ function normalizeYandexCreateShipmentDispatchSuccess(input: {
   const response = unwrapResponseObject(input.response)
   const providerShipmentReference = extractProviderShipmentReference(response)
   const responseCorrelationId = extractProviderCorrelationId(response)
-
-  return {
+  const result: YandexCreateShipmentDispatchResultWithBackendReference = {
     version: YANDEX_CREATE_SHIPMENT_DISPATCH_PORT_VERSION,
     provider_code: DELIVERY_HUB_PROVIDER_YANDEX,
     operation: "create_shipment",
@@ -430,6 +447,15 @@ function normalizeYandexCreateShipmentDispatchSuccess(input: {
     raw_execution_token_included: false,
     raw_quote_key_included: false,
   }
+
+  Object.defineProperty(result, YANDEX_CREATE_SHIPMENT_BACKEND_REFERENCE_SYMBOL, {
+    enumerable: false,
+    configurable: false,
+    writable: false,
+    value: providerShipmentReference,
+  })
+
+  return result
 }
 
 function normalizeYandexCreateShipmentDispatchFailure(input: {

@@ -1719,11 +1719,23 @@ const AdminOrderDeliveryHubResponseSchema = z
   })
   .strict()
 
+const AdminOrderDeliveryHubActionSchema = z
+  .object({
+    type: z.literal("create_shipment"),
+    status: z.enum(["accepted", "blocked", "failed"]),
+    blocked_reason_code: z.string().nullable(),
+    safe_message: z.string(),
+    redacted: z.literal(true),
+    provider_call_attempted: z.boolean(),
+    shipment_id: z.string().nullable(),
+  })
+  .strict()
+
 const AdminOrderDeliveryHubActionResponseSchema = z
   .object({
     ok: z.literal(true),
     delivery_hub: z.record(z.unknown()),
-    action: z.record(z.unknown()),
+    action: AdminOrderDeliveryHubActionSchema,
   })
   .strict()
 
@@ -1977,11 +1989,20 @@ export function sanitizeAdminOrderDeliveryHubResponse(result: unknown) {
 
 export function sanitizeAdminOrderDeliveryHubActionResponse(result: unknown) {
   const root = asRecord(result)
+  const action = asRecord(root.action)
 
   return AdminOrderDeliveryHubActionResponseSchema.parse({
     ok: root.ok,
     delivery_hub: sanitizeAdminStructuredPayload(root.delivery_hub),
-    action: sanitizeAdminStructuredPayload(root.action),
+    action: {
+      type: action.type,
+      status: action.status,
+      blocked_reason_code: sanitizeNullableAdminString(action.blocked_reason_code),
+      safe_message: sanitizeAdminString(action.safe_message),
+      redacted: action.redacted,
+      provider_call_attempted: action.provider_call_attempted,
+      shipment_id: sanitizeNullableAdminString(action.shipment_id),
+    },
   })
 }
 

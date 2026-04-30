@@ -593,7 +593,7 @@ describe("Delivery Hub admin shipment operations visibility", () => {
     expect(snapshot.action_posture.create_shipment).toBe("blocked")
   })
 
-  it("keeps order-scoped create blocked in Phase 6 even when the order context is otherwise ready", () => {
+  it("marks order-scoped create ready in Phase 7 when gate and order context are ready", () => {
     const snapshot = buildDeliveryHubAdminOrderDeliveryHubSnapshot({
       order_id: "order_admin_ops",
       order: buildOrderWithDeliveryHubFulfillment(),
@@ -604,13 +604,13 @@ describe("Delivery Hub admin shipment operations visibility", () => {
 
     expect(snapshot.shipment_readiness).toEqual(
       expect.objectContaining({
-        available: false,
-        status: "blocked",
-        blocked_reason_code: "order_scoped_shipment_create_not_materialized",
+        available: true,
+        status: "ready",
+        blocked_reason_code: null,
         execution_enabled: true,
       })
     )
-    expect(snapshot.action_posture.create_shipment).toBe("blocked")
+    expect(snapshot.action_posture.create_shipment).toBe("available")
   })
 
   it("wires explicit admin auth middleware for accepted shipment operation routes", () => {
@@ -642,6 +642,9 @@ describe("Delivery Hub admin shipment operations visibility", () => {
     )
     expect(middlewaresSource).toMatch(
       /matcher:\s*"\/admin\/orders\/:id\/delivery-hub\/shipments\/:shipment_id\/cancel"[\s\S]*?methods:\s*\["POST"\][\s\S]*?middlewares:\s*\[adminAuth,\s*validateAndTransformBody\(AdminOrderDeliveryHubShipmentActionSchema\)\]/
+    )
+    expect(middlewaresSource).toMatch(
+      /matcher:\s*"\/admin\/orders\/:id\/delivery-hub\/shipments\/:shipment_id\/retry"[\s\S]*?methods:\s*\["POST"\][\s\S]*?middlewares:\s*\[adminAuth,\s*validateAndTransformBody\(AdminOrderDeliveryHubShipmentActionSchema\)\]/
     )
   })
 })

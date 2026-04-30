@@ -1249,7 +1249,7 @@ function providerOriginDispatchContextsEqual(
   )
 }
 
-function createDeliveryHubProviderExecutionReferenceFromQuoteReference(
+export function createDeliveryHubProviderExecutionReferenceFromQuoteReference(
   quoteReference: DeliveryHubQuoteReference
 ): DeliveryHubProviderExecutionReference | null {
   const payload = decryptDeliveryHubQuoteReferencePayload(quoteReference)

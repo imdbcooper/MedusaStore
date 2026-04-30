@@ -8,10 +8,14 @@ import {
   DELIVERY_HUB_PROVIDER_YANDEX,
 } from "./constants"
 import {
+  createDeliveryHubProviderExecutionReferenceFromQuoteReference,
   createDeliveryHubQuoteReference,
   readDeliveryHubCartSelection,
+  readDeliveryHubProviderExecutionReferenceOriginContext,
   type DeliveryHubCartSelectionRecord,
   type DeliveryHubCartSelectionValidationContext,
+  type DeliveryHubProviderExecutionReference,
+  type DeliveryHubProviderOriginDispatchContext,
   type DeliveryHubQuoteReference,
 } from "./cart-selection"
 import type {
@@ -76,6 +80,8 @@ import {
 import {
   buildDeliveryHubExecutionPlanObservabilityPreview,
   buildDeliveryHubFulfillmentBridgePreview,
+  buildDeliveryHubFulfillmentHandoffSnapshot,
+  buildDeliveryHubShipmentExecutionPlanPreview,
   type DeliveryHubExecutionPlanObservabilityPreview,
   type DeliveryHubFulfillmentBridgePlannerIssue,
   type DeliveryHubFulfillmentBridgePreview,
@@ -89,6 +95,11 @@ import {
   buildDeliveryHubAdminOrderDeliveryHubSnapshot,
   type DeliveryHubAdminOrderDeliveryHubSnapshot,
 } from "./admin-order-delivery-hub"
+import {
+  buildDeliveryHubControlledFulfillmentExecutionResult,
+  type DeliveryHubControlledFulfillmentExecutionLedgerRuntime,
+} from "./fulfillment-execution-seam"
+import { readYandexCreateShipmentDispatchBackendProviderShipmentReference } from "./adapters/yandex/create-shipment-dispatch-port"
 import { buildDeliveryHubAcceptedShipmentLifecycleSnapshot } from "./shipment-lifecycle-read-model"
 import { refreshDeliveryHubAcceptedShipmentStatus } from "./shipment-status-polling"
 import { cancelDeliveryHubAcceptedShipment } from "./shipment-cancel-policy"
@@ -122,11 +133,23 @@ import {
 } from "./storage/warehouses-repository"
 import { DeliveryHubExecutionLedgerPgRepository } from "./storage/execution-ledger-pg-repository"
 import {
+  DELIVERY_HUB_EXECUTION_STATE,
+  buildDeliveryHubControlledExecutionAuditDraft,
+  buildDeliveryHubControlledExecutionRecordDraft,
+  buildDeliveryHubControlledExecutionReservationDraft,
+  canDispatchDeliveryHubControlledExecution,
+  canFailBlockedDeliveryHubControlledExecution,
+} from "./shipment-execution-contract"
+import {
   getDeliveryShipmentByExecutionReference,
   getDeliveryShipmentByIdForOrder,
   listDeliveryShipmentsByOrderId,
+  buildDeliveryHubShipmentPersistenceRequestSummary,
+  buildDeliveryHubShipmentPersistenceResponseSummary,
+  upsertDeliveryShipment,
   type DeliveryHubShipmentRecord,
 } from "./storage/shipments-repository"
+import type { DeliveryHubFulfillmentSelectionData } from "./provider-surface"
 
 export type DeliveryHubEventLogListInput = {
   connection_id?: string | null
@@ -204,10 +227,12 @@ export type DeliveryHubAdminOrderDeliveryHubResponse = {
 export type DeliveryHubAdminOrderDeliveryHubActionResponse = DeliveryHubAdminOrderDeliveryHubResponse & {
   action: {
     type: "create_shipment"
-    status: "blocked"
+    status: "accepted" | "blocked" | "failed"
     blocked_reason_code: string | null
     safe_message: string
     redacted: true
+    provider_call_attempted: boolean
+    shipment_id: string | null
   }
 }
 
@@ -497,16 +522,78 @@ export class DeliveryHubService {
 
     assertDeliveryHubAdminOrderShipmentCreateAllowed(deliveryHub)
 
+    const fulfillment = resolveOrderScopedDeliveryHubFulfillment(order)
+    const fulfillmentData = resolveOrderScopedFulfillmentDeliveryData(fulfillment)
+    const items = resolveOrderScopedShipmentItems(order, fulfillment)
+    const executionPlanPreview = buildDeliveryHubShipmentExecutionPlanPreview({
+      fulfillment_data: fulfillmentData,
+      items,
+      order,
+      fulfillment,
+    })
+
+    if (executionPlanPreview.contract_status !== "ready") {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message: `Order-scoped Delivery Hub shipment execution is not ready: ${executionPlanPreview.blocked_reasons.join("; ")}`,
+        status: 409,
+        details: {
+          order_id: orderId,
+          blocked_reason_code: "order_scoped_execution_plan_not_ready",
+          redacted: true,
+        },
+      })
+    }
+
+    const handoff = buildDeliveryHubFulfillmentHandoffSnapshot({
+      fulfillment_data: fulfillmentData,
+      order,
+      fulfillment,
+    })
+    const connection = await getDeliveryConnectionByIdReadOnly(this.pg, handoff.connection_id)
+    const controlledExecution = await buildDeliveryHubControlledFulfillmentExecutionResult({
+      execution_plan_preview: executionPlanPreview,
+      handoff,
+      execution_ledger_evidence: executionPlanPreview.normalized.execution_ledger_evidence,
+      connection,
+      connection_lookup_available: true,
+      persisted_execution_reference: createOrderScopedProviderExecutionReference(fulfillmentData),
+      provider_origin_dispatch_context: readOrderScopedProviderOriginDispatchContext(fulfillmentData),
+      fulfillment_data: fulfillmentData,
+      shipment_execution_enabled: isDeliveryHubShipmentExecutionEnabledForAdminOrder(),
+      execution_ledger_runtime: this.buildAdminOrderControlledExecutionLedgerRuntime({
+        execution_plan_preview: executionPlanPreview,
+      }),
+    })
+    const persistedShipment = await this.persistAdminOrderControlledExecutionShipment({
+      controlled_execution: controlledExecution,
+      execution_plan_preview: executionPlanPreview,
+      handoff,
+      fulfillment,
+      order,
+    })
+    const refreshedDeliveryHub = await this.buildAdminOrderDeliveryHubSnapshot({
+      order_id: orderId,
+      order,
+    })
+
     return {
       ok: true,
-      delivery_hub: deliveryHub,
+      delivery_hub: refreshedDeliveryHub,
       action: {
         type: "create_shipment",
-        status: "blocked",
-        blocked_reason_code: "shipment_execution_path_not_materialized",
-        safe_message:
-          "Order-scoped shipment creation readiness is available, but direct admin shipment execution must go through the backend fulfillment execution seam when DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED is explicitly enabled.",
+        status: controlledExecution.dispatch_result.outcome === "accepted"
+          ? "accepted"
+          : controlledExecution.dispatch_result.outcome === "failed"
+            ? "failed"
+            : "blocked",
+        blocked_reason_code: controlledExecution.blocked_reason_code,
+        safe_message: controlledExecution.dispatch_result.outcome === "accepted"
+          ? "Order-scoped Delivery Hub shipment creation completed through the strict gated backend execution seam with safe persisted ledger/shipment linkage."
+          : controlledExecution.blocked_reason ?? controlledExecution.dispatch_result.safe_message,
         redacted: true,
+        provider_call_attempted: controlledExecution.dispatch_result.attempted,
+        shipment_id: persistedShipment?.id ?? null,
       },
     }
   }
@@ -532,6 +619,19 @@ export class DeliveryHubService {
     const shipment = await this.requireOrderShipment(input.order_id, input.shipment_id)
 
     return this.cancelAdminShipmentOperationsShipment({
+      execution_reference: shipment.execution_reference,
+      correlation_id: input.correlation_id,
+    })
+  }
+
+  async retryAdminOrderDeliveryHubShipment(input: {
+    order_id: string
+    shipment_id: string
+    correlation_id?: string | null
+  }) {
+    const shipment = await this.requireOrderShipment(input.order_id, input.shipment_id)
+
+    return this.retryAdminShipmentOperationsExecution({
       execution_reference: shipment.execution_reference,
       correlation_id: input.correlation_id,
     })
@@ -699,6 +799,295 @@ export class DeliveryHubService {
       }),
       retry,
     }
+  }
+
+  private buildAdminOrderControlledExecutionLedgerRuntime(input: {
+    execution_plan_preview: ReturnType<typeof buildDeliveryHubShipmentExecutionPlanPreview>
+  }): DeliveryHubControlledFulfillmentExecutionLedgerRuntime | null {
+    const executionPlan = input.execution_plan_preview.normalized.provider_execution_plan
+    const executionIdentity = input.execution_plan_preview.execution_identity
+
+    if (!executionPlan || !executionIdentity?.provider_operation_reference || !executionIdentity.idempotency_key_preview) {
+      return null
+    }
+
+    if (!input.execution_plan_preview.normalized.execution_ledger_evidence) {
+      return null
+    }
+
+    const repository = new DeliveryHubExecutionLedgerPgRepository({
+      connection: this.pg,
+      now: () => new Date().toISOString(),
+    })
+    const reservationDraft = buildDeliveryHubControlledExecutionReservationDraft({
+      execution_plan: executionPlan,
+    })
+    const executionRecordDraft = buildDeliveryHubControlledExecutionRecordDraft({
+      execution_plan: executionPlan,
+    })
+
+    return {
+      reserveForDispatch: async ({ execution_reference, idempotency_key }) => {
+        if (
+          execution_reference !== executionIdentity.provider_operation_reference ||
+          idempotency_key !== executionIdentity.idempotency_key_preview
+        ) {
+          return {
+            status: "drifted",
+            persistence_performed: false,
+            existing_state: null,
+          }
+        }
+
+        const reserveResult = await repository.reserveExecution({
+          execution_record: executionRecordDraft,
+          reservation_draft: reservationDraft,
+          audit_event: buildDeliveryHubControlledExecutionAuditDraft({
+            execution_plan: executionPlan,
+            current_state: DELIVERY_HUB_EXECUTION_STATE.planned,
+            event_type: "deliveryhub.execution.planned",
+          }),
+        })
+
+        if (reserveResult.status !== "created") {
+          const existingState = reserveResult.record.execution.current_state
+
+          if (reserveResult.status === "drifted") {
+            return {
+              status: "drifted",
+              persistence_performed: false,
+              existing_state: existingState,
+            }
+          }
+
+          if (existingState === DELIVERY_HUB_EXECUTION_STATE.completed) {
+            return {
+              status: "replay_blocked",
+              persistence_performed: false,
+              existing_state: existingState,
+            }
+          }
+
+          if (existingState === DELIVERY_HUB_EXECUTION_STATE.failedBlocked) {
+            return {
+              status: "failed_blocked",
+              persistence_performed: false,
+              existing_state: existingState,
+            }
+          }
+
+          return {
+            status: "matched",
+            persistence_performed: false,
+            existing_state: existingState,
+          }
+        }
+
+        await repository.recordTransition({
+          execution_reference,
+          from: DELIVERY_HUB_EXECUTION_STATE.planned,
+          to: DELIVERY_HUB_EXECUTION_STATE.reserved,
+          audit_event: buildDeliveryHubControlledExecutionAuditDraft({
+            execution_plan: executionPlan,
+            current_state: DELIVERY_HUB_EXECUTION_STATE.reserved,
+            event_type: "deliveryhub.execution.reserved",
+          }),
+        })
+        await repository.recordTransition({
+          execution_reference,
+          from: DELIVERY_HUB_EXECUTION_STATE.reserved,
+          to: DELIVERY_HUB_EXECUTION_STATE.dispatchReady,
+          audit_event: buildDeliveryHubControlledExecutionAuditDraft({
+            execution_plan: executionPlan,
+            current_state: DELIVERY_HUB_EXECUTION_STATE.dispatchReady,
+            event_type: "deliveryhub.execution.dispatch_ready",
+          }),
+        })
+        await repository.recordTransition({
+          execution_reference,
+          from: DELIVERY_HUB_EXECUTION_STATE.dispatchReady,
+          to: DELIVERY_HUB_EXECUTION_STATE.dispatchInflight,
+        })
+
+        return {
+          status: "created",
+          persistence_performed: true,
+          existing_state: DELIVERY_HUB_EXECUTION_STATE.dispatchInflight,
+        }
+      },
+      markDispatchResultReceived: async ({ execution_reference, outcome }) => {
+        const existingRecord = await repository.getExecutionByReference(execution_reference)
+
+        if (!existingRecord) {
+          return { persistence_performed: false }
+        }
+
+        if (existingRecord.execution.current_state !== DELIVERY_HUB_EXECUTION_STATE.dispatchInflight) {
+          if (outcome === "failed" && canFailBlockedDeliveryHubControlledExecution(existingRecord.execution.current_state)) {
+            const failedBlocked = await repository.recordTransition({
+              execution_reference,
+              from: existingRecord.execution.current_state,
+              to: DELIVERY_HUB_EXECUTION_STATE.failedBlocked,
+            })
+
+            return { persistence_performed: failedBlocked.status === "recorded" }
+          }
+
+          return { persistence_performed: false }
+        }
+
+        const resultReceived = await repository.recordTransition({
+          execution_reference,
+          from: DELIVERY_HUB_EXECUTION_STATE.dispatchInflight,
+          to: DELIVERY_HUB_EXECUTION_STATE.resultReceived,
+        })
+
+        if (resultReceived.status !== "recorded") {
+          return { persistence_performed: false }
+        }
+
+        if (outcome === "failed") {
+          const failedBlocked = await repository.recordTransition({
+            execution_reference,
+            from: DELIVERY_HUB_EXECUTION_STATE.resultReceived,
+            to: DELIVERY_HUB_EXECUTION_STATE.failedBlocked,
+          })
+
+          return {
+            persistence_performed: failedBlocked.status === "recorded" || resultReceived.status === "recorded",
+          }
+        }
+
+        const applicationReady = await repository.recordTransition({
+          execution_reference,
+          from: DELIVERY_HUB_EXECUTION_STATE.resultReceived,
+          to: DELIVERY_HUB_EXECUTION_STATE.applicationReady,
+        })
+
+        if (applicationReady.status !== "recorded") {
+          return { persistence_performed: true }
+        }
+
+        const terminal = await repository.recordTransition({
+          execution_reference,
+          from: DELIVERY_HUB_EXECUTION_STATE.applicationReady,
+          to: DELIVERY_HUB_EXECUTION_STATE.completed,
+        })
+
+        return {
+          persistence_performed: terminal.status === "recorded" || applicationReady.status === "recorded",
+        }
+      },
+    }
+  }
+
+  private async persistAdminOrderControlledExecutionShipment(input: {
+    controlled_execution: Awaited<ReturnType<typeof buildDeliveryHubControlledFulfillmentExecutionResult>>
+    execution_plan_preview: ReturnType<typeof buildDeliveryHubShipmentExecutionPlanPreview>
+    handoff: ReturnType<typeof buildDeliveryHubFulfillmentHandoffSnapshot>
+    order: Record<string, unknown>
+    fulfillment: Record<string, unknown>
+  }) {
+    if (
+      input.controlled_execution.status !== "dispatch_attempted" ||
+      input.controlled_execution.dispatch_result.outcome !== "accepted"
+    ) {
+      return null
+    }
+
+    const executionReference = input.controlled_execution.execution_identity.provider_operation_reference
+    if (!executionReference) {
+      return null
+    }
+
+    const requestSummary = buildDeliveryHubShipmentPersistenceRequestSummary({
+      provider_code: input.controlled_execution.provider_code,
+      operation: "create_shipment",
+      execution_reference: executionReference,
+      idempotency_key: input.controlled_execution.execution_identity.idempotency_key_preview,
+      mode_code: input.handoff.quote_type,
+      order_id: input.execution_plan_preview.normalized.order?.id ?? null,
+      fulfillment_id: normalizeNullableText(input.fulfillment.id),
+      cart_id: input.handoff.references.cart_id,
+      quote_reference_id: input.handoff.quote_reference.id,
+      quote_reference_version: input.handoff.quote_reference.version,
+      country_code: null,
+    })
+    const responseSummary = buildDeliveryHubShipmentPersistenceResponseSummary({
+      outcome: input.controlled_execution.provider_dispatch_result?.succeeded ? "accepted" : "failed",
+      status: input.controlled_execution.provider_dispatch_result?.succeeded
+        ? "dispatch_accepted"
+        : "dispatch_failed",
+      accepted: input.controlled_execution.provider_dispatch_result?.accepted ?? false,
+      succeeded: input.controlled_execution.provider_dispatch_result?.succeeded ?? false,
+      status_category: input.controlled_execution.provider_dispatch_result?.status_category ?? null,
+      provider_shipment_reference_present:
+        input.controlled_execution.provider_dispatch_result?.provider_shipment_reference_present ?? false,
+      provider_correlation_reference_present:
+        !!input.controlled_execution.provider_dispatch_result?.correlation_id_masked,
+      label_document_present: input.controlled_execution.provider_dispatch_result?.label_available ?? false,
+      attachment_document_present:
+        input.controlled_execution.provider_dispatch_result?.documents_available ?? false,
+      safe_message: input.controlled_execution.dispatch_result.safe_message,
+    })
+
+    const persistedShipment = await upsertDeliveryShipment(this.pg, {
+      execution_reference: executionReference,
+      idempotency_key: input.controlled_execution.execution_identity.idempotency_key_preview,
+      provider_code: input.controlled_execution.provider_code,
+      connection_id: input.handoff.connection_id,
+      mode_code: input.handoff.quote_type,
+      order_id: input.execution_plan_preview.normalized.order?.id ?? null,
+      fulfillment_id: normalizeNullableText(input.fulfillment.id),
+      cart_id: input.handoff.references.cart_id,
+      shipping_option_id: input.handoff.references.shipping_option_id,
+      location_id: input.handoff.references.location_id,
+      quote_reference_id: input.handoff.quote_reference.id,
+      quote_reference_version: input.handoff.quote_reference.version,
+      correlation_id: input.handoff.correlation_id,
+      outcome: input.controlled_execution.provider_dispatch_result?.succeeded ? "accepted" : "failed",
+      status: input.controlled_execution.provider_dispatch_result?.succeeded
+        ? "dispatch_accepted"
+        : "dispatch_failed",
+      accepted: input.controlled_execution.provider_dispatch_result?.accepted ?? false,
+      succeeded: input.controlled_execution.provider_dispatch_result?.succeeded ?? false,
+      provider_shipment_reference_present:
+        input.controlled_execution.provider_dispatch_result?.provider_shipment_reference_present ?? false,
+      provider_correlation_reference_present:
+        !!input.controlled_execution.provider_dispatch_result?.correlation_id_masked,
+      label_document_present: input.controlled_execution.provider_dispatch_result?.label_available ?? false,
+      attachment_document_present:
+        input.controlled_execution.provider_dispatch_result?.documents_available ?? false,
+      request_summary: requestSummary,
+      response_summary: responseSummary,
+      metadata: {
+        provider_code: input.controlled_execution.provider_code,
+        execution_path: input.controlled_execution.execution_path,
+        ledger_execution_reference:
+          input.controlled_execution.execution_identity.provider_operation_reference,
+        ledger_idempotency_key_preview:
+          input.controlled_execution.execution_identity.idempotency_key_preview,
+        ledger_persistence_performed:
+          input.controlled_execution.dispatch_result.execution_ledger_persistence_performed,
+        provider_shipment_reference:
+          readYandexCreateShipmentDispatchBackendProviderShipmentReference(
+            input.controlled_execution.provider_dispatch_result
+          ),
+        provider_shipment_reference_present:
+          input.controlled_execution.provider_dispatch_result?.provider_shipment_reference_present ?? false,
+        provider_shipment_reference_redacted: true,
+        redacted: true,
+      },
+    })
+
+    input.controlled_execution.dispatch_result.persistence_performed = persistedShipment !== null
+    input.controlled_execution.dispatch_result.safe_message = persistedShipment
+      ? input.controlled_execution.dispatch_result.execution_ledger_persistence_performed
+        ? "Direct Yandex create_shipment was attempted and accepted in runtime, canonical execution-ledger reservation/result transitions were persisted, and shipment persistence was materialized with ledger linkage; no order or fulfillment mutation was performed."
+        : "Direct Yandex create_shipment was attempted and accepted in runtime, with a redacted result returned and shipment persistence materialized; no execution-ledger persistence and no order or fulfillment mutation were performed."
+      : input.controlled_execution.dispatch_result.safe_message
+
+    return persistedShipment
   }
 
   private async buildAdminOrderDeliveryHubSnapshot(input: {
@@ -2853,6 +3242,105 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {}
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function resolveOrderScopedDeliveryHubFulfillment(order: Record<string, unknown>) {
+  const fulfillments = asArray(order.fulfillments).map(asRecord)
+
+  return fulfillments.find((fulfillment) => !!resolveOrderScopedFulfillmentDeliveryDataOrNull(fulfillment)) ?? {}
+}
+
+function resolveOrderScopedFulfillmentDeliveryData(fulfillment: Record<string, unknown>): DeliveryHubFulfillmentSelectionData {
+  const deliveryData = resolveOrderScopedFulfillmentDeliveryDataOrNull(fulfillment)
+
+  if (!deliveryData) {
+    throw new DeliveryHubError({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      message: "The order-scoped Delivery Hub fulfillment does not contain normalized Delivery Hub delivery data.",
+      status: 409,
+      details: {
+        blocked_reason_code: "delivery_hub_fulfillment_data_required",
+        redacted: true,
+      },
+    })
+  }
+
+  return deliveryData as DeliveryHubFulfillmentSelectionData
+}
+
+function resolveOrderScopedFulfillmentDeliveryDataOrNull(fulfillment: Record<string, unknown>) {
+  const data = asRecord(fulfillment.data)
+  const delivery = asRecord(data.delivery)
+
+  if (Object.keys(delivery).length) {
+    return delivery
+  }
+
+  if (looksLikeOrderScopedFulfillmentDeliveryData(data)) {
+    return data
+  }
+
+  return null
+}
+
+function looksLikeOrderScopedFulfillmentDeliveryData(value: Record<string, unknown>) {
+  return !!(
+    normalizeNullableText(value.connection_id) &&
+    normalizeNullableText(value.mode_code) &&
+    asRecord(value.quote_reference).id &&
+    Object.keys(asRecord(value.quote)).length &&
+    Object.keys(asRecord(value.pickup_point)).length
+  )
+}
+
+function resolveOrderScopedShipmentItems(
+  order: Record<string, unknown>,
+  fulfillment: Record<string, unknown>
+): Array<Record<string, unknown>> {
+  const fulfillmentItems = asArray(fulfillment.items).map(asRecord)
+  if (fulfillmentItems.length) {
+    return fulfillmentItems.map(normalizeOrderScopedShipmentItem)
+  }
+
+  return asArray(order.items).map(asRecord).map(normalizeOrderScopedShipmentItem)
+}
+
+function normalizeOrderScopedShipmentItem(item: Record<string, unknown>) {
+  const nestedItem = asRecord(item.item)
+  const source = Object.keys(nestedItem).length ? nestedItem : item
+  const quantity = normalizeOrderScopedQuantity(item.quantity) ?? normalizeOrderScopedQuantity(source.quantity) ?? 1
+
+  return {
+    ...source,
+    id: normalizeNullableText(source.id) ?? normalizeNullableText(item.line_item_id) ?? normalizeNullableText(item.id),
+    line_item_id: normalizeNullableText(item.line_item_id) ?? normalizeNullableText(source.id) ?? normalizeNullableText(item.id),
+    quantity,
+  }
+}
+
+function normalizeOrderScopedQuantity(value: unknown) {
+  const normalized = normalizeFiniteNumber(value)
+  return normalized !== null && Number.isInteger(normalized) && normalized > 0
+    ? normalized
+    : null
+}
+
+function createOrderScopedProviderExecutionReference(
+  fulfillmentData: DeliveryHubFulfillmentSelectionData
+): DeliveryHubProviderExecutionReference | null {
+  return createDeliveryHubProviderExecutionReferenceFromQuoteReference(fulfillmentData.quote_reference)
+}
+
+function readOrderScopedProviderOriginDispatchContext(
+  fulfillmentData: DeliveryHubFulfillmentSelectionData
+): DeliveryHubProviderOriginDispatchContext | null {
+  const reference = createOrderScopedProviderExecutionReference(fulfillmentData)
+
+  return reference ? readDeliveryHubProviderExecutionReferenceOriginContext(reference) : null
 }
 
 function normalizeFiniteNumber(value: unknown) {

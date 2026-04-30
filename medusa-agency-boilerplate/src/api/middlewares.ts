@@ -97,6 +97,11 @@ export default defineMiddlewares({
       middlewares: [adminAuth, validateAndTransformBody(AdminOrderDeliveryHubShipmentActionSchema)],
     },
     {
+      matcher: "/admin/orders/:id/delivery-hub/shipments/:shipment_id/retry",
+      methods: ["POST"],
+      middlewares: [adminAuth, validateAndTransformBody(AdminOrderDeliveryHubShipmentActionSchema)],
+    },
+    {
       matcher: "/admin/delivery/shipments/:execution_reference/operations",
       methods: ["GET"],
       middlewares: [adminAuth],

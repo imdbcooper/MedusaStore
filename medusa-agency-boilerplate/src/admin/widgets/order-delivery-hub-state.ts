@@ -130,6 +130,10 @@ export function buildOrderDeliveryHubCancelShipmentUrl(orderId: string, shipment
   return `/admin/orders/${encodeURIComponent(orderId)}/delivery-hub/shipments/${encodeURIComponent(shipmentId)}/cancel`
 }
 
+export function buildOrderDeliveryHubRetryShipmentUrl(orderId: string, shipmentId: string) {
+  return `/admin/orders/${encodeURIComponent(orderId)}/delivery-hub/shipments/${encodeURIComponent(shipmentId)}/retry`
+}
+
 export function deriveOrderDeliveryHubWidgetState(
   snapshot: OrderDeliveryHubWidgetSnapshot | null | undefined
 ) {
@@ -147,6 +151,7 @@ export function deriveOrderDeliveryHubWidgetState(
       createEnabled: false,
       refreshEnabled: false,
       cancelEnabled: false,
+      retryEnabled: false,
       safeLogLines: [],
     }
   }
@@ -197,6 +202,7 @@ export function deriveOrderDeliveryHubWidgetState(
     createEnabled: snapshot.action_posture?.create_shipment === "available",
     refreshEnabled: snapshot.action_posture?.refresh_status === "available",
     cancelEnabled: snapshot.action_posture?.cancel === "available",
+    retryEnabled: snapshot.action_posture?.retry === "available",
     shipmentId: firstShipment?.id ?? null,
     labelPresent: operations?.shipment?.label_document_present === true,
     attachmentPresent: operations?.shipment?.attachment_document_present === true,

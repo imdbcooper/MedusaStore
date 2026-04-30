@@ -3,6 +3,7 @@ import {
   buildOrderDeliveryHubCancelShipmentUrl,
   buildOrderDeliveryHubCreateShipmentUrl,
   buildOrderDeliveryHubRefreshShipmentUrl,
+  buildOrderDeliveryHubRetryShipmentUrl,
   buildOrderDeliveryHubSnapshotUrl,
   deriveOrderDeliveryHubWidgetState,
   type OrderDeliveryHubWidgetSnapshot,
@@ -21,6 +22,9 @@ describe("order Delivery Hub widget state", () => {
     )
     expect(buildOrderDeliveryHubCancelShipmentUrl("order_1", "shipment/1")).toBe(
       "/admin/orders/order_1/delivery-hub/shipments/shipment%2F1/cancel"
+    )
+    expect(buildOrderDeliveryHubRetryShipmentUrl("order_1", "shipment/1")).toBe(
+      "/admin/orders/order_1/delivery-hub/shipments/shipment%2F1/retry"
     )
   })
 
@@ -93,6 +97,11 @@ describe("order Delivery Hub widget state", () => {
                 available: true,
               },
             },
+            retry: {
+              readiness: {
+                available: true,
+              },
+            },
             shipment: {
               label_document_present: true,
               attachment_document_present: false,
@@ -111,7 +120,7 @@ describe("order Delivery Hub widget state", () => {
         create_shipment: "available",
         refresh_status: "available",
         cancel: "available",
-        retry: "blocked",
+        retry: "available",
       },
     }
 
@@ -130,6 +139,7 @@ describe("order Delivery Hub widget state", () => {
         createEnabled: true,
         refreshEnabled: true,
         cancelEnabled: true,
+        retryEnabled: true,
         shipmentId: "shipment_1",
         labelPresent: true,
       })
@@ -176,6 +186,7 @@ describe("order Delivery Hub widget state", () => {
     expect(state.createEnabled).toBe(false)
     expect(state.refreshEnabled).toBe(false)
     expect(state.cancelEnabled).toBe(false)
+    expect(state.retryEnabled).toBe(false)
     expect(JSON.stringify(state)).not.toContain("execution_reference")
     expect(JSON.stringify(state)).not.toContain("quote_key")
     expect(JSON.stringify(state)).not.toContain("offer_id")

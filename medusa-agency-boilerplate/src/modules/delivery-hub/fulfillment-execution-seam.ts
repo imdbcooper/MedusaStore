@@ -50,6 +50,8 @@ export type DeliveryHubControlledFulfillmentExecutionBlockReasonCode =
   | "execution_ledger_failed_blocked"
   | "execution_ledger_duplicate_execution"
   | "execution_ledger_drift_detected"
+  | "execution_ledger_runtime_missing"
+  | "execution_ledger_identity_missing"
 
 export type DeliveryHubControlledFulfillmentExecutionResult = {
   version: typeof DELIVERY_HUB_CONTROLLED_FULFILLMENT_EXECUTION_RESULT_VERSION
@@ -140,6 +142,7 @@ export type DeliveryHubControlledFulfillmentExecutionResult = {
     execution_fingerprint: string | null
   }
   provider_dispatch_result: YandexCreateShipmentDispatchResult | null
+  backend_provider_references?: never
   dispatch_result: {
     attempted: boolean
     performed: boolean
@@ -489,6 +492,34 @@ export async function buildDeliveryHubControlledFulfillmentExecutionResult(input
     blocking_stage: "provider_dispatch_contract",
   })
 
+  const executionReference =
+    input.execution_plan_preview.execution_identity?.provider_operation_reference ?? null
+  const idempotencyKey = input.execution_plan_preview.execution_identity?.idempotency_key_preview ?? null
+
+  if (!executionReference || !idempotencyKey) {
+    return buildBlockedResult({
+      execution_plan_preview: input.execution_plan_preview,
+      handoff: input.handoff,
+      execution_ledger_evidence: input.execution_ledger_evidence,
+      connection,
+      connection_lookup_available: true,
+      persisted_execution_reference_present: true,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+      provider_origin_dispatch_context_present: true,
+      fulfillment_data: input.fulfillment_data,
+      shipment_execution_enabled: true,
+      mode_code: modeCode,
+      mode_supported: true,
+      runtime_dispatch_implemented: true,
+      blocked_reason_code: "execution_ledger_identity_missing",
+      blocked_reason:
+        "Controlled execution is fail-closed because the execution reference or idempotency key is missing; provider dispatch is blocked before any Yandex call to preserve durable reservation authority.",
+      status: "dispatch_prepared",
+      result_decision: "dispatch_prepared_but_blocked",
+      blocking_stage: "provider_dispatch_execution",
+    })
+  }
+
   if (providerPayloadMaterialization.status !== "ready") {
     return buildBlockedResult({
       execution_plan_preview: input.execution_plan_preview,
@@ -549,115 +580,162 @@ export async function buildDeliveryHubControlledFulfillmentExecutionResult(input
     })
   }
 
-  const executionReference =
-    input.execution_plan_preview.execution_identity?.provider_operation_reference ?? null
-  const idempotencyKey = input.execution_plan_preview.execution_identity?.idempotency_key_preview ?? null
   let executionLedgerPersistencePerformed = false
 
-  if (input.execution_ledger_runtime && executionReference && idempotencyKey) {
-    const reservation = await input.execution_ledger_runtime.reserveForDispatch({
+  if (!input.execution_ledger_runtime) {
+    return buildBlockedResult({
+      execution_plan_preview: input.execution_plan_preview,
+      handoff: input.handoff,
+      execution_ledger_evidence: input.execution_ledger_evidence,
+      connection,
+      connection_lookup_available: true,
+      persisted_execution_reference_present: true,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+      provider_origin_dispatch_context_present: true,
+      fulfillment_data: input.fulfillment_data,
+      shipment_execution_enabled: true,
+      mode_code: modeCode,
+      mode_supported: true,
+      runtime_dispatch_implemented: true,
+      blocked_reason_code: "execution_ledger_runtime_missing",
+      blocked_reason:
+        "Controlled execution is fail-closed because the execution ledger runtime is unavailable; provider dispatch is blocked before any Yandex call to preserve durable reservation authority.",
+      status: "dispatch_prepared",
+      result_decision: "dispatch_prepared_but_blocked",
+      blocking_stage: "provider_dispatch_execution",
+    })
+  }
+
+  let reservation: Awaited<
+    ReturnType<DeliveryHubControlledFulfillmentExecutionLedgerRuntime["reserveForDispatch"]>
+  >
+
+  try {
+    reservation = await input.execution_ledger_runtime.reserveForDispatch({
       execution_reference: executionReference,
       idempotency_key: idempotencyKey,
     })
-
-    if (reservation.status === "replay_blocked") {
-      return buildBlockedResult({
-        execution_plan_preview: input.execution_plan_preview,
-        handoff: input.handoff,
-        execution_ledger_evidence: input.execution_ledger_evidence,
-        connection,
-        connection_lookup_available: true,
-        persisted_execution_reference_present: true,
-        provider_origin_dispatch_context: input.provider_origin_dispatch_context,
-        provider_origin_dispatch_context_present: true,
-        fulfillment_data: input.fulfillment_data,
-        shipment_execution_enabled: true,
-        mode_code: modeCode,
-        mode_supported: true,
-        runtime_dispatch_implemented: true,
-        blocked_reason_code: "execution_ledger_replay_blocked",
-        blocked_reason:
-          "Controlled execution ledger already completed this canonical shipment execution identity, so replay is blocked before provider dispatch to preserve replay-safe single-call semantics.",
-        status: "dispatch_prepared",
-        result_decision: "dispatch_prepared_but_blocked",
-        blocking_stage: "provider_dispatch_execution",
-      })
-    }
-
-    if (reservation.status === "failed_blocked") {
-      return buildBlockedResult({
-        execution_plan_preview: input.execution_plan_preview,
-        handoff: input.handoff,
-        execution_ledger_evidence: input.execution_ledger_evidence,
-        connection,
-        connection_lookup_available: true,
-        persisted_execution_reference_present: true,
-        provider_origin_dispatch_context: input.provider_origin_dispatch_context,
-        provider_origin_dispatch_context_present: true,
-        fulfillment_data: input.fulfillment_data,
-        shipment_execution_enabled: true,
-        mode_code: modeCode,
-        mode_supported: true,
-        runtime_dispatch_implemented: true,
-        blocked_reason_code: "execution_ledger_failed_blocked",
-        blocked_reason:
-          "Controlled execution ledger already has this canonical shipment execution identity in failed_blocked state, so replay is blocked without automatic retry, provider re-dispatch, completion, or shipment persistence.",
-        status: "dispatch_prepared",
-        result_decision: "dispatch_prepared_but_blocked",
-        blocking_stage: "provider_dispatch_execution",
-      })
-    }
-
-    if (reservation.status === "matched") {
-      return buildBlockedResult({
-        execution_plan_preview: input.execution_plan_preview,
-        handoff: input.handoff,
-        execution_ledger_evidence: input.execution_ledger_evidence,
-        connection,
-        connection_lookup_available: true,
-        persisted_execution_reference_present: true,
-        provider_origin_dispatch_context: input.provider_origin_dispatch_context,
-        provider_origin_dispatch_context_present: true,
-        fulfillment_data: input.fulfillment_data,
-        shipment_execution_enabled: true,
-        mode_code: modeCode,
-        mode_supported: true,
-        runtime_dispatch_implemented: true,
-        blocked_reason_code: "execution_ledger_duplicate_execution",
-        blocked_reason:
-          "Controlled execution ledger already contains this canonical shipment execution identity in an existing non-terminal state, so direct Yandex dispatch is intentionally blocked to preserve durable single-execution authority.",
-        status: "dispatch_prepared",
-        result_decision: "dispatch_prepared_but_blocked",
-        blocking_stage: "provider_dispatch_execution",
-      })
-    }
-
-    if (reservation.status === "drifted") {
-      return buildBlockedResult({
-        execution_plan_preview: input.execution_plan_preview,
-        handoff: input.handoff,
-        execution_ledger_evidence: input.execution_ledger_evidence,
-        connection,
-        connection_lookup_available: true,
-        persisted_execution_reference_present: true,
-        provider_origin_dispatch_context: input.provider_origin_dispatch_context,
-        provider_origin_dispatch_context_present: true,
-        fulfillment_data: input.fulfillment_data,
-        shipment_execution_enabled: true,
-        mode_code: modeCode,
-        mode_supported: true,
-        runtime_dispatch_implemented: true,
-        blocked_reason_code: "execution_ledger_drift_detected",
-        blocked_reason:
-          "Controlled execution ledger detected reservation drift for this canonical shipment execution identity, so live direct Yandex dispatch is blocked until the existing durable record is reconciled.",
-        status: "dispatch_prepared",
-        result_decision: "dispatch_prepared_but_blocked",
-        blocking_stage: "provider_dispatch_execution",
-      })
-    }
-
-    executionLedgerPersistencePerformed = reservation.persistence_performed
+  } catch {
+    return buildBlockedResult({
+      execution_plan_preview: input.execution_plan_preview,
+      handoff: input.handoff,
+      execution_ledger_evidence: input.execution_ledger_evidence,
+      connection,
+      connection_lookup_available: true,
+      persisted_execution_reference_present: true,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+      provider_origin_dispatch_context_present: true,
+      fulfillment_data: input.fulfillment_data,
+      shipment_execution_enabled: true,
+      mode_code: modeCode,
+      mode_supported: true,
+      runtime_dispatch_implemented: true,
+      blocked_reason_code: "execution_ledger_runtime_missing",
+      blocked_reason:
+        "Controlled execution is fail-closed because the execution ledger runtime failed during reservation; provider dispatch is blocked before any Yandex call to preserve durable reservation authority.",
+      status: "dispatch_prepared",
+      result_decision: "dispatch_prepared_but_blocked",
+      blocking_stage: "provider_dispatch_execution",
+    })
   }
+
+  if (reservation.status === "replay_blocked") {
+    return buildBlockedResult({
+      execution_plan_preview: input.execution_plan_preview,
+      handoff: input.handoff,
+      execution_ledger_evidence: input.execution_ledger_evidence,
+      connection,
+      connection_lookup_available: true,
+      persisted_execution_reference_present: true,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+      provider_origin_dispatch_context_present: true,
+      fulfillment_data: input.fulfillment_data,
+      shipment_execution_enabled: true,
+      mode_code: modeCode,
+      mode_supported: true,
+      runtime_dispatch_implemented: true,
+      blocked_reason_code: "execution_ledger_replay_blocked",
+      blocked_reason:
+        "Controlled execution ledger already completed this canonical shipment execution identity, so replay is blocked before provider dispatch to preserve replay-safe single-call semantics.",
+      status: "dispatch_prepared",
+      result_decision: "dispatch_prepared_but_blocked",
+      blocking_stage: "provider_dispatch_execution",
+    })
+  }
+
+  if (reservation.status === "failed_blocked") {
+    return buildBlockedResult({
+      execution_plan_preview: input.execution_plan_preview,
+      handoff: input.handoff,
+      execution_ledger_evidence: input.execution_ledger_evidence,
+      connection,
+      connection_lookup_available: true,
+      persisted_execution_reference_present: true,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+      provider_origin_dispatch_context_present: true,
+      fulfillment_data: input.fulfillment_data,
+      shipment_execution_enabled: true,
+      mode_code: modeCode,
+      mode_supported: true,
+      runtime_dispatch_implemented: true,
+      blocked_reason_code: "execution_ledger_failed_blocked",
+      blocked_reason:
+        "Controlled execution ledger already has this canonical shipment execution identity in failed_blocked state, so replay is blocked without automatic retry, provider re-dispatch, completion, or shipment persistence.",
+      status: "dispatch_prepared",
+      result_decision: "dispatch_prepared_but_blocked",
+      blocking_stage: "provider_dispatch_execution",
+    })
+  }
+
+  if (reservation.status === "matched") {
+    return buildBlockedResult({
+      execution_plan_preview: input.execution_plan_preview,
+      handoff: input.handoff,
+      execution_ledger_evidence: input.execution_ledger_evidence,
+      connection,
+      connection_lookup_available: true,
+      persisted_execution_reference_present: true,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+      provider_origin_dispatch_context_present: true,
+      fulfillment_data: input.fulfillment_data,
+      shipment_execution_enabled: true,
+      mode_code: modeCode,
+      mode_supported: true,
+      runtime_dispatch_implemented: true,
+      blocked_reason_code: "execution_ledger_duplicate_execution",
+      blocked_reason:
+        "Controlled execution ledger already contains this canonical shipment execution identity in an existing non-terminal state, so direct Yandex dispatch is intentionally blocked to preserve durable single-execution authority.",
+      status: "dispatch_prepared",
+      result_decision: "dispatch_prepared_but_blocked",
+      blocking_stage: "provider_dispatch_execution",
+    })
+  }
+
+  if (reservation.status === "drifted") {
+    return buildBlockedResult({
+      execution_plan_preview: input.execution_plan_preview,
+      handoff: input.handoff,
+      execution_ledger_evidence: input.execution_ledger_evidence,
+      connection,
+      connection_lookup_available: true,
+      persisted_execution_reference_present: true,
+      provider_origin_dispatch_context: input.provider_origin_dispatch_context,
+      provider_origin_dispatch_context_present: true,
+      fulfillment_data: input.fulfillment_data,
+      shipment_execution_enabled: true,
+      mode_code: modeCode,
+      mode_supported: true,
+      runtime_dispatch_implemented: true,
+      blocked_reason_code: "execution_ledger_drift_detected",
+      blocked_reason:
+        "Controlled execution ledger detected reservation drift for this canonical shipment execution identity, so live direct Yandex dispatch is blocked until the existing durable record is reconciled.",
+      status: "dispatch_prepared",
+      result_decision: "dispatch_prepared_but_blocked",
+      blocking_stage: "provider_dispatch_execution",
+    })
+  }
+
+  executionLedgerPersistencePerformed = reservation.persistence_performed
 
   const dispatchResult = await executeYandexCreateShipmentDispatch({
     client: new YandexDeliveryClient(connection),
@@ -665,13 +743,10 @@ export async function buildDeliveryHubControlledFulfillmentExecutionResult(input
   })
 
   if (!dispatchResult.succeeded) {
-    const ledgerResult =
-      input.execution_ledger_runtime && executionReference
-        ? await input.execution_ledger_runtime.markDispatchResultReceived({
-            execution_reference: executionReference,
-            outcome: "failed",
-          })
-        : { persistence_performed: false }
+    const ledgerResult = await input.execution_ledger_runtime.markDispatchResultReceived({
+      execution_reference: executionReference,
+      outcome: "failed",
+    })
     executionLedgerPersistencePerformed =
       executionLedgerPersistencePerformed || ledgerResult.persistence_performed
 
@@ -694,15 +769,13 @@ export async function buildDeliveryHubControlledFulfillmentExecutionResult(input
     })
   }
 
-  if (input.execution_ledger_runtime && executionReference) {
-    const ledgerResult = await input.execution_ledger_runtime.markDispatchResultReceived({
-      execution_reference: executionReference,
-      outcome: "accepted",
-    })
-    executionLedgerPersistencePerformed =
-      executionLedgerPersistencePerformed || ledgerResult.persistence_performed
-  }
- 
+  const ledgerResult = await input.execution_ledger_runtime.markDispatchResultReceived({
+    execution_reference: executionReference,
+    outcome: "accepted",
+  })
+  executionLedgerPersistencePerformed =
+    executionLedgerPersistencePerformed || ledgerResult.persistence_performed
+
   return buildDispatchAttemptedResult({
     execution_plan_preview: input.execution_plan_preview,
     handoff: input.handoff,

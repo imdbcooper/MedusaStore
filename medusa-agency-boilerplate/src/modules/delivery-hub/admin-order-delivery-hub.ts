@@ -21,7 +21,6 @@ export type DeliveryHubAdminOrderDeliveryHubReadinessBlockCode =
   | "delivery_hub_fulfillment_data_required"
   | "package_items_required"
   | "shipment_execution_disabled"
-  | "order_scoped_shipment_create_not_materialized"
   | "shipment_already_created"
 
 export type DeliveryHubAdminOrderDeliveryHubShipmentEntry = {
@@ -473,11 +472,13 @@ function resolveShipmentReadiness(input: {
     )
   }
 
-  return blockedReadiness(
-    "order_scoped_shipment_create_not_materialized",
-    "The order delivery context is ready, but the order-scoped create-shipment action is not wired to live dispatch in Phase 6.",
-    true
-  )
+  return {
+    available: true,
+    status: "ready",
+    blocked_reason_code: null,
+    blocked_reason: null,
+    execution_enabled: true,
+  }
 }
 
 function blockedReadiness(

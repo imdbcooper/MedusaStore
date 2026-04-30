@@ -5,6 +5,7 @@ import {
   buildOrderDeliveryHubCancelShipmentUrl,
   buildOrderDeliveryHubCreateShipmentUrl,
   buildOrderDeliveryHubRefreshShipmentUrl,
+  buildOrderDeliveryHubRetryShipmentUrl,
   buildOrderDeliveryHubSnapshotUrl,
   deriveOrderDeliveryHubWidgetState,
   type OrderDeliveryHubWidgetSnapshot,
@@ -128,6 +129,13 @@ const OrderDeliveryHubWidget = ({ data: order }: DetailWidgetProps<AdminOrder>) 
           disabled={!shipmentId || !state.refreshEnabled || actionLoading}
         >
           Refresh status
+        </button>
+        <button
+          style={secondaryButtonStyle}
+          onClick={() => shipmentId && void runAction(buildOrderDeliveryHubRetryShipmentUrl(orderId, shipmentId))}
+          disabled={!shipmentId || !state.retryEnabled || actionLoading}
+        >
+          Retry
         </button>
         <button
           style={dangerButtonStyle}

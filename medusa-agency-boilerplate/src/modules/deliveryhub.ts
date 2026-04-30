@@ -45,6 +45,7 @@ import {
   getDeliveryShipmentByExecutionReference,
   upsertDeliveryShipment,
 } from "./delivery-hub/storage/shipments-repository"
+import { readYandexCreateShipmentDispatchBackendProviderShipmentReference } from "./delivery-hub/adapters/yandex/create-shipment-dispatch-port"
 import { DeliveryHubExecutionLedgerPgRepository } from "./delivery-hub/storage/execution-ledger-pg-repository"
 import type { DeliveryHubExecutionLedgerRecord } from "./delivery-hub/storage/execution-ledger-repository"
 import {
@@ -202,7 +203,7 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
             fulfillment: fulfillmentRecord,
           })
         : null
- 
+
     this.logger_.info(
       `Delivery Hub createFulfillment execution-plan preview seam evaluated: ${JSON.stringify({
         contract_status: executionPlanPreview.contract_status,
@@ -541,6 +542,10 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
             input.controlled_execution.execution_identity.idempotency_key_preview,
           ledger_persistence_performed:
             input.controlled_execution.dispatch_result.execution_ledger_persistence_performed,
+          provider_shipment_reference:
+            readYandexCreateShipmentDispatchBackendProviderShipmentReference(
+              input.controlled_execution.provider_dispatch_result
+            ),
           provider_shipment_reference_present:
             input.controlled_execution.provider_dispatch_result?.provider_shipment_reference_present ?? false,
           provider_shipment_reference_redacted: true,
@@ -646,6 +651,10 @@ input.controlled_execution.dispatch_result.persistence_performed = persistedShip
   }): DeliveryHubControlledFulfillmentExecutionLedgerRuntime | null {
     const executionPlan = input.execution_plan_preview.normalized.provider_execution_plan
     if (!input.pg_connection || !executionPlan) {
+      return null
+    }
+
+    if (!input.execution_plan_preview.normalized.execution_ledger_evidence) {
       return null
     }
 
