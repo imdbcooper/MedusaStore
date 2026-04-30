@@ -244,6 +244,45 @@ describe("Delivery Hub store routes", () => {
     expect(res.json).toHaveBeenCalledWith(result)
   })
 
+  it("returns safe pickup-point category fields and coordinates through store sanitizer", async () => {
+    const result = {
+      ok: true,
+      points: [
+        {
+          provider_point_id: "pvz_yandex_safe",
+          provider_point_code: "code_yandex_safe",
+          provider_operator_id: "market_l4g",
+          network_label: "Яндекс Маркет",
+          is_yandex_branded: true,
+          is_market_partner: false,
+          station_type: "pickup_point",
+          name: "Пункт выдачи заказов Яндекс Маркета",
+          address: "Москва, Тверская 1",
+          city: "Москва",
+          region: "Москва",
+          postal_code: "125009",
+          lat: 55.757,
+          lng: 37.615,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: ["card"],
+          metadata: {
+            available_for_dropoff: false,
+          },
+        },
+      ],
+    }
+
+    jest.spyOn(DeliveryHubService.prototype, "listStorePickupPoints").mockResolvedValue(result as any)
+
+    const res = createMockResponse()
+
+    await deliveryPickupPointsRoute.GET(createMockRequest() as any, res as any)
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith(result)
+  })
+
   it("rejects pickup point payloads that try to expose secret-like metadata or credentials", async () => {
     jest.spyOn(DeliveryHubService.prototype, "listStorePickupPoints").mockResolvedValue({
       ok: true,

@@ -487,7 +487,6 @@ const Shipping: React.FC<ShippingProps> = ({
       ? listDeliveryHubPickupPoints({
           city: deliveryHubAddressContext.city,
           country_code: deliveryHubAddressContext.country_code_upper,
-          limit: 50,
         })
       : Promise.resolve(null)
 

@@ -827,7 +827,6 @@ async function fetchStorePickupPointsForSmoke(input: DeliveryHubStorefrontNeutra
   const url = new URL("/store/delivery/pickup-points", input.backend_url)
   url.searchParams.set("connection_id", input.connection_id ?? "")
   url.searchParams.set("country_code", "RU")
-  url.searchParams.set("limit", String(DEFAULT_PICKUP_POINTS_LIMIT))
 
   const response = await fetch(url, {
     method: "GET",

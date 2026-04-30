@@ -878,7 +878,7 @@ test("normalizeDeliveryHubPickupPointsResponse strips metadata and readiness hel
   assert.equal("metadata" in points.points[0], false)
 })
 
-test("classifyDeliveryHubPickupPoint separates Yandex, partner, and unknown safely", () => {
+test("classifyDeliveryHubPickupPoint separates Yandex, Yandex Market, partner, and unknown safely", () => {
   assert.equal(
     classifyDeliveryHubPickupPoint({
       provider_operator_id: "market_l4g",
@@ -886,6 +886,16 @@ test("classifyDeliveryHubPickupPoint separates Yandex, partner, and unknown safe
       is_yandex_branded: true,
       is_market_partner: false,
       name: "Пункт выдачи заказов Яндекс Маркета",
+    }),
+    "yandex"
+  )
+  assert.equal(
+    classifyDeliveryHubPickupPoint({
+      provider_operator_id: "market_l4g",
+      network_label: "Яндекс Маркет / партнёр",
+      is_yandex_branded: null,
+      is_market_partner: null,
+      name: "Пункт выдачи Яндекс Market",
     }),
     "yandex"
   )
@@ -909,6 +919,58 @@ test("classifyDeliveryHubPickupPoint separates Yandex, partner, and unknown safe
     }),
     "unknown"
   )
+})
+
+test("normalizeDeliveryHubPickupPointsResponse preserves safe category fields and coordinates", () => {
+  const points = normalizeDeliveryHubPickupPointsResponse({
+    ok: true,
+    points: [
+      {
+        provider_point_id: "pvz_yandex_coords",
+        provider_point_code: "code_yandex_coords",
+        provider_operator_id: "market_l4g",
+        network_label: "Яндекс Маркет",
+        is_yandex_branded: true,
+        is_market_partner: false,
+        station_type: "pickup_point",
+        name: "Пункт выдачи заказов Яндекс Маркета",
+        address: "Тверская 1",
+        city: "Москва",
+        region: null,
+        postal_code: "125009",
+        lat: 55.757,
+        lng: 37.615,
+        is_origin_dropoff_allowed: false,
+        is_destination_pickup_allowed: true,
+        payment_methods: ["card"],
+        raw_metadata: {
+          token: "must-not-leak",
+        },
+      },
+    ],
+  })
+
+  assert.deepEqual(points.points[0], {
+    provider_point_id: "pvz_yandex_coords",
+    provider_point_code: "code_yandex_coords",
+    provider_operator_id: "market_l4g",
+    network_label: "Яндекс Маркет",
+    is_yandex_branded: true,
+    is_market_partner: false,
+    station_type: "pickup_point",
+    name: "Пункт выдачи заказов Яндекс Маркета",
+    address: "Тверская 1",
+    city: "Москва",
+    region: null,
+    postal_code: "125009",
+    lat: 55.757,
+    lng: 37.615,
+    is_origin_dropoff_allowed: false,
+    is_destination_pickup_allowed: true,
+    payment_methods: ["card"],
+  })
+  assert.equal("raw_metadata" in points.points[0], false)
+  assert.equal(classifyDeliveryHubPickupPoint(points.points[0]), "yandex")
 })
 
 test("buildDeliveryHubPickupPointSelectorModel builds buyer tiles, counts, filtering, and search", () => {
@@ -11636,6 +11698,65 @@ test("buildDeliveryHubBuyerDeliveryCardModel presents shopper copy for saveable 
   assert.equal(unavailable.detail_label.includes("не удалось получить безопасный вариант"), true)
 })
 
+test("delivery hub pickup point selector keeps Yandex tab non-empty in mixed checkout list", () => {
+  const selector = buildDeliveryHubPickupPointSelectorModel({
+    selected_category: "yandex",
+    selected_pickup_point_id: "pvz_partner_selected",
+    quote_status: "blocked",
+    pickup_points: {
+      ok: true,
+      points: [
+        {
+          provider_point_id: "pvz_yandex_market",
+          provider_point_code: null,
+          provider_operator_id: "market_l4g",
+          network_label: "Яндекс Маркет",
+          is_yandex_branded: true,
+          is_market_partner: false,
+          station_type: "pickup_point",
+          name: "Пункт выдачи заказов Яндекс Маркета",
+          address: "Москва, Тверская 1",
+          city: "Москва",
+          region: "Москва",
+          postal_code: "125009",
+          lat: 55.757,
+          lng: 37.615,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+        {
+          provider_point_id: "pvz_partner_selected",
+          provider_point_code: null,
+          provider_operator_id: "5post",
+          network_label: "5 Post",
+          is_yandex_branded: false,
+          is_market_partner: true,
+          station_type: "pickup_point",
+          name: "5 Post (Пятерочка)",
+          address: "Москва, Героев Панфиловцев 1",
+          city: "Москва",
+          region: "Москва",
+          postal_code: "125480",
+          lat: 55.85,
+          lng: 37.44,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      ],
+    },
+  })
+
+  assert.equal(selector.status, "ready")
+  assert.equal(selector.yandex_point_count, 1)
+  assert.equal(selector.partner_point_count, 1)
+  assert.equal(selector.selected_point, null)
+  assert.equal(selector.visible_points[0].provider_point_id, "pvz_yandex_market")
+  assert.equal(selector.visible_points[0].category_label, "Яндекс")
+  assert.equal(selector.visible_points[0].quote_status_label, null)
+})
+
 test("delivery hub pickup point selector lists, filters and selects shopper-safe PVZ entries", () => {
   const selector = buildDeliveryHubPickupPointSelectorModel({
     pickup_points: {
@@ -11893,7 +12014,7 @@ test("checkout shipping source exposes shopper pickup-point selector hooks and a
   assert.equal(shippingSource.includes("listDeliveryHubPickupWindows"), false)
   assert.equal(shippingSource.includes("selected_pickup_point_id"), true)
   assert.equal(shippingSource.includes("listDeliveryHubPickupPoints({"), true)
-  assert.equal(shippingSource.includes("limit: 50"), true)
+  assert.equal(shippingSource.includes("limit: 50"), false)
   assert.equal(shippingSource.includes("Стоимость временно недоступна для выбранного пункта"), true)
   assert.equal(shippingSource.includes("Повторить расчёт стоимости"), true)
 })

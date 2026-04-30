@@ -1144,7 +1144,7 @@ export class DeliveryHubService {
         city,
         country_code: countryCode,
       })
-      const sampledPoints = points.slice(0, limit)
+      const sampledPoints = limit === null ? points : points.slice(0, limit)
 
       await this.appendLog({
         connection,
@@ -1155,6 +1155,7 @@ export class DeliveryHubService {
           city,
           country_code: countryCode,
           limit,
+          store_lookup_full_list: limit === null,
         },
         response_summary: {
           pickup_points_count: points.length,
@@ -1180,6 +1181,7 @@ export class DeliveryHubService {
           city,
           country_code: countryCode,
           limit,
+          store_lookup_full_list: limit === null,
         },
         response_summary: buildProviderErrorSummary(normalized, correlationId),
       })
@@ -2427,8 +2429,12 @@ function normalizePickupPointLookupLimit(value: number | null | undefined) {
 }
 
 function normalizeStorePickupPointLimit(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return null
+  }
+
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    return 20
+    return null
   }
 
   return Math.max(1, Math.min(100, Math.floor(value)))

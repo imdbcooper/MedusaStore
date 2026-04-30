@@ -902,6 +902,76 @@ describe("Delivery Hub service", () => {
     expect(result.points).toHaveLength(2)
   })
 
+  it("returns full mixed store pickup point list by default so checkout can classify Yandex and partners", async () => {
+    const connection = createConnectionRecord({
+      enabled: true,
+      status: "active",
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+    })
+    const pg = createMockPg([connection])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter("yandex")
+    const mixedPoints = [
+      buildTestPickupPoint("partner_1", {
+        provider_operator_id: "5post",
+        network_label: "5 Post",
+        is_yandex_branded: false,
+        is_market_partner: true,
+        name: "5 Post (Пятерочка)",
+      }),
+      buildTestPickupPoint("partner_2", {
+        provider_operator_id: "5post",
+        network_label: "5 Post",
+        is_yandex_branded: false,
+        is_market_partner: true,
+        name: "5 Post (Пятерочка)",
+      }),
+      buildTestPickupPoint("yandex_1", {
+        provider_operator_id: "market_l4g",
+        network_label: "Яндекс Маркет",
+        is_yandex_branded: true,
+        is_market_partner: false,
+        name: "Пункт выдачи заказов Яндекс Маркета",
+        lat: 55.757,
+        lng: 37.615,
+      }),
+    ]
+
+    const pickupSpy = jest.spyOn(adapter, "listPickupPoints").mockResolvedValue(mixedPoints)
+
+    const result = await service.listStorePickupPoints({
+      connection_id: connection.id,
+      city: "Москва",
+      country_code: "RU",
+    })
+
+    expect(result.points).toHaveLength(3)
+    expect(result.points).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        provider_point_id: "yandex_1",
+        provider_operator_id: "market_l4g",
+        network_label: "Яндекс Маркет",
+        is_yandex_branded: true,
+        is_market_partner: false,
+        lat: 55.757,
+        lng: 37.615,
+      }),
+      expect.objectContaining({
+        provider_point_id: "partner_1",
+        provider_operator_id: "5post",
+        network_label: "5 Post",
+        is_market_partner: true,
+      }),
+    ]))
+    expect(pickupSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ connection }),
+      {
+        city: "Москва",
+        country_code: "RU",
+      }
+    )
+  })
+
   it("normalizes lowercase store pickup country codes before provider calls", async () => {
     const connection = createConnectionRecord({
       enabled: true,
@@ -2207,6 +2277,12 @@ describe("Delivery Hub service", () => {
 function buildTestPickupPoint(
   id: string,
   overrides: Partial<{
+    provider_operator_id: string | null
+    network_label: string | null
+    is_yandex_branded: boolean | null
+    is_market_partner: boolean | null
+    station_type: string | null
+    name: string
     lat: number | null
     lng: number | null
   }> = {}
@@ -2214,12 +2290,12 @@ function buildTestPickupPoint(
   return {
     provider_point_id: id,
     provider_point_code: `${id}_code`,
-    provider_operator_id: "market_l4g",
-    network_label: "Яндекс Маркет",
-    is_yandex_branded: true,
-    is_market_partner: true,
-    station_type: "pickup_point",
-    name: `PVZ ${id}`,
+    provider_operator_id: overrides.provider_operator_id ?? "market_l4g",
+    network_label: overrides.network_label ?? "Яндекс Маркет",
+    is_yandex_branded: overrides.is_yandex_branded ?? true,
+    is_market_partner: overrides.is_market_partner ?? true,
+    station_type: overrides.station_type ?? "pickup_point",
+    name: overrides.name ?? `PVZ ${id}`,
     address: "Tverskaya 1",
     city: "Moscow",
     region: "Moscow",

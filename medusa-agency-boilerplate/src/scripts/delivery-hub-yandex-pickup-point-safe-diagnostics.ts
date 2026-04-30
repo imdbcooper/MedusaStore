@@ -51,6 +51,7 @@ export default async function deliveryHubYandexPickupPointSafeDiagnostics({ args
     ok: boolean | null
     total_available: number | null
     returned_count: number | null
+    category_counts: SafeCategoryCounts
     points: SafePointSummary[]
     error: SafeErrorSummary | null
   } = {
@@ -58,6 +59,7 @@ export default async function deliveryHubYandexPickupPointSafeDiagnostics({ args
     ok: null,
     total_available: null,
     returned_count: null,
+    category_counts: buildEmptySafeCategoryCounts(),
     points: [],
     error: null,
   }
@@ -67,9 +69,10 @@ export default async function deliveryHubYandexPickupPointSafeDiagnostics({ args
   }
 
   if (
-    missingInputs.length === 0 &&
-    parsed.find_candidate_if_not_available &&
-    target.status !== "found_available"
+    (missingInputs.length === 0 &&
+      parsed.find_candidate_if_not_available &&
+      target.status !== "found_available") ||
+    (!parsed.pickup_point_id && parsed.connection_id && parsed.find_candidate_if_not_available)
   ) {
     candidates = await runCandidateLookup(service, parsed as Args & { connection_id: string })
   }
@@ -105,7 +108,11 @@ export default async function deliveryHubYandexPickupPointSafeDiagnostics({ args
     candidates,
   }, null, 2))
 
-  process.exitCode = missingInputs.length === 0 && target.status === "found_available" ? 0 : 2
+  process.exitCode =
+    (missingInputs.length === 0 && target.status === "found_available") ||
+    (!parsed.pickup_point_id && candidates.ok === true)
+      ? 0
+      : 2
 }
 
 async function runTargetLookup(
@@ -161,12 +168,15 @@ async function runCandidateLookup(
       limit: input.candidate_limit,
     })
 
+    const points = result.points.map(toSafePointSummary)
+
     return {
       attempted: true,
       ok: true,
       total_available: safeNumber(result.total_available),
       returned_count: safeNumber(result.returned_count),
-      points: result.points.map(toSafePointSummary),
+      category_counts: countSafeCategories(points),
+      points,
       error: null,
     }
   } catch (error) {
@@ -175,6 +185,7 @@ async function runCandidateLookup(
       ok: false,
       total_available: null,
       returned_count: null,
+      category_counts: buildEmptySafeCategoryCounts(),
       points: [],
       error: toSafeErrorSummary(error),
     }
@@ -203,6 +214,13 @@ function toSafePointSummary(point: {
   }
 }
 
+type SafeCategoryCounts = {
+  yandex: number
+  partner: number
+  warehouse: number
+  unknown: number
+}
+
 type SafeErrorSummary = {
   code: string | null
   status: number | null
@@ -211,6 +229,33 @@ type SafeErrorSummary = {
   error_category: string | null
   operator_hint: string | null
   correlation_id: string | null
+}
+
+function countSafeCategories(points: SafePointSummary[]): SafeCategoryCounts {
+  const counts = buildEmptySafeCategoryCounts()
+
+  for (const point of points) {
+    if (point.is_yandex_branded === true) {
+      counts.yandex += 1
+    } else if (point.station_type === "warehouse") {
+      counts.warehouse += 1
+    } else if (point.is_market_partner === true || point.operator_id_present || point.network_label_present) {
+      counts.partner += 1
+    } else {
+      counts.unknown += 1
+    }
+  }
+
+  return counts
+}
+
+function buildEmptySafeCategoryCounts(): SafeCategoryCounts {
+  return {
+    yandex: 0,
+    partner: 0,
+    warehouse: 0,
+    unknown: 0,
+  }
 }
 
 function toSafeErrorSummary(error: unknown): SafeErrorSummary {

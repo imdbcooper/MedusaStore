@@ -374,7 +374,7 @@ describe("Delivery Hub storefront-neutral smoke harness", () => {
       const href = String(url)
 
       if (href.includes("/store/delivery/pickup-points")) {
-        expect(href).toContain("limit=50")
+        expect(href).not.toContain("limit=")
         return buildJsonResponse(200, {
           ok: true,
           points: [
