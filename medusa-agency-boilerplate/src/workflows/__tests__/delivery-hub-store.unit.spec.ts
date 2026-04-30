@@ -19,6 +19,10 @@ const originalStoreDeliverySelectionReadinessDeps = {
   ...deliveryReadinessRoute.storeDeliverySelectionReadinessDeps,
 }
 
+const originalStoreDeliveryQuotesDeps = {
+  ...deliveryQuotesRoute.storeDeliveryQuotesDeps,
+}
+
 const originalStoreDeliveryCutoverCandidateDeps = {
   ...deliveryCutoverCandidateRoute.storeDeliveryCutoverCandidateDeps,
 }
@@ -32,6 +36,10 @@ describe("Delivery Hub store routes", () => {
     Object.assign(
       deliveryReadinessRoute.storeDeliverySelectionReadinessDeps,
       originalStoreDeliverySelectionReadinessDeps
+    )
+    Object.assign(
+      deliveryQuotesRoute.storeDeliveryQuotesDeps,
+      originalStoreDeliveryQuotesDeps
     )
     Object.assign(
       deliveryCutoverCandidateRoute.storeDeliveryCutoverCandidateDeps,
@@ -241,7 +249,23 @@ describe("Delivery Hub store routes", () => {
       city: "Moscow",
     })
     expect(res.status).toHaveBeenCalledWith(200)
-    expect(res.json).toHaveBeenCalledWith(result)
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      points: [
+        {
+          provider_point_id: "pvz_1",
+          network_label: null,
+          name: "PVZ 1",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_destination_pickup_allowed: true,
+        },
+      ],
+    })
   })
 
   it("returns safe pickup-point category fields and coordinates through store sanitizer", async () => {
@@ -280,10 +304,26 @@ describe("Delivery Hub store routes", () => {
     await deliveryPickupPointsRoute.GET(createMockRequest() as any, res as any)
 
     expect(res.status).toHaveBeenCalledWith(200)
-    expect(res.json).toHaveBeenCalledWith(result)
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      points: [
+        {
+          provider_point_id: "pvz_yandex_safe",
+          network_label: "Яндекс Маркет",
+          name: "Пункт выдачи заказов Яндекс Маркета",
+          address: "Москва, Тверская 1",
+          city: "Москва",
+          region: "Москва",
+          postal_code: "125009",
+          lat: 55.757,
+          lng: 37.615,
+          is_destination_pickup_allowed: true,
+        },
+      ],
+    })
   })
 
-  it("rejects pickup point payloads that try to expose secret-like metadata or credentials", async () => {
+  it("strips pickup point payloads that try to expose secret-like metadata or credentials", async () => {
     jest.spyOn(DeliveryHubService.prototype, "listStorePickupPoints").mockResolvedValue({
       ok: true,
       points: [
@@ -310,11 +350,21 @@ describe("Delivery Hub store routes", () => {
 
     await deliveryPickupPointsRoute.GET(createMockRequest() as any, res as any)
 
-    expect(res.status).toHaveBeenCalledWith(400)
+    expect(res.status).toHaveBeenCalledWith(200)
     const payload = (res.json as jest.Mock).mock.calls[0][0] as any
-    expect(payload.error.code).toBe("DELIVERY_HUB_VALIDATION_ERROR")
-    expect(payload.error.message).toBe("Store delivery request validation failed")
-    expect(JSON.stringify(payload.error.details)).toContain("token")
+    expect(JSON.stringify(payload)).not.toMatch(/token|metadata|payment_methods|is_origin_dropoff_allowed/i)
+    expect(payload.points[0]).toEqual({
+      provider_point_id: "pvz_1",
+      network_label: null,
+      name: "PVZ 1",
+      address: "Tverskaya 1",
+      city: "Moscow",
+      region: "Moscow",
+      postal_code: "101000",
+      lat: 55.75,
+      lng: 37.61,
+      is_destination_pickup_allowed: true,
+    })
   })
 
   it("returns neutral pickup windows payload", async () => {
@@ -401,6 +451,12 @@ describe("Delivery Hub store routes", () => {
           },
           amount: 499,
           currency_code: "RUB",
+          customer_price: {
+            amount: 399,
+            currency_code: "RUB",
+            source: "fixed",
+            policy_id: "policy_test_fixed",
+          },
           delivery_eta_min: 1,
           delivery_eta_max: 2,
           pickup_point_required: true,
@@ -467,20 +523,26 @@ describe("Delivery Hub store routes", () => {
     expect(res.json).toHaveBeenCalledWith(result)
   })
 
-  it("accepts neutral JSON body quote smoke without checkout cutover", async () => {
+  it("accepts checkout quote POST with only cart/address/selected PVZ context", async () => {
     const result = {
       ok: true,
       quotes: [
         {
           carrier_code: "yandex",
           carrier_label: "Yandex Delivery",
-          mode_code: "dropoff_point_to_pickup_point",
+          mode_code: "warehouse_to_pickup_point",
           quote_reference: {
             id: "dhsel_22222222222222222222222222222222",
             version: 1,
           },
           amount: 181.9,
           currency_code: "RUB",
+          customer_price: {
+            amount: 150,
+            currency_code: "RUB",
+            source: "provider_quote_markup",
+            policy_id: "policy_test_markup",
+          },
           delivery_eta_min: 1,
           delivery_eta_max: 2,
           pickup_point_required: true,
@@ -496,46 +558,60 @@ describe("Delivery Hub store routes", () => {
     }
 
     const quoteSpy = jest
-      .spyOn(DeliveryHubService.prototype, "listStoreQuotes")
+      .spyOn(DeliveryHubService.prototype, "listCheckoutQuotes")
       .mockResolvedValue(result as any)
 
+    deliveryQuotesRoute.storeDeliveryQuotesDeps.getDeliveryHubCartById = jest.fn(async () => ({
+      id: "cart_1",
+      currency_code: "RUB",
+      subtotal: 2000,
+      items: [
+        {
+          id: "cali_1",
+          quantity: 2,
+          unit_price: 1000,
+          subtotal: 2000,
+          variant: {
+            id: "variant_1",
+            weight: 350,
+          },
+        },
+      ],
+      metadata: {},
+    })) as any
+    deliveryQuotesRoute.storeDeliveryQuotesDeps.requireDeliveryHubCart = jest.fn((cart) => cart) as any
     const res = createMockResponse()
 
     await deliveryQuotesRoute.POST(
       createMockRequest({
         validatedBody: {
-          connection_id: "conn_1",
-          mode_code: "dropoff_point_to_pickup_point",
-          origin_point_id: "dropoff_1",
+          cart_id: "cart_1",
           destination_point_id: "pvz_2",
+          destination_address: {
+            fullname: "Москва, ПВЗ 2",
+            coordinates: [37.61, 55.75],
+          },
           currency_code: "RUB",
-          items: [
-            {
-              quantity: 1,
-              weight_grams: 500,
-              price: 2000,
-            },
-          ],
         },
       }) as any,
       res as any
     )
 
+    expect(deliveryQuotesRoute.storeDeliveryQuotesDeps.getDeliveryHubCartById).toHaveBeenCalledWith(
+      expect.anything(),
+      "cart_1"
+    )
     expect(quoteSpy).toHaveBeenCalledWith({
-      connection_id: "conn_1",
-      mode_code: "dropoff_point_to_pickup_point",
+      cart: expect.objectContaining({ id: "cart_1" }),
+      cart_id: "cart_1",
       currency_code: "RUB",
       destination_point_id: "pvz_2",
-      origin_point_id: "dropoff_1",
-      warehouse_id: undefined,
+      destination_address: {
+        fullname: "Москва, ПВЗ 2",
+        coordinates: [37.61, 55.75],
+      },
+      shipping_address: null,
       interval_utc: undefined,
-      items: [
-        {
-          quantity: 1,
-          weight_grams: 500,
-          price: 2000,
-        },
-      ],
     })
     expect(res.status).toHaveBeenCalledWith(200)
     expect(res.json).toHaveBeenCalledWith(result)
@@ -620,6 +696,12 @@ describe("Delivery Hub store routes", () => {
           },
           amount: 499,
           currency_code: "RUB",
+          customer_price: {
+            amount: 399,
+            currency_code: "RUB",
+            source: "fixed",
+            policy_id: "policy_test_fixed",
+          },
           delivery_eta_min: 1,
           delivery_eta_max: 2,
           pickup_point_required: true,
@@ -665,8 +747,14 @@ describe("Delivery Hub store routes", () => {
       quote: {
         carrier_code: "yandex",
         carrier_label: "Yandex Delivery",
-        amount: 499,
+        amount: 399,
         currency_code: "RUB",
+        customer_price: {
+          amount: 399,
+          currency_code: "RUB",
+          source: "fixed",
+          policy_id: "policy_test_fixed",
+        },
         delivery_eta_min: 1,
         delivery_eta_max: 2,
         pickup_point_required: true,
@@ -726,7 +814,21 @@ describe("Delivery Hub store routes", () => {
     expect(res.json).toHaveBeenCalledWith({
       ok: true,
       cart_id: "cart_1",
-      selection,
+      selection: {
+        ...selection,
+        pickup_point: {
+          provider_point_id: "pvz_1",
+          network_label: null,
+          name: "PVZ 1",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_destination_pickup_allowed: true,
+        },
+      },
     })
   })
 
@@ -755,6 +857,12 @@ describe("Delivery Hub store routes", () => {
           carrier_label: "Yandex Delivery",
           amount: 499,
           currency_code: "RUB",
+          customer_price: {
+            amount: 399,
+            currency_code: "RUB",
+            source: "fixed",
+            policy_id: "policy_test_fixed",
+          },
           delivery_eta_min: 1,
           delivery_eta_max: 2,
           pickup_point_required: true,
@@ -825,6 +933,12 @@ describe("Delivery Hub store routes", () => {
           carrier_label: "Yandex Delivery",
           amount: 499,
           currency_code: "RUB",
+          customer_price: {
+            amount: 399,
+            currency_code: "RUB",
+            source: "fixed",
+            policy_id: "policy_test_fixed",
+          },
           delivery_eta_min: 1,
           delivery_eta_max: 2,
           pickup_point_required: true,
@@ -914,8 +1028,14 @@ describe("Delivery Hub store routes", () => {
       quote: {
         carrier_code: "yandex",
         carrier_label: "Yandex Delivery",
-        amount: 499,
+        amount: 399,
         currency_code: "RUB",
+        customer_price: {
+          amount: 399,
+          currency_code: "RUB",
+          source: "fixed",
+          policy_id: "policy_test_fixed",
+        },
         delivery_eta_min: 1,
         delivery_eta_max: 2,
         pickup_point_required: true,
@@ -978,6 +1098,12 @@ describe("Delivery Hub store routes", () => {
             carrier_label: "Yandex Delivery",
             amount: 499,
             currency_code: "RUB",
+            customer_price: {
+              amount: 399,
+              currency_code: "RUB",
+              source: "fixed",
+              policy_id: "policy_test_fixed",
+            },
             delivery_eta_min: 1,
             delivery_eta_max: 2,
             pickup_point_required: true,
@@ -1017,7 +1143,21 @@ describe("Delivery Hub store routes", () => {
     expect(res.json).toHaveBeenCalledWith({
       ok: true,
       cart_id: "cart_1",
-      selection,
+      selection: {
+        ...selection,
+        pickup_point: {
+          provider_point_id: "pvz_1",
+          network_label: null,
+          name: "PVZ 1",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_destination_pickup_allowed: true,
+        },
+      },
       diagnostics: {
         correlation_id: "corr_store_1",
         checkout_source_of_truth: "unchanged",
@@ -1031,7 +1171,7 @@ describe("Delivery Hub store routes", () => {
     expect(payload.diagnostics.checkout_source_of_truth).toBe("unchanged")
   })
 
-  it("rejects selection POST payloads that try to expose provider-specific fragments", async () => {
+  it("strips selection POST response payloads that try to expose provider-specific fragments", async () => {
     deliverySelectionRoute.storeDeliverySelectionDeps.getDeliveryHubCartById =
       jest.fn(async () => ({
         id: "cart_1",
@@ -1044,6 +1184,7 @@ describe("Delivery Hub store routes", () => {
     deliverySelectionRoute.storeDeliverySelectionDeps.upsertDeliveryHubCartSelection =
       jest.fn(async () => ({
         version: 1,
+        provider_code: "yandex",
         connection_id: "conn_1",
         quote_type: "warehouse_to_pickup_point",
         quote_reference: {
@@ -1055,6 +1196,12 @@ describe("Delivery Hub store routes", () => {
           carrier_label: "Yandex Delivery",
           amount: 499,
           currency_code: "RUB",
+          customer_price: {
+            amount: 399,
+            currency_code: "RUB",
+            source: "fixed",
+            policy_id: "policy_test_fixed",
+          },
           delivery_eta_min: 1,
           delivery_eta_max: 2,
           pickup_point_required: true,
@@ -1078,6 +1225,7 @@ describe("Delivery Hub store routes", () => {
           },
         },
         pickup_window: null,
+        correlation_id: null,
         updated_at: "2026-04-21T03:00:00.000Z",
       })) as any
 
@@ -1098,6 +1246,12 @@ describe("Delivery Hub store routes", () => {
             carrier_label: "Yandex Delivery",
             amount: 499,
             currency_code: "RUB",
+            customer_price: {
+              amount: 399,
+              currency_code: "RUB",
+              source: "fixed",
+              policy_id: "policy_test_fixed",
+            },
             delivery_eta_min: 1,
             delivery_eta_max: 2,
             pickup_point_required: true,
@@ -1123,11 +1277,21 @@ describe("Delivery Hub store routes", () => {
       res as any
     )
 
-    expect(res.status).toHaveBeenCalledWith(400)
+    expect(res.status).toHaveBeenCalledWith(200)
     const payload = (res.json as jest.Mock).mock.calls[0][0] as any
-    expect(payload.error.code).toBe("DELIVERY_HUB_VALIDATION_ERROR")
-    expect(payload.error.message).toBe("Store delivery request validation failed")
-    expect(JSON.stringify(payload.error.details)).toContain("metadata")
+    expect(JSON.stringify(payload)).not.toMatch(/metadata|provider_offer_id|payment_methods|is_origin_dropoff_allowed/i)
+    expect(payload.selection.pickup_point).toEqual({
+      provider_point_id: "pvz_1",
+      network_label: null,
+      name: "PVZ 1",
+      address: "Tverskaya 1",
+      city: "Moscow",
+      region: "Moscow",
+      postal_code: "101000",
+      lat: 55.75,
+      lng: 37.61,
+      is_destination_pickup_allowed: true,
+    })
   })
 
   it("returns neutral empty selection payload after DELETE", async () => {
@@ -1228,6 +1392,12 @@ describe("Delivery Hub store routes", () => {
           carrier_label: "Yandex Delivery",
           amount: 499,
           currency_code: "RUB",
+          customer_price: {
+            amount: 399,
+            currency_code: "RUB",
+            source: "fixed",
+            policy_id: "policy_test_fixed",
+          },
           delivery_eta_min: 1,
           delivery_eta_max: 2,
           pickup_point_required: true,
@@ -1308,7 +1478,24 @@ describe("Delivery Hub store routes", () => {
       },
     })
     expect(res.status).toHaveBeenCalledWith(200)
-    expect(res.json).toHaveBeenCalledWith(result)
+    expect(res.json).toHaveBeenCalledWith({
+      ...result,
+      selection: {
+        ...result.selection,
+        pickup_point: {
+          provider_point_id: "pvz_1",
+          network_label: null,
+          name: "PVZ 1",
+          address: "Tverskaya 1",
+          city: "Moscow",
+          region: "Moscow",
+          postal_code: "101000",
+          lat: 55.75,
+          lng: 37.61,
+          is_destination_pickup_allowed: true,
+        },
+      },
+    })
   })
 
   it("rejects readiness payloads that try to expose internal selection fragments", async () => {
@@ -1330,6 +1517,12 @@ describe("Delivery Hub store routes", () => {
           carrier_label: "Yandex Delivery",
           amount: 499,
           currency_code: "RUB",
+          customer_price: {
+            amount: 399,
+            currency_code: "RUB",
+            source: "fixed",
+            policy_id: "policy_test_fixed",
+          },
           delivery_eta_min: 1,
           delivery_eta_max: 2,
           pickup_point_required: true,
@@ -1855,6 +2048,12 @@ function createStoreSelection(overrides?: Record<string, unknown>) {
       carrier_label: "Yandex Delivery",
       amount: 499,
       currency_code: "RUB",
+      customer_price: {
+        amount: 399,
+        currency_code: "RUB",
+        source: "fixed",
+        policy_id: "policy_test_fixed",
+      },
       delivery_eta_min: 1,
       delivery_eta_max: 2,
       pickup_point_required: true,

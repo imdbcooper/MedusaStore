@@ -1,22 +1,28 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { z } from "@medusajs/framework/zod"
-import {
-  DeliveryHubIntervalUtcSchema,
-  DeliveryHubQuoteItemsSchema,
-  DeliveryHubStoreQuotesBodySchema,
-  DeliveryHubStoreQuotesQuerySchema,
-} from "../../../../modules/delivery-hub"
+import * as deliveryHub from "../../../../modules/delivery-hub"
 import {
   createStoreDeliveryValidationError,
   getStoreDeliveryHubService,
+  getStoreQuery,
   handleStoreDeliveryHubError,
   parseStoreDeliveryInterval,
   parseStoreDeliveryItems,
   sanitizeStoreDeliveryQuotesResponse,
 } from "../shared"
 
-export const StoreDeliveryQuotesQuerySchema = DeliveryHubStoreQuotesQuerySchema
-export const StoreDeliveryQuotesBodySchema = DeliveryHubStoreQuotesBodySchema
+export const StoreDeliveryQuotesQuerySchema = deliveryHub.DeliveryHubStoreQuotesQuerySchema
+export const StoreDeliveryQuotesBodySchema = deliveryHub.DeliveryHubStoreQuotesBodySchema
+
+export type StoreDeliveryQuotesDeps = {
+  getDeliveryHubCartById: typeof deliveryHub.getDeliveryHubCartById
+  requireDeliveryHubCart: typeof deliveryHub.requireDeliveryHubCart
+}
+
+export const storeDeliveryQuotesDeps: StoreDeliveryQuotesDeps = {
+  getDeliveryHubCartById: deliveryHub.getDeliveryHubCartById,
+  requireDeliveryHubCart: deliveryHub.requireDeliveryHubCart,
+}
 
 type StoreDeliveryQuotesQuery = z.infer<typeof StoreDeliveryQuotesQuerySchema>
 type StoreDeliveryQuotesBody = z.infer<typeof StoreDeliveryQuotesBodySchema>
@@ -28,10 +34,10 @@ export async function GET(
   try {
     const service = getStoreDeliveryHubService(req)
     const validatedQuery = req.validatedQuery ?? {}
-    const interval_utc = DeliveryHubIntervalUtcSchema.parse(
+    const interval_utc = deliveryHub.DeliveryHubIntervalUtcSchema.parse(
       parseStoreDeliveryInterval(validatedQuery.interval_utc)
     )
-    const items = DeliveryHubQuoteItemsSchema.parse(
+    const items = deliveryHub.DeliveryHubQuoteItemsSchema.parse(
       parseStoreDeliveryItems(validatedQuery.items)
     )
 
@@ -64,18 +70,25 @@ export async function POST(
       req.validatedBody ?? req.body ?? failMissingValidatedBody()
     )
 
+    const query = getStoreQuery(req)
+    const cart = await storeDeliveryQuotesDeps.getDeliveryHubCartById(
+      query,
+      validatedBody.cart_id
+    )
+    const existingCart = storeDeliveryQuotesDeps.requireDeliveryHubCart(
+      cart,
+      validatedBody.cart_id
+    )
+
     const result = sanitizeStoreDeliveryQuotesResponse(
-      await service.listStoreQuotes({
-        connection_id: validatedBody.connection_id,
-        mode_code: validatedBody.mode_code,
+      await service.listCheckoutQuotes({
+        cart: existingCart,
+        cart_id: validatedBody.cart_id,
         currency_code: validatedBody.currency_code,
         destination_point_id: validatedBody.destination_point_id,
         destination_address: validatedBody.destination_address,
-        origin_point_id: validatedBody.origin_point_id,
-        origin_address: validatedBody.origin_address,
-        warehouse_id: validatedBody.warehouse_id,
+        shipping_address: validatedBody.shipping_address ?? null,
         interval_utc: validatedBody.interval_utc ?? undefined,
-        items: validatedBody.items,
       })
     )
 

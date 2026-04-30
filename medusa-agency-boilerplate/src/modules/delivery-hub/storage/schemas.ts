@@ -4,10 +4,51 @@ import {
   DELIVERY_HUB_SUPPORTED_PUBLIC_PROVIDER_CODES,
 } from "../constants"
 
+const DeliveryHubCustomerPricingPolicySchema = z
+  .object({
+    id: z.string().trim().min(1).optional(),
+    policy_id: z.string().trim().min(1).optional(),
+    type: z
+      .enum([
+        "fixed",
+        "free_threshold",
+        "free",
+        "provider_pass_through",
+        "provider_quote",
+        "provider_quote_markup",
+        "markup",
+        "manual",
+        "unavailable",
+        "fail_closed",
+        "fail-closed",
+      ])
+      .optional(),
+    source: z.string().trim().min(1).optional(),
+    amount: z.number().finite().nonnegative().optional(),
+    fixed_amount: z.number().finite().nonnegative().optional(),
+    currency_code: z.string().trim().min(3).max(3).optional(),
+    threshold_amount: z.number().finite().nonnegative().optional(),
+    free_threshold_amount: z.number().finite().nonnegative().optional(),
+    below_threshold_amount: z.number().finite().nonnegative().optional(),
+    amount_below_threshold: z.number().finite().nonnegative().optional(),
+    markup_amount: z.number().finite().optional(),
+    markup_percent: z.number().finite().optional(),
+    rounding: z
+      .object({
+        mode: z.enum(["none", "ceil", "floor", "round"]).optional(),
+        increment: z.number().finite().positive().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+
 export const DeliveryHubConnectionConfigSchema = z.object({
   auto_confirm: z.boolean().optional(),
   label_format: z.string().optional(),
   default_warehouse_id: z.string().optional(),
+  customer_pricing_policy: DeliveryHubCustomerPricingPolicySchema.optional(),
+  pricing_policy: DeliveryHubCustomerPricingPolicySchema.optional(),
 })
 
 export const DeliveryHubCreateConnectionSchema = z.object({
@@ -150,10 +191,16 @@ export const DeliveryHubStoreQuotesQuerySchema = DeliveryHubStoreQuoteBaseSchema
   items: z.string().trim().optional(),
 })
 
-export const DeliveryHubStoreQuotesBodySchema = DeliveryHubStoreQuoteBaseSchema.extend({
-  interval_utc: DeliveryHubIntervalUtcSchema.nullable().optional(),
-  items: DeliveryHubQuoteItemsSchema,
-}).strict()
+export const DeliveryHubStoreQuotesBodySchema = z
+  .object({
+    cart_id: z.string().trim().min(1),
+    currency_code: z.string().trim().min(3).max(3).optional(),
+    destination_point_id: z.string().trim().min(1),
+    destination_address: DeliveryHubRoutePointAddressSchema,
+    shipping_address: DeliveryHubRoutePointAddressSchema.partial().optional(),
+    interval_utc: DeliveryHubIntervalUtcSchema.nullable().optional(),
+  })
+  .strict()
 
 export const DeliveryHubStorePickupPointsQuerySchema = z.object({
   connection_id: z.string().trim().min(1).optional(),
@@ -189,12 +236,29 @@ export const DeliveryHubStoreSettingsQuerySchema = z.object({})
 
 export const DeliveryHubStoreCutoverPreconditionsQuerySchema = z.object({})
 
+export const DeliveryHubCustomerPriceSchema = z
+  .object({
+    amount: z.number().finite().nonnegative(),
+    currency_code: z.string().trim().min(1),
+    source: z.enum([
+      "fixed",
+      "free_threshold",
+      "free",
+      "provider_quote",
+      "provider_quote_markup",
+      "manual",
+    ]),
+    policy_id: z.string().trim().min(1).nullable(),
+  })
+  .strict()
+
 export const DeliveryHubStoreCartSelectionQuoteSchema = z
   .object({
     carrier_code: z.string().trim().min(1),
     carrier_label: z.string().trim().min(1),
     amount: z.number().finite(),
     currency_code: z.string().trim().min(1),
+    customer_price: DeliveryHubCustomerPriceSchema.optional(),
     delivery_eta_min: z.number().int().nonnegative().nullable(),
     delivery_eta_max: z.number().int().nonnegative().nullable(),
     pickup_point_required: z.boolean(),

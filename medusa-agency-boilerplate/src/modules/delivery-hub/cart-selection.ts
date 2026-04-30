@@ -7,6 +7,7 @@ import {
   DELIVERY_HUB_QUOTE_REFERENCE_ID_PATTERN,
   DELIVERY_HUB_SUPPORTED_PUBLIC_PROVIDER_CODES,
 } from "./constants"
+import type { DeliveryHubCustomerPrice } from "./domain/pricing-policy"
 import type { DeliveryPickupPoint } from "./domain/pickup-point"
 import type { DeliveryPickupWindow } from "./domain/pickup-window"
 import { DeliveryHubError } from "./errors"
@@ -22,6 +23,7 @@ export type DeliveryHubCartSelectionQuoteSummary = {
   carrier_label: string
   amount: number
   currency_code: string
+  customer_price?: DeliveryHubCustomerPrice
   delivery_eta_min: number | null
   delivery_eta_max: number | null
   pickup_point_required: boolean
@@ -104,6 +106,28 @@ export type DeliveryHubQueryGraphLike = {
 export type DeliveryHubCartSelectionRecord = {
   id: string
   metadata?: unknown
+  currency_code?: string | null
+  subtotal?: number | null
+  total?: number | null
+  item_subtotal?: number | null
+  items?: Array<{
+    id?: string | null
+    title?: string | null
+    subtitle?: string | null
+    quantity?: number | null
+    unit_price?: number | null
+    total?: number | null
+    subtotal?: number | null
+    variant?: {
+      id?: string | null
+      title?: string | null
+      sku?: string | null
+      weight?: number | null
+      length?: number | null
+      width?: number | null
+      height?: number | null
+    } | null
+  }> | null
   shipping_methods?: Array<{
     shipping_option?: {
       id?: string | null
@@ -125,7 +149,32 @@ export async function getDeliveryHubCartById(
   const normalizedCartId = requireNonEmptyString(cartId, "cart_id")
   const { data } = await query.graph<DeliveryHubCartSelectionRecord>({
     entity: "cart",
-    fields: ["id", "metadata", "shipping_methods.shipping_option.id", "shipping_methods.shipping_option.name", "shipping_methods.shipping_option.provider_id", "shipping_methods.shipping_option.data"],
+    fields: [
+      "id",
+      "metadata",
+      "currency_code",
+      "subtotal",
+      "total",
+      "item_subtotal",
+      "items.id",
+      "items.title",
+      "items.subtitle",
+      "items.quantity",
+      "items.unit_price",
+      "items.total",
+      "items.subtotal",
+      "items.variant.id",
+      "items.variant.title",
+      "items.variant.sku",
+      "items.variant.weight",
+      "items.variant.length",
+      "items.variant.width",
+      "items.variant.height",
+      "shipping_methods.shipping_option.id",
+      "shipping_methods.shipping_option.name",
+      "shipping_methods.shipping_option.provider_id",
+      "shipping_methods.shipping_option.data",
+    ],
     filters: {
       id: normalizedCartId,
     },
@@ -264,6 +313,10 @@ function readPersistedDeliveryHubCartSelection(metadata?: unknown) {
   const carrierCode = readString(quote.carrier_code)
   const carrierLabel = readString(quote.carrier_label)
   const currencyCode = readString(quote.currency_code)
+  const customerPrice = readCustomerPrice(quote.customer_price, {
+    amount,
+    currency_code: currencyCode,
+  })
   const pickupPointRequired = readBoolean(quote.pickup_point_required)
   const pickupWindowRequired = readBoolean(quote.pickup_window_required)
 
@@ -304,6 +357,11 @@ function readPersistedDeliveryHubCartSelection(metadata?: unknown) {
       carrier_label: carrierLabel,
       amount,
       currency_code: currencyCode,
+      ...(customerPrice
+        ? {
+            customer_price: customerPrice,
+          }
+        : {}),
       delivery_eta_min: readNullableNumber(quote.delivery_eta_min),
       delivery_eta_max: readNullableNumber(quote.delivery_eta_max),
       pickup_point_required: pickupPointRequired,
@@ -332,6 +390,9 @@ function buildPersistedDeliveryHubCartSelection(input: DeliveryHubCartSelectionW
     quoteReference,
     input
   )
+  const customerPrice = requireCustomerPrice(input.quote)
+  const quoteAmount = requireFiniteNumber(input.quote.amount, "quote.amount")
+  const quoteCurrencyCode = requireNonEmptyString(input.quote.currency_code, "quote.currency_code")
   const updatedAt = new Date().toISOString()
 
   return {
@@ -343,8 +404,9 @@ function buildPersistedDeliveryHubCartSelection(input: DeliveryHubCartSelectionW
     quote: {
       carrier_code: requireNonEmptyString(input.quote.carrier_code, "quote.carrier_code"),
       carrier_label: requireNonEmptyString(input.quote.carrier_label, "quote.carrier_label"),
-      amount: requireFiniteNumber(input.quote.amount, "quote.amount"),
-      currency_code: requireNonEmptyString(input.quote.currency_code, "quote.currency_code"),
+      amount: quoteAmount,
+      currency_code: quoteCurrencyCode,
+      customer_price: customerPrice,
       delivery_eta_min: normalizeNullableFiniteNumber(input.quote.delivery_eta_min),
       delivery_eta_max: normalizeNullableFiniteNumber(input.quote.delivery_eta_max),
       pickup_point_required: !!input.quote.pickup_point_required,
@@ -802,6 +864,77 @@ function requireNonEmptyString(value: unknown, field: string) {
       field,
     },
   })
+}
+
+function readCustomerPrice(
+  value: unknown,
+  fallback: {
+    amount: number | null
+    currency_code: string | null
+  }
+): DeliveryHubCustomerPrice | null {
+  const record = asRecord(value)
+
+  if (!Object.keys(record).length) {
+    return null
+  }
+
+  const amount = readNumber(record.amount) ?? fallback.amount
+  const currencyCode = readString(record.currency_code) ?? fallback.currency_code
+  const source = readCustomerPriceSource(record.source) ?? "provider_quote"
+  const policyId = readNullableString(record.policy_id)
+
+  if (amount === null || !currencyCode) {
+    return null
+  }
+
+  return {
+    amount,
+    currency_code: currencyCode,
+    source,
+    policy_id: policyId,
+  }
+}
+
+function requireCustomerPrice(
+  quote: DeliveryHubCartSelectionQuoteSummary
+): DeliveryHubCustomerPrice {
+  const fallbackAmount = readNumber(quote.amount)
+  const fallbackCurrency = readString(quote.currency_code)
+  const customerPrice = readCustomerPrice(quote.customer_price, {
+    amount: fallbackAmount,
+    currency_code: fallbackCurrency,
+  })
+
+  if (customerPrice) {
+    return customerPrice
+  }
+
+  throw new DeliveryHubError({
+    code: "DELIVERY_HUB_VALIDATION_ERROR",
+    message: 'Field "quote.customer_price" must contain the buyer-facing Delivery Hub price',
+    status: 400,
+    details: {
+      field: "quote.customer_price",
+    },
+  })
+}
+
+function readCustomerPriceSource(value: unknown): DeliveryHubCustomerPrice["source"] | null {
+  const normalized = readString(value)
+
+  if (
+    normalized === "fixed" ||
+    normalized === "free_threshold" ||
+    normalized === "free" ||
+    normalized === "provider_quote" ||
+    normalized === "provider_quote_markup" ||
+    normalized === "manual"
+  ) {
+    return normalized
+  }
+
+  return null
 }
 
 function requireFiniteNumber(value: unknown, field: string) {

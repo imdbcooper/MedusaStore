@@ -10,6 +10,7 @@ import {
 import {
   createDeliveryHubQuoteReference,
   readDeliveryHubCartSelection,
+  type DeliveryHubCartSelectionRecord,
   type DeliveryHubQuoteReference,
 } from "./cart-selection"
 import type {
@@ -18,7 +19,8 @@ import type {
   DeliveryConnectionUpsertInput,
 } from "./domain/connection"
 import type { DeliveryHubRoutePointAddressInput } from "./adapters/types"
-import type { DeliveryQuote } from "./domain/quote"
+import type { DeliveryHubPricedQuote, DeliveryQuote } from "./domain/quote"
+import { evaluateDeliveryHubCustomerPricingPolicy } from "./domain/pricing-policy"
 import type { DeliveryPickupPoint } from "./domain/pickup-point"
 import type { DeliveryPickupWindow } from "./domain/pickup-window"
 import type {
@@ -237,8 +239,8 @@ export type DeliveryHubAdminPickupWindowLookupResponse = {
 }
 
 type DeliveryStoreQuotePublic = Omit<
-  DeliveryQuote,
-  "quote_key" | "pickup_points_embedded" | "pickup_window_options" | "raw_reference"
+  DeliveryHubPricedQuote,
+  "quote_key" | "pickup_points_embedded" | "pickup_window_options" | "raw_reference" | "provider_quote"
 > & {
   quote_reference: DeliveryHubQuoteReference
 }
@@ -1258,9 +1260,52 @@ export class DeliveryHubService {
     }
   }
 
+  async listCheckoutQuotes(input: {
+    cart_id: string
+    cart: DeliveryHubCartSelectionRecord
+    currency_code?: string | null
+    destination_point_id: string
+    destination_address: {
+      fullname: string
+      coordinates?: [number, number] | null
+      contact?: {
+        name?: string | null
+        phone?: string | null
+      } | null
+    }
+    shipping_address?: {
+      fullname?: string
+      coordinates?: [number, number] | null
+      contact?: {
+        name?: string | null
+        phone?: string | null
+      } | null
+    } | null
+    interval_utc?: {
+      from: string
+      to: string
+    } | null
+  }) {
+    const cartPackage = buildCheckoutCartQuotePackage(input.cart)
+
+    return this.listStoreQuotes({
+      mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+      currency_code: input.currency_code ?? input.cart.currency_code ?? undefined,
+      destination_point_id: input.destination_point_id,
+      destination_address: mergeCheckoutDestinationAddress(
+        input.destination_address,
+        input.shipping_address ?? null
+      ),
+      interval_utc: input.interval_utc ?? null,
+      items: cartPackage.items,
+      cart_subtotal: cartPackage.cart_subtotal,
+      cart_package_diagnostics: cartPackage.diagnostics,
+    })
+  }
+
   async listStoreQuotes(input: {
     connection_id?: string | null
-    mode_code: string
+    mode_code: typeof DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint | typeof DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint
     currency_code?: string | null
     destination_point_id: string
     destination_address?: {
@@ -1290,10 +1335,28 @@ export class DeliveryHubService {
       weight_grams?: number
       price?: number
     }>
+    cart_subtotal?: number | null
+    cart_package_diagnostics?: DeliveryHubCheckoutCartPackageDiagnostics | null
   }) {
     const connection = await this.resolveStoreConnection(input.connection_id)
     const adapter = getDeliveryHubAdapter(connection.provider_code)
     const correlationId = crypto.randomUUID()
+
+    if (
+      input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint &&
+      connection.provider_code !== DELIVERY_HUB_PROVIDER_YANDEX
+    ) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_PROVIDER_NOT_SUPPORTED",
+        message: "Store checkout warehouse_to_pickup_point quote currently requires Yandex /check-price provider orchestration.",
+        status: 409,
+        details: {
+          provider_code: connection.provider_code,
+          mode_code: input.mode_code,
+        },
+      })
+    }
+
     const warehouse =
       input.mode_code === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
         ? await this.resolveWarehouseRecord(connection, input.warehouse_id)
@@ -1355,6 +1418,7 @@ export class DeliveryHubService {
           warehouse_id: input.warehouse_id ?? null,
           provider_warehouse_id: resolvedWarehouseId,
           interval_utc: input.interval_utc ?? null,
+          cart_package: input.cart_package_diagnostics ?? null,
         },
         response_summary: {
           quotes_count: quotes.length,
@@ -1362,9 +1426,16 @@ export class DeliveryHubService {
         },
       })
 
+      const pricedQuotes = quotes.map((quote) =>
+        applyCustomerPricingToStoreQuote(connection, quote, {
+          currency_code: input.currency_code ?? quote.currency_code,
+          cart_subtotal: input.cart_subtotal ?? sumQuoteItemsPrice(input.items),
+        })
+      )
+
       return {
         ok: true,
-        quotes: quotes.map((quote) =>
+        quotes: pricedQuotes.map((quote) =>
           sanitizeStoreQuote(connection.id, quote, input.mode_code === DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint
             ? {
                 mode_code: DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint,
@@ -1402,6 +1473,7 @@ export class DeliveryHubService {
           warehouse_id: input.warehouse_id ?? null,
           provider_warehouse_id: resolvedWarehouseId,
           interval_utc: input.interval_utc ?? null,
+          cart_package: input.cart_package_diagnostics ?? null,
         },
         response_summary: {
           message: normalized.message,
@@ -1985,7 +2057,17 @@ export class DeliveryHubService {
     const selectedWarehouseId = explicitWarehouseId ?? configDefaultWarehouseId
 
     if (!selectedWarehouseId) {
-      return null
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_VALIDATION_ERROR",
+        message:
+          "Delivery Hub warehouse_to_pickup_point quote requires config.default_warehouse_id when warehouse_id is not supplied.",
+        status: 409,
+        details: {
+          field: "config.default_warehouse_id",
+          operator_hint:
+            "Настройте default warehouse в Admin Settings → Delivery. Shopper checkout больше не передаёт public NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID как реальный origin.",
+        },
+      })
     }
 
     const warehouse = await this.requireWarehouse(selectedWarehouseId)
@@ -2334,6 +2416,109 @@ function resolveQuoteRoutePointAddress(
     coordinates,
     contact: value?.contact ?? null,
   }
+}
+
+type DeliveryHubCheckoutCartPackageDiagnostics = {
+  source: "cart_lines" | "fallback"
+  item_count: number
+  fallback_reasons: string[]
+}
+
+function mergeCheckoutDestinationAddress(
+  destinationAddress: DeliveryHubRoutePointAddressInput,
+  shippingAddress?: {
+    contact?: {
+      name?: string | null
+      phone?: string | null
+    } | null
+  } | null
+): DeliveryHubRoutePointAddressInput {
+  return {
+    ...destinationAddress,
+    contact: destinationAddress.contact ?? shippingAddress?.contact ?? null,
+  }
+}
+
+function buildCheckoutCartQuotePackage(cart: DeliveryHubCartSelectionRecord): {
+  items: Array<{
+    quantity: number
+    weight_grams: number
+    price: number
+  }>
+  cart_subtotal: number | null
+  diagnostics: DeliveryHubCheckoutCartPackageDiagnostics
+} {
+  const cartSubtotal = normalizeFiniteNumber(cart.subtotal) ??
+    normalizeFiniteNumber(cart.item_subtotal) ??
+    normalizeFiniteNumber(cart.total)
+  const items = Array.isArray(cart.items)
+    ? cart.items.map(buildCheckoutCartQuoteItem).filter((item): item is CheckoutCartQuoteItem => !!item)
+    : []
+
+  if (items.length) {
+    return {
+      items: items.map(({ fallback_reasons: _fallbackReasons, ...item }) => item),
+      cart_subtotal: cartSubtotal ?? sumQuoteItemsPrice(items),
+      diagnostics: {
+        source: "cart_lines",
+        item_count: items.length,
+        fallback_reasons: items.flatMap((item) => item.fallback_reasons),
+      },
+    }
+  }
+
+  return {
+    items: [
+      {
+        quantity: 1,
+        weight_grams: DELIVERY_HUB_CHECKOUT_FALLBACK_WEIGHT_GRAMS,
+        price: cartSubtotal ?? 0,
+      },
+    ],
+    cart_subtotal: cartSubtotal,
+    diagnostics: {
+      source: "fallback",
+      item_count: 1,
+      fallback_reasons: ["cart_lines_unavailable"],
+    },
+  }
+}
+
+type CheckoutCartQuoteItem = {
+  quantity: number
+  weight_grams: number
+  price: number
+  fallback_reasons: string[]
+}
+
+const DELIVERY_HUB_CHECKOUT_FALLBACK_WEIGHT_GRAMS = 500
+
+function buildCheckoutCartQuoteItem(
+  item: NonNullable<DeliveryHubCartSelectionRecord["items"]>[number]
+): CheckoutCartQuoteItem | null {
+  const quantity = normalizePositiveInteger(item.quantity) ?? 1
+  const unitPrice = normalizeFiniteNumber(item.unit_price)
+  const lineSubtotal = normalizeFiniteNumber(item.subtotal) ?? normalizeFiniteNumber(item.total)
+  const variant = item.variant ?? null
+  const weight = normalizePositiveInteger(variant?.weight)
+  const fallbackReasons: string[] = []
+
+  if (!weight) {
+    fallbackReasons.push(`missing_weight:${normalizeNullableText(item.id) ?? "cart_line"}`)
+  }
+
+  return {
+    quantity,
+    weight_grams: weight ?? DELIVERY_HUB_CHECKOUT_FALLBACK_WEIGHT_GRAMS,
+    price: lineSubtotal ?? (unitPrice !== null ? unitPrice * quantity : 0),
+    fallback_reasons: fallbackReasons,
+  }
+}
+
+function normalizePositiveInteger(value: unknown) {
+  const number = normalizeFiniteNumber(value)
+
+  return number !== null && number > 0 ? Math.trunc(number) : null
 }
 
 function buildTestQuoteInputEcho(input: DeliveryTestQuoteInput): DeliveryTestQuoteEcho {
@@ -2715,7 +2900,7 @@ function isStoreCatalogQuoteType(modeCode: string) {
 
 function sanitizeStoreQuote(
   connectionId: string,
-  quote: DeliveryQuote,
+  quote: DeliveryHubPricedQuote,
   providerOriginDispatchContext:
     | {
         mode_code: typeof DELIVERY_HUB_MODE_CODE.dropoffPointToPickupPoint
@@ -2730,8 +2915,9 @@ function sanitizeStoreQuote(
     carrier_code: quote.carrier_code,
     carrier_label: quote.carrier_label,
     mode_code: quote.mode_code,
-    amount: quote.amount,
-    currency_code: quote.currency_code,
+    amount: quote.customer_price.amount,
+    currency_code: quote.customer_price.currency_code,
+    customer_price: quote.customer_price,
     delivery_eta_min: quote.delivery_eta_min,
     delivery_eta_max: quote.delivery_eta_max,
     pickup_point_required: quote.pickup_point_required,
@@ -2744,4 +2930,68 @@ function sanitizeStoreQuote(
       provider_origin_dispatch_context: providerOriginDispatchContext,
     }),
   }
+}
+
+function applyCustomerPricingToStoreQuote(
+  connection: DeliveryConnectionRecord,
+  quote: DeliveryQuote,
+  context: {
+    currency_code?: string | null
+    cart_subtotal?: number | null
+  }
+): DeliveryHubPricedQuote {
+  const providerQuote = {
+    amount: quote.amount,
+    currency_code: quote.currency_code,
+    carrier_code: quote.carrier_code,
+    quote_key_present: !!quote.quote_key,
+  }
+  const pricing = evaluateDeliveryHubCustomerPricingPolicy({
+    provider_quote: providerQuote,
+    currency_code: context.currency_code ?? quote.currency_code,
+    cart_subtotal: context.cart_subtotal ?? null,
+    config: connection.config,
+  })
+
+  if (!pricing.available) {
+    throw new DeliveryHubError({
+      code: "DELIVERY_HUB_VALIDATION_ERROR",
+      message: pricing.message,
+      status: 409,
+      details: {
+        field: "config.customer_pricing_policy",
+        policy_id: pricing.policy_id,
+      },
+    })
+  }
+
+  return {
+    ...quote,
+    provider_quote: providerQuote,
+    customer_price: pricing.customer_price,
+  }
+}
+
+function sumQuoteItemsPrice(
+  items?: Array<{
+    quantity?: number
+    price?: number
+  }> | null
+) {
+  if (!Array.isArray(items)) {
+    return null
+  }
+
+  const total = items.reduce((sum, item) => {
+    const price = typeof item.price === "number" && Number.isFinite(item.price)
+      ? item.price
+      : 0
+    const quantity = typeof item.quantity === "number" && Number.isFinite(item.quantity)
+      ? item.quantity
+      : 1
+
+    return sum + price * quantity
+  }, 0)
+
+  return Number.isFinite(total) ? total : null
 }

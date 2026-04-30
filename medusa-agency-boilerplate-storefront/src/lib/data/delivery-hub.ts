@@ -23,6 +23,7 @@ import {
   type DeliveryHubClearSelectionInput,
   type DeliveryHubCutoverApprovalArtifactResponse,
   type DeliveryHubCutoverCandidateResponse,
+  type DeliveryHubCheckoutQuoteInput,
   type DeliveryHubCutoverPreconditionsResponse,
   type DeliveryHubListPickupPointsInput,
   type DeliveryHubListPickupWindowsInput,
@@ -152,7 +153,7 @@ export async function listDeliveryHubQuotes(input: DeliveryHubListQuotesInput) {
     .catch(() => null)
 }
 
-export async function previewDeliveryHubQuotes(input: DeliveryHubListQuotesInput) {
+export async function previewDeliveryHubQuotes(input: DeliveryHubCheckoutQuoteInput) {
   const headers = await getDeliveryHubHeaders({ json: true })
 
   return sdk.client

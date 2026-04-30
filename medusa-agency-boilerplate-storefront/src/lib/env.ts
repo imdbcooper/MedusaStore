@@ -46,6 +46,7 @@ export const DELIVERY_HUB_PREVIEW_DEFAULT_DESTINATION_POINT_ID =
 export const DELIVERY_HUB_PREVIEW_DEFAULT_ORIGIN_POINT_ID =
   process.env.NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_ORIGIN_POINT_ID?.trim() || ""
 
+// Diagnostic/dev-only preview override. Real buyer checkout resolves warehouse origin on the backend via connection config.
 export const DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID =
   process.env.NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID?.trim() || ""
 

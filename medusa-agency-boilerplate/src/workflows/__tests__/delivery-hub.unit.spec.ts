@@ -1890,6 +1890,12 @@ describe("Delivery Hub service", () => {
       credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
       config: {
         default_warehouse_id: warehouse.id,
+        customer_pricing_policy: {
+          id: "policy_fixed_checkout",
+          type: "fixed",
+          amount: 199,
+          currency_code: "RUB",
+        },
       },
     })
     const pg = createMockPg([connection], [], [warehouse])
@@ -1932,7 +1938,14 @@ describe("Delivery Hub service", () => {
         ok: true,
         quotes: [
           expect.objectContaining({
-            amount: 499,
+            amount: 199,
+            currency_code: "RUB",
+            customer_price: {
+              amount: 199,
+              currency_code: "RUB",
+              source: "fixed",
+              policy_id: "policy_fixed_checkout",
+            },
             quote_reference: expect.objectContaining({
               id: expect.any(String),
               version: 1,
@@ -1941,8 +1954,10 @@ describe("Delivery Hub service", () => {
         ],
       })
     )
+    expect(JSON.stringify(result)).not.toContain("499")
     expect(result.quotes[0]).not.toHaveProperty("quote_key")
     expect(result.quotes[0]).not.toHaveProperty("raw_reference")
+    expect(result.quotes[0]).not.toHaveProperty("provider_quote")
     expect(quoteSpy).toHaveBeenCalledWith(
       expect.objectContaining({ connection }),
       expect.objectContaining({
@@ -1950,6 +1965,107 @@ describe("Delivery Hub service", () => {
         destination_point_id: "pvz_1",
         currency_code: "RUB",
       })
+    )
+  })
+
+  it("orchestrates checkout quote from cart lines without caller-supplied connection warehouse or items", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_checkout",
+      provider_code: DELIVERY_HUB_PROVIDER_YANDEX,
+      provider_warehouse_id: null,
+      city: "Москва",
+      address_line_1: "Льва Толстого 16",
+      metadata: { coordinates: [37.588144, 55.733842] },
+    })
+    const connection = createConnectionRecord({
+      id: "conn_checkout",
+      enabled: true,
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      config: {
+        default_warehouse_id: warehouse.id,
+        customer_pricing_policy: {
+          id: "policy_fixed_checkout",
+          type: "fixed",
+          amount: 199,
+          currency_code: "RUB",
+        },
+      },
+    })
+    const pg = createMockPg([connection], [], [warehouse])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter(DELIVERY_HUB_PROVIDER_YANDEX)
+    const quoteSpy = jest.spyOn(adapter, "quoteWarehouseToPickupPoint").mockResolvedValue([
+      {
+        carrier_code: DELIVERY_HUB_PROVIDER_YANDEX,
+        carrier_label: "Yandex Delivery",
+        mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+        quote_key: "provider_quote_checkout",
+        amount: 499,
+        currency_code: "RUB",
+        delivery_eta_min: 1,
+        delivery_eta_max: 2,
+        pickup_point_required: true,
+        pickup_point_ids: ["pvz_checkout"],
+        pickup_points_embedded: [],
+        pickup_window_required: false,
+        pickup_window_options: [],
+        raw_reference: {
+          provider_offer_id: "raw-offer-id-should-not-leak",
+        },
+      },
+    ])
+
+    const result = await service.listCheckoutQuotes({
+      cart_id: "cart_checkout",
+      cart: {
+        id: "cart_checkout",
+        currency_code: "RUB",
+        subtotal: 3000,
+        metadata: {},
+        items: [
+          {
+            id: "cali_real",
+            quantity: 2,
+            unit_price: 1500,
+            subtotal: 3000,
+            variant: {
+              id: "variant_real",
+              weight: 250,
+            },
+          },
+        ],
+      },
+      destination_point_id: "pvz_checkout",
+      destination_address: {
+        fullname: "Москва, ПВЗ Checkout",
+        coordinates: [37.61, 55.75],
+      },
+      currency_code: "RUB",
+    })
+
+    expect(quoteSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ connection }),
+      expect.objectContaining({
+        warehouse_id: warehouse.id,
+        destination_point_id: "pvz_checkout",
+        origin_address: expect.objectContaining({ coordinates: [37.588144, 55.733842] }),
+        destination_address: expect.objectContaining({ coordinates: [37.61, 55.75] }),
+        items: [
+          {
+            quantity: 2,
+            weight_grams: 250,
+            price: 3000,
+          },
+        ],
+      })
+    )
+    expect(result.quotes[0]).toEqual(expect.objectContaining({
+      amount: 199,
+      customer_price: expect.objectContaining({ amount: 199 }),
+    }))
+    expect(JSON.stringify(result)).not.toMatch(
+      /conn_checkout|wh_checkout|raw-offer-id-should-not-leak|provider_quote_checkout/
     )
   })
 
@@ -2235,6 +2351,83 @@ describe("Delivery Hub service", () => {
     })
 
     expect(quoteSpy).not.toHaveBeenCalled()
+  })
+
+  it("uses explicit safe fallback diagnostics internally when checkout cart line dimensions are missing", async () => {
+    const warehouse = createWarehouseRecord({
+      id: "wh_fallback",
+      metadata: { coordinates: [37.588144, 55.733842] },
+    })
+    const connection = createConnectionRecord({
+      id: "conn_fallback",
+      enabled: true,
+      status: DELIVERY_HUB_CONNECTION_STATUS.active,
+      credentials_state: DELIVERY_HUB_CREDENTIALS_STATE.sealed,
+      config: {
+        default_warehouse_id: warehouse.id,
+      },
+    })
+    const pg = createMockPg([connection], [], [warehouse])
+    const service = new DeliveryHubService(pg as any)
+    const adapter = getDeliveryHubAdapter(DELIVERY_HUB_PROVIDER_YANDEX)
+    jest.spyOn(adapter, "quoteWarehouseToPickupPoint").mockResolvedValue([
+      {
+        carrier_code: DELIVERY_HUB_PROVIDER_YANDEX,
+        carrier_label: "Yandex Delivery",
+        mode_code: DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint,
+        quote_key: "provider_quote_fallback",
+        amount: 499,
+        currency_code: "RUB",
+        delivery_eta_min: 1,
+        delivery_eta_max: 2,
+        pickup_point_required: true,
+        pickup_point_ids: ["pvz_fallback"],
+        pickup_points_embedded: [],
+        pickup_window_required: false,
+        pickup_window_options: [],
+        raw_reference: {},
+      },
+    ])
+
+    const result = await service.listCheckoutQuotes({
+      cart_id: "cart_fallback",
+      cart: {
+        id: "cart_fallback",
+        currency_code: "RUB",
+        subtotal: 1000,
+        metadata: {},
+        items: [
+          {
+            id: "cali_missing_weight",
+            quantity: 1,
+            unit_price: 1000,
+            subtotal: 1000,
+            variant: {
+              id: "variant_missing_weight",
+              weight: null,
+            },
+          },
+        ],
+      },
+      destination_point_id: "pvz_fallback",
+      destination_address: {
+        fullname: "Москва, ПВЗ fallback",
+        coordinates: [37.61, 55.75],
+      },
+    })
+
+    const quoteLog = pg.calls
+      .filter((call) => call.sql.includes("insert into delivery_event_logs"))
+      .map((call) => JSON.parse(String(call.params[6] ?? "{}")))
+      .find((summary) => summary.cart_package)
+
+    expect(result.ok).toBe(true)
+    expect(quoteLog.cart_package).toEqual(expect.objectContaining({
+      source: "cart_lines",
+      item_count: 1,
+      fallback_reasons: ["missing_weight:cali_missing_weight"],
+    }))
+    expect(JSON.stringify(result)).not.toContain("missing_weight")
   })
 
   it("fails warehouse quote before provider call when selected PVZ coordinates are missing", async () => {
