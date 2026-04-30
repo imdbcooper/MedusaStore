@@ -10,6 +10,10 @@ import * as deliveryFulfillmentBridgePreviewRoute from "../../api/admin/delivery
 import * as deliveryShippingOptionsPreviewRoute from "../../api/admin/delivery/shipping-options/preview/route"
 import * as deliveryShippingOptionsSyncRoute from "../../api/admin/delivery/shipping-options/sync/route"
 import * as deliveryShared from "../../api/admin/delivery/shared"
+import * as orderDeliveryHubRoute from "../../api/admin/orders/[id]/delivery-hub/route"
+import * as orderDeliveryHubShipmentsRoute from "../../api/admin/orders/[id]/delivery-hub/shipments/route"
+import * as orderDeliveryHubShipmentRefreshRoute from "../../api/admin/orders/[id]/delivery-hub/shipments/[shipment_id]/refresh/route"
+import * as orderDeliveryHubShipmentCancelRoute from "../../api/admin/orders/[id]/delivery-hub/shipments/[shipment_id]/cancel/route"
 import * as deliveryPickupPointsRoute from "../../api/admin/delivery/pickup-points/route"
 import * as deliveryPickupWindowsRoute from "../../api/admin/delivery/pickup-windows/route"
 import * as deliveryTestQuoteRoute from "../../api/admin/delivery/test-quote/route"
@@ -1326,6 +1330,121 @@ describe("Delivery Hub admin routes", () => {
     const payload = (res.json as jest.Mock).mock.calls[0][0] as any
     expect(payload.error.code).toBe("DELIVERY_HUB_UNEXPECTED_ERROR")
     expect(payload.error.message).toContain("provider_secret")
+  })
+
+  it("returns order-scoped Delivery Hub snapshot without manual execution reference", async () => {
+    const snapshot = buildOrderDeliveryHubSnapshotPayload()
+    const serviceSpy = jest
+      .spyOn(DeliveryHubService.prototype, "getAdminOrderDeliveryHubSnapshot")
+      .mockResolvedValue({ ok: true, delivery_hub: snapshot } as any)
+    const req = createOrderDeliveryHubRequest({
+      url: "/admin/orders/order_1/delivery-hub",
+    })
+    const res = createMockResponse()
+
+    await orderDeliveryHubRoute.GET(req as any, res as any)
+
+    expect(serviceSpy).toHaveBeenCalledWith({
+      order_id: "order_1",
+      order: expect.objectContaining({ id: "order_1" }),
+    })
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      delivery_hub: expect.objectContaining({
+        safe: true,
+        shipment_readiness: expect.objectContaining({
+          blocked_reason_code: "shipment_execution_disabled",
+        }),
+      }),
+    })
+  })
+
+  it("blocks duplicate order-scoped shipment create through sanitized backend response", async () => {
+    const snapshot = buildOrderDeliveryHubSnapshotPayload({
+      shipment_readiness: {
+        available: false,
+        status: "already_created",
+        blocked_reason_code: "shipment_already_created",
+        blocked_reason: "A Delivery Hub shipment is already linked to this order.",
+        execution_enabled: true,
+      },
+    })
+    const createSpy = jest
+      .spyOn(DeliveryHubService.prototype, "createAdminOrderDeliveryHubShipment")
+      .mockResolvedValue({
+        ok: true,
+        delivery_hub: snapshot,
+        action: {
+          type: "create_shipment",
+          status: "blocked",
+          blocked_reason_code: "shipment_already_created",
+          safe_message: "Duplicate shipment creation is blocked.",
+          redacted: true,
+        },
+      } as any)
+    const res = createMockResponse()
+
+    await orderDeliveryHubShipmentsRoute.POST(
+      createOrderDeliveryHubRequest({
+        url: "/admin/orders/order_1/delivery-hub/shipments",
+        validatedBody: { correlation_id: "corr-order-create" },
+      }) as any,
+      res as any
+    )
+
+    expect(createSpy).toHaveBeenCalledWith({
+      order_id: "order_1",
+      order: expect.objectContaining({ id: "order_1" }),
+      correlation_id: "corr-order-create",
+    })
+    expect(res.status).toHaveBeenCalledWith(202)
+    const payload = (res.json as jest.Mock).mock.calls[0][0] as any
+    expect(payload.action).toEqual(expect.objectContaining({ redacted: true }))
+    expect(JSON.stringify(payload)).not.toContain("execution_reference_raw_value")
+    expect(JSON.stringify(payload)).not.toContain("leaked_quote_key")
+  })
+
+  it("refreshes and cancels order-scoped shipments by shipment id only", async () => {
+    const operations = buildShipmentOperationsPayload()
+    const refreshSpy = jest
+      .spyOn(DeliveryHubService.prototype, "refreshAdminOrderDeliveryHubShipment")
+      .mockResolvedValue({ ok: true, operations, refresh: { status: "blocked", redacted: true } } as any)
+    const cancelSpy = jest
+      .spyOn(DeliveryHubService.prototype, "cancelAdminOrderDeliveryHubShipment")
+      .mockResolvedValue({ ok: true, operations, cancel: { status: "blocked", redacted: true } } as any)
+
+    const refreshRes = createMockResponse()
+    await orderDeliveryHubShipmentRefreshRoute.POST(
+      createOrderDeliveryHubRequest({
+        url: "/admin/orders/order_1/delivery-hub/shipments/shipment_1/refresh",
+        validatedBody: { correlation_id: "corr-refresh" },
+      }) as any,
+      refreshRes as any
+    )
+
+    expect(refreshSpy).toHaveBeenCalledWith({
+      order_id: "order_1",
+      shipment_id: "shipment_1",
+      correlation_id: "corr-refresh",
+    })
+    expect(refreshRes.status).toHaveBeenCalledWith(200)
+
+    const cancelRes = createMockResponse()
+    await orderDeliveryHubShipmentCancelRoute.POST(
+      createOrderDeliveryHubRequest({
+        url: "/admin/orders/order_1/delivery-hub/shipments/shipment_1/cancel",
+        validatedBody: { correlation_id: "corr-cancel" },
+      }) as any,
+      cancelRes as any
+    )
+
+    expect(cancelSpy).toHaveBeenCalledWith({
+      order_id: "order_1",
+      shipment_id: "shipment_1",
+      correlation_id: "corr-cancel",
+    })
+    expect(cancelRes.status).toHaveBeenCalledWith(200)
   })
 
   it("returns admin delivery logs list payload", async () => {
@@ -4788,6 +4907,266 @@ describe("Delivery Hub admin shared helpers", () => {
     })
   })
 })
+
+function createOrderDeliveryHubRequest(input?: Record<string, unknown>) {
+  return createMockRequest({
+    url: "/admin/orders/order_1/delivery-hub",
+    scope: {
+      resolve: jest.fn((key: string | symbol) => {
+        if (key === ContainerRegistrationKeys.QUERY || String(key) === "query") {
+          return {
+            graph: jest.fn(async () => ({
+              data: [
+                {
+                  id: "order_1",
+                  email: "customer@example.test",
+                  items: [{ id: "item_1", quantity: 1 }],
+                  fulfillments: [],
+                },
+              ],
+            })),
+          }
+        }
+
+        return { raw: jest.fn() }
+      }),
+    },
+    ...input,
+  })
+}
+
+function buildOrderDeliveryHubSnapshotPayload(overrides?: Record<string, unknown>) {
+  return {
+    version: 1,
+    safe: true,
+    order: {
+      id: "order_1",
+      email_present: true,
+      customer_contact: {
+        name: "Customer",
+        email_present: true,
+        phone_present: true,
+      },
+      shipping_address: {
+        city: "Moscow",
+        address_line_1: "Tverskaya 1",
+        postal_code: "125009",
+        country_code: "RU",
+      },
+    },
+    delivery: {
+      selection_present: true,
+      selection_source: "fulfillment_data",
+      method: {
+        provider_code: "deliveryhub",
+        mode_code: "warehouse_to_pickup_point",
+        carrier_label: "Yandex Delivery",
+        amount: 499,
+        currency_code: "RUB",
+      },
+      pickup_point: {
+        name: "PVZ 1",
+        address: "PVZ street 1",
+        city: "Moscow",
+        postal_code: "125009",
+      },
+      pickup_window: null,
+      connection_id: "conn_1",
+      quote_reference: {
+        present: true,
+        version: 1,
+      },
+    },
+    source: {
+      warehouse: null,
+      location_id: "sloc_1",
+    },
+    fulfillment: {
+      id: "ful_1",
+      status: "created",
+      provider_id: "deliveryhub_deliveryhub",
+      location_id: "sloc_1",
+      delivery_data_present: true,
+    },
+    package: {
+      item_count: 1,
+      total_quantity: 1,
+      ready: true,
+      blockers: [],
+      items: [],
+    },
+    shipment_readiness: {
+      available: false,
+      status: "blocked",
+      blocked_reason_code: "shipment_execution_disabled",
+      blocked_reason: "DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED is disabled.",
+      execution_enabled: false,
+    },
+    shipments: [],
+    safe_logs: [],
+    action_posture: {
+      create_shipment: "blocked",
+      refresh_status: "blocked",
+      cancel: "blocked",
+      retry: "blocked",
+    },
+    anti_leak_confirmations: {
+      raw_provider_payloads_included: false,
+      raw_provider_request_included: false,
+      raw_provider_response_included: false,
+      auth_headers_included: false,
+      credentials_included: false,
+      raw_quote_key_included: false,
+      raw_offer_id_included: false,
+      raw_provider_identifier_included: false,
+      raw_execution_secret_included: false,
+    },
+    ...overrides,
+  }
+}
+
+function buildShipmentOperationsPayload() {
+  return {
+    version: 1,
+    safe: true,
+    reference: {
+      lookup_kind: "execution_reference",
+      execution_reference_preview: "ex***ce",
+    },
+    lifecycle: {
+      classification: "accepted_shipment",
+      accepted: true,
+      blocked_reason_code: null,
+    },
+    provider: {
+      provider_code: "deliveryhub",
+      mode_code: "warehouse_to_pickup_point",
+      dispatch_status: "dispatch_accepted",
+      dispatch_outcome: "accepted",
+      provider_shipment_reference_present: true,
+      provider_correlation_reference_present: true,
+    },
+    status: {
+      current: null,
+      refresh: {
+        available: false,
+        blocked_reason_code: "provider_shipment_reference_required",
+        blocked_reason: "No backend provider shipment reference.",
+        last_outcome: "not_refreshed",
+        status_refreshed_at: null,
+      },
+    },
+    cancel: {
+      readiness: {
+        version: 1,
+        available: false,
+        blocked_reason_code: "provider_shipment_reference_required",
+        blocked_reason: "No backend provider shipment reference.",
+        lifecycle_classification: "accepted_shipment",
+        accepted: true,
+        provider_code: "deliveryhub",
+        provider_shipment_reference_present: false,
+        status_neutral: null,
+        redacted: true,
+        anti_leak_confirmations: buildShipmentOperationAntiLeak(),
+      },
+      last_result: {
+        status: "not_requested",
+        safe_message: "Not requested.",
+        redacted: true,
+      },
+    },
+    retry: {
+      readiness: {
+        version: 1,
+        available: false,
+        blocked_reason_code: "accepted_shipment_not_retryable",
+        blocked_reason: "Accepted shipment is not retryable.",
+        lifecycle_classification: "accepted_shipment",
+        ledger_state: null,
+        terminal_completed: false,
+        terminal_blocked: false,
+        idempotency_linked: false,
+        persisted_shipment_present: true,
+        accepted_shipment_present: true,
+        provider_shipment_reference_present: false,
+        redacted: true,
+        anti_leak_confirmations: buildShipmentOperationAntiLeak(),
+      },
+      last_result: {
+        status: "not_requested",
+        safe_message: "Not requested.",
+        redacted: true,
+      },
+    },
+    ledger: {
+      linked: false,
+      state: null,
+      terminal_completed: false,
+      terminal_blocked: false,
+      execution_reference_preview: "ex***ce",
+      idempotency_key_preview: "id***ey",
+      transition_count: 0,
+      audit_event_count: 0,
+    },
+    shipment: {
+      id: "shipment_1",
+      accepted: true,
+      status: "dispatch_accepted",
+      label_document_present: false,
+      attachment_document_present: false,
+    },
+    context: {
+      connection_id: "conn_1",
+      order_id: "order_1",
+      fulfillment_id: "ful_1",
+      cart_id: "cart_1",
+      shipping_option_id: "deliveryhub:warehouse_to_pickup_point",
+      location_id: "sloc_1",
+      quote_reference: {
+        id: "dhsel_safe",
+        version: 1,
+      },
+      correlation_id_present: true,
+    },
+    timestamps: {
+      created_at: "2026-04-24T00:00:00.000Z",
+      updated_at: "2026-04-24T00:00:00.000Z",
+      status_refreshed_at: null,
+    },
+    action_posture: {
+      refresh_status: "blocked",
+      cancel: "blocked",
+      retry: "blocked",
+      webhooks: "not_materialized",
+      scheduler: "not_materialized",
+    },
+    anti_leak_confirmations: {
+      raw_provider_payloads_included: false,
+      raw_provider_request_included: false,
+      raw_provider_response_included: false,
+      auth_headers_included: false,
+      credentials_included: false,
+      raw_quote_key_included: false,
+      raw_provider_identifier_included: false,
+      raw_execution_secret_included: false,
+    },
+  }
+}
+
+function buildShipmentOperationAntiLeak() {
+  return {
+    raw_provider_payloads_included: false,
+    raw_provider_request_included: false,
+    raw_provider_response_included: false,
+    raw_yandex_response_body_included: false,
+    auth_headers_included: false,
+    credentials_included: false,
+    raw_quote_key_included: false,
+    raw_provider_identifier_included: false,
+    raw_execution_secret_included: false,
+  }
+}
 
 function createMockRequest(input?: Record<string, unknown>) {
   return {

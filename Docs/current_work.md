@@ -26,6 +26,8 @@
 
 > Phase 5 review/commit note (2026-04-30): `Settings -> Delivery` has been reworked into a merchant-facing Yandex Delivery setup surface with primary readiness, write-only token handling, warehouse/default-source guidance, customer pricing policy controls, checkout mode summary, and guarded shipping-option preview/sync. Provider JSON, pickup/quote diagnostics, fulfillment bridge, execution plan, and shipment-operation surfaces remain available under advanced/details and are not the primary merchant path. Review checks: `git diff --check` PASS; focused admin/page-state tests PASS (`80/80`); root `npm run typecheck` PASS. Phase 4 browser smoke gap is unchanged unless explicitly rechecked.
 
+> Phase 6 review/commit note (2026-04-30): order-scoped Delivery Hub admin surface is materialized through `GET /admin/orders/:id/delivery-hub`, order-scoped shipment refresh/cancel routes by shipment id, an Admin order widget, and a safe read model that shows delivery selection, PVZ, customer contact, warehouse/source, package readiness, linked shipment status/actions, safe logs, and no raw execution/provider references. Normal order processing no longer requires pasting `execution_reference`; the backend resolves linked shipment execution references internally for refresh/cancel. Create-shipment remains blocked in Phase 6 even when order context is otherwise ready because order-scoped live dispatch wiring belongs to Phase 7/gated execution hardening. Review checks: `git diff --check` PASS; focused widget/admin/order-shipment tests PASS (`68/68`); root `npm run typecheck` PASS. Latest browser cutover/rollback smokes still fail on `cutover preconditions verifier` timeout and are not green checkout evidence.
+
 
 ---
 

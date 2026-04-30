@@ -15,6 +15,8 @@ import { AdminDeliveryShippingOptionManualSyncSchema } from "./admin/delivery/sh
 import { AdminDeliveryTestQuoteSchema } from "./admin/delivery/test-quote/route"
 import { AdminCreateDeliveryWarehouseSchema } from "./admin/delivery/warehouses/route"
 import { AdminUpdateDeliveryWarehouseSchema } from "./admin/delivery/warehouses/[id]/route"
+import { AdminOrderDeliveryHubCreateShipmentSchema } from "./admin/orders/[id]/delivery-hub/shipments/route"
+import { AdminOrderDeliveryHubShipmentActionSchema } from "./admin/orders/[id]/delivery-hub/shipments/[shipment_id]/refresh/route"
 import {
   AdminCreateMarketingCampaignSchema,
   AdminUpdateCustomerMarketingPreferencesSchema,
@@ -73,6 +75,26 @@ export default defineMiddlewares({
       matcher: "/admin/delivery/shipping-options/sync",
       methods: ["POST"],
       middlewares: [adminAuth, validateAndTransformBody(AdminDeliveryShippingOptionManualSyncSchema)],
+    },
+    {
+      matcher: "/admin/orders/:id/delivery-hub",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/orders/:id/delivery-hub/shipments",
+      methods: ["POST"],
+      middlewares: [adminAuth, validateAndTransformBody(AdminOrderDeliveryHubCreateShipmentSchema)],
+    },
+    {
+      matcher: "/admin/orders/:id/delivery-hub/shipments/:shipment_id/refresh",
+      methods: ["POST"],
+      middlewares: [adminAuth, validateAndTransformBody(AdminOrderDeliveryHubShipmentActionSchema)],
+    },
+    {
+      matcher: "/admin/orders/:id/delivery-hub/shipments/:shipment_id/cancel",
+      methods: ["POST"],
+      middlewares: [adminAuth, validateAndTransformBody(AdminOrderDeliveryHubShipmentActionSchema)],
     },
     {
       matcher: "/admin/delivery/shipments/:execution_reference/operations",

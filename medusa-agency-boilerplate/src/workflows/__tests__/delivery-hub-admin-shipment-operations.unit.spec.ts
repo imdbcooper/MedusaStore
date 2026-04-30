@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { describe, expect, it, jest } from "@jest/globals"
 import { DeliveryHubError } from "../../modules/delivery-hub/errors"
+import { buildDeliveryHubAdminOrderDeliveryHubSnapshot } from "../../modules/delivery-hub/admin-order-delivery-hub"
 import { buildDeliveryHubAdminShipmentOperationsViewModel } from "../../modules/delivery-hub/admin-shipment-operations"
 import { buildDeliveryHubAcceptedShipmentLifecycleSnapshot } from "../../modules/delivery-hub/shipment-lifecycle-read-model"
 import { cancelDeliveryHubAcceptedShipment } from "../../modules/delivery-hub/shipment-cancel-policy"
@@ -191,7 +192,7 @@ describe("Delivery Hub admin shipment operations visibility", () => {
 
     expect(post).toHaveBeenCalledTimes(1)
     expect(post).toHaveBeenCalledWith(
-      "/shipments/cancel",
+      "/request/cancel",
       { shipment_id: providerReference },
       "admin-cancel-correlation"
     )
@@ -462,6 +463,156 @@ describe("Delivery Hub admin shipment operations visibility", () => {
     )
   })
 
+  it("builds an order-scoped Delivery Hub snapshot without exposing execution references", () => {
+    const shipment = buildAcceptedShipment({
+      metadata: {
+        provider_shipment_reference: "provider-order-widget-raw-ref-should-not-leak",
+        redacted: true,
+      },
+    })
+    const operations = buildDeliveryHubAdminShipmentOperationsViewModel({
+      lifecycle: buildDeliveryHubAcceptedShipmentLifecycleSnapshot({ shipment }),
+      shipment,
+      connection: acceptedConnection,
+    })
+    const snapshot = buildDeliveryHubAdminOrderDeliveryHubSnapshot({
+      order_id: "order_admin_ops",
+      order: buildOrderWithDeliveryHubFulfillment(),
+      shipments: [shipment],
+      shipment_operations: [{ id: shipment.id, operations }],
+      connections: [
+        {
+          ...acceptedConnection,
+          config: {
+            default_warehouse_id: "wh_admin_ops",
+          },
+        },
+      ],
+      warehouses: [
+        {
+          id: "wh_admin_ops",
+          name: "Admin warehouse",
+          enabled: true,
+          country_code: "RU",
+          city: "Moscow",
+          address_line_1: "Tverskaya 1",
+          contact_name: "Ops",
+          contact_phone: "+79990000000",
+          provider_code: "yandex",
+          provider_warehouse_id: "ya-wh-admin",
+          metadata: {},
+          created_at: "2026-04-24T05:00:00.000Z",
+          updated_at: "2026-04-24T05:00:00.000Z",
+        },
+      ],
+      execution_enabled: false,
+    })
+
+    expect(snapshot).toEqual(
+      expect.objectContaining({
+        safe: true,
+        order: expect.objectContaining({
+          id: "order_admin_ops",
+          email_present: true,
+          customer_contact: expect.objectContaining({
+            phone_present: true,
+          }),
+        }),
+        delivery: expect.objectContaining({
+          selection_present: true,
+          selection_source: "fulfillment_data",
+          method: expect.objectContaining({
+            carrier_label: "Yandex Delivery",
+            mode_code: "dropoff_point_to_pickup_point",
+          }),
+          pickup_point: expect.objectContaining({
+            name: "PVZ 2",
+          }),
+        }),
+        source: expect.objectContaining({
+          warehouse: expect.objectContaining({
+            id: "wh_admin_ops",
+          }),
+        }),
+        shipment_readiness: expect.objectContaining({
+          available: false,
+          blocked_reason_code: "shipment_already_created",
+        }),
+        action_posture: expect.objectContaining({
+          refresh_status: "available",
+          cancel: "available",
+        }),
+      })
+    )
+
+    const json = JSON.stringify(snapshot)
+    expect(json).not.toContain("exec_admin_ops_accepted_reference")
+    expect(json).not.toContain("idempotency_admin_ops_raw_key")
+    expect(json).not.toContain("provider-order-widget-raw-ref-should-not-leak")
+    expect(json).not.toContain("leaked_quote_key")
+    expect(json).not.toContain("leaked_offer_id")
+  })
+
+  it("blocks duplicate order-scoped shipment creation when a shipment already exists", () => {
+    const shipment = buildAcceptedShipment()
+    const snapshot = buildDeliveryHubAdminOrderDeliveryHubSnapshot({
+      order_id: "order_admin_ops",
+      order: buildOrderWithDeliveryHubFulfillment(),
+      shipments: [shipment],
+      shipment_operations: [],
+      execution_enabled: true,
+    })
+
+    expect(snapshot.shipment_readiness).toEqual(
+      expect.objectContaining({
+        available: false,
+        status: "already_created",
+        blocked_reason_code: "shipment_already_created",
+      })
+    )
+    expect(snapshot.action_posture.create_shipment).toBe("blocked")
+  })
+
+  it("keeps order-scoped create blocked when execution flag is off", () => {
+    const snapshot = buildDeliveryHubAdminOrderDeliveryHubSnapshot({
+      order_id: "order_admin_ops",
+      order: buildOrderWithDeliveryHubFulfillment(),
+      shipments: [],
+      shipment_operations: [],
+      execution_enabled: false,
+    })
+
+    expect(snapshot.shipment_readiness).toEqual(
+      expect.objectContaining({
+        available: false,
+        status: "blocked",
+        blocked_reason_code: "shipment_execution_disabled",
+        execution_enabled: false,
+      })
+    )
+    expect(snapshot.action_posture.create_shipment).toBe("blocked")
+  })
+
+  it("keeps order-scoped create blocked in Phase 6 even when the order context is otherwise ready", () => {
+    const snapshot = buildDeliveryHubAdminOrderDeliveryHubSnapshot({
+      order_id: "order_admin_ops",
+      order: buildOrderWithDeliveryHubFulfillment(),
+      shipments: [],
+      shipment_operations: [],
+      execution_enabled: true,
+    })
+
+    expect(snapshot.shipment_readiness).toEqual(
+      expect.objectContaining({
+        available: false,
+        status: "blocked",
+        blocked_reason_code: "order_scoped_shipment_create_not_materialized",
+        execution_enabled: true,
+      })
+    )
+    expect(snapshot.action_posture.create_shipment).toBe("blocked")
+  })
+
   it("wires explicit admin auth middleware for accepted shipment operation routes", () => {
     const middlewaresSource = readFileSync(
       resolve(process.cwd(), "src/api/middlewares.ts"),
@@ -480,8 +631,96 @@ describe("Delivery Hub admin shipment operations visibility", () => {
     expect(middlewaresSource).toMatch(
       /matcher:\s*"\/admin\/delivery\/shipments\/:execution_reference\/operations\/retry"[\s\S]*?methods:\s*\["POST"\][\s\S]*?middlewares:\s*\[adminAuth\]/
     )
+    expect(middlewaresSource).toMatch(
+      /matcher:\s*"\/admin\/orders\/:id\/delivery-hub"[\s\S]*?methods:\s*\["GET"\][\s\S]*?middlewares:\s*\[adminAuth\]/
+    )
+    expect(middlewaresSource).toMatch(
+      /matcher:\s*"\/admin\/orders\/:id\/delivery-hub\/shipments"[\s\S]*?methods:\s*\["POST"\][\s\S]*?middlewares:\s*\[adminAuth,\s*validateAndTransformBody\(AdminOrderDeliveryHubCreateShipmentSchema\)\]/
+    )
+    expect(middlewaresSource).toMatch(
+      /matcher:\s*"\/admin\/orders\/:id\/delivery-hub\/shipments\/:shipment_id\/refresh"[\s\S]*?methods:\s*\["POST"\][\s\S]*?middlewares:\s*\[adminAuth,\s*validateAndTransformBody\(AdminOrderDeliveryHubShipmentActionSchema\)\]/
+    )
+    expect(middlewaresSource).toMatch(
+      /matcher:\s*"\/admin\/orders\/:id\/delivery-hub\/shipments\/:shipment_id\/cancel"[\s\S]*?methods:\s*\["POST"\][\s\S]*?middlewares:\s*\[adminAuth,\s*validateAndTransformBody\(AdminOrderDeliveryHubShipmentActionSchema\)\]/
+    )
   })
 })
+
+function buildOrderWithDeliveryHubFulfillment() {
+  return {
+    id: "order_admin_ops",
+    display_id: 42,
+    email: "customer@example.test",
+    shipping_address: {
+      first_name: "Ivan",
+      last_name: "Petrov",
+      phone: "+79990000000",
+      city: "Moscow",
+      address_1: "Customer street 1",
+      postal_code: "125009",
+      country_code: "RU",
+    },
+    items: [
+      {
+        id: "item_1",
+        title: "Item 1",
+        quantity: 2,
+        requires_shipping: true,
+        variant: {
+          sku: "SKU-1",
+        },
+      },
+    ],
+    fulfillments: [
+      {
+        id: "ful_admin_ops",
+        provider_id: "deliveryhub_deliveryhub",
+        location_id: "sloc_admin_ops",
+        data: {
+          delivery: {
+            version: 1,
+            connection_id: "conn_admin_ops",
+            mode_code: "dropoff_point_to_pickup_point",
+            quote_reference: {
+              id: "dhsel_safe_reference",
+              version: 1,
+            },
+            quote: {
+              carrier_code: "yandex",
+              carrier_label: "Yandex Delivery",
+              amount: 499,
+              currency_code: "RUB",
+              customer_price: {
+                amount: 399,
+                currency_code: "RUB",
+                source: "fixed",
+                policy_id: "policy_safe",
+              },
+              delivery_eta_min: 1,
+              delivery_eta_max: 2,
+              pickup_point_required: true,
+              pickup_window_required: false,
+            },
+            pickup_point: {
+              provider_point_id: "pvz_backend_only_should_not_be_rendered_raw",
+              name: "PVZ 2",
+              address: "PVZ street 2",
+              city: "Moscow",
+              region: "Moscow",
+              postal_code: "125009",
+              lat: 55.75,
+              lng: 37.61,
+              is_origin_dropoff_allowed: false,
+              is_destination_pickup_allowed: true,
+              payment_methods: ["card"],
+            },
+            pickup_window: null,
+          },
+        },
+      },
+    ],
+  }
+}
 
 function buildAcceptedShipment(
   overrides?: Partial<DeliveryHubShipmentRecord>

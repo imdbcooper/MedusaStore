@@ -1712,6 +1712,21 @@ const AdminDeliveryAdminShipmentOperationsRetryResponseSchema = z
   })
   .strict()
 
+const AdminOrderDeliveryHubResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    delivery_hub: z.record(z.unknown()),
+  })
+  .strict()
+
+const AdminOrderDeliveryHubActionResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    delivery_hub: z.record(z.unknown()),
+    action: z.record(z.unknown()),
+  })
+  .strict()
+
 export function getDeliveryHubService(req: AuthenticatedMedusaRequest) {
   const pg = getDeliveryHubPgConnection(req.scope)
   return createDeliveryHubService(pg)
@@ -1728,16 +1743,30 @@ export function getRouteParam(req: AuthenticatedMedusaRequest, key: string) {
   const segments = path.split("/").filter(Boolean)
 
   if (key === "id") {
+    const ordersIndex = segments.findIndex((segment) => segment === "orders")
+
+    if (ordersIndex >= 0) {
+      return decodeURIComponent(segments[ordersIndex + 1] || "")
+    }
+
     const connectionsIndex = segments.findIndex((segment) => segment === "connections")
 
     if (connectionsIndex >= 0) {
-      return segments[connectionsIndex + 1] || ""
+      return decodeURIComponent(segments[connectionsIndex + 1] || "")
     }
 
     const warehousesIndex = segments.findIndex((segment) => segment === "warehouses")
 
     if (warehousesIndex >= 0) {
-      return segments[warehousesIndex + 1] || ""
+      return decodeURIComponent(segments[warehousesIndex + 1] || "")
+    }
+  }
+
+  if (key === "shipment_id") {
+    const shipmentsIndex = segments.findIndex((segment) => segment === "shipments")
+
+    if (shipmentsIndex >= 0) {
+      return decodeURIComponent(segments[shipmentsIndex + 1] || "")
     }
   }
 
@@ -1745,7 +1774,7 @@ export function getRouteParam(req: AuthenticatedMedusaRequest, key: string) {
     const shipmentsIndex = segments.findIndex((segment) => segment === "shipments")
 
     if (shipmentsIndex >= 0) {
-      return segments[shipmentsIndex + 1] || ""
+      return decodeURIComponent(segments[shipmentsIndex + 1] || "")
     }
   }
 
@@ -1934,6 +1963,25 @@ export function sanitizeAdminDeliveryAdminShipmentOperationsRetryResponse(result
     ...root,
     operations: sanitizeAdminDeliveryAdminShipmentOperations(root.operations),
     retry: sanitizeAdminStructuredPayload(root.retry),
+  })
+}
+
+export function sanitizeAdminOrderDeliveryHubResponse(result: unknown) {
+  const root = asRecord(result)
+
+  return AdminOrderDeliveryHubResponseSchema.parse({
+    ok: root.ok,
+    delivery_hub: sanitizeAdminStructuredPayload(root.delivery_hub),
+  })
+}
+
+export function sanitizeAdminOrderDeliveryHubActionResponse(result: unknown) {
+  const root = asRecord(result)
+
+  return AdminOrderDeliveryHubActionResponseSchema.parse({
+    ok: root.ok,
+    delivery_hub: sanitizeAdminStructuredPayload(root.delivery_hub),
+    action: sanitizeAdminStructuredPayload(root.action),
   })
 }
 

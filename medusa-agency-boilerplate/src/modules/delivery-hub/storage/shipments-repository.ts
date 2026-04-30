@@ -188,6 +188,63 @@ export async function getDeliveryShipmentByExecutionReference(
   return rows[0] ? normalizeDeliveryShipmentRow(rows[0]) : null
 }
 
+export async function listDeliveryShipmentsByOrderId(
+  pg: DeliveryHubPgConnection,
+  orderId: string
+) {
+  const normalizedOrderId = normalizeNullableText(orderId)
+
+  if (!normalizedOrderId) {
+    return []
+  }
+
+  await ensureDeliveryShipmentsTable(pg)
+
+  const rows = getRawRows<DeliveryHubShipmentRow>(
+    await pg.raw(
+      `
+        select *
+        from ${DELIVERY_HUB_SHIPMENTS_TABLE}
+        where order_id = ?
+        order by created_at desc, id desc
+      `,
+      [normalizedOrderId]
+    )
+  )
+
+  return rows.map(normalizeDeliveryShipmentRow)
+}
+
+export async function getDeliveryShipmentByIdForOrder(
+  pg: DeliveryHubPgConnection,
+  shipmentId: string,
+  orderId: string
+) {
+  const normalizedShipmentId = normalizeNullableText(shipmentId)
+  const normalizedOrderId = normalizeNullableText(orderId)
+
+  if (!normalizedShipmentId || !normalizedOrderId) {
+    return null
+  }
+
+  await ensureDeliveryShipmentsTable(pg)
+
+  const rows = getRawRows<DeliveryHubShipmentRow>(
+    await pg.raw(
+      `
+        select *
+        from ${DELIVERY_HUB_SHIPMENTS_TABLE}
+        where id = ?
+          and order_id = ?
+        limit 1
+      `,
+      [normalizedShipmentId, normalizedOrderId]
+    )
+  )
+
+  return rows[0] ? normalizeDeliveryShipmentRow(rows[0]) : null
+}
+
 export async function upsertDeliveryShipment(
   pg: DeliveryHubPgConnection,
   input: DeliveryHubShipmentUpsertInput

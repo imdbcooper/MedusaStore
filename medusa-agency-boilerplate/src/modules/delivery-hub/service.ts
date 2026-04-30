@@ -84,6 +84,11 @@ import {
   buildDeliveryHubAdminShipmentOperationsViewModel,
   type DeliveryHubAdminShipmentOperationsViewModel,
 } from "./admin-shipment-operations"
+import {
+  assertDeliveryHubAdminOrderShipmentCreateAllowed,
+  buildDeliveryHubAdminOrderDeliveryHubSnapshot,
+  type DeliveryHubAdminOrderDeliveryHubSnapshot,
+} from "./admin-order-delivery-hub"
 import { buildDeliveryHubAcceptedShipmentLifecycleSnapshot } from "./shipment-lifecycle-read-model"
 import { refreshDeliveryHubAcceptedShipmentStatus } from "./shipment-status-polling"
 import { cancelDeliveryHubAcceptedShipment } from "./shipment-cancel-policy"
@@ -116,7 +121,12 @@ import {
   upsertDeliveryWarehouse,
 } from "./storage/warehouses-repository"
 import { DeliveryHubExecutionLedgerPgRepository } from "./storage/execution-ledger-pg-repository"
-import { getDeliveryShipmentByExecutionReference } from "./storage/shipments-repository"
+import {
+  getDeliveryShipmentByExecutionReference,
+  getDeliveryShipmentByIdForOrder,
+  listDeliveryShipmentsByOrderId,
+  type DeliveryHubShipmentRecord,
+} from "./storage/shipments-repository"
 
 export type DeliveryHubEventLogListInput = {
   connection_id?: string | null
@@ -184,6 +194,21 @@ export type DeliveryHubExecutionPlanObservabilityReadModel = {
 export type DeliveryHubAdminShipmentOperationsSnapshot = {
   ok: true
   operations: DeliveryHubAdminShipmentOperationsViewModel
+}
+
+export type DeliveryHubAdminOrderDeliveryHubResponse = {
+  ok: true
+  delivery_hub: DeliveryHubAdminOrderDeliveryHubSnapshot
+}
+
+export type DeliveryHubAdminOrderDeliveryHubActionResponse = DeliveryHubAdminOrderDeliveryHubResponse & {
+  action: {
+    type: "create_shipment"
+    status: "blocked"
+    blocked_reason_code: string | null
+    safe_message: string
+    redacted: true
+  }
 }
 
 export type DeliveryHubAdminPickupPointLookupPoint = {
@@ -441,6 +466,77 @@ export class DeliveryHubService {
     }
   }
 
+  async getAdminOrderDeliveryHubSnapshot(input: {
+    order_id: string
+    order?: Record<string, unknown> | null
+  }): Promise<DeliveryHubAdminOrderDeliveryHubResponse> {
+    const orderId = requireString(input.order_id, "order_id")
+    const order = input.order ?? { id: orderId }
+    const deliveryHub = await this.buildAdminOrderDeliveryHubSnapshot({
+      order_id: orderId,
+      order,
+    })
+
+    return {
+      ok: true,
+      delivery_hub: deliveryHub,
+    }
+  }
+
+  async createAdminOrderDeliveryHubShipment(input: {
+    order_id: string
+    order?: Record<string, unknown> | null
+    correlation_id?: string | null
+  }): Promise<DeliveryHubAdminOrderDeliveryHubActionResponse> {
+    const orderId = requireString(input.order_id, "order_id")
+    const order = input.order ?? { id: orderId }
+    const deliveryHub = await this.buildAdminOrderDeliveryHubSnapshot({
+      order_id: orderId,
+      order,
+    })
+
+    assertDeliveryHubAdminOrderShipmentCreateAllowed(deliveryHub)
+
+    return {
+      ok: true,
+      delivery_hub: deliveryHub,
+      action: {
+        type: "create_shipment",
+        status: "blocked",
+        blocked_reason_code: "shipment_execution_path_not_materialized",
+        safe_message:
+          "Order-scoped shipment creation readiness is available, but direct admin shipment execution must go through the backend fulfillment execution seam when DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED is explicitly enabled.",
+        redacted: true,
+      },
+    }
+  }
+
+  async refreshAdminOrderDeliveryHubShipment(input: {
+    order_id: string
+    shipment_id: string
+    correlation_id?: string | null
+  }) {
+    const shipment = await this.requireOrderShipment(input.order_id, input.shipment_id)
+
+    return this.refreshAdminShipmentOperationsStatus({
+      execution_reference: shipment.execution_reference,
+      correlation_id: input.correlation_id,
+    })
+  }
+
+  async cancelAdminOrderDeliveryHubShipment(input: {
+    order_id: string
+    shipment_id: string
+    correlation_id?: string | null
+  }) {
+    const shipment = await this.requireOrderShipment(input.order_id, input.shipment_id)
+
+    return this.cancelAdminShipmentOperationsShipment({
+      execution_reference: shipment.execution_reference,
+      correlation_id: input.correlation_id,
+    })
+  }
+
   async getAdminShipmentOperationsSnapshot(input: {
     execution_reference: string
   }): Promise<DeliveryHubAdminShipmentOperationsSnapshot> {
@@ -603,6 +699,60 @@ export class DeliveryHubService {
       }),
       retry,
     }
+  }
+
+  private async buildAdminOrderDeliveryHubSnapshot(input: {
+    order_id: string
+    order: Record<string, unknown>
+  }) {
+    const shipments = await listDeliveryShipmentsByOrderId(this.pg, input.order_id)
+    const operations = await Promise.all(
+      shipments.map(async (shipment) => ({
+        id: shipment.id,
+        operations: (await this.getAdminShipmentOperationsSnapshot({
+          execution_reference: shipment.execution_reference,
+        })).operations,
+      }))
+    )
+    const [connections, warehouses] = await Promise.all([
+      listDeliveryConnectionsReadOnly(this.pg),
+      listDeliveryWarehousesReadOnly(this.pg),
+    ])
+
+    return buildDeliveryHubAdminOrderDeliveryHubSnapshot({
+      order_id: input.order_id,
+      order: input.order,
+      shipments,
+      shipment_operations: operations,
+      connections,
+      warehouses,
+      execution_enabled: isDeliveryHubShipmentExecutionEnabledForAdminOrder(),
+    })
+  }
+
+  private async requireOrderShipment(orderId: string, shipmentId: string): Promise<DeliveryHubShipmentRecord> {
+    const normalizedOrderId = requireString(orderId, "order_id")
+    const normalizedShipmentId = requireString(shipmentId, "shipment_id")
+    const shipment = await getDeliveryShipmentByIdForOrder(
+      this.pg,
+      normalizedShipmentId,
+      normalizedOrderId
+    )
+
+    if (!shipment) {
+      throw new DeliveryHubError({
+        code: "DELIVERY_HUB_NOT_FOUND",
+        message: `Delivery Hub shipment "${normalizedShipmentId}" was not found for order "${normalizedOrderId}"`,
+        status: 404,
+        details: {
+          order_id: normalizedOrderId,
+          shipment_id: normalizedShipmentId,
+          redacted: true,
+        },
+      })
+    }
+
+    return shipment
   }
 
   async reconcileShippingOptions(
@@ -2253,6 +2403,10 @@ export class DeliveryHubService {
 
 export function createDeliveryHubService(pg: DeliveryHubPgConnection) {
   return new DeliveryHubService(pg)
+}
+
+function isDeliveryHubShipmentExecutionEnabledForAdminOrder() {
+  return process.env.DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED?.trim().toLowerCase() === "true"
 }
 
 function normalizeDeliveryHubError(error: unknown) {
