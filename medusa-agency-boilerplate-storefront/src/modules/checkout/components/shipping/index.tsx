@@ -71,7 +71,7 @@ import ShippingSummary from "@modules/checkout/components/shipping-summary"
 import Divider from "@modules/common/components/divider"
 import MedusaRadio from "@modules/common/components/radio"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 type CheckoutShippingOption = HttpTypes.StoreCartShippingOption & {
   provider?: {
@@ -152,6 +152,7 @@ type DeliveryHubBuyerQuoteState = {
   status: DeliveryHubPickupPointSelectorQuoteStatus
   quotes: DeliveryHubQuotesResponse | null
   message: string | null
+  request_key: string | null
 }
 
 function getDeliveryHubAddressRequestKey(
@@ -359,7 +360,14 @@ const Shipping: React.FC<ShippingProps> = ({
       status: "idle",
       quotes: null,
       message: null,
+      request_key: null,
     })
+  const deliveryHubCompletedRequestKeysRef = useRef<Set<string>>(new Set())
+  const deliveryHubLastReadyQuoteRef = useRef<{
+    target_key: string
+    request_key: string
+    quotes: DeliveryHubQuotesResponse
+  } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const searchParams = useSearchParams()
@@ -436,6 +444,21 @@ const Shipping: React.FC<ShippingProps> = ({
   useEffect(() => {
     let cancelled = false
     const requestKey = getDeliveryHubAddressRequestKey(deliveryHubAddressContext)
+    const effectRequestKey = [
+      cart.id,
+      cart.currency_code,
+      String(cart.subtotal ?? ""),
+      requestKey ?? "missing_address",
+      deliveryHubPickupPointState.selected_category,
+      deliveryHubPickupPointState.selected_point_id ?? "auto_pickup_point",
+      String(deliveryHubPickupPointState.quote_retry_nonce),
+      preferredCartShippingMethodId ?? "no_shipping_method",
+      cartShippingMethod?.name ?? "no_shipping_method_name",
+    ].join("|")
+
+    if (deliveryHubCompletedRequestKeysRef.current.has(effectRequestKey)) {
+      return
+    }
 
     setDeliveryHubRehearsalState((current) => ({
       ...current,
@@ -475,13 +498,14 @@ const Shipping: React.FC<ShippingProps> = ({
           : "yandex",
       last_request_key: deliveryHubAddressContext.is_complete ? current.last_request_key : null,
     }))
-    setDeliveryHubBuyerQuoteState({
+    setDeliveryHubBuyerQuoteState((current) => ({
       status: deliveryHubAddressContext.is_complete ? "loading" : "blocked",
-      quotes: null,
+      quotes: current.quotes,
       message: deliveryHubAddressContext.is_complete
         ? "Рассчитываем стоимость для выбранного ПВЗ."
         : "Укажите город и страну, чтобы найти ПВЗ и рассчитать доставку.",
-    })
+      request_key: current.request_key,
+    }))
 
     const pickupPointsRequest = deliveryHubAddressContext.is_complete
       ? listDeliveryHubPickupPoints({
@@ -625,23 +649,55 @@ const Shipping: React.FC<ShippingProps> = ({
           (modeCode !== "dropoff_point_to_pickup_point" || quoteInput.origin_point_id)
             ? await previewDeliveryHubQuotes(quoteInput)
             : null
+        const quoteTargetKey = [
+          requestKey ?? "missing_address",
+          selectedCategory,
+          selectedPointId ?? "no_pickup_point",
+          modeCode,
+          quoteInput?.connection_id ?? "no_connection",
+          quoteInput?.destination_point_id ?? "no_destination",
+          quoteInput?.origin_point_id ?? "no_origin",
+          quoteInput?.warehouse_id ?? "no_warehouse",
+          cart.currency_code,
+          String(cart.subtotal ?? ""),
+        ].join("|")
+        const quoteRequestKey = [
+          quoteTargetKey,
+          String(deliveryHubPickupPointState.quote_retry_nonce),
+        ].join("|")
+        const stableQuotes =
+          quotes ??
+          (deliveryHubLastReadyQuoteRef.current?.target_key === quoteTargetKey &&
+          deliveryHubLastReadyQuoteRef.current.request_key === quoteRequestKey
+            ? deliveryHubLastReadyQuoteRef.current.quotes
+            : null)
+
+        if (quotes) {
+          deliveryHubLastReadyQuoteRef.current = {
+            target_key: quoteTargetKey,
+            request_key: quoteRequestKey,
+            quotes,
+          }
+        }
+
         const quoteMessage = !destinationPoint
           ? "Выберите ПВЗ, чтобы рассчитать доставку."
           : !quoteInput
             ? "Не хватает адреса доставки или выбранного ПВЗ для расчёта."
             : modeCode === "dropoff_point_to_pickup_point" && !quoteInput.origin_point_id
               ? "Для выбранного способа не найден безопасный пункт передачи отправления."
-              : quotes
+              : stableQuotes
                 ? `Стоимость получена для выбранного ПВЗ: ${getDeliveryHubPickupPointLabel(destinationPoint)}.`
                 : `Стоимость временно недоступна для выбранного пункта: ${getDeliveryHubPickupPointLabel(destinationPoint)}. Попробуйте повторить расчёт или выберите другой ПВЗ.`
         setDeliveryHubBuyerQuoteState({
-          status: quotes
+          status: stableQuotes
             ? "ready"
             : destinationPoint && quoteInput
               ? "unavailable"
               : "blocked",
-          quotes,
+          quotes: stableQuotes,
           message: quoteMessage,
+          request_key: quoteRequestKey,
         })
 
         if (cancelled) {
@@ -652,7 +708,7 @@ const Shipping: React.FC<ShippingProps> = ({
           cart_id: cart.id,
           settings,
           catalog,
-          quotes,
+          quotes: stableQuotes,
           pickup_points: pickupPoints,
           selected_pickup_point_id: selectedPointId,
           pickup_windows: null,
@@ -674,6 +730,23 @@ const Shipping: React.FC<ShippingProps> = ({
           preview_input: previewInput,
           issue_message: null,
         })
+
+        deliveryHubCompletedRequestKeysRef.current.add(effectRequestKey)
+        if (selectedPointId) {
+          deliveryHubCompletedRequestKeysRef.current.add(
+            [
+              cart.id,
+              cart.currency_code,
+              String(cart.subtotal ?? ""),
+              requestKey ?? "missing_address",
+              selectedCategory,
+              selectedPointId,
+              String(deliveryHubPickupPointState.quote_retry_nonce),
+              preferredCartShippingMethodId ?? "no_shipping_method",
+              cartShippingMethod?.name ?? "no_shipping_method_name",
+            ].join("|")
+          )
+        }
       })
       .catch(() => {
         if (cancelled) {
@@ -718,7 +791,6 @@ const Shipping: React.FC<ShippingProps> = ({
     cart.subtotal,
     cartShippingMethod?.name,
     deliveryHubAddressContext,
-    deliveryHubPickupPointState.last_request_key,
     deliveryHubPickupPointState.quote_retry_nonce,
     deliveryHubPickupPointState.selected_category,
     deliveryHubPickupPointState.selected_point_id,

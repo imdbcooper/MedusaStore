@@ -12019,6 +12019,30 @@ test("checkout shipping source exposes shopper pickup-point selector hooks and a
   assert.equal(shippingSource.includes("Повторить расчёт стоимости"), true)
 })
 
+test("checkout shipping source prevents automatic Delivery Hub refetch loop and keeps successful quote state stable", () => {
+  const shippingSource = readFileSync(
+    new URL("../../modules/checkout/components/shipping/index.tsx", import.meta.url),
+    "utf8"
+  )
+
+  const effectDependencies = shippingSource.slice(
+    shippingSource.indexOf("  useEffect(() => {\n    let cancelled = false"),
+    shippingSource.indexOf("  useEffect(() => {\n    setError(null)")
+  )
+
+  assert.equal(shippingSource.includes("deliveryHubCompletedRequestKeysRef"), true)
+  assert.equal(shippingSource.includes("deliveryHubLastReadyQuoteRef"), true)
+  assert.equal(shippingSource.includes("stableQuotes"), true)
+  assert.equal(shippingSource.includes("request_key: quoteRequestKey"), true)
+  const dependencyList = effectDependencies.slice(effectDependencies.lastIndexOf("  }, ["))
+
+  assert.equal(dependencyList.includes("deliveryHubPickupPointState.last_request_key"), false)
+  assert.equal(dependencyList.includes("deliveryHubPickupPointState.quote_retry_nonce"), true)
+  assert.equal(effectDependencies.includes("current.quotes"), true)
+  assert.equal(effectDependencies.includes("quotes: stableQuotes"), true)
+  assert.equal(effectDependencies.includes("deliveryHubCompletedRequestKeysRef.current.add(effectRequestKey)"), true)
+})
+
 test("checkout shipping source puts customer Delivery Hub card before collapsed dev diagnostics", () => {
   const shippingSource = readFileSync(
     new URL("../../modules/checkout/components/shipping/index.tsx", import.meta.url),
