@@ -133,7 +133,7 @@ test("buildDeliveryHubBuyerDeliveryCardModel asks for buyer address before previ
   assert.equal(card.status, "needs_address")
   assert.equal(card.can_save_selection, false)
   assert.equal(card.unavailable_reason_label?.includes("city"), true)
-  assert.equal(card.detail_label.includes("checkout"), true)
+  assert.equal(card.detail_label.includes("адресу доставки"), true)
 })
 
 test("buildDeliveryHubBuyerDeliveryCardModel surfaces buyer address context with visible quote", () => {
@@ -236,6 +236,7 @@ test("buildDeliveryHubBuyerDeliveryCardModel surfaces buyer address context with
 
   assert.equal(card.status, "ready_to_save")
   assert.equal(card.quote_amount, 350)
+  assert.equal(card.currency_code, "RUB")
   assert.equal(card.buyer_context_label, "Адрес покупателя: Казань, RU")
   assert.equal(card.buyer_address_label, "420000, RU, Казань, ул. Баумана, 1")
   assert.equal(card.pickup_point_label, "ПВЗ Казань")
@@ -255,6 +256,12 @@ test("normalizeDeliveryHubQuotesResponse keeps neutral fields and rejects provid
         },
         amount: 499,
         currency_code: "RUB",
+        customer_price: {
+          amount: 399,
+          currency_code: "RUB",
+          source: "fixed",
+          policy_id: "policy_test_fixed",
+        },
         delivery_eta_min: 1,
         delivery_eta_max: 2,
         pickup_point_required: true,
@@ -280,8 +287,14 @@ test("normalizeDeliveryHubQuotesResponse keeps neutral fields and rejects provid
           id: "dhsel_quote_1",
           version: 1,
         },
-        amount: 499,
+        amount: 399,
         currency_code: "RUB",
+        customer_price: {
+          amount: 399,
+          currency_code: "RUB",
+          source: "fixed",
+          policy_id: "policy_test_fixed",
+        },
         delivery_eta_min: 1,
         delivery_eta_max: 2,
         pickup_point_required: true,
@@ -626,21 +639,15 @@ test("shapeDeliveryHubPickupPointsQuery serializes safe limit for coordinate-bea
   })
 })
 
-test("shapeDeliveryHubQuotesPayload shapes POST body and diagnostics stay shopper-safe", () => {
+test("shapeDeliveryHubQuotesPayload sends checkout-only POST body and diagnostics stay shopper-safe", () => {
   const payload = shapeDeliveryHubQuotesPayload({
-    connection_id: "conn_post_preview",
-    mode_code: "dropoff_point_to_pickup_point",
+    cart_id: "cart_post_preview",
     currency_code: "RUB",
     destination_point_id: "pvz_post_preview",
-    origin_point_id: "dropoff_post_preview",
-    warehouse_id: "warehouse_should_be_preserved_when_explicit",
-    items: [
-      {
-        quantity: 1,
-        weight_grams: 500,
-        price: 2000,
-      },
-    ],
+    destination_address: {
+      fullname: "Москва, ПВЗ",
+      coordinates: [37.61, 55.75],
+    },
   })
   const quotes = normalizeDeliveryHubQuotesResponse({
     ok: true,
@@ -668,20 +675,17 @@ test("shapeDeliveryHubQuotesPayload shapes POST body and diagnostics stay shoppe
   })
 
   assert.deepEqual(payload, {
-    connection_id: "conn_post_preview",
-    mode_code: "dropoff_point_to_pickup_point",
+    cart_id: "cart_post_preview",
     currency_code: "RUB",
     destination_point_id: "pvz_post_preview",
-    origin_point_id: "dropoff_post_preview",
-    warehouse_id: "warehouse_should_be_preserved_when_explicit",
-    items: [
-      {
-        quantity: 1,
-        weight_grams: 500,
-        price: 2000,
-      },
-    ],
+    destination_address: {
+      fullname: "Москва, ПВЗ",
+      coordinates: [37.61, 55.75],
+    },
   })
+  assert.equal(JSON.stringify(payload).includes("connection_id"), false)
+  assert.equal(JSON.stringify(payload).includes("warehouse_id"), false)
+  assert.equal(JSON.stringify(payload).includes("items"), false)
   assert.deepEqual(quotes.diagnostics, {
     correlation_id: "corr_post_preview",
     checkout_source_of_truth: "unchanged",
@@ -704,6 +708,12 @@ test("shapeDeliveryHubSaveSelectionPayload preserves neutral selection structure
       carrier_label: "Yandex Delivery",
       amount: 499,
       currency_code: "RUB",
+      customer_price: {
+        amount: 399,
+        currency_code: "RUB",
+        source: "fixed",
+        policy_id: "policy_test_fixed",
+      },
       delivery_eta_min: 1,
       delivery_eta_max: 2,
       pickup_point_required: true,
@@ -746,8 +756,14 @@ test("shapeDeliveryHubSaveSelectionPayload preserves neutral selection structure
     quote: {
       carrier_code: "yandex",
       carrier_label: "Yandex Delivery",
-      amount: 499,
+      amount: 399,
       currency_code: "RUB",
+      customer_price: {
+        amount: 399,
+        currency_code: "RUB",
+        source: "fixed",
+        policy_id: "policy_test_fixed",
+      },
       delivery_eta_min: 1,
       delivery_eta_max: 2,
       pickup_point_required: true,
@@ -793,6 +809,12 @@ test("shapeDeliveryHubSaveSelectionPayload omits absent provider_code but preser
       carrier_label: "Neutral Carrier",
       amount: 499,
       currency_code: "RUB",
+      customer_price: {
+        amount: 399,
+        currency_code: "RUB",
+        source: "fixed" as const,
+        policy_id: "policy_test_fixed",
+      },
       delivery_eta_min: 1,
       delivery_eta_max: 2,
       pickup_point_required: true,
@@ -881,40 +903,28 @@ test("normalizeDeliveryHubPickupPointsResponse strips metadata and readiness hel
 test("classifyDeliveryHubPickupPoint separates Yandex, Yandex Market, partner, and unknown safely", () => {
   assert.equal(
     classifyDeliveryHubPickupPoint({
-      provider_operator_id: "market_l4g",
       network_label: "Яндекс Маркет",
-      is_yandex_branded: true,
-      is_market_partner: false,
       name: "Пункт выдачи заказов Яндекс Маркета",
     }),
     "yandex"
   )
   assert.equal(
     classifyDeliveryHubPickupPoint({
-      provider_operator_id: "market_l4g",
       network_label: "Яндекс Маркет / партнёр",
-      is_yandex_branded: null,
-      is_market_partner: null,
       name: "Пункт выдачи Яндекс Market",
     }),
     "yandex"
   )
   assert.equal(
     classifyDeliveryHubPickupPoint({
-      provider_operator_id: "5post",
       network_label: "5 Post",
-      is_yandex_branded: false,
-      is_market_partner: true,
       name: "5 Post (Пятерочка)",
     }),
     "partner"
   )
   assert.equal(
     classifyDeliveryHubPickupPoint({
-      provider_operator_id: null,
       network_label: null,
-      is_yandex_branded: null,
-      is_market_partner: null,
       name: "Пункт выдачи",
     }),
     "unknown"
@@ -1146,7 +1156,7 @@ test("delivery-hub preview-only helpers keep readiness and summary semantics for
   })
 })
 
-test("buildDeliveryHubSavedSelectionSummaryModel surfaces saved neutral state without provider leaks or final-commit wording", () => {
+test("buildDeliveryHubSavedSelectionSummaryModel surfaces saved shopper state without provider leaks or final-commit wording", () => {
   const summary = buildDeliveryHubSavedSelectionSummaryModel(
     {
       ok: true,
@@ -1211,27 +1221,22 @@ test("buildDeliveryHubSavedSelectionSummaryModel surfaces saved neutral state wi
   assert.deepEqual(summary, {
     tone: "positive",
     state: "saved",
-    title: "Delivery Hub saved neutral selection",
-    status_label: "Saved neutral selection is available",
-    finality_label:
-      "Saved Delivery Hub metadata only: no Medusa shipping method commit and no fulfillment execution.",
-    modality_label: "Warehouse → pickup point",
+    title: "Доставка в пункт выдачи",
+    status_label: "Пункт выдачи сохранён",
+    finality_label: "Стоимость и срок рассчитаны для выбранного пункта выдачи.",
+    modality_label: null,
     quote_amount: 799,
     currency_code: "RUB",
-    quote_eta_label: "ETA 2–4 days",
+    quote_eta_label: "2–4 дня",
     pickup_point_label: "Central pickup point",
     pickup_point_address_label: "Tverskaya 42",
-    pickup_point_code_label: "Pickup point code: PVZ-42",
+    pickup_point_code_label: null,
     pickup_window_label: "24 Apr · 12:00–16:00",
-    readiness_label: "Selection ready",
-    saved_at_label: "Saved at 2026-04-23T07:00:00.000Z",
-    correlation_id_label: "Correlation corr_saved_summary",
-    reconciliation_messages: [
-      "Persisted selection currently passes readiness checks.",
-      "Readiness currently reconciles with the saved neutral selection. Shipping method commit remains separate.",
-    ],
-    action_label:
-      "Continue using the committed Medusa shipping method until Delivery Hub shipping-method commit is enabled separately.",
+    readiness_label: null,
+    saved_at_label: "Сохранено 2026-04-23T07:00:00.000Z",
+    correlation_id_label: null,
+    reconciliation_messages: ["Выбор готов к оформлению."],
+    action_label: "Можно продолжить оформление заказа.",
   })
 
   const serialized = JSON.stringify(summary)
@@ -1241,6 +1246,7 @@ test("buildDeliveryHubSavedSelectionSummaryModel surfaces saved neutral state wi
   assert.equal(serialized.includes("secret"), false)
   assert.equal(serialized.includes("raw_reference"), false)
   assert.equal(serialized.includes("quote_key"), false)
+  assert.equal(/Delivery Hub|neutral|shipping-method|commit|provider|internal|dropoff|cutover|diagnostic/i.test(serialized), false)
 })
 
 test("buildDeliveryHubSavedSelectionSummaryModel reconciles stale or invalid saved neutral selection explicitly", () => {
@@ -1336,25 +1342,179 @@ test("buildDeliveryHubSavedSelectionSummaryModel reconciles stale or invalid sav
 
   assert.equal(summary.tone, "warning")
   assert.equal(summary.state, "stale_or_invalid")
-  assert.equal(summary.status_label, "Saved neutral selection needs reconciliation")
-  assert.equal(summary.readiness_label, "Selection invalid")
-  assert.equal(
-    summary.reconciliation_messages.includes(
-      "Readiness selection context differs from the persisted neutral selection snapshot. Save the Delivery Hub selection again after refreshing checkout context."
-    ),
-    true
-  )
-  assert.equal(
-    summary.reconciliation_messages.includes(
-      "Do not treat this saved metadata as final shipping. Clear it or save a fresh neutral selection after resolving checkout context."
-    ),
-    true
-  )
+  assert.equal(summary.status_label, "Выбор нужно обновить")
+  assert.equal(summary.readiness_label, null)
+  assert.equal(summary.quote_amount, null)
+  assert.equal(summary.quote_eta_label, null)
+  assert.deepEqual(summary.reconciliation_messages, [
+    "Выберите пункт выдачи ещё раз, чтобы обновить стоимость и срок для текущего адреса.",
+  ])
   assert.equal(
     summary.action_label,
-    "Clear the stale neutral selection or save again after choosing a fresh Delivery Hub candidate."
+    "Выберите и сохраните пункт выдачи заново."
   )
-  assert.equal(JSON.stringify(summary).includes("point_stale_summary_internal_id"), false)
+  const serialized = JSON.stringify(summary)
+  assert.equal(serialized.includes("point_stale_summary_internal_id"), false)
+  assert.equal(/Delivery Hub|neutral|shipping-method|commit|provider|internal|dropoff|cutover|diagnostic/i.test(serialized), false)
+})
+
+test("buildDeliveryHubBuyerDeliveryCardModel prefers freshly selected PVZ quote over stale saved selection", () => {
+  const addressContext = buildDeliveryHubCheckoutAddressContext({
+    city: "Москва",
+    country_code: "ru",
+    postal_code: "125009",
+    address_1: "Тверская 1",
+  })
+  const card = buildDeliveryHubBuyerDeliveryCardModel({
+    cart_id: "cart_phase3_refresh",
+    address_context: addressContext,
+    settings: {
+      ok: true,
+      settings: {
+        enabled: true,
+        status: "available",
+        summary: {
+          enabled_connection_count: 1,
+          ready_connection_count: 1,
+          default_connection_label: "ПВЗ",
+          modality_codes: ["warehouse_to_pickup_point"],
+          supports_pickup_points: true,
+          supports_pickup_windows: false,
+          supports_dropoff: false,
+        },
+        preview_visibility: {
+          shadow_settings: false,
+          readiness: false,
+          persisted_selection: false,
+          shadow_catalog: false,
+          shadow_pickup_points: false,
+          shadow_quotes: false,
+          shadow_pickup_windows: false,
+        },
+        hints: [],
+      },
+    },
+    catalog: {
+      ok: true,
+      default_connection_id: "conn_phase3_refresh",
+      connections: [
+        {
+          connection_id: "conn_phase3_refresh",
+          label: "ПВЗ",
+          state: "ready",
+          ready: true,
+          quote_types: ["warehouse_to_pickup_point"],
+          supports_pickup_points: true,
+          supports_pickup_windows: false,
+          supports_dropoff: false,
+        },
+      ],
+    },
+    quotes: {
+      ok: true,
+      quotes: [
+        {
+          carrier_code: "pickup",
+          carrier_label: "ПВЗ",
+          mode_code: "warehouse_to_pickup_point",
+          quote_reference: { id: "dhsel_quote_new_point", version: 1 },
+          amount: 450,
+          currency_code: "RUB",
+          customer_price: {
+            amount: 390,
+            currency_code: "RUB",
+            source: "fixed",
+            policy_id: "policy_phase3",
+          },
+          delivery_eta_min: 1,
+          delivery_eta_max: 2,
+          pickup_point_required: true,
+          pickup_point_ids: ["pvz_new"],
+          pickup_window_required: false,
+        },
+      ],
+    },
+    pickup_points: {
+      ok: true,
+      points: [
+        {
+          provider_point_id: "pvz_new",
+          provider_point_code: null,
+          name: "Новый пункт выдачи",
+          address: "Новая 1",
+          city: "Москва",
+          region: null,
+          postal_code: "125009",
+          lat: 55.75,
+          lng: 37.61,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+      ],
+    },
+    selected_pickup_point_id: "pvz_new",
+    persisted_selection: {
+      ok: true,
+      cart_id: "cart_phase3_refresh",
+      selection: {
+        version: 1,
+        connection_id: "conn_phase3_refresh",
+        quote_type: "warehouse_to_pickup_point",
+        quote_reference: { id: "dhsel_quote_old_point", version: 1 },
+        quote: {
+          carrier_code: "pickup",
+          carrier_label: "ПВЗ",
+          amount: 900,
+          currency_code: "RUB",
+          delivery_eta_min: 5,
+          delivery_eta_max: 6,
+          pickup_point_required: true,
+          pickup_window_required: false,
+        },
+        pickup_point: {
+          provider_point_id: "pvz_old",
+          provider_point_code: null,
+          name: "Старый пункт выдачи",
+          address: "Старая 1",
+          city: "Москва",
+          region: null,
+          postal_code: "125009",
+          lat: null,
+          lng: null,
+          is_origin_dropoff_allowed: false,
+          is_destination_pickup_allowed: true,
+          payment_methods: [],
+        },
+        pickup_window: null,
+        updated_at: "2026-04-23T07:00:00.000Z",
+      },
+    },
+    readiness: {
+      ok: true,
+      cart_id: "cart_phase3_refresh",
+      status: "invalid_selection",
+      issues: [],
+      selection: null,
+      quote_context: null,
+    },
+    legacy_context: {
+      active_commit_path: "delivery_hub",
+      legacy_is_committed: false,
+      legacy_flow_kind: null,
+      legacy_selection_fresh: false,
+      legacy_method_label: null,
+    },
+  })
+
+  assert.equal(card.status, "ready_to_save")
+  assert.equal(card.quote_amount, 390)
+  assert.equal(card.currency_code, "RUB")
+  assert.equal(card.quote_eta_label, "1–2 дня")
+  assert.equal(card.pickup_point_label, "Новый пункт выдачи")
+  assert.equal(card.pickup_point_address_label, "Новая 1")
+  assert.equal(card.action_label, "Обновить доставку")
+  assert.equal(JSON.stringify(card).includes("Старый пункт выдачи"), false)
 })
 
 test("delivery hub checkout cutover flag parsing is explicit true only", () => {
@@ -11445,8 +11605,9 @@ test("delivery hub selection cut-in wires only neutral save/clear helpers and ke
   assert.equal(shippingSource.includes("Delivery Hub Preview/Shadow UI"), true)
   assert.equal(shippingSource.includes("void handleDeliveryHubNeutralPreviewQuote()"), true)
   assert.equal(shippingSource.includes("listDeliveryHubCatalog()"), true)
+  assert.equal(shippingSource.includes("cart_id: cart.id"), true)
   assert.equal(shippingSource.includes("warehouse_id:"), true)
-  assert.equal(shippingSource.includes("items: ["), true)
+  assert.equal(shippingSource.includes("items: ["), false)
   assert.equal(shippingSource.includes("delivery-hub-cutover-gate-status"), true)
   assert.equal(shippingSource.includes("delivery-hub-cutover-preconditions-status"), true)
   assert.equal(shippingSource.includes("retrieveDeliveryHubCutoverPreconditions()"), true)
@@ -11695,7 +11856,8 @@ test("buildDeliveryHubBuyerDeliveryCardModel presents shopper copy for saveable 
 
   assert.equal(unavailable.status, "unavailable")
   assert.equal(unavailable.can_save_selection, false)
-  assert.equal(unavailable.detail_label.includes("не удалось получить безопасный вариант"), true)
+  assert.equal(unavailable.detail_label.includes("не удалось получить вариант доставки"), true)
+  assert.equal(/Delivery Hub|neutral|shipping-method|commit|provider|internal|dropoff|cutover|diagnostic/i.test(unavailable.detail_label), false)
 })
 
 test("delivery hub pickup point selector keeps Yandex tab non-empty in mixed checkout list", () => {
@@ -12064,7 +12226,7 @@ test("checkout shipping source puts customer Delivery Hub card before collapsed 
   )
   assert.equal(
     shippingSource.includes('data-testid="delivery-hub-customer-payment-blocker"'),
-    true
+    false
   )
   assert.equal(
     shippingSource.includes("Delivery Hub diagnostics / dev-only validation"),

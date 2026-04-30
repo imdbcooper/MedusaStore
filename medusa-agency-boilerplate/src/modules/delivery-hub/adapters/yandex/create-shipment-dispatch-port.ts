@@ -1,7 +1,7 @@
 import { DELIVERY_HUB_MODE_CODE, DELIVERY_HUB_PROVIDER_YANDEX } from "../../constants"
 import { isDeliveryHubError } from "../../errors"
 import type { YandexDeliveryClient } from "./client"
-import { YANDEX_DELIVERY_API_PATH } from "./endpoints"
+import { YANDEX_DELIVERY_SHIPMENT_API_PATH } from "./endpoints"
 import {
   materializeYandexCreateShipmentPayloadPreview,
   type YandexCreateShipmentMaterializerMode,
@@ -10,7 +10,7 @@ import {
 } from "./create-shipment-materializer"
 
 export const YANDEX_CREATE_SHIPMENT_DISPATCH_PORT_VERSION = 1
-export const YANDEX_CREATE_SHIPMENT_API_PATH = YANDEX_DELIVERY_API_PATH.requestCreate
+export const YANDEX_CREATE_SHIPMENT_API_PATH = YANDEX_DELIVERY_SHIPMENT_API_PATH.create
 
 export type YandexCreateShipmentDispatchPortBlockedReasonCode =
   | "execution_gate_disabled"
@@ -45,18 +45,15 @@ export type YandexCreateShipmentDispatchPortContract = {
 
 export type YandexCreateShipmentDispatchRequestPayload = {
   source: {
-    platform_station?: {
-      platform_id: string
-    }
+    pickup_point_id?: string
+    warehouse_id?: string
     interval_utc?: {
       from: string
       to: string
     }
   }
   destination: {
-    platform_station: {
-      platform_id: string
-    }
+    pickup_point_id: string
   }
   recipient: {
     full_name: string
@@ -340,13 +337,14 @@ function buildExecutableRequestPayload(
       ? normalizeString(input.provider_origin_dispatch_context.origin_point_id)
       : null
 
-  const source: YandexCreateShipmentDispatchRequestPayload["source"] = {
-    platform_station: {
-      platform_id: mode === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
-        ? warehouseOriginId ?? ""
-        : dropoffOriginPointId ?? "",
-    },
-  }
+  const source: YandexCreateShipmentDispatchRequestPayload["source"] =
+    mode === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint
+      ? {
+          warehouse_id: warehouseOriginId ?? "",
+        }
+      : {
+          pickup_point_id: dropoffOriginPointId ?? "",
+        }
 
   if (mode === DELIVERY_HUB_MODE_CODE.warehouseToPickupPoint) {
     const interval = normalizePickupInterval(input.pickup_interval_utc)
@@ -359,9 +357,7 @@ function buildExecutableRequestPayload(
   return {
     source,
     destination: {
-      platform_station: {
-        platform_id: normalizeString(input.destination_pickup_point?.provider_point_id) ?? "",
-      },
+      pickup_point_id: normalizeString(input.destination_pickup_point?.provider_point_id) ?? "",
     },
     recipient: {
       full_name: recipientName,

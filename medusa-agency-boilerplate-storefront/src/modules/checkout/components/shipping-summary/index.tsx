@@ -38,7 +38,19 @@ const ShippingSummary = ({
       {deliveryHubSavedSelectionSummary &&
         deliveryHubSavedSelectionSummary.state !== "missing" && (
           <Text className="txt-medium text-ui-fg-subtle">
-            {deliveryHubSavedSelectionSummary.title}: {deliveryHubSavedSelectionSummary.status_label}
+            {deliveryHubSavedSelectionSummary.pickup_point_label
+              ? `${deliveryHubSavedSelectionSummary.title}: ${deliveryHubSavedSelectionSummary.pickup_point_label}`
+              : `${deliveryHubSavedSelectionSummary.title}: ${deliveryHubSavedSelectionSummary.status_label}`}
+            {deliveryHubSavedSelectionSummary.quote_amount !== null &&
+              deliveryHubSavedSelectionSummary.currency_code
+              ? ` · ${convertToLocale({
+                  amount: deliveryHubSavedSelectionSummary.quote_amount,
+                  currency_code: deliveryHubSavedSelectionSummary.currency_code,
+                })}`
+              : ""}
+            {deliveryHubSavedSelectionSummary.quote_eta_label
+              ? ` · ${deliveryHubSavedSelectionSummary.quote_eta_label}`
+              : ""}
           </Text>
         )}
     </div>

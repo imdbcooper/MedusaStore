@@ -608,7 +608,10 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
           payload: { token: "***" },
         },
         response: {
-          message: "Authorization: Bearer ***",
+          body_type: "json",
+          provider_code: null,
+          redacted: true,
+          summary: "Provider rejected request. Raw provider body is not exposed.",
         },
       },
     })
@@ -668,8 +671,10 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
           path: "/pickup-points/list",
         },
         response: {
-          code: "404",
-          message: "No route for URL",
+          body_type: "json",
+          provider_code: null,
+          redacted: true,
+          summary: "Provider rejected request. Raw provider body is not exposed.",
         },
       },
     })
@@ -730,10 +735,12 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
 
     await expect(client.post("/offers/calculate", { token: "payload-secret" }, "corr_403_json")).rejects.toMatchObject({
       code: "DELIVERY_HUB_PROVIDER_ERROR",
-      status: 502,
+      status: 409,
       details: {
         provider_status: 403,
         error_category: "provider_permission_denied",
+        provider_code: "provider_access_or_permission_denied",
+        customer_safe: true,
         operator_hint: expect.stringContaining("Yandex denied this API resource"),
         request: {
           path: "/offers/calculate",
@@ -741,7 +748,10 @@ describe("Delivery Hub direct Yandex adapter mapping", () => {
           payload: { token: "***" },
         },
         response: {
-          message: "permission denied for resource",
+          body_type: "json",
+          provider_code: "provider_access_or_permission_denied",
+          redacted: true,
+          summary: "Provider rejected request with a safe diagnostic code. Raw provider body is not exposed.",
         },
       },
     })

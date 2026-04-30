@@ -51,7 +51,7 @@ import {
   type DeliveryHubCutoverApprovalArtifactResponse,
   type DeliveryHubCutoverCandidateResponse,
   type DeliveryHubCutoverPreconditionsResponse,
-  type DeliveryHubListQuotesInput,
+  type DeliveryHubCheckoutQuoteInput,
   type DeliveryHubNeutralSelectionRehearsalInput,
   type DeliveryHubNeutralSelectionRehearsalModel,
   type DeliveryHubPickupPoint,
@@ -323,7 +323,7 @@ const Shipping: React.FC<ShippingProps> = ({
     })
   const [deliveryHubNeutralPreviewForm, setDeliveryHubNeutralPreviewForm] =
     useState<DeliveryHubNeutralPreviewFormState>({
-      quote_type: "dropoff_point_to_pickup_point",
+      quote_type: "warehouse_to_pickup_point",
       connection_id: DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED
         ? DELIVERY_HUB_PREVIEW_DEFAULT_CONNECTION_ID
         : "",
@@ -492,19 +492,27 @@ const Shipping: React.FC<ShippingProps> = ({
         deliveryHubAddressContext.is_complete && current.last_request_key === requestKey
           ? current.selected_point_id
           : null,
+      search_query:
+        deliveryHubAddressContext.is_complete && current.last_request_key === requestKey
+          ? current.search_query
+          : "",
+      quote_retry_nonce:
+        deliveryHubAddressContext.is_complete && current.last_request_key === requestKey
+          ? current.quote_retry_nonce
+          : 0,
       selected_category:
         deliveryHubAddressContext.is_complete && current.last_request_key === requestKey
           ? current.selected_category
           : "yandex",
       last_request_key: deliveryHubAddressContext.is_complete ? current.last_request_key : null,
     }))
-    setDeliveryHubBuyerQuoteState((current) => ({
+    setDeliveryHubBuyerQuoteState(() => ({
       status: deliveryHubAddressContext.is_complete ? "loading" : "blocked",
-      quotes: current.quotes,
+      quotes: null,
       message: deliveryHubAddressContext.is_complete
         ? "Рассчитываем стоимость для выбранного ПВЗ."
         : "Укажите город и страну, чтобы найти ПВЗ и рассчитать доставку.",
-      request_key: current.request_key,
+      request_key: null,
     }))
 
     const pickupPointsRequest = deliveryHubAddressContext.is_complete
@@ -596,68 +604,27 @@ const Shipping: React.FC<ShippingProps> = ({
         const defaultConnection = catalog?.connections.find(
           (connection) => connection.connection_id === catalog.default_connection_id
         )
-        const modeCode =
-          readiness?.quote_context?.quote_type ??
-          selection?.selection?.quote_type ??
-          (defaultConnection?.quote_types.includes("warehouse_to_pickup_point")
-            ? "warehouse_to_pickup_point"
-            : defaultConnection?.quote_types[0]) ??
-          "warehouse_to_pickup_point"
-        const originPoint =
-          modeCode === "dropoff_point_to_pickup_point"
-            ? pickupPoints?.points.find(
-                (point) =>
-                  point.is_origin_dropoff_allowed &&
-                  point.provider_point_id !== destinationPoint?.provider_point_id
-              ) ?? null
-            : null
-        const quoteInput: DeliveryHubListQuotesInput | null =
+        const modeCode: DeliveryHubQuoteType = "warehouse_to_pickup_point"
+        const quoteInput: DeliveryHubCheckoutQuoteInput | null =
           deliveryHubAddressContext.is_complete && destinationPoint
             ? {
-                connection_id:
-                  readiness?.quote_context?.connection.connection_id ??
-                  selection?.selection?.connection_id ??
-                  catalog?.default_connection_id ??
-                  null,
-                mode_code: modeCode,
+                cart_id: cart.id,
                 currency_code: cart.currency_code,
                 destination_point_id: destinationPoint.provider_point_id,
                 destination_address: buildDeliveryHubQuoteDestinationAddress(
                   destinationPoint,
                   deliveryHubAddressContext
                 ),
-                warehouse_id:
-                  modeCode === "warehouse_to_pickup_point" &&
-                  DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID
-                    ? DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID
-                    : null,
-                origin_point_id:
-                  modeCode === "dropoff_point_to_pickup_point"
-                    ? originPoint?.provider_point_id ?? null
-                    : null,
-                items: [
-                  {
-                    quantity: 1,
-                    weight_grams: 500,
-                    price: typeof cart.subtotal === "number" ? cart.subtotal : undefined,
-                  },
-                ],
               }
             : null
-        const quotes =
-          quoteInput &&
-          (modeCode !== "dropoff_point_to_pickup_point" || quoteInput.origin_point_id)
-            ? await previewDeliveryHubQuotes(quoteInput)
-            : null
+        const quotes = quoteInput ? await previewDeliveryHubQuotes(quoteInput) : null
         const quoteTargetKey = [
           requestKey ?? "missing_address",
           selectedCategory,
           selectedPointId ?? "no_pickup_point",
           modeCode,
-          quoteInput?.connection_id ?? "no_connection",
+          quoteInput?.cart_id ?? "no_cart",
           quoteInput?.destination_point_id ?? "no_destination",
-          quoteInput?.origin_point_id ?? "no_origin",
-          quoteInput?.warehouse_id ?? "no_warehouse",
           cart.currency_code,
           String(cart.subtotal ?? ""),
         ].join("|")
@@ -684,9 +651,7 @@ const Shipping: React.FC<ShippingProps> = ({
           ? "Выберите ПВЗ, чтобы рассчитать доставку."
           : !quoteInput
             ? "Не хватает адреса доставки или выбранного ПВЗ для расчёта."
-            : modeCode === "dropoff_point_to_pickup_point" && !quoteInput.origin_point_id
-              ? "Для выбранного способа не найден безопасный пункт передачи отправления."
-              : stableQuotes
+            : stableQuotes
                 ? `Стоимость получена для выбранного ПВЗ: ${getDeliveryHubPickupPointLabel(destinationPoint)}.`
                 : `Стоимость временно недоступна для выбранного пункта: ${getDeliveryHubPickupPointLabel(destinationPoint)}. Попробуйте повторить расчёт или выберите другой ПВЗ.`
         setDeliveryHubBuyerQuoteState({
@@ -819,11 +784,8 @@ const Shipping: React.FC<ShippingProps> = ({
     }))
   }
 
-  const buildDeliveryHubNeutralPreviewQuoteInput = (): DeliveryHubListQuotesInput | null => {
-    const connectionId = deliveryHubNeutralPreviewForm.connection_id.trim()
+  const buildDeliveryHubNeutralPreviewQuoteInput = (): DeliveryHubCheckoutQuoteInput | null => {
     const destinationPointId = deliveryHubNeutralPreviewForm.destination_point_id.trim()
-    const originPointId = deliveryHubNeutralPreviewForm.origin_point_id.trim()
-    const warehouseId = deliveryHubNeutralPreviewForm.warehouse_id.trim()
 
     if (!deliveryHubAddressContext.is_complete) {
       setDeliveryHubNeutralPreviewState((current) => ({
@@ -840,30 +802,6 @@ const Shipping: React.FC<ShippingProps> = ({
         ...current,
         status: "blocked",
         message: "Destination pickup point id is required for Delivery Hub preview quotes.",
-      }))
-      return null
-    }
-
-    if (
-      deliveryHubNeutralPreviewForm.quote_type === "dropoff_point_to_pickup_point" &&
-      !originPointId
-    ) {
-      setDeliveryHubNeutralPreviewState((current) => ({
-        ...current,
-        status: "blocked",
-        message: "Origin dropoff point id is required for dropoff → pickup preview quotes.",
-      }))
-      return null
-    }
-
-    if (
-      deliveryHubNeutralPreviewForm.quote_type === "warehouse_to_pickup_point" &&
-      !warehouseId
-    ) {
-      setDeliveryHubNeutralPreviewState((current) => ({
-        ...current,
-        status: "blocked",
-        message: "Warehouse id is required for warehouse → pickup preview quotes.",
       }))
       return null
     }
@@ -888,8 +826,7 @@ const Shipping: React.FC<ShippingProps> = ({
     }
 
     return {
-      connection_id: connectionId || null,
-      mode_code: deliveryHubNeutralPreviewForm.quote_type,
+      cart_id: cart.id,
       currency_code: cart.currency_code,
       destination_point_id: destinationPointId,
       destination_address: selectedDestinationPoint
@@ -905,21 +842,6 @@ const Shipping: React.FC<ShippingProps> = ({
               phone: deliveryHubAddressContext.phone,
             },
           },
-      origin_point_id:
-        deliveryHubNeutralPreviewForm.quote_type === "dropoff_point_to_pickup_point"
-          ? originPointId
-          : null,
-      warehouse_id:
-        deliveryHubNeutralPreviewForm.quote_type === "warehouse_to_pickup_point"
-          ? warehouseId
-          : null,
-      items: [
-        {
-          quantity: 1,
-          weight_grams: 500,
-          price: typeof cart.subtotal === "number" ? cart.subtotal : undefined,
-        },
-      ],
     }
   }
 
@@ -1013,8 +935,14 @@ const Shipping: React.FC<ShippingProps> = ({
       quote: {
         carrier_code: selectedQuote.carrier_code,
         carrier_label: selectedQuote.carrier_label,
-        amount: selectedQuote.amount,
-        currency_code: selectedQuote.currency_code,
+        amount: selectedQuote.customer_price?.amount ?? selectedQuote.amount,
+        currency_code: selectedQuote.customer_price?.currency_code ?? selectedQuote.currency_code,
+        customer_price: selectedQuote.customer_price ?? {
+          amount: selectedQuote.amount,
+          currency_code: selectedQuote.currency_code,
+          source: "provider_quote",
+          policy_id: null,
+        },
         delivery_eta_min: selectedQuote.delivery_eta_min,
         delivery_eta_max: selectedQuote.delivery_eta_max,
         pickup_point_required: selectedQuote.pickup_point_required,
@@ -1150,22 +1078,21 @@ const Shipping: React.FC<ShippingProps> = ({
     setError(null)
     setDeliveryHubSelectionCutInState({
       status: "saving",
-      message: "Saving neutral Delivery Hub selection to the cart metadata…",
+      message: "Сохраняем выбранный пункт выдачи…",
     })
 
     await saveDeliveryHubSelection(guard.payload)
       .then(() => {
         setDeliveryHubSelectionCutInState({
           status: "saved",
-          message:
-            "Neutral Delivery Hub selection saved to the cart metadata. Shipping method commit remains disabled for Delivery Hub.",
+          message: "Пункт выдачи сохранён. Стоимость и срок обновлены для выбранного адреса.",
         })
         router.refresh()
       })
       .catch((err) => {
         setDeliveryHubSelectionCutInState({
           status: "error",
-          message: err.message ?? "Unable to save Delivery Hub selection.",
+          message: err.message ?? "Не удалось сохранить доставку. Попробуйте ещё раз.",
         })
       })
   }
@@ -1174,7 +1101,7 @@ const Shipping: React.FC<ShippingProps> = ({
     if (!cart.id) {
       setDeliveryHubSelectionCutInState({
         status: "blocked",
-        message: "Cart id is required before Delivery Hub selection can be cleared.",
+        message: "Не удалось обновить выбор доставки. Обновите страницу и попробуйте ещё раз.",
       })
       return
     }
@@ -1182,21 +1109,21 @@ const Shipping: React.FC<ShippingProps> = ({
     setError(null)
     setDeliveryHubSelectionCutInState({
       status: "clearing",
-      message: "Clearing neutral Delivery Hub selection from the cart metadata…",
+      message: "Очищаем выбранный пункт выдачи…",
     })
 
     await clearDeliveryHubSelection({ cart_id: cart.id })
       .then(() => {
         setDeliveryHubSelectionCutInState({
           status: "cleared",
-          message: "Neutral Delivery Hub selection cleared from the cart metadata.",
+          message: "Выбор очищен. Выберите новый пункт выдачи.",
         })
         router.refresh()
       })
       .catch((err) => {
         setDeliveryHubSelectionCutInState({
           status: "error",
-          message: err.message ?? "Unable to clear Delivery Hub selection.",
+          message: err.message ?? "Не удалось очистить выбор. Попробуйте ещё раз.",
         })
       })
   }
@@ -1796,14 +1723,6 @@ const Shipping: React.FC<ShippingProps> = ({
                       "Очищаем выбор" :
                       "Изменить выбор"}
                   </Button>
-                )}
-                {!deliveryHubCommitEligibility.canCommitShippingMethod && (
-                  <Text
-                    className="text-ui-fg-muted txt-small"
-                    data-testid="delivery-hub-customer-payment-blocker"
-                  >
-                    Переход к оплате остаётся закрыт до включения системного Delivery Hub shipping-method commit.
-                  </Text>
                 )}
               </div>
             </div>
@@ -2555,11 +2474,11 @@ const Shipping: React.FC<ShippingProps> = ({
                           }
                           data-testid="delivery-hub-preview-quote-type"
                         >
-                          <option value="dropoff_point_to_pickup_point">
-                            Dropoff point → pickup point
-                          </option>
                           <option value="warehouse_to_pickup_point">
-                            Warehouse → pickup point
+                            Warehouse → pickup point (shopper default)
+                          </option>
+                          <option value="dropoff_point_to_pickup_point">
+                            Dropoff point → pickup point (diagnostic/advanced)
                           </option>
                         </select>
                       </label>
@@ -2609,7 +2528,7 @@ const Shipping: React.FC<ShippingProps> = ({
                         />
                       </label>
                       <label className="flex flex-col gap-y-1 text-ui-fg-muted txt-small">
-                        Warehouse id
+                        Warehouse id (diagnostic override; empty uses backend default warehouse)
                         <input
                           className="rounded-rounded border border-ui-border-base bg-ui-bg-base px-3 py-2 text-ui-fg-base"
                           value={deliveryHubNeutralPreviewForm.warehouse_id}
@@ -2619,7 +2538,7 @@ const Shipping: React.FC<ShippingProps> = ({
                               event.target.value
                             )
                           }
-                          placeholder="Required for warehouse → pickup"
+                          placeholder="Optional diagnostic override for warehouse → pickup"
                           data-testid="delivery-hub-preview-warehouse-id"
                         />
                       </label>
@@ -2729,7 +2648,7 @@ const Shipping: React.FC<ShippingProps> = ({
                                 }
                                 data-testid="delivery-hub-preview-quote-radio"
                               />
-                              {quote.carrier_label} · {formatPrice(quote.amount, quote.currency_code)}
+                              {quote.carrier_label} · {formatPrice(quote.customer_price?.amount ?? quote.amount, quote.customer_price?.currency_code ?? quote.currency_code)}
                             </span>
                             <span>
                               ETA: {quote.delivery_eta_min ?? "?"}–{quote.delivery_eta_max ?? "?"} days

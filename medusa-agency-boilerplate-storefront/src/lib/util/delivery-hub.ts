@@ -174,6 +174,13 @@ export type DeliveryHubQuoteReference = {
   version: number
 }
 
+export type DeliveryHubCustomerPrice = {
+  amount: number
+  currency_code: string
+  source: "fixed" | "free_threshold" | "free" | "provider_quote" | "provider_quote_markup" | "manual"
+  policy_id: string | null
+}
+
 export type DeliveryHubQuote = {
   carrier_code: string
   carrier_label: string
@@ -181,6 +188,7 @@ export type DeliveryHubQuote = {
   quote_reference: DeliveryHubQuoteReference
   amount: number
   currency_code: string
+  customer_price?: DeliveryHubCustomerPrice
   delivery_eta_min: number | null
   delivery_eta_max: number | null
   pickup_point_required: boolean
@@ -202,7 +210,7 @@ export type DeliveryHubQuotesResponse = {
 
 export type DeliveryHubPickupPoint = {
   provider_point_id: string
-  provider_point_code: string | null
+  provider_point_code?: string | null
   provider_operator_id?: string | null
   network_label?: string | null
   is_yandex_branded?: boolean | null
@@ -215,9 +223,9 @@ export type DeliveryHubPickupPoint = {
   postal_code: string | null
   lat: number | null
   lng: number | null
-  is_origin_dropoff_allowed: boolean
+  is_origin_dropoff_allowed?: boolean
   is_destination_pickup_allowed: boolean
-  payment_methods: string[]
+  payment_methods?: string[]
 }
 
 export type DeliveryHubPickupPointsResponse = {
@@ -243,6 +251,7 @@ export type DeliveryHubSelectionQuoteSummary = {
   carrier_label: string
   amount: number
   currency_code: string
+  customer_price?: DeliveryHubCustomerPrice
   delivery_eta_min: number | null
   delivery_eta_max: number | null
   pickup_point_required: boolean
@@ -417,6 +426,15 @@ export type DeliveryHubListQuotesInput = {
   warehouse_id?: string | null
   interval_utc?: DeliveryHubIntervalUtc | null
   items?: DeliveryHubQuoteRequestItem[] | null
+}
+
+export type DeliveryHubCheckoutQuoteInput = {
+  cart_id: string
+  currency_code?: string | null
+  destination_point_id: string
+  destination_address: DeliveryHubRoutePointAddressInput
+  shipping_address?: DeliveryHubRoutePointAddressInput | null
+  interval_utc?: DeliveryHubIntervalUtc | null
 }
 
 export type DeliveryHubListPickupPointsInput = {
@@ -740,12 +758,29 @@ function normalizeDeliveryHubSelectionQuoteSummary(
   field: string
 ): DeliveryHubSelectionQuoteSummary {
   const record = requireRecord(value, field)
+  const legacyAmount = readFiniteNumber(record.amount, `${field}.amount`)
+  const legacyCurrencyCode = readRequiredString(record.currency_code, `${field}.currency_code`)
+  const customerPrice = record.customer_price === undefined || record.customer_price === null
+    ? null
+    : normalizeDeliveryHubCustomerPrice(
+        record.customer_price,
+        `${field}.customer_price`,
+        {
+          amount: legacyAmount,
+          currency_code: legacyCurrencyCode,
+        }
+      )
 
   return {
     carrier_code: readRequiredString(record.carrier_code, `${field}.carrier_code`),
     carrier_label: readRequiredString(record.carrier_label, `${field}.carrier_label`),
-    amount: readFiniteNumber(record.amount, `${field}.amount`),
-    currency_code: readRequiredString(record.currency_code, `${field}.currency_code`),
+    amount: customerPrice?.amount ?? legacyAmount,
+    currency_code: customerPrice?.currency_code ?? legacyCurrencyCode,
+    ...(customerPrice
+      ? {
+          customer_price: customerPrice,
+        }
+      : {}),
     delivery_eta_min: readNullableFiniteNumber(
       record.delivery_eta_min,
       `${field}.delivery_eta_min`
@@ -784,34 +819,20 @@ function normalizeDeliveryHubPickupPoint(
     postal_code: readOptionalString(record.postal_code),
     lat: readNullableFiniteNumber(record.lat, `${field}.lat`),
     lng: readNullableFiniteNumber(record.lng, `${field}.lng`),
-    is_origin_dropoff_allowed: readBoolean(
-      record.is_origin_dropoff_allowed,
-      `${field}.is_origin_dropoff_allowed`
-    ),
+    is_origin_dropoff_allowed:
+      typeof record.is_origin_dropoff_allowed === "boolean"
+        ? record.is_origin_dropoff_allowed
+        : false,
     is_destination_pickup_allowed: readBoolean(
       record.is_destination_pickup_allowed,
       `${field}.is_destination_pickup_allowed`
     ),
     payment_methods: readStringArray(record.payment_methods),
   }
-  const providerOperatorId = readOptionalString(record.provider_operator_id)
   const networkLabel = readOptionalString(record.network_label)
-  const stationType = readOptionalString(record.station_type)
 
-  if (providerOperatorId) {
-    point.provider_operator_id = providerOperatorId
-  }
   if (networkLabel) {
     point.network_label = networkLabel
-  }
-  if (typeof record.is_yandex_branded === "boolean") {
-    point.is_yandex_branded = record.is_yandex_branded
-  }
-  if (typeof record.is_market_partner === "boolean") {
-    point.is_market_partner = record.is_market_partner
-  }
-  if (stationType) {
-    point.station_type = stationType
   }
 
   return point
@@ -899,6 +920,16 @@ function normalizeDeliveryHubCatalogConnection(
 
 function normalizeDeliveryHubQuote(value: unknown, field: string): DeliveryHubQuote {
   const record = requireRecord(value, field)
+  const legacyAmount = readFiniteNumber(record.amount, `${field}.amount`)
+  const legacyCurrencyCode = readRequiredString(record.currency_code, `${field}.currency_code`)
+  const customerPrice = normalizeDeliveryHubCustomerPrice(
+    record.customer_price,
+    `${field}.customer_price`,
+    {
+      amount: legacyAmount,
+      currency_code: legacyCurrencyCode,
+    }
+  )
 
   return {
     carrier_code: readRequiredString(record.carrier_code, `${field}.carrier_code`),
@@ -908,8 +939,9 @@ function normalizeDeliveryHubQuote(value: unknown, field: string): DeliveryHubQu
       record.quote_reference,
       `${field}.quote_reference`
     ),
-    amount: readFiniteNumber(record.amount, `${field}.amount`),
-    currency_code: readRequiredString(record.currency_code, `${field}.currency_code`),
+    amount: customerPrice.amount,
+    currency_code: customerPrice.currency_code,
+    customer_price: customerPrice,
     delivery_eta_min: readNullableFiniteNumber(
       record.delivery_eta_min,
       `${field}.delivery_eta_min`
@@ -928,6 +960,53 @@ function normalizeDeliveryHubQuote(value: unknown, field: string): DeliveryHubQu
       `${field}.pickup_window_required`
     ),
   }
+}
+
+function normalizeDeliveryHubCustomerPrice(
+  value: unknown,
+  field: string,
+  fallback: {
+    amount: number
+    currency_code: string
+  }
+): DeliveryHubCustomerPrice {
+  const record = isRecord(value) ? value : {}
+  const amount = record.amount === undefined || record.amount === null
+    ? fallback.amount
+    : readFiniteNumber(record.amount, `${field}.amount`)
+  const currencyCode = readOptionalString(record.currency_code) ?? fallback.currency_code
+  const source = readDeliveryHubCustomerPriceSource(record.source, `${field}.source`)
+
+  return {
+    amount,
+    currency_code: currencyCode,
+    source,
+    policy_id: readOptionalString(record.policy_id),
+  }
+}
+
+function readDeliveryHubCustomerPriceSource(
+  value: unknown,
+  field: string
+): DeliveryHubCustomerPrice["source"] {
+  if (value === undefined || value === null) {
+    return "provider_quote"
+  }
+
+  const source = readRequiredString(value, field)
+
+  if (
+    source === "fixed" ||
+    source === "free_threshold" ||
+    source === "free" ||
+    source === "provider_quote" ||
+    source === "provider_quote_markup" ||
+    source === "manual"
+  ) {
+    return source
+  }
+
+  throw new Error(`Delivery Hub payload field \"${field}\" must be a supported customer price source`)
 }
 
 function normalizeDeliveryHubStorePreviewDiagnostics(
@@ -1997,20 +2076,25 @@ export function shapeDeliveryHubQuotesQuery(
 }
 
 export function shapeDeliveryHubQuotesPayload(
-  input: DeliveryHubListQuotesInput
-): DeliveryHubListQuotesInput {
+  input: DeliveryHubCheckoutQuoteInput
+): DeliveryHubCheckoutQuoteInput {
   const record = requireRecord(input, "quotes")
-  const payload: DeliveryHubListQuotesInput = {
-    mode_code: readQuoteType(record.mode_code, "mode_code"),
+  const destinationAddress = normalizeDeliveryHubRoutePointAddress(
+    record.destination_address,
+    "destination_address"
+  )
+
+  if (!destinationAddress) {
+    throw new Error('Delivery Hub payload field "destination_address" is required')
+  }
+
+  const payload: DeliveryHubCheckoutQuoteInput = {
+    cart_id: readRequiredString(record.cart_id, "cart_id"),
     destination_point_id: readRequiredString(
       record.destination_point_id,
       "destination_point_id"
     ),
-  }
-
-  const connectionId = readOptionalString(record.connection_id)
-  if (connectionId) {
-    payload.connection_id = connectionId
+    destination_address: destinationAddress,
   }
 
   const currencyCode = readOptionalString(record.currency_code)
@@ -2018,42 +2102,18 @@ export function shapeDeliveryHubQuotesPayload(
     payload.currency_code = currencyCode
   }
 
-  const destinationAddress = normalizeDeliveryHubRoutePointAddress(
-    record.destination_address,
-    "destination_address"
+  const shippingAddress = normalizeDeliveryHubRoutePointAddress(
+    record.shipping_address,
+    "shipping_address"
   )
-  if (destinationAddress) {
-    payload.destination_address = destinationAddress
-  }
-
-  const originPointId = readOptionalString(record.origin_point_id)
-  if (originPointId) {
-    payload.origin_point_id = originPointId
-  }
-
-  const originAddress = normalizeDeliveryHubRoutePointAddress(
-    record.origin_address,
-    "origin_address"
-  )
-  if (originAddress) {
-    payload.origin_address = originAddress
-  }
-
-  const warehouseId = readOptionalString(record.warehouse_id)
-  if (warehouseId) {
-    payload.warehouse_id = warehouseId
+  if (shippingAddress) {
+    payload.shipping_address = shippingAddress
   }
 
   if (record.interval_utc !== null && record.interval_utc !== undefined) {
     payload.interval_utc = normalizeDeliveryHubIntervalUtc(
       record.interval_utc,
       "interval_utc"
-    )
-  }
-
-  if (Array.isArray(record.items) && record.items.length > 0) {
-    payload.items = record.items.map((item, index) =>
-      shapeDeliveryHubQuoteRequestItem(item, `items.${index}`)
     )
   }
 
@@ -4172,8 +4232,8 @@ export function buildDeliveryHubPersistedSelectionPreviewModel(
         ? "Persisted selection requires attention"
         : "Persisted selection available",
     modality_label: getDeliveryHubQuoteTypeLabel(selection.quote_type),
-    quote_amount: selection.quote.amount,
-    currency_code: selection.quote.currency_code,
+    quote_amount: selection.quote.customer_price?.amount ?? selection.quote.amount,
+    currency_code: selection.quote.customer_price?.currency_code ?? selection.quote.currency_code,
     quote_eta_label: formatDeliveryHubEtaLabel(
       selection.quote.delivery_eta_min,
       selection.quote.delivery_eta_max
@@ -4191,16 +4251,15 @@ export function buildDeliveryHubSavedSelectionSummaryModel(
   readiness: DeliveryHubReadinessResponse | null | undefined
 ): DeliveryHubSavedSelectionSummaryModel {
   const selection = selectionResponse?.selection ?? null
-  const readinessLabel = readiness ? getDeliveryHubReadinessStatusLabel(readiness.status) : null
+  const readinessReady = readiness?.status === "ready"
 
   if (!selection) {
     return {
       tone: readiness?.status === "missing_selection" ? "neutral" : "warning",
       state: "missing",
-      title: "Delivery Hub saved neutral selection",
-      status_label: "No saved neutral Delivery Hub selection",
-      finality_label:
-        "Delivery Hub metadata is not a committed Medusa shipping method and does not execute fulfillment.",
+      title: "Выбор пункта выдачи",
+      status_label: "Пункт выдачи ещё не выбран",
+      finality_label: "Выберите удобный пункт выдачи, чтобы увидеть стоимость и срок доставки.",
       modality_label: null,
       quote_amount: null,
       currency_code: null,
@@ -4209,18 +4268,14 @@ export function buildDeliveryHubSavedSelectionSummaryModel(
       pickup_point_address_label: null,
       pickup_point_code_label: null,
       pickup_window_label: null,
-      readiness_label: readinessLabel,
+      readiness_label: null,
       saved_at_label: null,
       correlation_id_label: null,
-      reconciliation_messages: buildDeliveryHubPersistedSelectionRelationHints(null, readiness),
-      action_label:
-        readiness?.status === "missing_selection"
-          ? null
-          : "Review the Delivery Hub selection and save it again from checkout before treating it as ready.",
+      reconciliation_messages: [],
+      action_label: readiness?.status === "missing_selection" ? null : "Выберите пункт выдачи ещё раз.",
     }
   }
 
-  const readinessMessages = buildDeliveryHubPersistedSelectionRelationHints(selection, readiness)
   const staleOrInvalid =
     readiness?.status === "invalid_selection" ||
     readiness?.status === "not_ready" ||
@@ -4233,46 +4288,41 @@ export function buildDeliveryHubSavedSelectionSummaryModel(
         readiness.selection.quote_reference.version !== selection.quote_reference.version)
   )
   const needsAttention = staleOrInvalid || readinessMismatch
-  const codeLabel = selection.pickup_point.provider_point_code
-    ? `Pickup point code: ${selection.pickup_point.provider_point_code}`
-    : null
-  const correlationId = readOptionalString(selection.correlation_id)
 
   return {
-    tone: needsAttention ? "warning" : readiness?.status === "ready" ? "positive" : "neutral",
+    tone: needsAttention ? "warning" : readinessReady ? "positive" : "neutral",
     state: needsAttention ? "stale_or_invalid" : "saved",
-    title: "Delivery Hub saved neutral selection",
-    status_label: needsAttention
-      ? "Saved neutral selection needs reconciliation"
-      : "Saved neutral selection is available",
-    finality_label:
-      "Saved Delivery Hub metadata only: no Medusa shipping method commit and no fulfillment execution.",
-    modality_label: getDeliveryHubQuoteTypeLabel(selection.quote_type),
-    quote_amount: selection.quote.amount,
-    currency_code: selection.quote.currency_code,
-    quote_eta_label: formatDeliveryHubEtaLabel(
-      selection.quote.delivery_eta_min,
-      selection.quote.delivery_eta_max
-    ),
-    pickup_point_label: selection.pickup_point.name || selection.pickup_point.address,
-    pickup_point_address_label: selection.pickup_point.address || null,
-    pickup_point_code_label: codeLabel,
-    pickup_window_label: selection.pickup_window?.label ?? null,
-    readiness_label: readinessLabel,
-    saved_at_label: selection.updated_at ? `Saved at ${selection.updated_at}` : null,
-    correlation_id_label: correlationId ? `Correlation ${correlationId}` : null,
-    reconciliation_messages: uniqueDeliveryHubMessages([
-      ...readinessMessages,
-      readinessMismatch
-        ? "Readiness selection context differs from the persisted neutral selection snapshot. Save the Delivery Hub selection again after refreshing checkout context."
-        : null,
-      needsAttention
-        ? "Do not treat this saved metadata as final shipping. Clear it or save a fresh neutral selection after resolving checkout context."
-        : "Readiness currently reconciles with the saved neutral selection. Shipping method commit remains separate.",
-    ]),
+    title: "Доставка в пункт выдачи",
+    status_label: needsAttention ? "Выбор нужно обновить" : "Пункт выдачи сохранён",
+    finality_label: needsAttention
+      ? "Выберите пункт выдачи заново, чтобы обновить стоимость и срок для текущего адреса."
+      : "Стоимость и срок рассчитаны для выбранного пункта выдачи.",
+    modality_label: null,
+    quote_amount: needsAttention
+      ? null
+      : selection.quote.customer_price?.amount ?? selection.quote.amount,
+    currency_code: needsAttention
+      ? null
+      : selection.quote.customer_price?.currency_code ?? selection.quote.currency_code,
+    quote_eta_label: needsAttention
+      ? null
+      : formatDeliveryHubBuyerEtaLabel(
+          selection.quote.delivery_eta_min,
+          selection.quote.delivery_eta_max
+        ),
+    pickup_point_label: needsAttention ? null : selection.pickup_point.name || selection.pickup_point.address,
+    pickup_point_address_label: needsAttention ? null : selection.pickup_point.address || null,
+    pickup_point_code_label: null,
+    pickup_window_label: needsAttention ? null : selection.pickup_window?.label ?? null,
+    readiness_label: null,
+    saved_at_label: selection.updated_at ? `Сохранено ${selection.updated_at}` : null,
+    correlation_id_label: null,
+    reconciliation_messages: needsAttention
+      ? ["Выберите пункт выдачи ещё раз, чтобы обновить стоимость и срок для текущего адреса."]
+      : ["Выбор готов к оформлению."],
     action_label: needsAttention
-      ? "Clear the stale neutral selection or save again after choosing a fresh Delivery Hub candidate."
-      : "Continue using the committed Medusa shipping method until Delivery Hub shipping-method commit is enabled separately.",
+      ? "Выберите и сохраните пункт выдачи заново."
+      : "Можно продолжить оформление заказа.",
   }
 }
 
@@ -4286,6 +4336,27 @@ export function buildDeliveryHubBuyerDeliveryCardModel(
     input.readiness
   )
   const saveGuard = buildDeliveryHubSelectionSaveCutInPayload(input)
+  const currentSelectedPointId = readOptionalString(input.selected_pickup_point_id)
+  const persistedSelectedPointId = readOptionalString(
+    input.persisted_selection?.selection?.pickup_point.provider_point_id
+  )
+  const currentQuote = input.quotes?.quotes[0] ?? null
+  const currentQuoteMatchesSelectedPoint = Boolean(
+    currentQuote &&
+      currentSelectedPointId &&
+      (!currentQuote.pickup_point_ids.length ||
+        currentQuote.pickup_point_ids.includes(currentSelectedPointId))
+  )
+  const currentSelectionDiffersFromSaved = Boolean(
+    currentSelectedPointId &&
+      persistedSelectedPointId &&
+      currentSelectedPointId !== persistedSelectedPointId
+  )
+  const shouldShowCurrentQuote =
+    saveGuard.status === "ready" &&
+    (savedSelection.state !== "saved" ||
+      currentQuoteMatchesSelectedPoint ||
+      currentSelectionDiffersFromSaved)
   const savedSelectionPresent = savedSelection.state !== "missing"
   const addressContext = options.address_context ?? input.address_context ?? null
   const buyerAddressLabel = addressContext?.address_label ?? null
@@ -4312,7 +4383,7 @@ export function buildDeliveryHubBuyerDeliveryCardModel(
       status: "needs_address",
       status_label: "Заполните адрес доставки",
       detail_label:
-        "Стоимость и пункт выдачи рассчитываются по адресу доставки из checkout. Укажите город и страну в адресе покупателя, затем вернитесь к доставке.",
+        "Стоимость и пункт выдачи рассчитываются по адресу доставки. Укажите город и страну, затем вернитесь к выбору доставки.",
       action_label: "Заполните адрес доставки",
       can_save_selection: false,
       quote_amount: null,
@@ -4344,66 +4415,14 @@ export function buildDeliveryHubBuyerDeliveryCardModel(
     }
   }
 
-  if (savedSelection.state === "saved") {
-    return {
-      ...base,
-      tone: "positive",
-      status: "saved",
-      status_label: "Способ доставки сохранён",
-      detail_label:
-        "Выбранный вариант сохранён в корзине. Подключение финального shipping-method commit остаётся отдельным системным шагом.",
-      action_label: saveGuard.status === "ready" ? "Сохранить способ доставки" : "Способ сохранён",
-      can_save_selection: saveGuard.status === "ready" && !options.save_in_flight,
-      quote_amount: savedSelection.quote_amount,
-      currency_code: savedSelection.currency_code,
-      quote_eta_label:
-        input.persisted_selection?.selection
-          ? formatDeliveryHubBuyerEtaLabel(
-              input.persisted_selection.selection.quote.delivery_eta_min,
-              input.persisted_selection.selection.quote.delivery_eta_max
-            )
-          : savedSelection.quote_eta_label,
-      pickup_point_label: savedSelection.pickup_point_label,
-      pickup_point_address_label: savedSelection.pickup_point_address_label,
-      pickup_window_label: savedSelection.pickup_window_label,
-      unavailable_reason_label: null,
-    }
-  }
-
-  if (savedSelection.state === "stale_or_invalid") {
-    return {
-      ...base,
-      tone: "warning",
-      status: "unavailable",
-      status_label: "Сохранённый способ доставки нужно обновить",
-      detail_label:
-        "Показываем ранее сохранённые данные, но перед оплатой нужно заново сохранить актуальный вариант доставки.",
-      action_label: saveGuard.status === "ready" ? "Обновить способ доставки" : "Доставка временно недоступна",
-      can_save_selection: saveGuard.status === "ready" && !options.save_in_flight,
-      quote_amount: savedSelection.quote_amount,
-      currency_code: savedSelection.currency_code,
-      quote_eta_label:
-        input.persisted_selection?.selection
-          ? formatDeliveryHubBuyerEtaLabel(
-              input.persisted_selection.selection.quote.delivery_eta_min,
-              input.persisted_selection.selection.quote.delivery_eta_max
-            )
-          : savedSelection.quote_eta_label,
-      pickup_point_label: savedSelection.pickup_point_label,
-      pickup_point_address_label: savedSelection.pickup_point_address_label,
-      pickup_window_label: savedSelection.pickup_window_label,
-      unavailable_reason_label: savedSelection.reconciliation_messages[0] ?? null,
-    }
-  }
-
-  if (saveGuard.status === "ready") {
+  if (shouldShowCurrentQuote) {
     return {
       ...base,
       tone: "positive",
       status: "ready_to_save",
       status_label: "Доступен вариант доставки",
-      detail_label: "Проверьте пункт выдачи, стоимость и срок, затем сохраните способ доставки.",
-      action_label: "Сохранить способ доставки",
+      detail_label: "Проверьте пункт выдачи, стоимость и срок, затем сохраните выбранную доставку.",
+      action_label: savedSelectionPresent ? "Обновить доставку" : "Сохранить доставку",
       can_save_selection: !options.save_in_flight,
       quote_amount: rehearsal.quote_amount,
       currency_code: rehearsal.currency_code,
@@ -4421,8 +4440,50 @@ export function buildDeliveryHubBuyerDeliveryCardModel(
     }
   }
 
+  if (savedSelection.state === "saved") {
+    return {
+      ...base,
+      tone: "positive",
+      status: "saved",
+      status_label: "Доставка сохранена",
+      detail_label:
+        "Выбранный пункт выдачи сохранён. При изменении адреса или пункта выдачи стоимость и срок пересчитываются.",
+      action_label: "Доставка сохранена",
+      can_save_selection: false,
+      quote_amount: savedSelection.quote_amount,
+      currency_code: savedSelection.currency_code,
+      quote_eta_label: savedSelection.quote_eta_label,
+      pickup_point_label: savedSelection.pickup_point_label,
+      pickup_point_address_label: savedSelection.pickup_point_address_label,
+      pickup_window_label: savedSelection.pickup_window_label,
+      unavailable_reason_label: null,
+    }
+  }
+
+  if (savedSelection.state === "stale_or_invalid") {
+    return {
+      ...base,
+      tone: "warning",
+      status: "unavailable",
+      status_label: "Выбор нужно обновить",
+      detail_label:
+        "Выберите пункт выдачи заново, чтобы обновить стоимость и срок для текущего адреса.",
+      action_label: saveGuard.status === "ready" ? "Обновить доставку" : "Выбрать пункт выдачи",
+      can_save_selection: saveGuard.status === "ready" && !options.save_in_flight,
+      quote_amount: null,
+      currency_code: null,
+      quote_eta_label: null,
+      pickup_point_label: null,
+      pickup_point_address_label: null,
+      pickup_window_label: null,
+      unavailable_reason_label: "Выберите пункт выдачи ещё раз, чтобы обновить стоимость и срок.",
+    }
+  }
+
   const hasPricePreview = rehearsal.quote_amount !== null
-  const unavailableReason = saveGuard.message || rehearsal.hint_messages[0] || null
+  const unavailableReason = hasPricePreview
+    ? "Выберите пункт выдачи и повторите расчёт стоимости."
+    : null
 
   return {
     ...base,
@@ -4432,8 +4493,8 @@ export function buildDeliveryHubBuyerDeliveryCardModel(
       ? "Вариант доставки требует уточнения"
       : "Доставка временно недоступна",
     detail_label: hasPricePreview
-      ? "Стоимость получена, но для выбора доставки пока не хватает безопасных данных пункта выдачи или готовности провайдера. Попробуйте обновить оформление позже."
-      : "Сейчас не удалось получить безопасный вариант Delivery Hub. Если ранее был сохранён способ доставки, он будет показан после обновления корзины.",
+      ? "Стоимость получена, но для выбора доставки пока не хватает данных пункта выдачи. Попробуйте обновить расчёт или выберите другой ПВЗ."
+      : "Сейчас не удалось получить вариант доставки для выбранного адреса. Попробуйте обновить расчёт или выберите другой ПВЗ.",
     action_label: "Доставка временно недоступна",
     can_save_selection: false,
     quote_amount: rehearsal.quote_amount,
@@ -4522,31 +4583,23 @@ export function parseDeliveryHubCheckoutCutoverEnabledFlag(value: unknown): bool
 export function classifyDeliveryHubPickupPoint(
   point: Pick<
     DeliveryHubPickupPoint,
-    | "provider_operator_id"
     | "network_label"
-    | "is_yandex_branded"
-    | "is_market_partner"
     | "name"
   >
 ): DeliveryHubPickupPointClassification {
-  const operatorId = readOptionalString(point.provider_operator_id)?.toLocaleLowerCase("ru-RU") ?? null
   const networkLabel = readOptionalString(point.network_label)
   const searchable = normalizeDeliveryHubSearchText(
-    [operatorId, networkLabel, point.name].filter(Boolean).join(" ")
+    [networkLabel, point.name].filter(Boolean).join(" ")
   )
 
   if (
-    point.is_yandex_branded === true ||
-    operatorId === "market_l4g" ||
-    /\bmarket_l4g\b|яндекс|yandex/.test(searchable)
+    /яндекс|yandex/.test(searchable)
   ) {
     return "yandex"
   }
 
   if (
-    point.is_market_partner === true ||
-    operatorId === "5post" ||
-    Boolean(operatorId) ||
+    /5\s*post|партн/.test(searchable) ||
     Boolean(networkLabel)
   ) {
     return "partner"
@@ -4558,10 +4611,7 @@ export function classifyDeliveryHubPickupPoint(
 export function getDeliveryHubPickupPointBuyerCategory(
   point: Pick<
     DeliveryHubPickupPoint,
-    | "provider_operator_id"
     | "network_label"
-    | "is_yandex_branded"
-    | "is_market_partner"
     | "name"
   >
 ): DeliveryHubPickupPointBuyerCategory {
@@ -6493,26 +6543,44 @@ function getDeliveryHubNeutralRehearsalCandidate(
   const quote = input.quotes?.quotes[0] ?? null
   const selectedPickupPointId = readOptionalString(input.selected_pickup_point_id)
   const quotedPickupPointIds = quote?.pickup_point_ids ?? []
+  const selectedPickupPoint = selectedPickupPointId
+    ? input.pickup_points?.points.find(
+        (point) => point.provider_point_id === selectedPickupPointId
+      ) ?? null
+    : null
+  const quotedPickupPoint = quotedPickupPointIds.length
+    ? input.pickup_points?.points.find((point) =>
+        quotedPickupPointIds.includes(point.provider_point_id)
+      ) ?? null
+    : null
+  const quoteMatchesSelectedPoint = Boolean(
+    quote &&
+      selectedPickupPointId &&
+      (!quotedPickupPointIds.length || quotedPickupPointIds.includes(selectedPickupPointId))
+  )
+  const useCurrentCheckoutQuote = Boolean(
+    quote && (quoteMatchesSelectedPoint || selectedPickupPoint || !selection)
+  )
   const pickupPoint =
+    (useCurrentCheckoutQuote ? selectedPickupPoint ?? quotedPickupPoint : null) ??
     selection?.pickup_point ??
-    (selectedPickupPointId
-      ? input.pickup_points?.points.find(
-          (point) => point.provider_point_id === selectedPickupPointId
-        )
-      : null) ??
-    (quotedPickupPointIds.length
-      ? input.pickup_points?.points.find((point) =>
-          quotedPickupPointIds.includes(point.provider_point_id)
-        )
-      : null) ??
+    selectedPickupPoint ??
+    quotedPickupPoint ??
     input.pickup_points?.points.find((point) => point.is_destination_pickup_allowed) ??
     input.pickup_points?.points[0] ??
     null
-  const pickupWindow = selection?.pickup_window ?? input.pickup_windows?.pickup_windows[0] ?? null
-  const quoteReference = getDeliveryHubNeutralQuoteReference(input, quote, selection)
-  const quoteType =
-    selection?.quote_type ?? quote?.mode_code ?? input.readiness?.quote_context?.quote_type ?? null
-  const quoteSummary = selection?.quote ?? quote ?? null
+  const pickupWindow =
+    (useCurrentCheckoutQuote ? input.pickup_windows?.pickup_windows[0] : null) ??
+    selection?.pickup_window ??
+    input.pickup_windows?.pickup_windows[0] ??
+    null
+  const quoteReference = useCurrentCheckoutQuote
+    ? quote?.quote_reference ?? getDeliveryHubNeutralQuoteReference(input, quote, selection)
+    : getDeliveryHubNeutralQuoteReference(input, quote, selection)
+  const quoteType = useCurrentCheckoutQuote
+    ? quote?.mode_code ?? selection?.quote_type ?? input.readiness?.quote_context?.quote_type ?? null
+    : selection?.quote_type ?? quote?.mode_code ?? input.readiness?.quote_context?.quote_type ?? null
+  const quoteSummary = useCurrentCheckoutQuote ? quote ?? selection?.quote ?? null : selection?.quote ?? quote ?? null
   const pickupPointRequired =
     selection?.quote.pickup_point_required ??
     quote?.pickup_point_required ??
@@ -6558,11 +6626,18 @@ function getDeliveryHubNeutralRehearsalBlockers(
     }
   }
 
+  const hasCurrentCheckoutCandidate = Boolean(
+    input.quotes?.quotes?.[0] &&
+      readOptionalString(input.selected_pickup_point_id) &&
+      candidate.pickupPoint
+  )
+
   if (
     settings &&
     (!settings.settings.enabled ||
       settings.settings.status === "unavailable" ||
-      settings.settings.summary.ready_connection_count === 0)
+      settings.settings.summary.ready_connection_count === 0) &&
+    !hasCurrentCheckoutCandidate
   ) {
     pushBlocker("settings_unavailable")
   }
@@ -6574,7 +6649,8 @@ function getDeliveryHubNeutralRehearsalBlockers(
   if (
     readiness &&
     readiness.status !== "ready" &&
-    readiness.status !== "missing_selection"
+    readiness.status !== "missing_selection" &&
+    !hasCurrentCheckoutCandidate
   ) {
     pushBlocker("readiness_blocked")
   }
@@ -6705,8 +6781,8 @@ export function buildDeliveryHubNeutralSelectionRehearsalModel(
     active_commit_path_label: "Active delivery contour: Delivery Hub (dispatch gated)",
     rehearsal_label: "Delivery Hub pre-cutin rehearsal · read-only · no shopper action",
     modality_label: getDeliveryHubQuoteTypeLabel(candidate.quoteType),
-    quote_amount: quoteSummary?.amount ?? null,
-    currency_code: quoteSummary?.currency_code ?? null,
+    quote_amount: quoteSummary?.customer_price?.amount ?? quoteSummary?.amount ?? null,
+    currency_code: quoteSummary?.customer_price?.currency_code ?? quoteSummary?.currency_code ?? null,
     quote_eta_label: quoteSummary
       ? formatDeliveryHubEtaLabel(
           quoteSummary.delivery_eta_min,

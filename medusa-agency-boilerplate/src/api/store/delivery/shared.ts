@@ -77,6 +77,22 @@ const StoreDeliveryQuoteReferenceSchema = z
   })
   .strict()
 
+const StoreDeliveryCustomerPriceSchema = z
+  .object({
+    amount: z.number().nonnegative(),
+    currency_code: z.string(),
+    source: z.enum([
+      "fixed",
+      "free_threshold",
+      "free",
+      "provider_quote",
+      "provider_quote_markup",
+      "manual",
+    ]),
+    policy_id: z.string().nullable(),
+  })
+  .strict()
+
 const StoreDeliveryQuoteSchema = z
   .object({
     carrier_code: z.string(),
@@ -85,6 +101,7 @@ const StoreDeliveryQuoteSchema = z
     quote_reference: StoreDeliveryQuoteReferenceSchema,
     amount: z.number(),
     currency_code: z.string(),
+    customer_price: StoreDeliveryCustomerPriceSchema,
     delivery_eta_min: z.number().int().nullable(),
     delivery_eta_max: z.number().int().nullable(),
     pickup_point_required: z.boolean(),
@@ -112,12 +129,7 @@ const StoreDeliveryQuotesResponseSchema = z
 const StoreDeliveryPickupPointSchema = z
   .object({
     provider_point_id: z.string(),
-    provider_point_code: z.string().nullable(),
-    provider_operator_id: z.string().nullable(),
     network_label: z.string().nullable(),
-    is_yandex_branded: z.boolean().nullable(),
-    is_market_partner: z.boolean().nullable(),
-    station_type: z.string().nullable(),
     name: z.string(),
     address: z.string(),
     city: z.string().nullable(),
@@ -125,10 +137,7 @@ const StoreDeliveryPickupPointSchema = z
     postal_code: z.string().nullable(),
     lat: z.number().nullable(),
     lng: z.number().nullable(),
-    is_origin_dropoff_allowed: z.boolean(),
     is_destination_pickup_allowed: z.boolean(),
-    payment_methods: z.array(z.string()),
-    metadata: z.record(z.unknown()).default({}),
   })
   .strict()
 
@@ -176,6 +185,7 @@ const StoreDeliverySelectionQuoteSchema = z
     carrier_label: z.string(),
     amount: z.number(),
     currency_code: z.string(),
+    customer_price: StoreDeliveryCustomerPriceSchema,
     delivery_eta_min: z.number().int().nullable(),
     delivery_eta_max: z.number().int().nullable(),
     pickup_point_required: z.boolean(),
@@ -186,12 +196,7 @@ const StoreDeliverySelectionQuoteSchema = z
 const StoreDeliverySelectionPickupPointSchema = z
   .object({
     provider_point_id: z.string(),
-    provider_point_code: z.string().nullable(),
-    provider_operator_id: z.string().nullable().optional(),
     network_label: z.string().nullable().optional(),
-    is_yandex_branded: z.boolean().nullable().optional(),
-    is_market_partner: z.boolean().nullable().optional(),
-    station_type: z.string().nullable().optional(),
     name: z.string(),
     address: z.string(),
     city: z.string().nullable(),
@@ -199,9 +204,7 @@ const StoreDeliverySelectionPickupPointSchema = z
     postal_code: z.string().nullable(),
     lat: z.number().nullable(),
     lng: z.number().nullable(),
-    is_origin_dropoff_allowed: z.boolean(),
     is_destination_pickup_allowed: z.boolean(),
-    payment_methods: z.array(z.string()),
   })
   .strict()
 
@@ -565,7 +568,13 @@ export function sanitizeStoreDeliveryQuotesResponse(result: unknown) {
 }
 
 export function sanitizeStoreDeliveryPickupPointsResponse(result: unknown) {
-  return StoreDeliveryPickupPointsResponseSchema.parse(result)
+  const record = asRecord(result)
+  return StoreDeliveryPickupPointsResponseSchema.parse({
+    ok: record.ok,
+    points: Array.isArray(record.points)
+      ? record.points.map(sanitizeStoreDeliveryPickupPoint)
+      : record.points,
+  })
 }
 
 export function sanitizeStoreDeliveryPickupWindowsResponse(result: unknown) {
@@ -573,11 +582,82 @@ export function sanitizeStoreDeliveryPickupWindowsResponse(result: unknown) {
 }
 
 export function sanitizeStoreDeliveryReadinessResponse(result: unknown) {
-  return StoreDeliveryReadinessResponseSchema.parse(result)
+  const record = asRecord(result)
+  const selection = maybeRecord(record.selection)
+
+  return StoreDeliveryReadinessResponseSchema.parse({
+    ...record,
+    selection: selection
+      ? {
+          ...selection,
+          pickup_point: sanitizeStoreDeliveryPickupPoint(selection.pickup_point),
+        }
+      : record.selection,
+  })
 }
 
 export function sanitizeStoreDeliverySelectionResponse(result: unknown) {
-  return StoreDeliverySelectionResponseSchema.parse(result)
+  const record = asRecord(result)
+  const selection = maybeRecord(record.selection)
+
+  return StoreDeliverySelectionResponseSchema.parse({
+    ...record,
+    selection: selection
+      ? {
+          ...selection,
+          pickup_point: sanitizeStoreDeliveryPickupPoint(selection.pickup_point),
+        }
+      : record.selection,
+  })
+}
+
+function sanitizeStoreDeliveryPickupPoint(value: unknown) {
+  const record = asRecord(value) ?? {}
+
+  return {
+    provider_point_id: record.provider_point_id,
+    network_label: sanitizeStoreDeliveryPickupPointNetworkLabel(record.network_label),
+    name: record.name,
+    address: record.address,
+    city: record.city ?? null,
+    region: record.region ?? null,
+    postal_code: record.postal_code ?? null,
+    lat: record.lat ?? null,
+    lng: record.lng ?? null,
+    is_destination_pickup_allowed: record.is_destination_pickup_allowed,
+  }
+}
+
+function sanitizeStoreDeliveryPickupPointNetworkLabel(value: unknown) {
+  const label = typeof value === "string" ? value.trim() : ""
+
+  if (!label) {
+    return null
+  }
+
+  if (/5\s*post/i.test(label)) {
+    return "5 Post"
+  }
+
+  if (/яндекс|yandex/i.test(label)) {
+    return label.includes("партн") || /partner/i.test(label)
+      ? "Яндекс Маркет / партнёр"
+      : "Яндекс Маркет"
+  }
+
+  return "Партнёрский ПВЗ"
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function maybeRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
 }
 
 export function sanitizeStoreDeliveryCutoverPreconditionsResponse(result: unknown) {
