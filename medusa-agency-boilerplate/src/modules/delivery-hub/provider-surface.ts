@@ -5,6 +5,7 @@ import type {
   DeliveryHubCartSelectionPublic,
   DeliveryHubQuoteReference,
 } from "./cart-selection"
+import type { DeliveryHubCustomerPrice } from "./domain/pricing-policy"
 import { DELIVERY_HUB_MODE_CODE } from "./constants"
 import {
   buildDeliveryHubShippingOptionData,
@@ -80,6 +81,10 @@ export function normalizeDeliveryHubFulfillmentData(
   const carrierCode = requireNonEmptyString(quote.carrier_code, "quote.carrier_code")
   const carrierLabel = requireNonEmptyString(quote.carrier_label, "quote.carrier_label")
   const currencyCode = requireNonEmptyString(quote.currency_code, "quote.currency_code")
+  const customerPrice = normalizeCustomerPrice(quote.customer_price, {
+    amount: quoteAmount,
+    currency_code: currencyCode,
+  })
   const pickupPointRequired = requireBoolean(
     quote.pickup_point_required,
     "quote.pickup_point_required"
@@ -125,6 +130,7 @@ export function normalizeDeliveryHubFulfillmentData(
       carrier_label: carrierLabel,
       amount: quoteAmount,
       currency_code: currencyCode,
+      customer_price: customerPrice,
       delivery_eta_min: normalizeNullableFiniteNumber(quote.delivery_eta_min),
       delivery_eta_max: normalizeNullableFiniteNumber(quote.delivery_eta_max),
       pickup_point_required: pickupPointRequired,
@@ -162,6 +168,38 @@ export function parseDeliveryHubFulfillmentData(
   }
 
   return normalized as DeliveryHubFulfillmentSelectionData
+}
+
+function normalizeCustomerPrice(
+  value: unknown,
+  quote: Record<string, unknown>
+): DeliveryHubCustomerPrice {
+  const record = asRecord(value)
+  const amount = normalizeNullableFiniteNumber(record.amount) ??
+    requireFiniteNumber(quote.amount, "quote.amount")
+  const currencyCode = normalizeNullableText(record.currency_code) ??
+    requireNonEmptyString(quote.currency_code, "quote.currency_code")
+  const source = readCustomerPriceSource(record.source) ?? "provider_quote"
+
+  return {
+    amount,
+    currency_code: currencyCode,
+    source,
+    policy_id: normalizeNullableText(record.policy_id),
+  }
+}
+
+function readCustomerPriceSource(value: unknown): DeliveryHubCustomerPrice["source"] | null {
+  const normalized = normalizeNullableText(value)
+
+  return normalized === "fixed" ||
+    normalized === "free_threshold" ||
+    normalized === "free" ||
+    normalized === "provider_quote" ||
+    normalized === "provider_quote_markup" ||
+    normalized === "manual"
+    ? normalized
+    : null
 }
 
 export function buildDeliveryHubCalculatedPriceData(

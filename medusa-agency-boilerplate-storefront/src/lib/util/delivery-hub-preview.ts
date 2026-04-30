@@ -48,11 +48,19 @@ export type DeliveryHubPreviewQuoteReference = {
   version: number
 }
 
+export type DeliveryHubPreviewCustomerPrice = {
+  amount: number
+  currency_code: string
+  source: "fixed" | "free_threshold" | "free" | "provider_quote" | "provider_quote_markup" | "manual"
+  policy_id: string | null
+}
+
 export type DeliveryHubPreviewSelectionQuoteSummary = {
   carrier_code: string
   carrier_label: string
   amount: number
   currency_code: string
+  customer_price?: DeliveryHubPreviewCustomerPrice
   delivery_eta_min: number | null
   delivery_eta_max: number | null
   pickup_point_required: boolean

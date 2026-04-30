@@ -30,6 +30,38 @@ beforeEach(() => {
 })
 
 describe("Delivery Hub provider validation seam", () => {
+  it("calculates customer-facing Delivery Hub price instead of raw provider operational amount", async () => {
+    const provider = buildProvider()
+    const optionData = buildValidOptionData()
+    const fulfillmentData = buildValidFulfillmentData({
+      quote: {
+        amount: 299,
+        currency_code: "RUB",
+        customer_price: {
+          amount: 199,
+          currency_code: "RUB",
+          source: "fixed",
+          policy_id: "policy_customer_fixed",
+        },
+      },
+    })
+
+    await expect(provider.calculatePrice(optionData, fulfillmentData)).resolves.toMatchObject({
+      calculated_amount: 199,
+      data: expect.objectContaining({
+        quote: expect.objectContaining({
+          amount: 199,
+          currency_code: "RUB",
+          customer_price: expect.objectContaining({
+            amount: 199,
+            source: "fixed",
+            policy_id: "policy_customer_fixed",
+          }),
+        }),
+      }),
+    })
+  })
+
   it("keeps validateFulfillmentData and createFulfillment aligned for valid input while returning a truthful controlled execution block", async () => {
     const provider = buildProvider()
     const optionData = buildValidOptionData()
@@ -3401,7 +3433,21 @@ function buildDropoffCartSelection(id: string, correlationId: string) {
   }
 }
 
-function buildValidFulfillmentData() {
+function buildValidFulfillmentData(input?: {
+  quote?: Partial<{
+    amount: number
+    currency_code: string
+    customer_price: {
+      amount: number
+      currency_code: string
+      source: "fixed" | "free_threshold" | "free" | "provider_quote" | "provider_quote_markup" | "manual"
+      policy_id: string | null
+    }
+  }>
+}) {
+  const amount = input?.quote?.amount ?? 299
+  const currencyCode = input?.quote?.currency_code ?? "RUB"
+
   return {
     version: 1,
     connection_id: "conn_ready",
@@ -3414,8 +3460,14 @@ function buildValidFulfillmentData() {
     quote: {
       carrier_code: "yandex",
       carrier_label: "Yandex Delivery",
-      amount: 299,
-      currency_code: "RUB",
+      amount,
+      currency_code: currencyCode,
+      customer_price: input?.quote?.customer_price ?? {
+        amount,
+        currency_code: currencyCode,
+        source: "provider_quote",
+        policy_id: null,
+      },
       delivery_eta_min: 1,
       delivery_eta_max: 1,
       pickup_point_required: true,

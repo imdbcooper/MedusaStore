@@ -1,3 +1,8 @@
+import type {
+  DeliveryHubCustomerPrice,
+  DeliveryHubProviderQuoteEvidence,
+} from "./pricing-policy"
+
 export type DeliveryQuote = {
   carrier_code: string
   carrier_label: string
@@ -13,4 +18,9 @@ export type DeliveryQuote = {
   pickup_window_required: boolean
   pickup_window_options: unknown[]
   raw_reference: Record<string, unknown>
+}
+
+export type DeliveryHubPricedQuote = DeliveryQuote & {
+  provider_quote: DeliveryHubProviderQuoteEvidence
+  customer_price: DeliveryHubCustomerPrice
 }

@@ -136,20 +136,36 @@ export class DeliveryHubFulfillmentProvider extends AbstractFulfillmentProviderS
       default_mode_code: normalizedOption.mode_code,
     })
 
+    const customerPrice = bridge.fulfillment_data.quote.customer_price ?? {
+      amount: bridge.fulfillment_data.quote.amount,
+      currency_code: bridge.fulfillment_data.quote.currency_code,
+      source: "provider_quote",
+      policy_id: null,
+    }
+
     this.logger_.info(
       `Delivery Hub calculated price materialized: ${JSON.stringify({
         connection_id: bridge.fulfillment_data.connection_id,
         mode_code: bridge.fulfillment_data.mode_code,
         quote_reference: bridge.fulfillment_data.quote_reference,
-        amount: bridge.fulfillment_data.quote.amount,
-        currency_code: bridge.fulfillment_data.quote.currency_code,
+        amount: customerPrice.amount,
+        currency_code: customerPrice.currency_code,
+        customer_price_source: customerPrice.source,
       })}`
     )
 
     return {
-      calculated_amount: bridge.fulfillment_data.quote.amount,
+      calculated_amount: customerPrice.amount,
       is_calculated_price_tax_inclusive: true,
-      data: bridge.calculated_price_data,
+      data: {
+        ...bridge.calculated_price_data,
+        quote: {
+          ...bridge.calculated_price_data.quote,
+          amount: customerPrice.amount,
+          currency_code: customerPrice.currency_code,
+          customer_price: customerPrice,
+        },
+      },
     }
   }
 

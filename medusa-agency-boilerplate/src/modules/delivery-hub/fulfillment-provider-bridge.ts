@@ -184,6 +184,7 @@ export type DeliveryHubFulfillmentHandoffSnapshot = {
     carrier_label: string
     amount: number
     currency_code: string
+    customer_price?: DeliveryHubFulfillmentSelectionData["quote"]["customer_price"]
     delivery_eta_min: number | null
     delivery_eta_max: number | null
   }
@@ -3164,8 +3165,8 @@ export function buildDeliveryHubFulfillmentHandoffSnapshot(input: {
     quote_summary: {
       carrier_code: selection.quote.carrier_code,
       carrier_label: selection.quote.carrier_label,
-      amount: selection.quote.amount,
-      currency_code: selection.quote.currency_code,
+      amount: selection.quote.customer_price?.amount ?? selection.quote.amount,
+      currency_code: selection.quote.customer_price?.currency_code ?? selection.quote.currency_code,
       delivery_eta_min: selection.quote.delivery_eta_min,
       delivery_eta_max: selection.quote.delivery_eta_max,
     },
@@ -3240,7 +3241,15 @@ export function buildDeliveryHubExecutionLedgerEvidenceArtifactAssembly(input: {
           id: handoff.quote_reference.id,
           version: handoff.quote_reference.version,
         },
-        quote_summary: handoff.quote_summary,
+        quote_summary: {
+          ...handoff.quote_summary,
+          amount: extractProviderQuoteAmount(input.fulfillment_data) ?? handoff.quote_summary.amount,
+          ...(extractCustomerPrice(input.fulfillment_data)
+            ? {
+                customer_price: extractCustomerPrice(input.fulfillment_data),
+              }
+            : {}),
+        },
         pickup_point_summary: handoff.pickup_point_summary,
         pickup_window_summary: handoff.pickup_window_summary,
         references: handoff.references,
@@ -3287,6 +3296,50 @@ function buildOptionalDeliveryHubFulfillmentHandoffSnapshot(input: {
   }
 
   return buildDeliveryHubFulfillmentHandoffSnapshot(input)
+}
+
+function extractProviderQuoteAmount(fulfillmentData: unknown) {
+  const amount = asRecord(asRecord(fulfillmentData).quote).amount
+
+  return typeof amount === "number" && Number.isFinite(amount) ? amount : null
+}
+
+function extractCustomerPrice(
+  fulfillmentData: unknown
+): DeliveryHubFulfillmentSelectionData["quote"]["customer_price"] | undefined {
+  const customerPrice = asRecord(asRecord(asRecord(fulfillmentData).quote).customer_price)
+  const amount = customerPrice.amount
+  const currencyCode = normalizeNullableText(customerPrice.currency_code)
+  const source = normalizeNullableText(customerPrice.source)
+  const policyId = normalizeNullableText(customerPrice.policy_id)
+
+  if (
+    typeof amount !== "number" ||
+    !Number.isFinite(amount) ||
+    !currencyCode ||
+    !source ||
+    !isCustomerPriceSource(source)
+  ) {
+    return undefined
+  }
+
+  return {
+    amount,
+    currency_code: currencyCode,
+    source,
+    policy_id: policyId,
+  }
+}
+
+function isCustomerPriceSource(
+  value: string
+): value is NonNullable<DeliveryHubFulfillmentSelectionData["quote"]["customer_price"]>["source"] {
+  return value === "fixed" ||
+    value === "free_threshold" ||
+    value === "free" ||
+    value === "provider_quote" ||
+    value === "provider_quote_markup" ||
+    value === "manual"
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -3338,6 +3391,12 @@ function buildNeutralDeliveryHubCartSelection(
       carrier_label: "Delivery Hub Preview",
       amount: warehouseFlow ? 499 : 299,
       currency_code: "RUB",
+      customer_price: {
+        amount: warehouseFlow ? 399 : 250,
+        currency_code: "RUB",
+        source: "fixed",
+        policy_id: "policy_test_fixed",
+      },
       delivery_eta_min: 1,
       delivery_eta_max: warehouseFlow ? 2 : 1,
       pickup_point_required: true,
