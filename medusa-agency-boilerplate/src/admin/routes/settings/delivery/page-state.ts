@@ -51,12 +51,39 @@ export type DeliveryWarehouse = {
   updated_at: string;
 };
 
+export type DeliveryHubCustomerPricingPolicy = {
+  type:
+    | "provider_pass_through"
+    | "provider_quote"
+    | "provider_quote_markup"
+    | "fixed"
+    | "free_threshold"
+    | "free"
+    | "manual"
+    | "unavailable";
+  amount?: number;
+  fixed_amount?: number;
+  threshold_amount?: number;
+  free_threshold_amount?: number;
+  below_threshold_amount?: number;
+  amount_below_threshold?: number;
+  markup_amount?: number;
+  markup_percent?: number;
+  currency_code?: string;
+  rounding?: {
+    mode?: "none" | "ceil" | "floor" | "round";
+    increment?: number;
+  };
+};
+
 export type DeliveryConfig = {
   auto_confirm?: boolean;
   label_format?: string;
   default_warehouse_id?: string;
   default_warehouse?: DeliveryWarehouse;
   api_base_url?: string;
+  customer_pricing_policy?: DeliveryHubCustomerPricingPolicy;
+  pricing_policy?: DeliveryHubCustomerPricingPolicy;
 };
 
 export type DeliveryConnectionForm = {
@@ -70,6 +97,15 @@ export type DeliveryConnectionForm = {
   label_format: string;
   default_warehouse_id: string;
   api_base_url: string;
+  pricing_policy_type: DeliveryHubCustomerPricingPolicy["type"];
+  pricing_fixed_amount: string;
+  pricing_free_threshold_amount: string;
+  pricing_below_threshold_amount: string;
+  pricing_markup_amount: string;
+  pricing_markup_percent: string;
+  pricing_currency_code: string;
+  pricing_rounding_mode: "none" | "ceil" | "floor" | "round";
+  pricing_rounding_increment: string;
 };
 
 export type DeliveryWarehouseForm = {
@@ -182,6 +218,9 @@ export function getFieldRequirementText(input: {
     | "api_host"
     | "label_format"
     | "auto_confirm"
+    | "pricing_policy"
+    | "checkout_modes"
+    | "shipping_option_sync"
     | "five_post";
   hasSavedToken?: boolean;
 }) {
@@ -222,6 +261,12 @@ export function getFieldRequirementText(input: {
       return "Расширенная настройка будущих label-файлов; для Test connection, ПВЗ и Test quote не нужна.";
     case "auto_confirm":
       return "Расширенная настройка будущего подтверждения офферов; текущий Test quote не подтверждает оффер и shipment не создаёт.";
+    case "pricing_policy":
+      return "Задаёт покупательскую цену доставки в checkout: по умолчанию безопасно передаём цену провайдера, можно задать фиксированную цену, бесплатный порог, бесплатную доставку или наценку. Raw provider quote, offer id и quote key не показываются.";
+    case "checkout_modes":
+      return "Покупательский checkout использует основной режим Склад → ПВЗ. Dropoff ПВЗ → ПВЗ остаётся диагностическим/advanced сценарием и не становится buyer default в Phase 5.";
+    case "shipping_option_sync":
+      return "Preview и dry-run безопасны для merchant flow. Execute остаётся ручным admin-only действием с guard string и Medusa ids; shipment lifecycle не запускается.";
     case "five_post":
       return "5 Post — партнёрская сеть в каталоге Yandex Delivery, а не отдельный провайдер Delivery Hub. Для тестов склад → ПВЗ сначала выбирайте operator=market_l4g или «только Яндекс-бренд»: в sandbox такие точки дают офферы стабильнее, чем случайные 5Post.";
     default:
@@ -922,6 +967,15 @@ export const defaultConnectionForm: DeliveryConnectionForm = {
   label_format: "",
   default_warehouse_id: "",
   api_base_url: "",
+  pricing_policy_type: "provider_pass_through",
+  pricing_fixed_amount: "",
+  pricing_free_threshold_amount: "",
+  pricing_below_threshold_amount: "",
+  pricing_markup_amount: "",
+  pricing_markup_percent: "",
+  pricing_currency_code: "RUB",
+  pricing_rounding_mode: "none",
+  pricing_rounding_increment: "",
 };
 
 export const defaultWarehouseForm: DeliveryWarehouseForm = {
@@ -949,9 +1003,61 @@ export const capabilityLabels: Record<string, string> = {
 };
 
 export const modeLabels: Record<string, string> = {
-  warehouse_to_pickup_point: "Склад → ПВЗ (warehouse_to_pickup_point)",
-  dropoff_point_to_pickup_point: "Dropoff ПВЗ → ПВЗ (dropoff_point_to_pickup_point)",
+  warehouse_to_pickup_point: "Склад → ПВЗ",
+  dropoff_point_to_pickup_point: "Dropoff ПВЗ → ПВЗ (advanced diagnostics)",
 };
+
+export const pricingPolicyTypeLabels: Record<DeliveryHubCustomerPricingPolicy["type"], string> = {
+  provider_pass_through: "Цена Яндекс Доставки",
+  provider_quote: "Цена Яндекс Доставки",
+  provider_quote_markup: "Цена Яндекс + наценка",
+  fixed: "Фиксированная цена",
+  free_threshold: "Бесплатно от суммы заказа",
+  free: "Бесплатная доставка",
+  manual: "Ручная политика недоступна",
+  unavailable: "Не показывать доставку",
+};
+
+export type MerchantSelectablePricingPolicyType = Exclude<
+  DeliveryHubCustomerPricingPolicy["type"],
+  "manual" | "provider_quote"
+>;
+
+export const pricingPolicyTypeOptions: Array<{
+  value: MerchantSelectablePricingPolicyType;
+  label: string;
+}> = [
+  { value: "provider_pass_through", label: pricingPolicyTypeLabels.provider_pass_through },
+  { value: "fixed", label: pricingPolicyTypeLabels.fixed },
+  { value: "free_threshold", label: pricingPolicyTypeLabels.free_threshold },
+  { value: "free", label: pricingPolicyTypeLabels.free },
+  { value: "provider_quote_markup", label: pricingPolicyTypeLabels.provider_quote_markup },
+  { value: "unavailable", label: pricingPolicyTypeLabels.unavailable },
+];
+
+export function normalizeMerchantSelectablePricingPolicyType(
+  type: DeliveryHubCustomerPricingPolicy["type"],
+): MerchantSelectablePricingPolicyType {
+  if (type === "manual") {
+    return "unavailable";
+  }
+
+  if (type === "provider_quote") {
+    return "provider_pass_through";
+  }
+
+  return type;
+}
+
+export const pricingRoundingModeOptions: Array<{
+  value: DeliveryConnectionForm["pricing_rounding_mode"];
+  label: string;
+}> = [
+  { value: "none", label: "Без округления" },
+  { value: "ceil", label: "Вверх" },
+  { value: "floor", label: "Вниз" },
+  { value: "round", label: "До ближайшего" },
+];
 
 export const labelFormatOptions = ["", "pdf", "zpl"];
 
@@ -2339,6 +2445,268 @@ export function formatTimestamp(value: string | null) {
   }).format(date);
 }
 
+export type DeliveryHubReadinessStatus = {
+  tone: "ready" | "blocked" | "warning";
+  title: string;
+  description: string;
+  checklist: Array<{
+    key: string;
+    label: string;
+    ready: boolean;
+    helper: string;
+  }>;
+};
+
+export function getDeliveryHubReadinessStatus(input: {
+  connections: DeliveryConnection[];
+  warehouses: DeliveryWarehouse[];
+  preview: DeliveryHubShippingOptionPreview | null;
+}): DeliveryHubReadinessStatus {
+  const yandexConnections = getYandexConnections(input.connections);
+  const activeConnection = yandexConnections.find(
+    (connection) =>
+      connection.enabled &&
+      connection.status === "active" &&
+      connection.credentials_state === "sealed",
+  );
+  const warehouses = getYandexWarehouses(input.warehouses);
+  const enabledWarehouse = warehouses.find((warehouse) => warehouse.enabled);
+  const defaultWarehouseId =
+    activeConnection && typeof activeConnection.config?.default_warehouse_id === "string"
+      ? activeConnection.config.default_warehouse_id.trim()
+      : "";
+  const defaultWarehouse = defaultWarehouseId
+    ? warehouses.find(
+        (warehouse) => warehouse.enabled && warehouse.id === defaultWarehouseId,
+      )
+    : null;
+  const defaultWarehouseCoordinates = defaultWarehouse
+    ? getWarehouseCoordinates(defaultWarehouse)
+    : null;
+  const defaultWarehouseReady = !!defaultWarehouse;
+  const warehouseWithCoordinates = !!defaultWarehouseCoordinates;
+  const primaryModeProjected = Boolean(
+    input.preview?.plan.desired_options.some(
+      (option) => option.mode_code === "warehouse_to_pickup_point",
+    ),
+  );
+
+  const checklist = [
+    {
+      key: "connection",
+      label: "Подключение Yandex активно",
+      ready: !!activeConnection,
+      helper: activeConnection
+        ? `${activeConnection.name} · ${activeConnection.mode}`
+        : "Создайте подключение, сохраните write-only token, проверьте его и включите connection.",
+    },
+    {
+      key: "warehouse",
+      label: "Адрес склада/источника включён",
+      ready: !!enabledWarehouse,
+      helper: enabledWarehouse
+        ? getWarehouseOptionLabel(enabledWarehouse)
+        : "Добавьте адрес продавца/склада для расчёта Склад → ПВЗ.",
+    },
+    {
+      key: "coordinates",
+      label: "Координаты склада заполнены",
+      ready: warehouseWithCoordinates,
+      helper: warehouseWithCoordinates
+        ? "Координаты сохранены в metadata.coordinates=[lng, lat]."
+        : "Укажите longitude и latitude склада для стабильного расчёта Яндекс Доставки.",
+    },
+    {
+      key: "default_warehouse",
+      label: "Склад выбран в подключении",
+      ready: defaultWarehouseReady,
+      helper: defaultWarehouse
+        ? `Default warehouse: ${getWarehouseOptionLabel(defaultWarehouse)}.`
+        : defaultWarehouseId
+          ? "Default warehouse из connection config не найден среди включённых Yandex складов."
+          : "Выберите склад по умолчанию в настройках подключения.",
+    },
+    {
+      key: "shipping_option",
+      label: "Shipping option Склад → ПВЗ готов к синхронизации",
+      ready: primaryModeProjected,
+      helper: primaryModeProjected
+        ? "Planner видит rollout-ready option для buyer checkout."
+        : "Проверьте preview shipping options и устраните deferred причины.",
+    },
+  ];
+  const readyCount = checklist.filter((item) => item.ready).length;
+  const allReady = readyCount === checklist.length;
+
+  return {
+    tone: allReady ? "ready" : readyCount > 0 ? "warning" : "blocked",
+    title: allReady
+      ? "Яндекс Доставка готова для merchant setup"
+      : "Настройка Яндекс Доставки ещё не завершена",
+    description: allReady
+      ? "Основной режим Склад → ПВЗ готов. Shipment execution остаётся выключенным до Phase 6."
+      : `Готово ${readyCount}/${checklist.length}. Заполните оставшиеся merchant-настройки перед rollout shipping option.`,
+    checklist,
+  };
+}
+
+function parseOptionalMoney(value: string) {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : undefined;
+}
+
+function parseOptionalPercent(value: string) {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export function normalizeCustomerPricingPolicy(
+  form: DeliveryConnectionForm,
+): DeliveryHubCustomerPricingPolicy {
+  const policyType = normalizeMerchantSelectablePricingPolicyType(
+    form.pricing_policy_type,
+  );
+  const policy: DeliveryHubCustomerPricingPolicy = {
+    type: policyType,
+  };
+  const currency = form.pricing_currency_code.trim().toUpperCase();
+  const fixedAmount = parseOptionalMoney(form.pricing_fixed_amount);
+  const thresholdAmount = parseOptionalMoney(form.pricing_free_threshold_amount);
+  const belowThresholdAmount = parseOptionalMoney(
+    form.pricing_below_threshold_amount,
+  );
+  const markupAmount = parseOptionalMoney(form.pricing_markup_amount);
+  const markupPercent = parseOptionalPercent(form.pricing_markup_percent);
+  const roundingIncrement = parseOptionalMoney(form.pricing_rounding_increment);
+
+  if (currency) {
+    policy.currency_code = currency;
+  }
+
+  if (fixedAmount !== undefined) {
+    policy.amount = fixedAmount;
+  }
+
+  if (thresholdAmount !== undefined) {
+    policy.threshold_amount = thresholdAmount;
+  }
+
+  if (belowThresholdAmount !== undefined) {
+    policy.below_threshold_amount = belowThresholdAmount;
+  }
+
+  if (markupAmount !== undefined) {
+    policy.markup_amount = markupAmount;
+  }
+
+  if (markupPercent !== undefined) {
+    policy.markup_percent = markupPercent;
+  }
+
+  if (form.pricing_rounding_mode !== "none" || roundingIncrement !== undefined) {
+    policy.rounding = {
+      mode: form.pricing_rounding_mode,
+      ...(roundingIncrement !== undefined ? { increment: roundingIncrement } : {}),
+    };
+  }
+
+  return policy;
+}
+
+function pricingPolicyFromConfig(config: DeliveryConfig) {
+  return config.customer_pricing_policy ?? config.pricing_policy ?? null;
+}
+
+function getPricingPolicyAmount(policy: DeliveryHubCustomerPricingPolicy | null) {
+  if (!policy) {
+    return "";
+  }
+
+  const value = policy.amount ?? policy.fixed_amount;
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+}
+
+function getPricingPolicyThresholdAmount(policy: DeliveryHubCustomerPricingPolicy | null) {
+  if (!policy) {
+    return "";
+  }
+
+  const value = policy.threshold_amount ?? policy.free_threshold_amount;
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+}
+
+function getPricingPolicyBelowThresholdAmount(policy: DeliveryHubCustomerPricingPolicy | null) {
+  if (!policy) {
+    return "";
+  }
+
+  const value = policy.below_threshold_amount ?? policy.amount_below_threshold;
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+}
+
+function getPricingPolicyNumberText(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+}
+
+export function getPricingPolicySummaryText(
+  policy: DeliveryHubCustomerPricingPolicy | null | undefined,
+) {
+  if (!policy) {
+    return "Цена Яндекс Доставки передаётся покупателю без наценки.";
+  }
+
+  const label = pricingPolicyTypeLabels[policy.type] ?? policy.type;
+  const currency = policy.currency_code ?? "RUB";
+
+  switch (policy.type) {
+    case "fixed":
+      return `${label}: ${policy.amount ?? policy.fixed_amount ?? 0} ${currency}.`;
+    case "free_threshold":
+      return `${label}: бесплатно от ${policy.threshold_amount ?? policy.free_threshold_amount ?? 0} ${currency}, ниже порога ${policy.below_threshold_amount ?? policy.amount_below_threshold ?? 0} ${currency}.`;
+    case "free":
+      return `${label}: покупатель видит 0 ${currency}.`;
+    case "provider_quote_markup":
+      return `${label}: amount +${policy.markup_amount ?? 0} ${currency}, percent +${policy.markup_percent ?? 0}%.`;
+    case "manual":
+      return `${label}: в merchant UI не выбирается; до backend contract сохраняется fail-closed как недоступная доставка.`;
+    case "unavailable":
+      return `${label}: доставка будет считаться недоступной.`;
+    default:
+      return `${label}: provider quote используется как customer price.`;
+  }
+}
+
+export function getCheckoutModesSummary(input: {
+  provider: DeliveryProviderDefinition | null;
+  preview: DeliveryHubShippingOptionPreview | null;
+}) {
+  const supported = input.provider?.supported_mode_codes ?? [];
+  const projected = input.preview?.plan.desired_options.map((option) => option.mode_code) ?? [];
+  const primaryReady = projected.includes("warehouse_to_pickup_point");
+
+  return {
+    primaryMode: "warehouse_to_pickup_point",
+    primaryLabel: modeLabels.warehouse_to_pickup_point,
+    primaryReady,
+    supportedModesText: supported.map((mode) => modeLabels[mode] ?? mode).join(", ") || "—",
+    projectedModesText: projected.map((mode) => modeLabels[mode] ?? mode).join(", ") || "—",
+    advancedModeText:
+      "dropoff_point_to_pickup_point остаётся advanced diagnostics и не включается как buyer default в Phase 5.",
+  };
+}
+
 export function normalizeConfig(form: DeliveryConnectionForm): DeliveryConfig {
   const nextConfig: DeliveryConfig = {};
 
@@ -2361,6 +2729,8 @@ export function normalizeConfig(form: DeliveryConnectionForm): DeliveryConfig {
   if (normalizedApiBaseUrl) {
     nextConfig.api_base_url = normalizedApiBaseUrl;
   }
+
+  nextConfig.customer_pricing_policy = normalizeCustomerPricingPolicy(form);
 
   return nextConfig;
 }
@@ -2388,6 +2758,29 @@ export function connectionToForm(
         ? config.default_warehouse_id
         : "",
     api_base_url: normalizeYandexApiBaseUrlForForm(config.api_base_url),
+    pricing_policy_type: normalizeMerchantSelectablePricingPolicyType(
+      pricingPolicyFromConfig(config)?.type ?? "provider_pass_through",
+    ),
+    pricing_fixed_amount: getPricingPolicyAmount(pricingPolicyFromConfig(config)),
+    pricing_free_threshold_amount: getPricingPolicyThresholdAmount(
+      pricingPolicyFromConfig(config),
+    ),
+    pricing_below_threshold_amount: getPricingPolicyBelowThresholdAmount(
+      pricingPolicyFromConfig(config),
+    ),
+    pricing_markup_amount: getPricingPolicyNumberText(
+      pricingPolicyFromConfig(config)?.markup_amount,
+    ),
+    pricing_markup_percent: getPricingPolicyNumberText(
+      pricingPolicyFromConfig(config)?.markup_percent,
+    ),
+    pricing_currency_code:
+      pricingPolicyFromConfig(config)?.currency_code ?? "RUB",
+    pricing_rounding_mode:
+      pricingPolicyFromConfig(config)?.rounding?.mode ?? "none",
+    pricing_rounding_increment: getPricingPolicyNumberText(
+      pricingPolicyFromConfig(config)?.rounding?.increment,
+    ),
   };
 }
 

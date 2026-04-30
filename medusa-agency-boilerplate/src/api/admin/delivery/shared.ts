@@ -44,6 +44,37 @@ const AdminDeliveryWarehouseSchema = z
   })
   .strict()
 
+const AdminDeliveryCustomerPricingPolicySchema = z
+  .object({
+    type: z.enum([
+      "fixed",
+      "free_threshold",
+      "free",
+      "provider_pass_through",
+      "provider_quote",
+      "provider_quote_markup",
+      "manual",
+      "unavailable",
+    ]),
+    amount: z.number().finite().nonnegative().optional(),
+    fixed_amount: z.number().finite().nonnegative().optional(),
+    threshold_amount: z.number().finite().nonnegative().optional(),
+    free_threshold_amount: z.number().finite().nonnegative().optional(),
+    below_threshold_amount: z.number().finite().nonnegative().optional(),
+    amount_below_threshold: z.number().finite().nonnegative().optional(),
+    markup_amount: z.number().finite().nonnegative().optional(),
+    markup_percent: z.number().finite().optional(),
+    currency_code: z.string().min(3).max(3).optional(),
+    rounding: z
+      .object({
+        mode: z.enum(["none", "ceil", "floor", "round"]).optional(),
+        increment: z.number().finite().nonnegative().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+
 const AdminDeliveryConnectionConfigSchema = z
   .object({
     auto_confirm: z.boolean().optional(),
@@ -58,6 +89,8 @@ const AdminDeliveryConnectionConfigSchema = z
         "https://b2b.taxi.tst.yandex.net/b2b/cargo/integration/v2",
       ])
       .optional(),
+    customer_pricing_policy: AdminDeliveryCustomerPricingPolicySchema.optional(),
+    pricing_policy: AdminDeliveryCustomerPricingPolicySchema.optional(),
   })
   .strict()
 

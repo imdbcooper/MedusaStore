@@ -16,16 +16,21 @@ import {
   deriveShipmentOperationsRenderState,
   deriveShippingOptionManualSyncRenderState,
   deriveShippingOptionPreviewRenderState,
+  getCheckoutModesSummary,
   getDeliveryHubApiErrorSafeLines,
+  getDeliveryHubReadinessStatus,
   getDiagnosticsSummaryText,
   getFieldRequirementText,
   getFilteredEventLogs,
   getObservedEncryptionDisabled,
   getPickupPointOptionLabel,
   getPickupWindowOptionLabel,
+  getPricingPolicySummaryText,
   getProviderCodeOperatorHint,
   getQuoteInputEchoLines,
   getQuoteModeHint,
+  normalizeMerchantSelectablePricingPolicyType,
+  pricingPolicyTypeOptions,
   getRequiredBadgeText,
   getShippingOptionSyncCapability,
   getTestConnectionCapability,
@@ -34,6 +39,7 @@ import {
   getYandexConnections,
   getYandexWarehouses,
   normalizeConfig,
+  normalizeCustomerPricingPolicy,
   normalizeYandexApiBaseUrlForForm,
   warehouseToForm,
   buildRoutePointAddressFromPickupPoint,
@@ -73,6 +79,12 @@ describe("delivery admin settings page state", () => {
         label_format: "pdf",
         default_warehouse_id: "wh_main",
         api_base_url: "https://b2b.taxi.tst.yandex.net/api/b2b/platform",
+        customer_pricing_policy: {
+          type: "free_threshold",
+          threshold_amount: 500000,
+          below_threshold_amount: 39000,
+          currency_code: "RUB",
+        },
         token: "secret-token-that-must-not-roundtrip",
       },
       metadata: {
@@ -93,6 +105,15 @@ describe("delivery admin settings page state", () => {
       label_format: "pdf",
       default_warehouse_id: "wh_main",
       api_base_url: "https://b2b.taxi.tst.yandex.net/api/b2b/platform",
+      pricing_policy_type: "free_threshold",
+      pricing_fixed_amount: "",
+      pricing_free_threshold_amount: "500000",
+      pricing_below_threshold_amount: "39000",
+      pricing_markup_amount: "",
+      pricing_markup_percent: "",
+      pricing_currency_code: "RUB",
+      pricing_rounding_mode: "none",
+      pricing_rounding_increment: "",
     });
   });
 
@@ -111,6 +132,10 @@ describe("delivery admin settings page state", () => {
       label_format: "pdf",
       default_warehouse_id: "wh_123",
       api_base_url: "https://b2b.taxi.tst.yandex.net/api/b2b/platform",
+      customer_pricing_policy: {
+        type: "provider_pass_through",
+        currency_code: "RUB",
+      },
     });
 
     expect(
@@ -120,7 +145,278 @@ describe("delivery admin settings page state", () => {
         label_format: "   ",
         default_warehouse_id: "",
       }),
-    ).toEqual({});
+    ).toEqual({
+      customer_pricing_policy: {
+        type: "provider_pass_through",
+        currency_code: "RUB",
+      },
+    });
+  });
+
+
+
+  it("normalizes merchant pricing policy without exposing provider quote internals", () => {
+    const policy = normalizeCustomerPricingPolicy({
+      ...defaultConnectionForm,
+      pricing_policy_type: "provider_quote_markup",
+      pricing_markup_amount: " 9900 ",
+      pricing_markup_percent: "10",
+      pricing_currency_code: " rub ",
+      pricing_rounding_mode: "ceil",
+      pricing_rounding_increment: "100",
+    });
+
+    expect(policy).toEqual({
+      type: "provider_quote_markup",
+      currency_code: "RUB",
+      markup_amount: 9900,
+      markup_percent: 10,
+      rounding: {
+        mode: "ceil",
+        increment: 100,
+      },
+    });
+    expect(JSON.stringify(policy)).not.toContain("quote_key");
+    expect(JSON.stringify(policy)).not.toContain("offer_id");
+    expect(getPricingPolicySummaryText(policy)).toContain("Цена Яндекс + наценка");
+  });
+
+  it("does not expose unsupported manual pricing as merchant-selectable policy", () => {
+    expect(pricingPolicyTypeOptions.map((option) => option.value)).toEqual([
+      "provider_pass_through",
+      "fixed",
+      "free_threshold",
+      "free",
+      "provider_quote_markup",
+      "unavailable",
+    ]);
+    expect(pricingPolicyTypeOptions.map((option) => option.value)).not.toContain(
+      "manual",
+    );
+
+    expect(normalizeMerchantSelectablePricingPolicyType("manual")).toBe(
+      "unavailable",
+    );
+    expect(normalizeMerchantSelectablePricingPolicyType("provider_quote")).toBe(
+      "provider_pass_through",
+    );
+    expect(
+      normalizeCustomerPricingPolicy({
+        ...defaultConnectionForm,
+        pricing_policy_type: "manual",
+      }),
+    ).toEqual({
+      type: "unavailable",
+      currency_code: "RUB",
+    });
+    expect(getPricingPolicySummaryText({ type: "manual" })).toContain(
+      "fail-closed",
+    );
+  });
+
+  it("maps legacy manual pricing config to fail-closed form state", () => {
+    expect(
+      connectionToForm({
+        id: "conn_manual_legacy",
+        provider_code: "yandex",
+        name: "Yandex legacy manual",
+        status: "active",
+        mode: "test",
+        enabled: true,
+        country_code: "RU",
+        credentials_state: "sealed",
+        credentials_fingerprint: "fp_legacy",
+        credentials_last_validated_at: null,
+        credentials_last_error_code: null,
+        credentials_present: true,
+        config: {
+          customer_pricing_policy: {
+            type: "manual",
+            currency_code: "RUB",
+          },
+        },
+        metadata: {},
+        created_at: "2026-04-20T10:00:00.000Z",
+        updated_at: "2026-04-21T10:00:00.000Z",
+      }),
+    ).toMatchObject({
+      pricing_policy_type: "unavailable",
+      pricing_currency_code: "RUB",
+    });
+
+    expect(
+      connectionToForm({
+        id: "conn_provider_quote_legacy",
+        provider_code: "yandex",
+        name: "Yandex provider quote",
+        status: "active",
+        mode: "test",
+        enabled: true,
+        country_code: "RU",
+        credentials_state: "sealed",
+        credentials_fingerprint: "fp_legacy",
+        credentials_last_validated_at: null,
+        credentials_last_error_code: null,
+        credentials_present: true,
+        config: {
+          customer_pricing_policy: {
+            type: "provider_quote",
+            currency_code: "RUB",
+          },
+        },
+        metadata: {},
+        created_at: "2026-04-20T10:00:00.000Z",
+        updated_at: "2026-04-21T10:00:00.000Z",
+      }),
+    ).toMatchObject({
+      pricing_policy_type: "provider_pass_through",
+      pricing_currency_code: "RUB",
+    });
+  });
+
+  it("derives merchant readiness and checkout mode summaries for Settings Delivery", () => {
+    const connection: DeliveryConnection = {
+      id: "conn_ready",
+      provider_code: "yandex",
+      name: "Yandex ready",
+      status: "active",
+      mode: "test",
+      enabled: true,
+      country_code: "RU",
+      credentials_state: "sealed",
+      credentials_fingerprint: "fp",
+      credentials_last_validated_at: "2026-04-21T10:00:00.000Z",
+      credentials_last_error_code: null,
+      credentials_present: true,
+      config: {
+        default_warehouse_id: "wh_ready",
+      },
+      metadata: {},
+      created_at: "2026-04-20T10:00:00.000Z",
+      updated_at: "2026-04-21T10:00:00.000Z",
+    };
+    const warehouse: DeliveryWarehouse = {
+      id: "wh_ready",
+      name: "Main warehouse",
+      enabled: true,
+      country_code: "RU",
+      city: "Москва",
+      address_line_1: "Льва Толстого, 16",
+      contact_name: null,
+      contact_phone: null,
+      provider_code: "yandex",
+      provider_warehouse_id: null,
+      metadata: {
+        coordinates: [37.588144, 55.733842],
+      },
+      created_at: "2026-04-20T10:00:00.000Z",
+      updated_at: "2026-04-21T10:00:00.000Z",
+    };
+    const preview = {
+      provider_code: "yandex",
+      provider_id: "prov_yandex",
+      current_options: [],
+      plan: {
+        provider_code: "yandex",
+        provider_id: "prov_yandex",
+        desired_options: [
+          {
+            status: "projected" as const,
+            mode_code: "warehouse_to_pickup_point",
+            data: {
+              version: 1,
+              provider_code: "yandex",
+              provider_id: "prov_yandex",
+              id: "deliveryhub.warehouse_to_pickup_point",
+              mode_code: "warehouse_to_pickup_point",
+            },
+            supporting_connection_ids: ["conn_ready"],
+          },
+        ],
+        deferred_options: [],
+        connection_plans: [],
+      },
+      reconciliation: {
+        provider_code: "yandex",
+        provider_id: "prov_yandex",
+        create_candidates: [],
+        update_candidates: [],
+        unchanged: [],
+        orphaned_managed_options: [],
+        ignored_foreign_options: [],
+      },
+      summary: {
+        current_option_count: 0,
+        desired_option_count: 1,
+        deferred_option_count: 0,
+        deferred_issue_count: 0,
+        connection_plan_count: 0,
+        create_candidate_count: 0,
+        update_candidate_count: 0,
+        unchanged_count: 0,
+        orphaned_managed_option_count: 0,
+        ignored_foreign_option_count: 0,
+      },
+    } satisfies DeliveryHubShippingOptionPreview;
+
+    expect(
+      getDeliveryHubReadinessStatus({
+        connections: [connection],
+        warehouses: [warehouse],
+        preview,
+      }),
+    ).toMatchObject({
+      tone: "ready",
+      title: "Яндекс Доставка готова для merchant setup",
+    });
+
+    const staleDefaultWarehouseStatus = getDeliveryHubReadinessStatus({
+      connections: [
+        {
+          ...connection,
+          config: {
+            default_warehouse_id: "wh_missing",
+          },
+        },
+      ],
+      warehouses: [warehouse],
+      preview,
+    });
+    expect(staleDefaultWarehouseStatus.tone).toBe("warning");
+    expect(
+      staleDefaultWarehouseStatus.checklist.find(
+        (item) => item.key === "default_warehouse",
+      ),
+    ).toMatchObject({
+      ready: false,
+      helper: expect.stringContaining("не найден"),
+    });
+    expect(
+      staleDefaultWarehouseStatus.checklist.find(
+        (item) => item.key === "coordinates",
+      ),
+    ).toMatchObject({
+      ready: false,
+    });
+
+    expect(
+      getCheckoutModesSummary({
+        provider: {
+          code: "yandex",
+          label: "Yandex Delivery",
+          capabilities: [],
+          supported_mode_codes: [
+            "warehouse_to_pickup_point",
+            "dropoff_point_to_pickup_point",
+          ],
+        },
+        preview,
+      }),
+    ).toMatchObject({
+      primaryMode: "warehouse_to_pickup_point",
+      primaryReady: true,
+      advancedModeText: expect.stringContaining("не включается как buyer default"),
+    });
   });
 
   it("normalizes legacy Yandex API base URL aliases for save payloads", () => {

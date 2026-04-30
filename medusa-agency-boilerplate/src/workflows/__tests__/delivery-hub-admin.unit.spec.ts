@@ -234,6 +234,11 @@ describe("Delivery Hub admin routes", () => {
       config: {
         auto_confirm: true,
         default_warehouse_id: "wh_1",
+        customer_pricing_policy: {
+          type: "fixed",
+          amount: 49000,
+          currency_code: "RUB",
+        },
       },
     }
     const connection = {
@@ -252,6 +257,11 @@ describe("Delivery Hub admin routes", () => {
       config: {
         auto_confirm: true,
         default_warehouse_id: "wh_1",
+        customer_pricing_policy: {
+          type: "fixed",
+          amount: 49000,
+          currency_code: "RUB",
+        },
       },
       metadata: {},
       created_at: "2026-04-20T00:00:00.000Z",
@@ -369,6 +379,62 @@ describe("Delivery Hub admin routes", () => {
           api_base_url: "https://b2b.taxi.tst.yandex.net/api/b2b/platform",
         },
       },
+    })
+  })
+
+
+
+  it("allows safe customer pricing policy in admin connection response boundary", async () => {
+    const connection = {
+      id: "conn_pricing",
+      provider_code: "yandex",
+      name: "Yandex pricing",
+      status: "active",
+      mode: "test",
+      enabled: true,
+      country_code: "RU",
+      credentials_state: "sealed",
+      credentials_fingerprint: "fingerprint",
+      credentials_last_validated_at: null,
+      credentials_last_error_code: null,
+      credentials_present: true,
+      config: {
+        customer_pricing_policy: {
+          type: "free_threshold",
+          threshold_amount: 500000,
+          below_threshold_amount: 39000,
+          currency_code: "RUB",
+          rounding: {
+            mode: "ceil",
+            increment: 100,
+          },
+        },
+      },
+      metadata: {},
+      created_at: "2026-04-20T00:00:00.000Z",
+      updated_at: "2026-04-21T00:00:00.000Z",
+    }
+
+    jest
+      .spyOn(DeliveryHubService.prototype, "updateConnection")
+      .mockResolvedValue(connection as any)
+
+    const res = createMockResponse()
+
+    await deliveryConnectionRoute.PUT(
+      createMockRequest({
+        url: "/admin/delivery/connections/conn_pricing",
+        validatedBody: {
+          enabled: true,
+        },
+      }) as any,
+      res as any
+    )
+
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      connection,
     })
   })
 

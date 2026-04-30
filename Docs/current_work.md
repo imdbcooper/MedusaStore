@@ -24,6 +24,8 @@
 
 > Phase 3 review/hardening note (2026-04-30): shopper PVZ response boundaries were tightened so Store pickup-point, selection, and readiness payloads strip provider/dropoff/internal fragments such as `provider_operator_id`, `station_type`, `is_origin_dropoff_allowed`, `payment_methods`, `metadata`, raw references, provider offer ids, and backend execution references before they can reach buyer-facing storefront state. Phase 4 prompt was corrected to require this as a precondition before shipping-method commit work.
 
+> Phase 5 review/commit note (2026-04-30): `Settings -> Delivery` has been reworked into a merchant-facing Yandex Delivery setup surface with primary readiness, write-only token handling, warehouse/default-source guidance, customer pricing policy controls, checkout mode summary, and guarded shipping-option preview/sync. Provider JSON, pickup/quote diagnostics, fulfillment bridge, execution plan, and shipment-operation surfaces remain available under advanced/details and are not the primary merchant path. Review checks: `git diff --check` PASS; focused admin/page-state tests PASS (`80/80`); root `npm run typecheck` PASS. Phase 4 browser smoke gap is unchanged unless explicitly rechecked.
+
 
 ---
 

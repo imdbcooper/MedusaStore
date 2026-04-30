@@ -42,13 +42,16 @@ import {
   deriveShippingOptionManualSyncRenderState,
   deriveShippingOptionPreviewRenderState,
   formatTimestamp,
+  getCheckoutModesSummary,
   getDeliveryHubApiErrorSafeLines,
+  getDeliveryHubReadinessStatus,
   getDiagnosticsSummaryText,
   getFieldRequirementText,
   getFilteredEventLogs,
   getObservedEncryptionDisabled,
   getPickupPointOptionLabel,
   getPickupWindowOptionLabel,
+  getPricingPolicySummaryText,
   getProviderCodeOperatorHint,
   getQuoteInputEchoLines,
   getQuoteModeHint,
@@ -64,7 +67,10 @@ import {
   logSuccessToneClass,
   modeLabels,
   normalizeConfig,
+  normalizeCustomerPricingPolicy,
   plannerStatusToneClass,
+  pricingPolicyTypeOptions,
+  pricingRoundingModeOptions,
   statusToneClass,
   warehouseToForm,
   yandexApiBaseUrlOptions,
@@ -438,6 +444,31 @@ const DeliverySettingsPage = () => {
         snapshot: shipmentOperationsSnapshot,
       }),
     [shipmentOperationsForm, shipmentOperationsSnapshot],
+  );
+
+  const readinessStatus = useMemo(
+    () =>
+      getDeliveryHubReadinessStatus({
+        connections,
+        warehouses,
+        preview: shippingOptionPreview,
+      }),
+    [connections, shippingOptionPreview, warehouses],
+  );
+
+  const checkoutModesSummary = useMemo(
+    () =>
+      getCheckoutModesSummary({
+        provider: yandexProvider,
+        preview: shippingOptionPreview,
+      }),
+    [shippingOptionPreview, yandexProvider],
+  );
+
+  const pricingPolicySummary = useMemo(
+    () =>
+      getPricingPolicySummaryText(normalizeCustomerPricingPolicy(connectionForm)),
+    [connectionForm],
   );
 
   const loadData = async (silent = false) => {
@@ -1345,8 +1376,9 @@ const DeliverySettingsPage = () => {
         <div>
           <Heading level="h1">Доставка</Heading>
           <Text className="text-ui-fg-subtle mt-2">
-            Панель ручного тестирования Delivery Hub. Боевые shipment-операции
-            остаются закрытыми и по умолчанию выключены.
+            Merchant-настройка Яндекс Доставки: подключение, write-only токен,
+            склад-источник, координаты, цена для покупателя и shipping options.
+            Shipment execution и lifecycle-операции не включаются в Phase 5.
           </Text>
         </div>
         <Button
@@ -1382,6 +1414,49 @@ const DeliverySettingsPage = () => {
             </Text>
           </div>
         ) : null}
+
+        <div className="rounded-lg border p-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <Heading level="h2">Готовность Яндекс Доставки</Heading>
+              <Text className="text-ui-fg-subtle mt-2">
+                {readinessStatus.description}
+              </Text>
+            </div>
+            <span
+              className={`rounded-full border px-2 py-1 text-xs ${
+                readinessStatus.tone === "ready"
+                  ? "border-green-200 bg-green-50 text-green-700"
+                  : readinessStatus.tone === "warning"
+                    ? "border-amber-200 bg-amber-50 text-amber-700"
+                    : "border-red-200 bg-red-50 text-red-700"
+              }`}
+            >
+              {readinessStatus.title}
+            </span>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {readinessStatus.checklist.map((item) => (
+              <div key={item.key} className="rounded-md border p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <Text className="font-medium">{item.label}</Text>
+                  <span
+                    className={`rounded-full border px-2 py-1 text-xs ${
+                      item.ready
+                        ? "border-green-200 bg-green-50 text-green-700"
+                        : "border-amber-200 bg-amber-50 text-amber-700"
+                    }`}
+                  >
+                    {item.ready ? "готово" : "нужно настроить"}
+                  </span>
+                </div>
+                <Text className="text-ui-fg-subtle mt-2 text-sm">
+                  {item.helper}
+                </Text>
+              </div>
+            ))}
+          </div>
+        </div>
 
         <details className="rounded-lg border p-4">
           <summary className="cursor-pointer text-base font-medium">
@@ -1645,6 +1720,173 @@ const DeliverySettingsPage = () => {
                 </Text>
               </div>
 
+
+              <div className="md:col-span-2 rounded-md border p-4">
+                <Heading level="h3">Цена доставки для покупателя</Heading>
+                <Text className="text-ui-fg-subtle mt-2 text-sm">
+                  {getFieldRequirementText({ field: "pricing_policy" })}
+                </Text>
+                <div className="mt-4 grid gap-4 md:grid-cols-3">
+                  <div>
+                    <Label htmlFor="connection-pricing-policy-type">Политика цены</Label>
+                    <select
+                      id="connection-pricing-policy-type"
+                      value={connectionForm.pricing_policy_type}
+                      onChange={(event) =>
+                        handleFormField(
+                          "pricing_policy_type",
+                          event.target.value as DeliveryConnectionForm["pricing_policy_type"],
+                        )
+                      }
+                      className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active mt-1 h-10 w-full rounded-md px-3 outline-none"
+                    >
+                      {pricingPolicyTypeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor="connection-pricing-currency">Валюта</Label>
+                    <Input
+                      id="connection-pricing-currency"
+                      value={connectionForm.pricing_currency_code}
+                      onChange={(event) =>
+                        handleFormField("pricing_currency_code", event.target.value)
+                      }
+                      placeholder="RUB"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="connection-pricing-fixed-amount">Фиксированная цена</Label>
+                    <Input
+                      id="connection-pricing-fixed-amount"
+                      type="number"
+                      min="0"
+                      value={connectionForm.pricing_fixed_amount}
+                      onChange={(event) =>
+                        handleFormField("pricing_fixed_amount", event.target.value)
+                      }
+                      placeholder="например 49000"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="connection-pricing-threshold">Бесплатно от</Label>
+                    <Input
+                      id="connection-pricing-threshold"
+                      type="number"
+                      min="0"
+                      value={connectionForm.pricing_free_threshold_amount}
+                      onChange={(event) =>
+                        handleFormField("pricing_free_threshold_amount", event.target.value)
+                      }
+                      placeholder="например 500000"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="connection-pricing-below-threshold">Цена ниже порога</Label>
+                    <Input
+                      id="connection-pricing-below-threshold"
+                      type="number"
+                      min="0"
+                      value={connectionForm.pricing_below_threshold_amount}
+                      onChange={(event) =>
+                        handleFormField("pricing_below_threshold_amount", event.target.value)
+                      }
+                      placeholder="например 0 или 39000"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="connection-pricing-markup-amount">Наценка суммой</Label>
+                    <Input
+                      id="connection-pricing-markup-amount"
+                      type="number"
+                      min="0"
+                      value={connectionForm.pricing_markup_amount}
+                      onChange={(event) =>
+                        handleFormField("pricing_markup_amount", event.target.value)
+                      }
+                      placeholder="например 9900"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="connection-pricing-markup-percent">Наценка, %</Label>
+                    <Input
+                      id="connection-pricing-markup-percent"
+                      type="number"
+                      value={connectionForm.pricing_markup_percent}
+                      onChange={(event) =>
+                        handleFormField("pricing_markup_percent", event.target.value)
+                      }
+                      placeholder="например 10"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="connection-pricing-rounding-mode">Округление</Label>
+                    <select
+                      id="connection-pricing-rounding-mode"
+                      value={connectionForm.pricing_rounding_mode}
+                      onChange={(event) =>
+                        handleFormField(
+                          "pricing_rounding_mode",
+                          event.target.value as DeliveryConnectionForm["pricing_rounding_mode"],
+                        )
+                      }
+                      className="bg-ui-bg-field shadow-borders-base txt-compact-small text-ui-fg-base focus-visible:shadow-borders-interactive-with-active mt-1 h-10 w-full rounded-md px-3 outline-none"
+                    >
+                      {pricingRoundingModeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor="connection-pricing-rounding-increment">Шаг округления</Label>
+                    <Input
+                      id="connection-pricing-rounding-increment"
+                      type="number"
+                      min="0"
+                      value={connectionForm.pricing_rounding_increment}
+                      onChange={(event) =>
+                        handleFormField("pricing_rounding_increment", event.target.value)
+                      }
+                      placeholder="например 100"
+                    />
+                  </div>
+                </div>
+                <div className="mt-4 rounded-md border bg-ui-bg-subtle p-3">
+                  <Text className="font-medium">Preview политики</Text>
+                  <Text className="text-ui-fg-subtle mt-1 text-sm">
+                    {pricingPolicySummary}
+                  </Text>
+                </div>
+              </div>
+
+              <div className="md:col-span-2 rounded-md border p-4">
+                <Heading level="h3">Режимы checkout</Heading>
+                <Text className="text-ui-fg-subtle mt-2 text-sm">
+                  {getFieldRequirementText({ field: "checkout_modes" })}
+                </Text>
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div>
+                    <Label>Основной buyer mode</Label>
+                    <Input readOnly value={checkoutModesSummary.primaryLabel} />
+                  </div>
+                  <div>
+                    <Label>Provider поддерживает</Label>
+                    <Input readOnly value={checkoutModesSummary.supportedModesText} />
+                  </div>
+                  <div>
+                    <Label>Готово в preview</Label>
+                    <Input readOnly value={checkoutModesSummary.projectedModesText} />
+                  </div>
+                </div>
+                <Text className="text-ui-fg-subtle mt-3 text-sm">
+                  {checkoutModesSummary.advancedModeText}
+                </Text>
+              </div>
               <details className="md:col-span-2 rounded-md border p-4">
                 <summary className="cursor-pointer text-sm font-medium">
                   Расширенные настройки подключения
@@ -2177,8 +2419,12 @@ const DeliverySettingsPage = () => {
           </div>
         </div>
 
-        <div className="rounded-lg border p-4">
-          <Heading level="h2">3. Найти ПВЗ</Heading>
+        <details className="rounded-lg border p-4">
+          <summary className="cursor-pointer text-base font-medium">
+            Advanced: поиск ПВЗ и диагностический quote
+          </summary>
+          <div className="mt-4">
+          <Heading level="h2">Найти ПВЗ</Heading>
           <Text className="text-ui-fg-subtle mt-2">
             Безопасный поиск Yandex pickup points. По документации Yandex для
             тестов используйте geo_id и operator_ids: по умолчанию выбран
@@ -2429,21 +2675,15 @@ const DeliverySettingsPage = () => {
               ))}
             </div>
           ) : null}
-        </div>
+          </div>
+        </details>
 
-        <details className="rounded-lg border p-4">
-          <summary className="cursor-pointer text-base font-medium">
-            Техническая диагностика: shipping options, fulfillment bridge, execution plan, shipment operations
-          </summary>
-          <div className="mt-4 grid gap-6">
-
-        <div className="rounded-lg border p-4">
+          <div className="rounded-lg border p-4">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <Heading level="h2">Shipping option preview</Heading>
+              <Heading level="h2">Shipping option preview / sync</Heading>
               <Text className="text-ui-fg-subtle mt-2">
-                Admin-only read preview for desired and reconciled deliveryhub
-                shipping-option state. No sync or write side-effects.
+                Merchant-facing preview для shipping options Яндекс Доставки. Preview и dry-run безопасны; execute остаётся ручным admin-only действием с guard string.
               </Text>
             </div>
             <Text className="text-ui-fg-subtle text-sm">
@@ -2803,6 +3043,14 @@ const DeliverySettingsPage = () => {
           )}
         </div>
 
+        <details className="rounded-lg border p-4">
+          <summary className="cursor-pointer text-base font-medium">
+            Техническая диагностика: fulfillment bridge, execution plan, shipment operations
+          </summary>
+          <Text className="text-ui-fg-subtle mt-2 text-sm">
+            Advanced diagnostics отделены от merchant setup. Эти блоки не включают live shipment execution и не меняют checkout gating.
+          </Text>
+          <div className="mt-4 grid gap-6">
         <div className="rounded-lg border p-4">
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -3439,6 +3687,8 @@ const DeliverySettingsPage = () => {
             </Text>
           )}
         </div>
+          </div>
+        </details>
 
         <div className="rounded-lg border p-4">
           <div className="flex items-center justify-between gap-4">
@@ -3815,8 +4065,6 @@ const DeliverySettingsPage = () => {
           )}
         </div>
 
-          </div>
-        </details>
 
         <details className="rounded-lg border p-4">
           <summary className="cursor-pointer text-base font-medium">
@@ -3891,8 +4139,12 @@ const DeliverySettingsPage = () => {
           </div>
         </details>
 
-        <div className="rounded-lg border p-4">
-          <Heading level="h2">4. Проверить стоимость доставки</Heading>
+        <details className="rounded-lg border p-4">
+          <summary className="cursor-pointer text-base font-medium">
+            Advanced: диагностический расчёт стоимости
+          </summary>
+          <div className="mt-4">
+          <Heading level="h2">Проверить стоимость доставки</Heading>
           <Text className="text-ui-fg-subtle mt-2">
             Диагностический расчёт тарифа для поддерживаемых режимов Yandex.
             Shipment не создаётся, токены и raw provider body не выводятся.
@@ -4361,7 +4613,7 @@ const DeliverySettingsPage = () => {
                             {quote.carrier_label}
                           </Text>
                           <Text className="text-ui-fg-subtle text-sm">
-                            {quote.mode_code} · {quote.quote_key}
+                            {modeLabels[quote.mode_code] || quote.mode_code} · quote reference hidden
                           </Text>
                         </div>
                         <div className="text-right">
@@ -4393,11 +4645,11 @@ const DeliverySettingsPage = () => {
 
                       <details className="mt-3">
                         <summary className="cursor-pointer text-sm text-ui-fg-subtle">
-                          Техническая диагностика: redacted provider reference
+                          Advanced diagnostics: redacted provider reference
                         </summary>
-                        <pre className="mt-2 overflow-auto rounded-md border bg-ui-bg-subtle p-3 text-xs">
-                          {JSON.stringify(quote.raw_reference, null, 2)}
-                        </pre>
+                        <Text className="text-ui-fg-subtle mt-2 text-sm">
+                          Raw provider payloads, offer ids and quote keys are intentionally hidden from Settings → Delivery.
+                        </Text>
                       </details>
                     </div>
                   ))
@@ -4411,7 +4663,8 @@ const DeliverySettingsPage = () => {
               </div>
             </div>
           ) : null}
-        </div>
+          </div>
+        </details>
       </div>
     </Container>
   );
