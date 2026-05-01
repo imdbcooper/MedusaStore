@@ -360,6 +360,7 @@ const Shipping: React.FC<ShippingProps> = ({
     request_key: string
     quotes: DeliveryHubQuotesResponse
   } | null>(null)
+  const [deliveryHubDiagnosticsRequested, setDeliveryHubDiagnosticsRequested] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const searchParams = useSearchParams()
@@ -458,21 +459,6 @@ const Shipping: React.FC<ShippingProps> = ({
       issue_message: null,
     }))
 
-    setDeliveryHubCutoverPreconditionsState({
-      status: "loading",
-      preconditions: null,
-    })
-
-    setDeliveryHubCutoverCandidateState({
-      status: "loading",
-      candidate: null,
-    })
-
-    setDeliveryHubCutoverApprovalArtifactState({
-      status: "loading",
-      artifact: null,
-    })
-
     setDeliveryHubPickupPointState((current) => ({
       ...current,
       status: deliveryHubAddressContext.is_complete ? "loading" : "idle",
@@ -519,9 +505,6 @@ const Shipping: React.FC<ShippingProps> = ({
       retrieveDeliveryHubSelection(cart.id),
       retrieveDeliveryHubReadiness(cart.id),
       pickupPointsRequest,
-      retrieveDeliveryHubCutoverPreconditions(),
-      retrieveDeliveryHubCutoverCandidate(cart.id),
-      retrieveDeliveryHubCutoverApprovalArtifact(cart.id),
     ])
       .then(async (results) => {
         if (cancelled) {
@@ -544,21 +527,6 @@ const Shipping: React.FC<ShippingProps> = ({
             ? deliveryHubPickupPointState.points
             : null
         const pickupPoints = fetchedPickupPoints ?? cachedPickupPoints
-        const cutoverPreconditions = results[4].status === "fulfilled" ? results[4].value : null
-        const cutoverCandidate = results[5].status === "fulfilled" ? results[5].value : null
-        const cutoverApprovalArtifact = results[6].status === "fulfilled" ? results[6].value : null
-        setDeliveryHubCutoverPreconditionsState({
-          status: cutoverPreconditions ? "ready" : "unavailable",
-          preconditions: cutoverPreconditions,
-        })
-        setDeliveryHubCutoverCandidateState({
-          status: cutoverCandidate ? "ready" : "unavailable",
-          candidate: cutoverCandidate,
-        })
-        setDeliveryHubCutoverApprovalArtifactState({
-          status: cutoverApprovalArtifact ? "ready" : "unavailable",
-          artifact: cutoverApprovalArtifact,
-        })
         const selectedCategory = deliveryHubPickupPointState.selected_category
         const selectedPointId = getDeliveryHubSelectedPickupPointId(
           pickupPoints,
@@ -710,15 +678,6 @@ const Shipping: React.FC<ShippingProps> = ({
           return
         }
 
-        setDeliveryHubCutoverPreconditionsState({
-          status: "unavailable",
-          preconditions: null,
-        })
-        setDeliveryHubCutoverCandidateState({
-          status: "unavailable",
-          candidate: null,
-        })
-
         const previewInput: DeliveryHubNeutralSelectionRehearsalInput = {
           cart_id: cart.id,
           address_context: deliveryHubAddressContext,
@@ -753,6 +712,77 @@ const Shipping: React.FC<ShippingProps> = ({
     deliveryHubPickupPointState.selected_point_id,
     preferredCartShippingMethodId,
   ])
+
+  useEffect(() => {
+    if (!DELIVERY_HUB_PREVIEW_ENABLED || !deliveryHubDiagnosticsRequested) {
+      return
+    }
+
+    let cancelled = false
+
+    setDeliveryHubCutoverPreconditionsState({
+      status: "loading",
+      preconditions: null,
+    })
+    setDeliveryHubCutoverCandidateState({
+      status: "loading",
+      candidate: null,
+    })
+    setDeliveryHubCutoverApprovalArtifactState({
+      status: "loading",
+      artifact: null,
+    })
+
+    Promise.allSettled([
+      retrieveDeliveryHubCutoverPreconditions(),
+      retrieveDeliveryHubCutoverCandidate(cart.id),
+      retrieveDeliveryHubCutoverApprovalArtifact(cart.id),
+    ])
+      .then((results) => {
+        if (cancelled) {
+          return
+        }
+
+        const cutoverPreconditions = results[0].status === "fulfilled" ? results[0].value : null
+        const cutoverCandidate = results[1].status === "fulfilled" ? results[1].value : null
+        const cutoverApprovalArtifact = results[2].status === "fulfilled" ? results[2].value : null
+
+        setDeliveryHubCutoverPreconditionsState({
+          status: cutoverPreconditions ? "ready" : "unavailable",
+          preconditions: cutoverPreconditions,
+        })
+        setDeliveryHubCutoverCandidateState({
+          status: cutoverCandidate ? "ready" : "unavailable",
+          candidate: cutoverCandidate,
+        })
+        setDeliveryHubCutoverApprovalArtifactState({
+          status: cutoverApprovalArtifact ? "ready" : "unavailable",
+          artifact: cutoverApprovalArtifact,
+        })
+      })
+      .catch(() => {
+        if (cancelled) {
+          return
+        }
+
+        setDeliveryHubCutoverPreconditionsState({
+          status: "unavailable",
+          preconditions: null,
+        })
+        setDeliveryHubCutoverCandidateState({
+          status: "unavailable",
+          candidate: null,
+        })
+        setDeliveryHubCutoverApprovalArtifactState({
+          status: "unavailable",
+          artifact: null,
+        })
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [cart.id, deliveryHubDiagnosticsRequested])
 
   useEffect(() => {
     setError(null)
@@ -844,6 +874,7 @@ const Shipping: React.FC<ShippingProps> = ({
       return
     }
 
+    setDeliveryHubDiagnosticsRequested(true)
     setDeliveryHubNeutralPreviewState({
       status: "loading",
       quotes: null,
@@ -912,6 +943,7 @@ const Shipping: React.FC<ShippingProps> = ({
       return
     }
 
+    setDeliveryHubDiagnosticsRequested(true)
     setDeliveryHubNeutralPreviewState((current) => ({
       ...current,
       status: "loading",
@@ -959,18 +991,6 @@ const Shipping: React.FC<ShippingProps> = ({
       correlation_id: deliveryHubNeutralPreviewState.quotes?.diagnostics?.correlation_id ?? null,
     })
       .then(async (selection) => {
-        const [candidate, artifact] = await Promise.all([
-          retrieveDeliveryHubCutoverCandidate(cart.id),
-          retrieveDeliveryHubCutoverApprovalArtifact(cart.id),
-        ])
-        setDeliveryHubCutoverCandidateState({
-          status: candidate ? "ready" : "unavailable",
-          candidate,
-        })
-        setDeliveryHubCutoverApprovalArtifactState({
-          status: artifact ? "ready" : "unavailable",
-          artifact,
-        })
         setDeliveryHubNeutralPreviewState((current) => ({
           ...current,
           status: "saved",
@@ -990,6 +1010,7 @@ const Shipping: React.FC<ShippingProps> = ({
   }
 
   const handleClearDeliveryHubNeutralPreviewSelection = async () => {
+    setDeliveryHubDiagnosticsRequested(true)
     setDeliveryHubNeutralPreviewState((current) => ({
       ...current,
       status: "loading",
@@ -999,18 +1020,6 @@ const Shipping: React.FC<ShippingProps> = ({
 
     await clearDeliveryHubSelection({ cart_id: cart.id })
       .then(async (selection) => {
-        const [candidate, artifact] = await Promise.all([
-          retrieveDeliveryHubCutoverCandidate(cart.id),
-          retrieveDeliveryHubCutoverApprovalArtifact(cart.id),
-        ])
-        setDeliveryHubCutoverCandidateState({
-          status: candidate ? "ready" : "unavailable",
-          candidate,
-        })
-        setDeliveryHubCutoverApprovalArtifactState({
-          status: artifact ? "ready" : "unavailable",
-          artifact,
-        })
         setDeliveryHubNeutralPreviewState((current) => ({
           ...current,
           status: "cleared",
@@ -1075,20 +1084,32 @@ const Shipping: React.FC<ShippingProps> = ({
 
     await saveDeliveryHubSelection(guard.payload)
       .then(async () => {
-        const [readiness, candidate] = await Promise.all([
+        const [readiness, persistedSelection] = await Promise.all([
           retrieveDeliveryHubReadiness(cart.id),
-          retrieveDeliveryHubCutoverCandidate(cart.id),
+          retrieveDeliveryHubSelection(cart.id),
         ])
-        const commitEligibility = buildDeliveryHubCommitEligibilityModel({
-          cutover_enabled: DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED,
-          cutover_candidate: candidate,
-          persisted_selection: await retrieveDeliveryHubSelection(cart.id),
-          readiness,
-          available_shipping_options: shippingMethods,
-          current_shipping_method: cartShippingMethod,
-        })
+        const selection = persistedSelection?.selection ?? null
+        const expectedShippingOptionId = selection ? `deliveryhub:${selection.quote_type}` : null
+        const matchedShippingOption = expectedShippingOptionId
+          ? shippingMethods.find((option) => {
+              if (option.id === expectedShippingOptionId) {
+                return true
+              }
 
-        if (!commitEligibility.canCommitShippingMethod || !commitEligibility.shipping_option_id) {
+              const optionData = option.data as Record<string, unknown> | null | undefined
+              return (
+                option.provider_id === "deliveryhub_deliveryhub" &&
+                optionData?.mode_code === selection?.quote_type
+              )
+            }) ?? null
+          : null
+
+        if (
+          !DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED ||
+          readiness?.status !== "ready" ||
+          !selection ||
+          !matchedShippingOption?.id
+        ) {
           setDeliveryHubSelectionCutInState({
             status: "blocked",
             message: "Нужно обновить доставку. Выберите пункт выдачи ещё раз или попробуйте позже.",
@@ -1097,7 +1118,7 @@ const Shipping: React.FC<ShippingProps> = ({
           return
         }
 
-        const committed = await commitShippingMethod(commitEligibility.shipping_option_id)
+        const committed = await commitShippingMethod(matchedShippingOption.id)
 
         setDeliveryHubSelectionCutInState({
           status: committed ? "committed" : "error",
@@ -1719,8 +1740,18 @@ const Shipping: React.FC<ShippingProps> = ({
             <details
               className="mb-6 rounded-rounded border border-ui-border-base bg-ui-bg-subtle px-5 py-4"
               data-testid="delivery-hub-dev-diagnostics"
+              onToggle={(event) => {
+                if (event.currentTarget.open) {
+                  setDeliveryHubDiagnosticsRequested(true)
+                }
+              }}
             >
-              <summary className="cursor-pointer text-ui-fg-muted txt-small-plus">
+              <summary
+                className="cursor-pointer text-ui-fg-muted txt-small-plus"
+                onClick={() => {
+                  setDeliveryHubDiagnosticsRequested(true)
+                }}
+              >
                 Advanced Delivery Hub diagnostics
               </summary>
               <div className="mt-4">

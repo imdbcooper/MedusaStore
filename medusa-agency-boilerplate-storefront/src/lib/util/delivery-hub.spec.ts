@@ -11771,6 +11771,8 @@ test("delivery hub selection cut-in wires only neutral save/clear helpers and ke
   assert.equal(shippingSource.includes("items: ["), false)
   assert.equal(shippingSource.includes("delivery-hub-advanced-readiness-status"), true)
   assert.equal(shippingSource.includes("delivery-hub-advanced-preconditions-status"), true)
+  assert.equal(shippingSource.includes("deliveryHubDiagnosticsRequested"), true)
+  assert.equal(shippingSource.includes("setDeliveryHubDiagnosticsRequested(true)"), true)
   assert.equal(shippingSource.includes("retrieveDeliveryHubCutoverPreconditions()"), true)
   assert.equal(shippingSource.includes("buildDeliveryHubCutoverPreconditionsPreviewModel"), true)
   assert.equal(shippingSource.includes("canCommitShippingMethod"), true)
@@ -11836,6 +11838,8 @@ test("delivery hub advanced diagnostics stay dev-only and expose stable manual v
     )
   }
 
+  assert.equal(shippingSource.includes("onToggle={(event) =>"), true)
+  assert.equal(shippingSource.includes("setDeliveryHubDiagnosticsRequested(true)"), true)
   assert.equal(shippingSource.includes("Advanced Delivery Hub diagnostics"), true)
   assert.equal(
     shippingSource.includes(
@@ -11874,6 +11878,47 @@ test("delivery hub advanced diagnostics stay dev-only and expose stable manual v
   assert.equal(diagnosticsBlockStart > -1, true)
   assert.equal(diagnosticsBlockEnd > diagnosticsBlockStart, true)
   assert.equal(/setShippingMethod\s*\(\s*\{/.test(diagnosticsBlockSource), false)
+})
+
+test("checkout shipping source isolates advanced diagnostic fetches from ordinary Delivery Hub product effect", () => {
+  const shippingSource = readFileSync(
+    new URL("../../modules/checkout/components/shipping/index.tsx", import.meta.url),
+    "utf8"
+  )
+  const ordinaryEffectStart = shippingSource.indexOf(
+    "const pickupPointsRequest = deliveryHubAddressContext.is_complete"
+  )
+  const ordinaryEffectEnd = shippingSource.indexOf(
+    "  useEffect(() => {\n    if (!DELIVERY_HUB_PREVIEW_ENABLED || !deliveryHubDiagnosticsRequested)"
+  )
+  const diagnosticsEffectStart = ordinaryEffectEnd
+  const diagnosticsEffectEnd = shippingSource.indexOf(
+    "  useEffect(() => {\n    setError(null)"
+  )
+  const ordinaryEffectSource = shippingSource.slice(ordinaryEffectStart, ordinaryEffectEnd)
+  const diagnosticsEffectSource = shippingSource.slice(diagnosticsEffectStart, diagnosticsEffectEnd)
+
+  assert.equal(ordinaryEffectStart > -1, true)
+  assert.equal(ordinaryEffectEnd > ordinaryEffectStart, true)
+  assert.equal(diagnosticsEffectStart > -1, true)
+  assert.equal(diagnosticsEffectEnd > diagnosticsEffectStart, true)
+
+  for (const diagnosticFetch of [
+    "retrieveDeliveryHubCutoverPreconditions()",
+    "retrieveDeliveryHubCutoverCandidate(cart.id)",
+    "retrieveDeliveryHubCutoverApprovalArtifact(cart.id)",
+  ]) {
+    assert.equal(ordinaryEffectSource.includes(diagnosticFetch), false)
+    assert.equal(diagnosticsEffectSource.includes(diagnosticFetch), true)
+  }
+
+  assert.equal(diagnosticsEffectSource.includes("DELIVERY_HUB_PREVIEW_ENABLED"), true)
+  assert.equal(diagnosticsEffectSource.includes("deliveryHubDiagnosticsRequested"), true)
+  assert.equal(diagnosticsEffectSource.includes("return"), true)
+  assert.equal(
+    /handleSaveDeliveryHubSelectionCutIn[\s\S]*retrieveDeliveryHubCutoverCandidate/.test(shippingSource),
+    false
+  )
 })
 
 test("buildDeliveryHubBuyerDeliveryCardModel presents shopper copy for saveable and fallback states", () => {
@@ -12339,7 +12384,7 @@ test("checkout shipping source prevents automatic Delivery Hub refetch loop and 
 
   const effectDependencies = shippingSource.slice(
     shippingSource.indexOf("  useEffect(() => {\n    let cancelled = false"),
-    shippingSource.indexOf("  useEffect(() => {\n    setError(null)")
+    shippingSource.indexOf("  useEffect(() => {\n    if (!DELIVERY_HUB_PREVIEW_ENABLED || !deliveryHubDiagnosticsRequested)")
   )
 
   assert.equal(shippingSource.includes("deliveryHubCompletedRequestKeysRef"), true)

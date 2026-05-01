@@ -8,7 +8,7 @@
 
 ## Current Focus
 
-Delivery Hub Phase 8 is accepted after review and is being committed.
+Delivery Hub Phase 8 is accepted; the non-blocking diagnostic-fetch isolation follow-up is implemented and verified in the current workspace.
 
 Phase 8 scope: remove or quarantine obsolete legacy/preview/cutover surfaces so the shopper checkout reads as one normal Delivery Hub delivery flow, while keeping diagnostics available only behind dev/admin/advanced boundaries.
 
@@ -62,6 +62,14 @@ Phase 8 verification:
 - `git diff --check` PASS
 - `node --test src/lib/util/delivery-hub.spec.ts` PASS (`146/146`)
 
+Phase 8 diagnostic-fetch isolation follow-up verification:
+
+- `git diff --check` PASS
+- `npm run typecheck` PASS
+- `node --test src/lib/util/delivery-hub.spec.ts` PASS (`147/147`)
+- `npm run smoke:delivery-hub-cutover:browser` PASS
+- `npm run smoke:delivery-hub-rollback:browser` PASS
+
 ---
 
 ## Active Delivery Hub Product Flow
@@ -77,9 +85,12 @@ Shopper-visible checkout must stay free of provider/internal/cutover vocabulary 
 
 Diagnostics remain available only in collapsed dev/admin/advanced surfaces. Product-flow smoke tests should use buyer-facing hooks, not diagnostic text or DOM labels.
 
-Non-blocking Phase 8 follow-up:
+Phase 8 follow-up status:
 
-- further isolate Delivery Hub diagnostic fetches from the ordinary checkout network flow. Phase 8 quarantines the UI and smoke dependencies, but some advanced diagnostic Store API reads still happen from the checkout effect and should move behind explicit diagnostics loading in a later cleanup.
+- Implemented in workspace: advanced diagnostic Store API reads for cutover preconditions, candidate, and approval artifact are removed from the ordinary checkout product-flow effect.
+- Diagnostics now load only when `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true` and diagnostics state is explicitly requested, such as opening the collapsed diagnostics panel or using diagnostics actions.
+- Product-flow browser smoke coverage now asserts the ordinary checkout quote/PVZ/save path does not fetch diagnostic routes while the diagnostics panel remains collapsed, then verifies those routes load after explicit diagnostics open.
+- Verification completed in this workspace: `git diff --check`, `npm run typecheck`, `node --test src/lib/util/delivery-hub.spec.ts`, `npm run smoke:delivery-hub-cutover:browser`, and `npm run smoke:delivery-hub-rollback:browser` all pass.
 
 ---
 

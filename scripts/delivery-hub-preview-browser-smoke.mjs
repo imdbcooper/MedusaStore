@@ -1058,6 +1058,54 @@ async function waitForMockDeliverySelectionSave(label) {
   fail(`${label} did not POST the mocked Delivery Hub selection save route.`)
 }
 
+function assertNoDiagnosticDeliveryHubRequests(label) {
+  const forbidden = mockRequests.filter((entry) =>
+    entry.method === "GET" &&
+    [
+      "/store/delivery/cutover-preconditions",
+      "/store/delivery/cutover-candidate",
+      "/store/delivery/cutover-approval-template",
+    ].includes(entry.pathname)
+  )
+  if (forbidden.length > 0) {
+    fail(`${label} unexpectedly fetched advanced diagnostic Delivery Hub routes: ${forbidden.map((entry) => `${entry.method} ${entry.pathname}`).join(", ")}`)
+  }
+}
+
+async function waitForMockDiagnosticDeliveryHubRequests(label) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const requestedDeliveryHubRoutes = new Set(mockRequests
+      .filter((entry) => entry.pathname.startsWith("/store/delivery/"))
+      .map((entry) => `${entry.method} ${entry.pathname}`))
+    const allPresent = [
+      "GET /store/delivery/cutover-preconditions",
+      "GET /store/delivery/cutover-candidate",
+      "GET /store/delivery/cutover-approval-template",
+    ].every((expectedRoute) => requestedDeliveryHubRoutes.has(expectedRoute))
+    if (allPresent) {
+      return
+    }
+    await delay(250)
+  }
+  assertDiagnosticDeliveryHubRequests(label)
+}
+
+function assertDiagnosticDeliveryHubRequests(label) {
+  const requestedDeliveryHubRoutes = new Set(mockRequests
+    .filter((entry) => entry.pathname.startsWith("/store/delivery/"))
+    .map((entry) => `${entry.method} ${entry.pathname}`))
+  for (const expectedRoute of [
+    "GET /store/delivery/cutover-preconditions",
+    "GET /store/delivery/cutover-candidate",
+    "GET /store/delivery/cutover-approval-template",
+  ]) {
+    if (!requestedDeliveryHubRoutes.has(expectedRoute)) {
+      fail(`${label} did not fetch expected advanced diagnostic Delivery Hub route after explicit diagnostics open: ${expectedRoute}`)
+    }
+  }
+}
+
 async function waitForMockCommitRequest(label, expectedOptionId) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -1160,6 +1208,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
   if (!initial.customerCard.includes("Smoke pickup point")) fail("Mocked pickup point was not visible in buyer delivery card.")
   if (!initial.diagnosticsPresent) fail("Dev diagnostics container is missing behind the enabled diagnostics flag.")
   if (initial.diagnosticsOpen) fail("Dev diagnostics should be collapsed by default and not be part of the shopper product flow.")
+  assertNoDiagnosticDeliveryHubRequests(`${label} initial collapsed diagnostics`)
   assertNoUnsafeNeedles(initial.text, "initial enabled Delivery Hub page")
 
   await evaluate(sessionId, `(() => {
@@ -1210,6 +1259,7 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
   if (afterSave.legacyFallbackVisible) fail("Legacy fallback checkout contour appeared after save.")
   if (afterSave.text.includes('Delivery Hub Preview/Shadow UI') || afterSave.text.includes('checkout source-of-truth') || afterSave.text.toLowerCase().includes('cutover') || afterSave.text.toLowerCase().includes('legacy fallback')) fail("Legacy preview/cutover wording appeared in the active shopper flow after save.")
   if (!afterSave.diagnosticsPresent || afterSave.diagnosticsOpen) fail("Dev diagnostics should stay present but collapsed after product-flow save.")
+  assertNoDiagnosticDeliveryHubRequests(`${label} product save with collapsed diagnostics`)
   assertNoUnsafeNeedles(afterSave.text, "after mocked selection save")
 
   if (expectedCutoverEnabled) {
@@ -1250,6 +1300,24 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
   } else {
     assertNoDeliveryHubCommitRequests(label)
   }
+  assertNoDiagnosticDeliveryHubRequests(`${label} ordinary product flow`)
+
+  await evaluate(sessionId, `(() => {
+    const diagnostics = document.querySelector('[data-testid="delivery-hub-dev-diagnostics"]')
+    if (!diagnostics) throw new Error('Delivery Hub diagnostics details is missing')
+    const summary = diagnostics.querySelector('summary')
+    if (!summary) throw new Error('Delivery Hub diagnostics summary is missing')
+    if (!diagnostics.open) summary.click()
+    return true
+  })()`)
+  await waitFor(
+    sessionId,
+    "document.querySelector('[data-testid=\"delivery-hub-dev-diagnostics\"]')?.open === true",
+    "advanced diagnostics panel open state"
+  )
+  await waitForMockDiagnosticDeliveryHubRequests(`${label} explicit diagnostics open`)
+  assertDiagnosticDeliveryHubRequests(`${label} explicit diagnostics open`)
+
   const requestedDeliveryHubRoutes = new Set(mockRequests
     .filter((entry) => entry.pathname.startsWith("/store/delivery/"))
     .map((entry) => `${entry.method} ${entry.pathname}`))
@@ -1259,6 +1327,9 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
     "POST /store/delivery/quotes",
     "POST /store/delivery/selection",
     "DELETE /store/delivery/selection",
+    "GET /store/delivery/cutover-preconditions",
+    "GET /store/delivery/cutover-candidate",
+    "GET /store/delivery/cutover-approval-template",
   ]) {
     if (!requestedDeliveryHubRoutes.has(expectedRoute)) {
       fail(`${label} did not exercise expected mocked Delivery Hub product route: ${expectedRoute}`)

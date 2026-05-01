@@ -64,7 +64,7 @@ Delivery Hub is governed by:
 Current Delivery Hub status:
 
 - Phases 0/1 through 8 are implemented and reviewed.
-- Phase 8 has one non-blocking follow-up: isolate advanced diagnostic Store API fetches more fully from the ordinary checkout network flow.
+- The Phase 8 diagnostic-fetch isolation follow-up is implemented: advanced diagnostic Store API reads are no longer part of the ordinary checkout product-flow effect and load only after diagnostics are explicitly requested.
 - Latest relevant commits:
   - `fbf7a6d feat(delivery-hub): harden gated shipment execution`
   - `aedaa6f test(delivery-hub): restore browser smoke coverage`
@@ -73,7 +73,7 @@ Current Delivery Hub status:
   - `npm run smoke:delivery-hub-rollback:browser` PASS
   - `npm run typecheck` PASS
   - `git diff --check` PASS
-- Phase 8 focused storefront utility/source test: `node --test src/lib/util/delivery-hub.spec.ts` PASS (`146/146`).
+- Phase 8 follow-up focused storefront utility/source test: `node --test src/lib/util/delivery-hub.spec.ts` PASS (`147/147`).
 - Shopper default mode is `warehouse_to_pickup_point`.
 - `dropoff_point_to_pickup_point` remains admin/diagnostic or advanced until explicitly validated for the intended live contour.
 - Customer-facing delivery price is separate from provider operational quote.
@@ -179,4 +179,4 @@ When the user asks what is done, what is next, where to look, or asks for a prom
 4. Use `Docs/plan_analysis.md` only for audit/history.
 5. Verify code/tests before making fresh technical claims.
 
-Current default next step after Phase 8 is the non-blocking Delivery Hub follow-up: isolate advanced diagnostic Store API fetches more fully from the ordinary checkout network flow while preserving the accepted one-flow shopper checkout.
+Current default next step after Phase 8 and its diagnostic-fetch follow-up is manual/local Delivery Hub verification on the full runtime: backend containers/database, backend app, and storefront, with live provider operations still gated and default-off.

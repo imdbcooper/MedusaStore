@@ -16,7 +16,7 @@ Use these documents for current Delivery Hub work:
 
 2. [delivery_hub_rework_plan.md](./delivery_hub_rework_plan.md)
    - Accepted phase plan for the Delivery Hub rework.
-   - Phases 0/1 through 8 are implemented and reviewed; Phase 8 has one non-blocking follow-up for deeper diagnostic fetch isolation.
+   - Phases 0/1 through 8 are implemented and reviewed; the Phase 8 diagnostic-fetch isolation follow-up is implemented.
 
 3. [delivery_hub_spec.md](./delivery_hub_spec.md)
    - Detailed architecture/reference material.
@@ -113,4 +113,4 @@ Phase 8 is accepted after review:
 - fresh-template docs do not require legacy delivery env or runtime routes;
 - remaining `preview`, `shadow`, `cutover`, and legacy terms in current docs must be interpreted as historical/evidence/admin/dev-only unless explicitly attached to the active shopper checkout flow.
 
-Non-blocking follow-up: isolate advanced diagnostic Store API fetches more fully from the ordinary checkout network flow. This is not a Phase 8 acceptance blocker because shopper UI, docs, and product-flow smokes no longer depend on those diagnostic labels.
+Follow-up status: advanced diagnostic Store API fetches are now isolated from the ordinary checkout product-flow effect. They load only after diagnostics are explicitly requested, while shopper UI, docs, and product-flow smokes remain independent from diagnostic labels.

@@ -1,6 +1,6 @@
 # Delivery Hub rework plan
 
-> Status: accepted execution plan; phases 0/1 through 8 are implemented and reviewed. Phase 8 has one non-blocking follow-up for deeper isolation of diagnostic fetches from the ordinary checkout network flow.
+> Status: accepted execution plan; phases 0/1 through 8 are implemented and reviewed. The Phase 8 diagnostic-fetch isolation follow-up is implemented: advanced diagnostic Store API reads are no longer part of the ordinary checkout product-flow effect.
 >
 > Last status update: 2026-05-01.
 >
