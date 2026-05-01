@@ -11762,22 +11762,22 @@ test("delivery hub selection cut-in wires only neutral save/clear helpers and ke
   assert.equal(/clearDeliveryHubSelection\s*[,(]/.test(shippingSource), true)
   assert.equal(/buildDeliveryHubSelectionSaveCutInPayload\s*\(/.test(shippingSource), true)
   assert.equal(shippingSource.includes("NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED"), true)
-  assert.equal(shippingSource.includes("checkout source-of-truth unchanged"), true)
-  assert.equal(shippingSource.includes("Delivery Hub Preview/Shadow UI"), true)
+  assert.equal(shippingSource.includes("Active checkout delivery flow remains unchanged"), true)
+  assert.equal(shippingSource.includes("Advanced Delivery Hub diagnostics"), true)
   assert.equal(shippingSource.includes("void handleDeliveryHubNeutralPreviewQuote()"), true)
   assert.equal(shippingSource.includes("listDeliveryHubCatalog()"), true)
   assert.equal(shippingSource.includes("cart_id: cart.id"), true)
   assert.equal(shippingSource.includes("warehouse_id:"), true)
   assert.equal(shippingSource.includes("items: ["), false)
-  assert.equal(shippingSource.includes("delivery-hub-cutover-gate-status"), true)
-  assert.equal(shippingSource.includes("delivery-hub-cutover-preconditions-status"), true)
+  assert.equal(shippingSource.includes("delivery-hub-advanced-readiness-status"), true)
+  assert.equal(shippingSource.includes("delivery-hub-advanced-preconditions-status"), true)
   assert.equal(shippingSource.includes("retrieveDeliveryHubCutoverPreconditions()"), true)
   assert.equal(shippingSource.includes("buildDeliveryHubCutoverPreconditionsPreviewModel"), true)
   assert.equal(shippingSource.includes("canCommitShippingMethod"), true)
   assert.equal(shippingSource.includes("handleDeliveryHubCheckoutCutoverCommit"), true)
   assert.equal(shippingSource.includes("delivery-hub-checkout-commit-guard"), true)
-  assert.equal(shippingSource.includes("Delivery Hub checkout is fail-closed"), true)
-  assert.equal(shippingSource.includes("no fallback shipping method is selected automatically"), true)
+  assert.equal(shippingSource.includes("Delivery Hub delivery is not ready yet"), true)
+  assert.equal(shippingSource.includes("checkout cannot continue to payment"), true)
   assert.equal(shippingSource.includes("setShippingMethod"), true)
   assert.equal(/handleDeliveryHubNeutralPreviewSelection[\s\S]*setShippingMethod/.test(shippingSource), false)
   assert.equal(/saveDeliveryHubSelection\s*\(/.test(utilSource), false)
@@ -11789,102 +11789,91 @@ test("delivery hub selection cut-in wires only neutral save/clear helpers and ke
   assert.equal(/delivery[-_ ]?hub[\s\S]{0,200}setShippingMethod/i.test(cartSource), false)
 })
 
-test("delivery hub preview shadow UI exposes stable manual validation hooks and guardrails", () => {
+test("delivery hub advanced diagnostics stay dev-only and expose stable manual validation hooks", () => {
   const shippingSource = readFileSync(
     new URL("../../modules/checkout/components/shipping/index.tsx", import.meta.url),
     "utf8"
   )
 
   for (const testId of [
-    "delivery-hub-preview-shadow-block",
-    "delivery-hub-preview-heading",
-    "delivery-hub-preview-guardrails",
-    "delivery-hub-preview-feature-flag-status",
-    "delivery-hub-preview-dev-defaults-status",
-    "delivery-hub-preview-source-of-truth-guardrail",
-    "delivery-hub-preview-no-provider-raw-guardrail",
-    "delivery-hub-cutover-gate-status",
-    "delivery-hub-cutover-gate-flag-status",
-    "delivery-hub-cutover-gate-mode",
-    "delivery-hub-cutover-gate-summary",
-    "delivery-hub-cutover-gate-detail",
-    "delivery-hub-cutover-preconditions-status",
-    "delivery-hub-cutover-preconditions-availability",
-    "delivery-hub-cutover-preconditions-summary",
-    "delivery-hub-cutover-preconditions-commit-status",
-    "delivery-hub-cutover-preconditions-guardrails",
-    "delivery-hub-cutover-preconditions-missing",
-    "delivery-hub-preview-quote-type",
-    "delivery-hub-preview-connection-id",
-    "delivery-hub-preview-destination-point-id",
-    "delivery-hub-preview-origin-point-id",
-    "delivery-hub-preview-warehouse-id",
-    "delivery-hub-preview-get-quotes-button",
-    "delivery-hub-preview-save-selection-button",
-    "delivery-hub-preview-clear-selection-button",
-    "delivery-hub-preview-results",
-    "delivery-hub-preview-source-of-truth-status",
-    "delivery-hub-preview-operation-status",
-    "delivery-hub-preview-quote-count",
-    "delivery-hub-preview-quote-correlation-id",
-    "delivery-hub-preview-selection-status",
-    "delivery-hub-preview-selection-correlation-id",
-    "delivery-hub-preview-message",
-    "delivery-hub-preview-quotes-list",
-    "delivery-hub-preview-quote-option",
-    "delivery-hub-preview-quote-radio",
+    "delivery-hub-dev-diagnostics",
+    "delivery-hub-advanced-diagnostics-block",
+    "delivery-hub-diagnostics-heading",
+    "delivery-hub-diagnostics-guardrails",
+    "delivery-hub-diagnostics-feature-flag-status",
+    "delivery-hub-diagnostics-dev-defaults-status",
+    "delivery-hub-diagnostics-active-flow-guardrail",
+    "delivery-hub-diagnostics-no-provider-raw-guardrail",
+    "delivery-hub-checkout-commit-guard",
+    "delivery-hub-checkout-commit-button",
+    "delivery-hub-advanced-readiness-status",
+    "delivery-hub-advanced-preconditions-status",
+    "delivery-hub-advanced-candidate-status",
+    "delivery-hub-advanced-approval-record",
+    "delivery-hub-diagnostics-quote-type",
+    "delivery-hub-diagnostics-connection-id",
+    "delivery-hub-diagnostics-destination-point-id",
+    "delivery-hub-diagnostics-origin-point-id",
+    "delivery-hub-diagnostics-warehouse-id",
+    "delivery-hub-diagnostics-get-quotes-button",
+    "delivery-hub-diagnostics-save-selection-button",
+    "delivery-hub-diagnostics-clear-selection-button",
+    "delivery-hub-diagnostics-results",
+    "delivery-hub-diagnostics-operation-status",
+    "delivery-hub-diagnostics-quote-count",
+    "delivery-hub-diagnostics-quote-correlation-id",
+    "delivery-hub-diagnostics-selection-status",
+    "delivery-hub-diagnostics-selection-correlation-id",
+    "delivery-hub-diagnostics-message",
+    "delivery-hub-diagnostics-quotes-list",
+    "delivery-hub-diagnostics-quote-option",
+    "delivery-hub-diagnostics-quote-radio",
   ]) {
     assert.equal(
       shippingSource.includes(`data-testid="${testId}"`),
       true,
-      `${testId} should be present for manual/runtime validation`
+      `${testId} should be present for dev/admin validation`
     )
   }
 
+  assert.equal(shippingSource.includes("Advanced Delivery Hub diagnostics"), true)
   assert.equal(
     shippingSource.includes(
-      "Operator/dev validation surface. It calls neutral Delivery Hub store endpoints and can save neutral metadata. The active checkout path is Delivery Hub only"
+      "Dev-only validation surface for safe Delivery Hub quote, selection, readiness, and shipping-method handoff checks."
     ),
     true
   )
-  assert.equal(shippingSource.includes("no automatic legacy delivery fallback"), true)
+  assert.equal(
+    shippingSource.includes(
+      "Active checkout flow: Delivery Hub quote/PVZ selection, saved delivery method, matched Medusa shipping option, then payment only after delivery is ready."
+    ),
+    true
+  )
   assert.equal(
     shippingSource.includes(
       "Diagnostics are shopper-safe only: quote/selection status, count, price, ETA and safe correlation id; no raw provider body, token, auth header, ciphertext or publishable key value is displayed."
     ),
     true
   )
-  assert.equal(
-    shippingSource.includes(
-      "Checkout cutover flag: NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED="
-    ),
-    true
-  )
-  assert.equal(shippingSource.includes("Commit guardrails:"), true)
-  assert.equal(shippingSource.includes("ready candidate can commit matched shipping option"), true)
-  assert.equal(
-    shippingSource.includes(
-      "Operation status: {deliveryHubNeutralPreviewState.status}"
-    ),
-    true
-  )
-  assert.equal(
-    /status:\s*"idle" \| "loading" \| "ready" \| "saved" \| "cleared" \| "blocked" \| "error"/.test(
-      shippingSource
-    ),
-    true
-  )
-  const previewBlockStart = shippingSource.indexOf(
-    'data-testid="delivery-hub-preview-shadow-block"'
-  )
-  const previewBlockEnd = shippingSource.indexOf(
-    'data-testid="delivery-hub-preview-quote-radio"'
-  )
-  const previewBlockSource = shippingSource.slice(previewBlockStart, previewBlockEnd)
+  assert.equal(shippingSource.includes("Delivery Hub Preview/Shadow UI"), false)
+  assert.equal(shippingSource.includes("checkout source-of-truth unchanged"), false)
+  assert.equal(shippingSource.includes("delivery-hub-preview-shadow-block"), false)
+  assert.equal(shippingSource.includes("delivery-hub-cutover-gate-status"), false)
+  assert.equal(shippingSource.includes("delivery-hub-cutover-preconditions-status"), false)
+  assert.equal(shippingSource.includes("delivery-hub-cutover-candidate-status"), false)
+  assert.equal(shippingSource.includes("delivery-hub-cutover-approval-artifact"), false)
 
-  assert.equal(previewBlockStart > -1, true)
-  assert.equal(previewBlockEnd > previewBlockStart, true)
-  assert.equal(/setShippingMethod\s*\(\s*\{/.test(previewBlockSource), false)
+  const diagnosticsBlockStart = shippingSource.indexOf(
+    'data-testid="delivery-hub-advanced-diagnostics-block"'
+  )
+  const diagnosticsBlockEnd = shippingSource.indexOf(
+    'data-testid="delivery-hub-diagnostics-quote-radio"'
+  )
+  const diagnosticsBlockSource = shippingSource.slice(diagnosticsBlockStart, diagnosticsBlockEnd)
+
+  assert.equal(diagnosticsBlockStart > -1, true)
+  assert.equal(diagnosticsBlockEnd > diagnosticsBlockStart, true)
+  assert.equal(/setShippingMethod\s*\(\s*\{/.test(diagnosticsBlockSource), false)
 })
 
 test("buildDeliveryHubBuyerDeliveryCardModel presents shopper copy for saveable and fallback states", () => {
@@ -12390,7 +12379,7 @@ test("checkout shipping source puts customer Delivery Hub card before collapsed 
     false
   )
   assert.equal(
-    shippingSource.includes("Delivery Hub diagnostics / dev-only validation"),
+    shippingSource.includes("Advanced Delivery Hub diagnostics"),
     true
   )
   assert.equal(

@@ -8,14 +8,11 @@
 
 ## Current Focus
 
-The active work before starting Delivery Hub Phase 8 is documentation cleanup:
+Delivery Hub Phase 8 is accepted after review and is being committed.
 
-- remove completed one-off phase prompts and duplicated status text;
-- keep canonical Delivery Hub docs professional and navigable;
-- mark old cutover/evidence material as historical or evidence-only where it is not the current shopper/admin flow;
-- update `.codex/skills/medusa-master-repo/SKILL.md` so future agents start from the cleaned source-of-truth set.
+Phase 8 scope: remove or quarantine obsolete legacy/preview/cutover surfaces so the shopper checkout reads as one normal Delivery Hub delivery flow, while keeping diagnostics available only behind dev/admin/advanced boundaries.
 
-Do not start Phase 8 implementation until this documentation cleanup is committed or explicitly skipped by the operator.
+Do not reopen closed phases or old one-off prompt artifacts unless new runtime evidence proves a regression.
 
 ---
 
@@ -49,44 +46,40 @@ Closed implementation phases:
 | 5 | Closed | `Settings -> Delivery` is merchant-facing; diagnostics are secondary/advanced. |
 | 6 | Closed | Order admin Delivery Hub widget/read model exists; operators no longer paste `execution_reference` for normal order processing. |
 | 7 | Closed | Direct Yandex shipment execution is hardened behind `DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED=false` by default, with durable reservation/idempotency and safe admin actions. |
+| 8 | Accepted, follow-up tracked | Shopper checkout no longer depends on preview/shadow/cutover diagnostic vocabulary; diagnostics are collapsed behind dev/admin flags; browser smoke now follows product-flow hooks. |
 
-Latest Delivery Hub commits:
+Latest Delivery Hub commits before Phase 8:
 
 - `fbf7a6d feat(delivery-hub): harden gated shipment execution`
 - `aedaa6f test(delivery-hub): restore browser smoke coverage`
+- `15a8a89 docs(delivery-hub): consolidate pre phase eight status`
 
-Current verification status:
+Phase 8 verification:
 
 - `npm run smoke:delivery-hub-cutover:browser` PASS
 - `npm run smoke:delivery-hub-rollback:browser` PASS
 - `npm run typecheck` PASS
 - `git diff --check` PASS
-
-The browser-smoke gap around hidden diagnostics and `innerText` is closed. The smoke harness now uses the current shopper-default `warehouse_to_pickup_point` mock contract, observes hidden diagnostic markers via `textContent`, and verifies the buyer-facing save path plus one-key Medusa shipping-method commit payload.
+- `node --test src/lib/util/delivery-hub.spec.ts` PASS (`146/146`)
 
 ---
 
-## Next Delivery Hub Step
+## Active Delivery Hub Product Flow
 
-After this documentation cleanup, the next implementation tranche is Phase 8:
+Shopper checkout should be treated as one Delivery Hub delivery flow:
 
-**Remove or quarantine obsolete legacy/cutover surfaces.**
+1. quote/PVZ selection;
+2. save Delivery Hub delivery method;
+3. commit the matched Medusa Delivery Hub shipping option only when readiness allows it;
+4. open payment only after delivery is ready.
 
-Phase 8 should:
+Shopper-visible checkout must stay free of provider/internal/cutover vocabulary and must not expose raw provider payloads, tokens, auth headers, ciphertext, quote keys, offer ids, execution references, or secrets.
 
-- remove shopper-visible preview/cutover language;
-- keep diagnostics only behind dev/admin flags or clearly advanced/admin-only surfaces;
-- mark old cutover/evidence docs as historical where they no longer describe the active product flow;
-- remove old provider-specific checkout paths if any active paths remain;
-- preserve old-order compatibility only where historical orders require it.
+Diagnostics remain available only in collapsed dev/admin/advanced surfaces. Product-flow smoke tests should use buyer-facing hooks, not diagnostic text or DOM labels.
 
-Phase 8 must not:
+Non-blocking Phase 8 follow-up:
 
-- enable production/staging GO automatically;
-- enable `DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED=true` by default;
-- add live provider/Yandex calls;
-- expose raw provider payloads, tokens, auth headers, ciphertext, quote keys, offer ids, execution references, or secrets;
-- reintroduce a legacy delivery fallback as an active checkout path.
+- further isolate Delivery Hub diagnostic fetches from the ordinary checkout network flow. Phase 8 quarantines the UI and smoke dependencies, but some advanced diagnostic Store API reads still happen from the checkout effect and should move behind explicit diagnostics loading in a later cleanup.
 
 ---
 
@@ -98,9 +91,10 @@ Use these documents in this order:
 2. [delivery_hub_documentation_index.md](./delivery_hub_documentation_index.md) - Delivery Hub documentation roles and historical/evidence classification.
 3. [delivery_hub_rework_plan.md](./delivery_hub_rework_plan.md) - accepted Delivery Hub phase plan.
 4. [delivery_hub_spec.md](./delivery_hub_spec.md) - detailed architecture/reference material; older preview/cutover sections should be treated as historical unless the cleaned docs say otherwise.
-5. [master_repo_plan_v2.md](./master_repo_plan_v2.md) - overall repository roadmap.
-6. [plan_analysis.md](./plan_analysis.md) - factual audit and historical reality check.
-7. [env_contract.md](./env_contract.md) - environment/startup contract.
+5. [delivery_hub_manual_testing_plan.md](./delivery_hub_manual_testing_plan.md) - operator validation, including product-flow smokes and advanced diagnostics.
+6. [env_contract.md](./env_contract.md) - environment/startup contract.
+7. [master_repo_plan_v2.md](./master_repo_plan_v2.md) - overall repository roadmap.
+8. [plan_analysis.md](./plan_analysis.md) - factual audit and historical reality check.
 
 Old phase prompt files are not source-of-truth. Completed prompt artifacts should not be used to infer current status.
 

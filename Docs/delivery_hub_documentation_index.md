@@ -16,15 +16,15 @@ Use these documents for current Delivery Hub work:
 
 2. [delivery_hub_rework_plan.md](./delivery_hub_rework_plan.md)
    - Accepted phase plan for the Delivery Hub rework.
-   - Phases 0/1 through 7 are implemented and reviewed; Phase 8 is next after documentation cleanup.
+   - Phases 0/1 through 8 are implemented and reviewed; Phase 8 has one non-blocking follow-up for deeper diagnostic fetch isolation.
 
 3. [delivery_hub_spec.md](./delivery_hub_spec.md)
    - Detailed architecture/reference material.
-   - Older preview, shadow, pre-cutover, and legacy-provider sections must be read as historical context unless the rework plan/current status confirms they are active.
+   - Older preview, shadow, pre-cutover, and legacy-provider sections must be read as historical/dev-diagnostic context unless the rework plan/current status confirms they are active.
 
 4. [delivery_hub_manual_testing_plan.md](./delivery_hub_manual_testing_plan.md)
    - Operator validation commands and manual testing contours.
-   - Should be updated during Phase 8 so product-flow smokes do not depend on shopper-visible diagnostic labels.
+   - Product-flow smokes should use shopper delivery hooks; diagnostic labels are dev/admin-only and must not be required for the active checkout path.
 
 5. [env_contract.md](./env_contract.md)
    - Delivery Hub env and startup contract.
@@ -103,11 +103,14 @@ Future prompts should be short-lived conversation artifacts unless the operator 
 
 ---
 
-## Phase 8 Documentation Expectations
+## Phase 8 Status
 
-Phase 8 should further reduce old terminology in active docs and UI references:
+Phase 8 is accepted after review:
 
-- shopper-facing docs should describe one Delivery Hub delivery flow, not preview/cutover mechanics;
-- admin docs should distinguish merchant setup, order shipment operations, and advanced diagnostics;
-- historical approval/evidence docs should stay clearly labeled as historical or evidence-only;
-- fresh-template docs should not require legacy delivery env or runtime routes.
+- shopper-facing docs describe one Delivery Hub delivery flow, not preview/cutover mechanics;
+- admin docs distinguish merchant setup, order shipment operations, and advanced diagnostics;
+- historical approval/evidence docs stay clearly labeled as historical or evidence-only;
+- fresh-template docs do not require legacy delivery env or runtime routes;
+- remaining `preview`, `shadow`, `cutover`, and legacy terms in current docs must be interpreted as historical/evidence/admin/dev-only unless explicitly attached to the active shopper checkout flow.
+
+Non-blocking follow-up: isolate advanced diagnostic Store API fetches more fully from the ordinary checkout network flow. This is not a Phase 8 acceptance blocker because shopper UI, docs, and product-flow smokes no longer depend on those diagnostic labels.

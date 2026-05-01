@@ -1,6 +1,8 @@
 # Delivery Hub v1 Specification
 
 > Cleanup status: legacy provider/runtime routes have been removed from the master template. Delivery Hub/direct Yandex is the selected delivery contour; first real direct Yandex runtime dispatch now exists only behind a strict gate and only on a fully ready supported contour; backend startup must not require new delivery env secrets. Existing old databases may still contain obsolete delivery rows/provider ids and require separate operator-approved cleanup if relevant.
+>
+> Phase 8 status (2026-05-01): active shopper checkout is one Delivery Hub delivery flow: quote/PVZ selection, save delivery method, matched Medusa shipping option handoff, then payment only when delivery is ready. Older preview/shadow/cutover sections in this specification are historical or advanced dev/admin diagnostics unless explicitly tied to current buyer-facing flow. They must not be used to reintroduce shopper-visible diagnostic vocabulary or a legacy delivery fallback path.
 
 > Phase 0/Phase 1 reconciliation note (2026-04-30): buyer-facing Delivery Hub card/save/clear UX is already materialized, but the previous public quote `amount` was effectively the provider operational quote. Phase 1 introduces a customer pricing policy layer: public/store quote and persisted selection buyer price are `customer_price`, while provider quote amount remains backend/internal evidence only. Real checkout warehouse origin for `warehouse_to_pickup_point` is resolved from backend connection settings rather than public storefront warehouse env; shipment execution remains gated.
 >
@@ -125,7 +127,8 @@
 
 - `medusa-agency-boilerplate-storefront/src/lib/data/delivery-hub.ts`
 - `medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.ts`
-- tranche-safe checkout wiring: сначала read-only readiness preview, затем read-only summary, затем read-only persisted selection preview, затем shadow catalog, затем read-only store settings surface + shadow settings preview, затем shadow pickup-point / shadow quote / shadow pickup-window previews, затем shadow selection actionability / shipping-option parity / selection parity / orchestration verdict / recommendation / cutover-readiness / cutover-blockers / cutover-next-steps / cutover-summary / cutover-evidence / cutover-rollout / cutover-gate / cutover-decision / cutover-checklist previews, затем pre-cutin neutral selection rehearsal как read-only shopper-safe draft layer, и только потом полноценная адаптация shipping UI к нейтральным quote/point contracts
+- current buyer-facing checkout wiring: Delivery Hub quote/PVZ selection, save selection metadata, guarded Medusa shipping option handoff, and payment gate only after Delivery Hub delivery is ready;
+- historical/advanced diagnostic model builders may still use preview/shadow/cutover naming internally for evidence compatibility, but they must remain collapsed behind dev/admin diagnostics and must not be required by product-flow smoke.
 
 ### 5.3. Fulfillment registration
 

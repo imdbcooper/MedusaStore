@@ -1,7 +1,7 @@
 # Delivery Hub — дружелюбный пошаговый план ручного тестирования
 
 
-> Phase 0 reconciliation note (2026-04-30): this manual testing plan documents historical/diagnostic cutover surfaces. The accepted Delivery Hub rework plan in [`delivery_hub_rework_plan.md`](delivery_hub_rework_plan.md) is now authoritative for Phase 1: shopper quotes use `customer_price`, real checkout resolves warehouse origin on the backend, and shipment execution remains gated. Public preview warehouse env values are diagnostic/dev-only.
+> Phase 8 note (2026-05-01): the active shopper checkout is one Delivery Hub delivery flow. Older preview/shadow/cutover sections below are historical or advanced dev/admin diagnostics only unless explicitly framed as product-flow checks. Product-flow browser smoke must use buyer-facing Delivery Hub hooks and must not depend on shopper-visible diagnostic labels. Public preview warehouse env values are diagnostic/dev-only.
 
 ## 0) Быстрый маршрут (2 минуты)
 
@@ -52,21 +52,35 @@
 
 ---
 
-## 1.1) Storefront preview/shadow UI без checkout cutover
+## 1.1) Storefront Delivery Hub checkout flow and advanced diagnostics
 
-Цель этого шага — проверить уже подтверждённый store-facing neutral quote/selection flow из checkout-adjacent storefront UI, не меняя фактический checkout source-of-truth.
+Цель этого шага — проверить текущий buyer-facing Delivery Hub checkout flow без привязки product smoke к диагностическим labels.
 
-### Включение preview UI
+### Product-flow ручная проверка в storefront
 
-В `medusa-agency-boilerplate-storefront/.env.local` включите только preview-флаг:
+1. Перезапустите storefront после изменения env. Для обычного shopper flow `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED` не требуется.
+2. Откройте checkout и перейдите на шаг доставки.
+3. Убедитесь, что виден один активный Delivery Hub delivery contour: quote/PVZ selection, сохранение доставки, Medusa shipping option handoff, затем payment только после ready delivery.
+4. Используйте buyer-facing hooks для ручной или automated проверки:
+   - `data-testid="delivery-hub-customer-delivery-card"`;
+   - `data-testid="delivery-hub-pickup-point-selector"`;
+   - `data-testid="delivery-hub-pickup-point-option"`;
+   - `data-testid="delivery-hub-customer-save-selection-button"`;
+   - `data-testid="delivery-hub-customer-save-message"`;
+   - `data-testid="delivery-hub-customer-selection-status"`;
+   - `data-testid="submit-delivery-option-button"`.
+5. Выберите ПВЗ, сохраните доставку, проверьте buyer-visible price/ETA/PVZ labels и переход к payment только после сохранённой Delivery Hub shipping option.
+6. Shopper-visible copy не должен содержать preview/shadow/cutover/debug/source-of-truth/legacy-fallback формулировки.
+7. В UI не должно быть raw provider body, token, auth header, ciphertext, publishable key value, quote key, offer id, execution reference или других секретов.
+
+### Advanced diagnostics
+
+Optional diagnostics остаются только за `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true` и collapsed details `data-testid="delivery-hub-dev-diagnostics"`. Это dev/admin validation surface, а не active shopper flow.
+
+Дополнительные local/sandbox defaults допускаются только для диагностики:
 
 ```text
 NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true
-```
-
-Опциональные dev/sandbox defaults можно включать только для локальной песочницы:
-
-```text
 NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED=true
 NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_CONNECTION_ID=30e7b02b-71de-42d8-8587-86780c2850b8
 NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_DESTINATION_POINT_ID=e1139f6d-e34f-47a9-a55f-31f032a861a6
@@ -74,95 +88,33 @@ NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_ORIGIN_POINT_ID=019d2a9da5877011a771b75
 NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID=fa279b9d-316d-45c2-aa8d-aa92a77d15ba
 ```
 
-Эти значения — только documented sandbox/dev defaults для уже проверенного local smoke. Не переносите их как production behavior и не добавляйте туда секреты.
-
-### Ручная проверка в storefront
-
-1. Перезапустите storefront после изменения env.
-2. Откройте checkout и перейдите на шаг доставки.
-3. Убедитесь, что Delivery Hub shipping selection UI is the only active delivery contour; no legacy delivery fallback UI should be required above the preview block.
-4. Найдите блок **Delivery Hub Preview/Shadow UI**. Для DOM/Playwright/manual locator можно использовать stable hook `data-testid="delivery-hub-preview-shadow-block"`.
-5. В guardrail-блоке (`data-testid="delivery-hub-preview-guardrails"`) проверьте видимые признаки:
-   - `data-testid="delivery-hub-preview-feature-flag-status"` показывает `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true`;
-   - `data-testid="delivery-hub-preview-dev-defaults-status"` честно показывает, включены ли local/dev defaults;
-   - `data-testid="delivery-hub-preview-source-of-truth-guardrail"` содержит `checkout source-of-truth unchanged` и говорит, что Delivery Hub preview metadata не commits Medusa shipping method;
-   - `data-testid="delivery-hub-preview-no-provider-raw-guardrail"` говорит, что отображаются только shopper-safe diagnostics и не выводятся raw provider body/token/auth header/ciphertext/publishable key value;
-   - `data-testid="delivery-hub-cutover-gate-status"` показывает reserved cutover flag state и `canCommitShippingMethod=false`;
-   - `data-testid="delivery-hub-cutover-preconditions-status"` показывает read-only verifier status. Если backend verifier доступен, expected availability is `available`, summary is evidence/preflight only, required/blocked labels include `operator_approval_required`, `shipment_lifecycle_not_enabled`, `can_commit_shipping_method`, and commit line still says `canCommitShippingMethod=false`. Если route недоступен, expected fail-safe is `unavailable` and commit remains blocked;
-   - `data-testid="delivery-hub-cutover-candidate-status"` показывает read-only candidate planner summary for the current cart without enabling checkout commit;
-   - `data-testid="delivery-hub-cutover-approval-artifact"` показывает read-only decision artifact template. Expected text includes `Decision artifact only / no approval execution`, default decision `not_requested`, pending signoffs, and commit controls `can_commit_shipping_method=false`, `approval_is_executable=false`, `requires_separate_implementation=true`, plus storefront `canCommitShippingMethod=false`. Если route недоступен, expected fail-safe is `unavailable` and commit remains blocked.
-6. Для `dropoff_point_to_pickup_point` укажите connection id, destination pickup point id и origin dropoff point id; для `warehouse_to_pickup_point` укажите connection id, destination pickup point id и warehouse id. Поля имеют hooks `delivery-hub-preview-connection-id`, `delivery-hub-preview-destination-point-id`, `delivery-hub-preview-origin-point-id`, `delivery-hub-preview-warehouse-id`.
-7. Нажмите **Get neutral preview quotes** (`data-testid="delivery-hub-preview-get-quotes-button"`).
-8. Ожидаемо в results-блоке (`data-testid="delivery-hub-preview-results"`) видно:
-   - `data-testid="delivery-hub-preview-source-of-truth-status"`: `checkout source-of-truth unchanged`;
-   - `data-testid="delivery-hub-preview-operation-status"`: переход `loading → ready` при success или `blocked/error` при controlled failure;
-   - `data-testid="delivery-hub-preview-quote-count"`: quote count, для успешного smoke больше `0`;
-   - `data-testid="delivery-hub-preview-quote-correlation-id"`: safe correlation id или `not returned`;
-   - `data-testid="delivery-hub-preview-message"`: success/failure/blocked message без raw provider body.
-9. Если quote count больше `0`, список `data-testid="delivery-hub-preview-quotes-list"` содержит варианты `data-testid="delivery-hub-preview-quote-option"` с price/currency, ETA, pickup point id и quote reference version. Выбор quote делается через `data-testid="delivery-hub-preview-quote-radio"`.
-10. Опционально выберите quote и нажмите **Save preview metadata** (`data-testid="delivery-hub-preview-save-selection-button"`). Это вызывает только `POST /store/delivery/selection` как neutral metadata save; Medusa shipping method не меняется. Expected UI signs: operation status `saved`, selection status `saved`, message содержит `checkout source-of-truth unchanged`.
-11. Опционально нажмите **Clear preview metadata** (`data-testid="delivery-hub-preview-clear-selection-button"`). Это вызывает только `DELETE /store/delivery/selection` и не меняет выбранный checkout shipping method. Expected UI signs: operation status `cleared`, selection status `cleared`, message содержит `checkout source-of-truth unchanged`.
-12. Не нажимайте и не ожидайте shipment create/status/cancel/retry: preview UI их не вызывает.
-
-Guardrails:
-
-- Delivery Hub preview UI должен быть виден только при `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true`; при disabled flag block с `data-testid="delivery-hub-preview-shadow-block"` отсутствует.
-- Preview UI не должен вызывать `setShippingMethod()` и не должен заменять существующий shipping method selection.
-- На экране должна быть явная фраза `checkout source-of-truth unchanged` в guardrail и results blocks.
-- В browser console/network не должно быть token/auth header/ciphertext/raw provider body/publishable key value в выводе или UI.
-- Для automated/manual Playwright smoke не требуется live Yandex в CI: достаточно mock/stub backend responses для `POST /store/delivery/quotes`, `POST /store/delivery/selection`, `DELETE /store/delivery/selection`, `GET /store/delivery/cutover-preconditions`, `GET /store/delivery/cutover-candidate` и `GET /store/delivery/cutover-approval-template`; проверять нужно только перечисленные `data-testid` hooks plus source-of-truth, candidate/decision evidence, and preflight-only guardrails.
+Эти значения — только documented sandbox/dev defaults. Не переносите их как production behavior и не добавляйте туда секреты.
 
 ### Mock-friendly browser smoke
 
-Автоматический browser-level smoke добавлен как root command:
+Root commands:
 
 ```bash
 npm run smoke:delivery-hub-preview:browser
-```
-
-Команда intentionally не использует live backend/Yandex. Она поднимает локальный mock Store API для `GET /store/regions`, cart/fulfillment/payment prerequisites и Delivery Hub endpoints `POST /store/delivery/quotes`, `POST /store/delivery/selection`, `DELETE /store/delivery/selection`, `GET /store/delivery/cutover-preconditions`, `GET /store/delivery/cutover-candidate`, `GET /store/delivery/cutover-approval-template`; затем запускает временный storefront `next dev` трижды: с `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=false`, с preview enabled / cutover flag false, and with preview enabled / cutover flag true. Dedicated flag-on operator shortcut:
-
-```bash
 npm run smoke:delivery-hub-cutover:browser
-```
-
-The shortcut reuses the same mock harness in cutover mode: it runs only the explicit `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` scenario, clicks the actual storefront commit CTA `data-testid="delivery-hub-checkout-commit-button"`, verifies the guarded mapped-option commit against the local mock Store API, and still does not call live backend/Yandex/provider APIs. Browser automation использует Chrome/Chromium DevTools Protocol без добавления Playwright dependency; при необходимости путь к браузеру задаётся через `BROWSER_SMOKE_BROWSER_BIN=/path/to/chrome`.
-
-Expected result:
-
-- disabled run: checkout delivery step показывает no legacy delivery fallback shipping, а `delivery-hub-preview-shadow-block` отсутствует;
-- enabled run with cutover flag false: preview/shadow block, guardrails, operation status, selection status and the default-off cutover gate status are visible;
-- enabled run with cutover flag true: the cutover gate status recognizes `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true`; with the mocked ready candidate it can show `canCommitShippingMethod=true`, the smoke clicks the actual storefront commit CTA, and the mock Store API receives exactly one commit containing only the mapped Delivery Hub Medusa shipping option id;
-- mocked verifier response is visible at `data-testid="delivery-hub-cutover-preconditions-status"`, includes `operator_approval_required`, `shipment_lifecycle_not_enabled`, `can_commit_shipping_method`, and preserves `canCommitShippingMethod=false`;
-- mocked candidate response is visible at `data-testid="delivery-hub-cutover-candidate-status"` as candidate-only evidence; its backend artifact still preserves `can_commit_shipping_method=false`, while the separate local browser commit guard can become `canCommitShippingMethod=true` only in the explicit cutover flag-on smoke;
-- mocked decision artifact response is visible at `data-testid="delivery-hub-cutover-approval-artifact"`, includes `Decision artifact only / no approval execution`, pending signoff placeholders, `can_commit_shipping_method=false`, `approval_is_executable=false`, `requires_separate_implementation=true`, and storefront `canCommitShippingMethod=false`;
-- mocked quote response отображает quote count `1`, safe correlation id, `Neutral Carrier`, price/currency and unchanged checkout source-of-truth;
-- mocked save/clear меняют только preview metadata status (`saved` / `cleared`) while keeping checkout source-of-truth unchanged;
-- UI text scan не содержит raw provider body, token/auth header, ciphertext or publishable key value;
-- positive cutover smoke does exercise the guarded browser `setShippingMethod()` path only after the explicit cutover flag and ready mocked candidate; preview-only/flag-off runs still do not call it, no legacy delivery fallback is required or visible, and no shipment operations are created.
-
-### Rollback/fallback browser drill
-
-Automated rollback/fallback drill command from the repository root:
-
-```bash
 npm run smoke:delivery-hub-rollback:browser
 ```
 
-This drill is intentionally mock/no-network. It reuses the local mocked Store API and temporary storefront `next dev` contour from the preview browser smoke, but runs the scenarios as a rollback proof instead of a generic preview pass:
+Команды intentionally не используют live backend/Yandex. Они поднимают локальный mock Store API для cart/fulfillment/payment prerequisites and Delivery Hub product endpoints. Product-flow assertions должны проверять buyer-facing Delivery Hub card/PVZ/save/payment gating and safe one-key Medusa shipping-method handoff; diagnostics may exist behind the collapsed details flag but must not be required DOM/text dependencies for PASS.
 
-1. **All Delivery Hub flags off**: `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=false` and `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false`; expected result is no preview block, no cutover gate/preconditions/candidate/decision artifact blocks, no Delivery Hub shipping-method commit request, and visible no legacy delivery fallback shipping.
-2. **Preview enabled, cutover flag false**: preview/shadow blocks are visible and can quote/save/clear mocked neutral metadata, but source-of-truth remains unchanged, no legacy delivery fallback contour is required or visible, and no Medusa shipping-method commit request is made.
-3. **Preview enabled, cutover flag true**: the reserved cutover flag is recognized; with the mocked ready candidate the UI can enable guarded commit eligibility and commit only the mapped mock Delivery Hub Medusa shipping option id, while mocked backend candidate/decision artifacts remain evidence-only and no provider payload is sent.
-4. **Simulated rollback/off restart**: after the cutover-true rehearsal, the script restarts storefront with both flags off while mock Delivery Hub selection still exists; expected result is that Delivery Hub UI/artifacts disappear again, no Delivery Hub preview/cutover endpoint is called, and the no legacy delivery fallback contour is required or visible.
+Expected result:
 
-The drill additionally scans visible UI text for unsafe raw provider/auth/secret needles and shipment lifecycle action strings, and fails if any Delivery Hub-specific Medusa shipping-method commit path is observed in mock requests. Passing this command means rollback/fallback is still flag-off, mock-only, and source-of-truth remains the Delivery Hub-only guarded contour; it is not production cutover approval.
+- disabled diagnostics run: active Delivery Hub shipping option remains visible, diagnostic details are hidden/absent, no legacy delivery fallback shipping is required or visible, and no Delivery Hub shipping-method commit request is made while handoff flag is false;
+- enabled diagnostics / handoff false: product quote/PVZ/save path works through mocked Store API, but no Medusa shipping-method commit request is made;
+- enabled diagnostics / handoff true: product save path commits exactly one Medusa shipping-method payload containing only the mapped Delivery Hub option id;
+- rollback drill: after the handoff-true rehearsal, restarting with flags off hides diagnostics again and does not reintroduce a legacy fallback path;
+- visible UI text scan contains no raw provider/auth/secret needles and no shipment lifecycle actions.
 
 ### Controlled staging enablement / rollback checklist
 
 1. Confirm committed examples/templates keep `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false`; do not commit a `true` default.
 2. Set `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` only in the staging deployment config for the intended storefront environment, not in production and not in committed examples.
-3. Run the local mock/no-network cutover smoke before staging rollout:
+3. Run the local mock/no-network handoff smoke before staging rollout:
 
    ```bash
    npm run smoke:delivery-hub-cutover:browser
@@ -218,20 +170,22 @@ Full convention: [`delivery_hub_cutover_evidence_bundle.md`](./delivery_hub_cuto
 
 Формальный go/no-go gate для будущего checkout source-of-truth cutover теперь вынесен в [`delivery_hub_checkout_cutover_plan.md`](./delivery_hub_checkout_cutover_plan.md).
 
-Критично для ручной проверки:
+Этот раздел является historical/evidence context. Для текущего buyer-facing Phase 8 product flow используйте §1.1 выше и browser smokes. Если нужно вручную проверить advanced diagnostics, откройте collapsed `data-testid="delivery-hub-dev-diagnostics"` при `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true`.
+
+Критично для historical/advanced проверки:
 
 - успешный Admin quote smoke, store-neutral quote/selection smoke, storefront preview validation и mock browser smoke являются readiness evidence only;
 - manual preview validation **не** является approval на checkout cutover;
 - default decision remains **NO-GO** until a separate approval gate explicitly records `GO`;
-- reserved future flag `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false` is now runtime-visible in the storefront preview/shadow guardrails as a default-off read-only/preflight gate;
+- reserved future flag `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false` is runtime-visible only in advanced diagnostics as a default-off read-only/preflight gate;
 - read-only verifier `GET /store/delivery/cutover-preconditions` is evidence/preflight only: it must not call Yandex/live providers, must not expose raw provider/Yandex DTOs or secrets, and must not be treated as approval;
 - read-only artifact endpoint `GET /store/delivery/cutover-approval-template?cart_id=<cart_id>` is a decision-record template only: default `decision_status=not_requested`, allowed statuses are `not_requested | go_requested | no_go | approved_but_commit_disabled`, and even an approved evidence state does not enable checkout commit;
 - human record template for operators is [`delivery_hub_cutover_decision_record_template.md`](./delivery_hub_cutover_decision_record_template.md); use it only as sanitized evidence, not runtime state;
-- when the flag is absent/false, `data-testid="delivery-hub-cutover-gate-status"` must show default-off and `canCommitShippingMethod=false`;
-- if an operator explicitly sets `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` in local/staging, the same guardrail must recognize `true`; `canCommitShippingMethod` may become `true` only when a ready candidate maps to an available Delivery Hub Medusa shipping option, otherwise it must fail closed as `false`;
-- `data-testid="delivery-hub-cutover-preconditions-status"` must show either available verifier evidence or fail-safe unavailable state, and in both cases `canCommitShippingMethod=false`;
-- `data-testid="delivery-hub-cutover-approval-artifact"` must show either available non-executable decision evidence or fail-safe unavailable state, and in both cases `canCommitShippingMethod=false`;
-- до отдельного approved cutover task Delivery Hub preview/selection path не должен вызывать `setShippingMethod()`, не должен reintroduce legacy delivery fallback checkout, и не должен запускать shipment create/cancel/status/retry.
+- when the handoff flag is absent/false, `data-testid="delivery-hub-advanced-readiness-status"` must show default-off and `canCommitShippingMethod=false`;
+- if an operator explicitly sets `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=true` in local/staging, the same advanced readiness block may show `canCommitShippingMethod=true` only when a ready candidate maps to an available Delivery Hub Medusa shipping option; otherwise it must fail closed as `false`;
+- `data-testid="delivery-hub-advanced-preconditions-status"` must show either available verifier evidence or fail-safe unavailable state, and the verifier artifact itself remains non-executable;
+- `data-testid="delivery-hub-advanced-approval-record"` must show either available non-executable decision evidence or fail-safe unavailable state;
+- active shopper checkout must not show these historical/advanced labels, must not reintroduce legacy delivery fallback checkout, and must not run shipment create/cancel/status/retry.
 
 ---
 
@@ -748,12 +702,13 @@ cd medusa-agency-boilerplate && MEDUSA_PUBLISHABLE_KEY=<store_publishable_key> D
 This verifies Delivery Hub public neutral quote + selection persistence without checkout cutover. Expected success: `quotes_count > 0`, `selection.saved=true`, `checkout_source_of_truth="unchanged"`, safe correlation id present, and no token/auth/raw provider/ciphertext fragments in output. The local `2026-04-27` rerun passed this check for both dropoff→PVZ and warehouse→PVZ scenarios.
 
 
-### Manual check: read-only cutover candidate planner
+### Manual check: advanced shipping-option planner diagnostics
 
-1. Open checkout delivery step with Delivery Hub preview enabled.
-2. Confirm the Preview/Shadow UI shows `delivery-hub-cutover-candidate-status` near cutover preconditions.
-3. With no saved Delivery Hub neutral selection, confirm candidate planner shows blocked/selection missing and `canCommitShippingMethod=false`.
-4. Save a neutral Delivery Hub preview selection. Confirm candidate planner can show a candidate shipping option summary when a safe matching Delivery Hub shipping option is available.
-5. Confirm the label says “candidate only / no checkout commit”, checkout source-of-truth remains unchanged, and the Delivery Hub-only guarded option remains the live checkout contour.
-6. Inspect page text/network payloads for absence of raw provider body, raw `quote_key`, provider offer ids, auth headers, tokens, ciphertext, credentials, event logs, or publishable key values.
-7. Do not treat planner output as approval; operator approval and a separate future cutover implementation remain required.
+1. Open checkout delivery step with `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true`.
+2. Confirm the active shopper flow works through buyer-facing hooks from §1.1 and does not show preview/shadow/cutover wording.
+3. Open collapsed `data-testid="delivery-hub-dev-diagnostics"` only for operator/dev validation.
+4. Confirm `data-testid="delivery-hub-advanced-candidate-status"` shows sanitized shipping-option planner evidence.
+5. With no saved Delivery Hub selection, confirm the planner is blocked or missing selection and cannot enable handoff by itself.
+6. Save a Delivery Hub selection through the buyer-facing flow. Confirm advanced candidate diagnostics can show a candidate shipping option summary when a safe matching Delivery Hub shipping option is available.
+7. Inspect page text/network payloads for absence of raw provider body, raw `quote_key`, provider offer ids, auth headers, tokens, ciphertext, credentials, event logs, or publishable key values.
+8. Do not treat planner output as production approval; shipment execution and production rollout remain separately gated.

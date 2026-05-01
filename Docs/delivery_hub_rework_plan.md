@@ -1,6 +1,6 @@
 # Delivery Hub rework plan
 
-> Status: accepted execution plan; phases 0/1 through 7 are implemented and reviewed. Phase 8 is the next implementation tranche after the documentation cleanup recorded in [current_work.md](./current_work.md).
+> Status: accepted execution plan; phases 0/1 through 8 are implemented and reviewed. Phase 8 has one non-blocking follow-up for deeper isolation of diagnostic fetches from the ordinary checkout network flow.
 >
 > Last status update: 2026-05-01.
 >

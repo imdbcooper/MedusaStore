@@ -36,17 +36,9 @@ import {
   buildDeliveryHubCutoverApprovalArtifactPreviewModel,
   buildDeliveryHubCutoverCandidatePreviewModel,
   buildDeliveryHubCutoverPreconditionsPreviewModel,
-  buildDeliveryHubHandoffContractMatrixPreviewModel,
-  buildDeliveryHubHandoffPreviewModel,
   buildDeliveryHubNeutralSelectionRehearsalModel,
-  buildDeliveryHubPersistedSelectionContractParityPreviewModel,
-  buildDeliveryHubProjectedCommitParityPreviewModel,
   buildDeliveryHubSavedSelectionSummaryModel,
-  buildDeliveryHubSelectionPayloadParityPreviewModel,
   buildDeliveryHubSelectionSaveCutInPayload,
-  buildDeliveryHubSelectionWriteSeamPreviewModel,
-  buildDeliveryHubShippingOptionParityPreviewModel,
-  buildDeliveryHubWriteIntentContractPreviewModel,
   evaluateDeliveryHubNeutralSelectionRehearsalActionability,
   type DeliveryHubCutoverApprovalArtifactResponse,
   type DeliveryHubCutoverCandidateResponse,
@@ -743,7 +735,7 @@ const Shipping: React.FC<ShippingProps> = ({
           status: "error",
           model: buildDeliveryHubNeutralSelectionRehearsalModel(previewInput),
           preview_input: previewInput,
-          issue_message: "Delivery Hub rehearsal preview is currently unavailable.",
+          issue_message: "Advanced Delivery Hub validation is currently unavailable.",
         })
       })
 
@@ -792,7 +784,7 @@ const Shipping: React.FC<ShippingProps> = ({
         ...current,
         status: "blocked",
         message:
-          "Fill the checkout shipping address before requesting Delivery Hub preview quotes; hidden dev/default address values are not used.",
+          "Fill the checkout shipping address before requesting Delivery Hub validation quotes; hidden dev/default address values are not used.",
       }))
       return null
     }
@@ -801,7 +793,7 @@ const Shipping: React.FC<ShippingProps> = ({
       setDeliveryHubNeutralPreviewState((current) => ({
         ...current,
         status: "blocked",
-        message: "Destination pickup point id is required for Delivery Hub preview quotes.",
+        message: "Destination pickup point id is required for Delivery Hub validation quotes.",
       }))
       return null
     }
@@ -858,7 +850,7 @@ const Shipping: React.FC<ShippingProps> = ({
       selected_quote_reference_id: null,
       selection: null,
       message:
-        "Requesting neutral Delivery Hub quotes. Checkout source-of-truth remains unchanged.",
+        "Requesting Delivery Hub validation quotes. Active checkout delivery flow remains unchanged.",
     })
 
     const quotes = await previewDeliveryHubQuotes(quoteInput)
@@ -869,7 +861,7 @@ const Shipping: React.FC<ShippingProps> = ({
         quotes: null,
         selected_quote_reference_id: null,
         selection: null,
-        message: "Delivery Hub preview quote request failed or returned an unsafe payload.",
+        message: "Delivery Hub validation quote request failed or returned an unsafe payload.",
       })
       return
     }
@@ -879,7 +871,7 @@ const Shipping: React.FC<ShippingProps> = ({
       quotes,
       selected_quote_reference_id: quotes.quotes[0]?.quote_reference.id ?? null,
       selection: null,
-      message: `Delivery Hub preview returned ${quotes.quotes.length} neutral quote(s). Checkout source-of-truth unchanged.`,
+      message: `Delivery Hub validation returned ${quotes.quotes.length} neutral quote(s). Active checkout delivery flow remains unchanged.`,
     })
   }
 
@@ -906,7 +898,7 @@ const Shipping: React.FC<ShippingProps> = ({
       setDeliveryHubNeutralPreviewState((current) => ({
         ...current,
         status: "blocked",
-        message: "Run Delivery Hub preview quote before saving selection metadata.",
+        message: "Run Delivery Hub validation quote before saving selection metadata.",
       }))
       return
     }
@@ -915,7 +907,7 @@ const Shipping: React.FC<ShippingProps> = ({
       setDeliveryHubNeutralPreviewState((current) => ({
         ...current,
         status: "blocked",
-        message: "Connection id is required to save Delivery Hub preview selection metadata.",
+        message: "Connection id is required to save Delivery Hub validation selection metadata.",
       }))
       return
     }
@@ -951,8 +943,8 @@ const Shipping: React.FC<ShippingProps> = ({
       pickup_point: {
         provider_point_id: destinationPointId,
         provider_point_code: null,
-        name: `Preview pickup point ${destinationPointId}`,
-        address: deliveryHubAddressContext.address_label ?? "Preview/sandbox pickup point id supplied by operator",
+        name: `Validation pickup point ${destinationPointId}`,
+        address: deliveryHubAddressContext.address_label ?? "Validation/sandbox pickup point id supplied by operator",
         city: deliveryHubAddressContext.city,
         region: deliveryHubAddressContext.province,
         postal_code: deliveryHubAddressContext.postal_code,
@@ -984,7 +976,7 @@ const Shipping: React.FC<ShippingProps> = ({
           status: "saved",
           selection,
           message:
-            "Delivery Hub preview selection metadata saved. checkout source-of-truth unchanged.",
+            "Delivery Hub validation selection metadata saved. Active checkout delivery flow remains unchanged.",
         }))
         router.refresh()
       })
@@ -992,7 +984,7 @@ const Shipping: React.FC<ShippingProps> = ({
         setDeliveryHubNeutralPreviewState((current) => ({
           ...current,
           status: "error",
-          message: err.message ?? "Unable to save Delivery Hub preview selection.",
+          message: err.message ?? "Unable to save Delivery Hub validation selection.",
         }))
       })
   }
@@ -1024,7 +1016,7 @@ const Shipping: React.FC<ShippingProps> = ({
           status: "cleared",
           selection,
           message:
-            "Delivery Hub preview selection metadata cleared. checkout source-of-truth unchanged.",
+            "Delivery Hub validation selection metadata cleared. Active checkout delivery flow remains unchanged.",
         }))
         router.refresh()
       })
@@ -1032,7 +1024,7 @@ const Shipping: React.FC<ShippingProps> = ({
         setDeliveryHubNeutralPreviewState((current) => ({
           ...current,
           status: "error",
-          message: err.message ?? "Unable to clear Delivery Hub preview selection.",
+          message: err.message ?? "Unable to clear Delivery Hub validation selection.",
         }))
       })
   }
@@ -1159,7 +1151,7 @@ const Shipping: React.FC<ShippingProps> = ({
       setDeliveryHubSelectionCutInState({
         status: "blocked",
         message:
-          "Delivery Hub checkout is fail-closed: quote/selection readiness is blocked, so no fallback shipping method is selected automatically. Retry after Delivery Hub is ready or ask an operator to resolve delivery setup.",
+          "Delivery Hub delivery is not ready yet: quote/selection readiness is blocked, so checkout cannot continue to payment. Retry after Delivery Hub is ready or ask an operator to resolve delivery setup.",
       })
       return
     }
@@ -1167,7 +1159,7 @@ const Shipping: React.FC<ShippingProps> = ({
     setDeliveryHubSelectionCutInState({
       status: "committing",
       message:
-        "Committing the matched Delivery Hub Medusa shipping option. No provider payloads or shipment execution are sent.",
+        "Saving the matched Delivery Hub shipping option. No provider payloads or shipment execution are sent.",
     })
 
     const committed = await commitShippingMethod(deliveryHubCommitEligibility.shipping_option_id)
@@ -1176,7 +1168,7 @@ const Shipping: React.FC<ShippingProps> = ({
       setDeliveryHubSelectionCutInState({
         status: "error",
         message:
-          "Delivery Hub checkout commit failed safely. No fallback shipping method is selected automatically; retry after refreshing the candidate or ask an operator to resolve Delivery Hub readiness.",
+          "Delivery Hub shipping option could not be saved. Retry after refreshing delivery readiness or ask an operator to resolve Delivery Hub setup.",
       })
       return
     }
@@ -1184,7 +1176,7 @@ const Shipping: React.FC<ShippingProps> = ({
     setDeliveryHubSelectionCutInState({
       status: "committed",
       message:
-        "Delivery Hub shipping option committed through Medusa. Shipment creation/execution remains disabled and rollback is flag-off.",
+        "Delivery Hub shipping option saved through Medusa. Shipment creation/execution remains disabled unless separately enabled by operators.",
     })
     router.refresh()
   }
@@ -1234,29 +1226,6 @@ const Shipping: React.FC<ShippingProps> = ({
     evaluateDeliveryHubNeutralSelectionRehearsalActionability(
       deliveryHubRehearsalState.model
     )
-  const deliveryHubHandoffPreview = buildDeliveryHubHandoffPreviewModel(
-    deliveryHubRehearsalState.preview_input
-  )
-  const deliveryHubShippingOptionParityPreview =
-    buildDeliveryHubShippingOptionParityPreviewModel(
-      deliveryHubRehearsalState.preview_input
-    )
-  const deliveryHubPersistedSelectionContractParityPreview =
-    buildDeliveryHubPersistedSelectionContractParityPreviewModel(
-      deliveryHubRehearsalState.preview_input
-    )
-  const deliveryHubProjectedCommitParityPreview =
-    buildDeliveryHubProjectedCommitParityPreviewModel(
-      deliveryHubRehearsalState.preview_input
-    )
-  const deliveryHubSelectionPayloadParityPreview =
-    buildDeliveryHubSelectionPayloadParityPreviewModel(
-      deliveryHubRehearsalState.preview_input
-    )
-  const deliveryHubSelectionWriteSeamPreview =
-    buildDeliveryHubSelectionWriteSeamPreviewModel(
-      deliveryHubRehearsalState.preview_input
-    )
   const deliveryHubSavedSelectionSummary = buildDeliveryHubSavedSelectionSummaryModel(
     deliveryHubRehearsalState.preview_input.persisted_selection,
     deliveryHubRehearsalState.preview_input.readiness
@@ -1279,14 +1248,6 @@ const Shipping: React.FC<ShippingProps> = ({
       address_context: deliveryHubAddressContext,
     }
   )
-  const deliveryHubWriteIntentContractPreview =
-    buildDeliveryHubWriteIntentContractPreviewModel(
-      deliveryHubRehearsalState.preview_input
-    )
-  const deliveryHubHandoffContractMatrixPreview =
-    buildDeliveryHubHandoffContractMatrixPreviewModel(
-      deliveryHubRehearsalState.preview_input
-    )
   const deliveryHubCommitEligibility = buildDeliveryHubCommitEligibilityModel({
     cutover_enabled: DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED,
     cutover_candidate: deliveryHubCutoverCandidateState.candidate,
@@ -1760,730 +1721,185 @@ const Shipping: React.FC<ShippingProps> = ({
               data-testid="delivery-hub-dev-diagnostics"
             >
               <summary className="cursor-pointer text-ui-fg-muted txt-small-plus">
-                Delivery Hub diagnostics / dev-only validation
+                Advanced Delivery Hub diagnostics
               </summary>
               <div className="mt-4">
-          <div className="mb-6 rounded-rounded border border-ui-border-base bg-ui-bg-subtle px-5 py-4">
-            <div className="flex flex-col gap-y-4">
-              <div className="flex flex-col gap-y-2">
-                <Text className="text-ui-fg-base txt-medium-plus">
-                  Delivery Hub neutral selection rehearsal
-                </Text>
-                <Text className="text-ui-fg-muted txt-small">
-                  Controlled save/clear cut-in for the neutral cart selection contract. Delivery Hub selection metadata can be saved or cleared, while shipping-method commit and live dispatch remain disabled.
-                </Text>
-                {deliveryHubSavedSelectionSummary.state !== "missing" && (
-                  <div className="rounded-rounded border border-ui-border-base bg-ui-bg-base p-3">
-                    <div className="grid gap-y-1 text-ui-fg-muted txt-small">
-                      <span className="text-ui-fg-base">
-                        {deliveryHubSavedSelectionSummary.title}: {deliveryHubSavedSelectionSummary.status_label}
+                <div
+                  className="rounded-rounded border border-ui-border-base bg-ui-bg-base p-4"
+                  data-testid="delivery-hub-advanced-diagnostics-block"
+                >
+                  <div className="flex flex-col gap-y-3">
+                    <div className="flex flex-col gap-y-2">
+                      <Text
+                        className="text-ui-fg-base txt-medium-plus"
+                        data-testid="delivery-hub-diagnostics-heading"
+                      >
+                        Delivery Hub advanced validation
+                      </Text>
+                      <Text className="text-ui-fg-muted txt-small">
+                        Dev-only validation surface for safe Delivery Hub quote, selection, readiness, and shipping-method handoff checks. It is collapsed by default, uses sanitized Store API responses, and does not create shipments or expose provider payloads.
+                      </Text>
+                    </div>
+
+                    <div
+                      className="grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"
+                      data-testid="delivery-hub-diagnostics-guardrails"
+                    >
+                      <span data-testid="delivery-hub-diagnostics-feature-flag-status">
+                        Diagnostics flag: NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true.
                       </span>
-                      <span>{deliveryHubSavedSelectionSummary.finality_label}</span>
-                      {deliveryHubSavedSelectionSummary.modality_label && (
-                        <span>Saved modality: {deliveryHubSavedSelectionSummary.modality_label}</span>
+                      <span data-testid="delivery-hub-diagnostics-dev-defaults-status">
+                        Sandbox defaults: {DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED ? "enabled for local/dev ids" : "disabled; enter non-secret ids manually"}.
+                      </span>
+                      <span data-testid="delivery-hub-diagnostics-active-flow-guardrail">
+                        Active checkout flow: Delivery Hub quote/PVZ selection, saved delivery method, matched Medusa shipping option, then payment only after delivery is ready.
+                      </span>
+                      <span data-testid="delivery-hub-diagnostics-no-provider-raw-guardrail">
+                        Diagnostics are shopper-safe only: quote/selection status, count, price, ETA and safe correlation id; no raw provider body, token, auth header, ciphertext or publishable key value is displayed.
+                      </span>
+                    </div>
+
+                    <div className="grid gap-y-1 text-ui-fg-muted txt-small">
+                      <span>{deliveryHubRehearsalState.model.status_label}</span>
+                      <span>{deliveryHubRehearsalState.model.active_commit_path_label}</span>
+                      <span>Validation status: {deliveryHubRehearsalActionability.verdict}</span>
+                      {deliveryHubRehearsalState.issue_message && (
+                        <span>{deliveryHubRehearsalState.issue_message}</span>
                       )}
-                      {deliveryHubSavedSelectionSummary.quote_amount !== null && (
-                        <span>
-                          Saved quote: {formatPrice(
-                            deliveryHubSavedSelectionSummary.quote_amount,
-                            deliveryHubSavedSelectionSummary.currency_code
-                          )}
-                          {deliveryHubSavedSelectionSummary.quote_eta_label
-                            ? ` · ${deliveryHubSavedSelectionSummary.quote_eta_label}`
-                            : ""}
+                      {deliveryHubRehearsalState.status === "loading" && (
+                        <span className="flex items-center gap-x-2">
+                          <Loader /> Loading advanced validation…
+                        </span>
+                      )}
+                      {deliveryHubSavedSelectionSummary.state !== "missing" && (
+                        <span data-testid="delivery-hub-diagnostics-saved-selection">
+                          {deliveryHubSavedSelectionSummary.title}: {deliveryHubSavedSelectionSummary.status_label}
                         </span>
                       )}
                       {deliveryHubSavedSelectionSummary.pickup_point_label && (
-                        <span>
-                          Saved pickup point: {deliveryHubSavedSelectionSummary.pickup_point_label}
-                          {deliveryHubSavedSelectionSummary.pickup_point_address_label
-                            ? ` · ${deliveryHubSavedSelectionSummary.pickup_point_address_label}`
-                            : ""}
-                          {deliveryHubSavedSelectionSummary.pickup_point_code_label
-                            ? ` · ${deliveryHubSavedSelectionSummary.pickup_point_code_label}`
-                            : ""}
-                        </span>
-                      )}
-                      {deliveryHubSavedSelectionSummary.pickup_window_label && (
-                        <span>Saved pickup window: {deliveryHubSavedSelectionSummary.pickup_window_label}</span>
+                        <span>Saved pickup point: {deliveryHubSavedSelectionSummary.pickup_point_label}</span>
                       )}
                       {deliveryHubSavedSelectionSummary.readiness_label && (
                         <span>Readiness: {deliveryHubSavedSelectionSummary.readiness_label}</span>
                       )}
-                      {deliveryHubSavedSelectionSummary.saved_at_label && (
-                        <span>{deliveryHubSavedSelectionSummary.saved_at_label}</span>
+                    </div>
+
+                    <div
+                      className="grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"
+                      data-testid="delivery-hub-checkout-commit-guard"
+                    >
+                      <span data-testid="delivery-hub-checkout-commit-guard-status">
+                        Shipping-method handoff guard: {deliveryHubCommitEligibility.status}; canCommitShippingMethod={String(deliveryHubCommitEligibility.canCommitShippingMethod)}.
+                      </span>
+                      <span>{deliveryHubCommitEligibility.status_label}</span>
+                      <span>{deliveryHubCommitEligibility.detail_label}</span>
+                      <span>Candidate shipping option: {deliveryHubCommitEligibility.shipping_option_id ?? "none"}</span>
+                      <span>Current shipping option: {deliveryHubCommitEligibility.current_shipping_option_id ?? "none"}</span>
+                      {deliveryHubCommitEligibility.reason_codes.length > 0 && (
+                        <span>Handoff blockers: {deliveryHubCommitEligibility.reason_codes.join(", ")}</span>
                       )}
-                      {deliveryHubSavedSelectionSummary.correlation_id_label && (
-                        <span>{deliveryHubSavedSelectionSummary.correlation_id_label}</span>
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        type="button"
+                        disabled={
+                          !deliveryHubCommitEligibility.canCommitShippingMethod ||
+                          isLoading ||
+                          deliveryHubSelectionMutationInFlight ||
+                          deliveryHubSelectionCutInState.status === "committing"
+                        }
+                        onClick={() => {
+                          void handleDeliveryHubCheckoutCutoverCommit()
+                        }}
+                        data-testid="delivery-hub-checkout-commit-button"
+                      >
+                        {deliveryHubSelectionCutInState.status === "committing" ? (
+                          <span className="flex items-center gap-x-2">
+                            <Loader /> Saving Delivery Hub shipping
+                          </span>
+                        ) : (
+                          "Save Delivery Hub shipping option"
+                        )}
+                      </Button>
+                    </div>
+
+                    <div
+                      className="grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"
+                      data-testid="delivery-hub-advanced-readiness-status"
+                    >
+                      <span data-testid="delivery-hub-advanced-readiness-flag-status">
+                        Checkout handoff flag: NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED={deliveryHubCheckoutCutoverGateStatus.enabled ? "true" : "false"}.
+                      </span>
+                      <span data-testid="delivery-hub-advanced-readiness-mode">
+                        Handoff mode: {deliveryHubCheckoutCutoverGateStatus.mode}; canCommitShippingMethod={String(deliveryHubCheckoutCutoverGateStatus.canCommitShippingMethod)}.
+                      </span>
+                      <span data-testid="delivery-hub-advanced-readiness-summary">
+                        {deliveryHubCheckoutCutoverGateStatus.status_label}
+                      </span>
+                      <span data-testid="delivery-hub-advanced-readiness-detail">
+                        {deliveryHubCheckoutCutoverGateStatus.detail_label}
+                      </span>
+                    </div>
+
+                    <div
+                      className="grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"
+                      data-testid="delivery-hub-advanced-preconditions-status"
+                    >
+                      <span data-testid="delivery-hub-advanced-preconditions-availability">
+                        Readiness verifier: {deliveryHubCutoverPreconditionsPreview.availability}; load status={deliveryHubCutoverPreconditionsState.status}.
+                      </span>
+                      <span data-testid="delivery-hub-advanced-preconditions-summary">
+                        {deliveryHubCutoverPreconditionsPreview.status_label} · {deliveryHubCutoverPreconditionsPreview.summary_label}
+                      </span>
+                      <span data-testid="delivery-hub-advanced-preconditions-commit-status">
+                        {deliveryHubCutoverPreconditionsPreview.commit_label}; canCommitShippingMethod={String(deliveryHubCutoverPreconditionsPreview.canCommitShippingMethod)}.
+                      </span>
+                      <span data-testid="delivery-hub-advanced-preconditions-guardrails">
+                        Guardrails: {deliveryHubCutoverPreconditionsPreview.guardrail_labels.join("; ")}.
+                      </span>
+                    </div>
+
+                    <div
+                      className="grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"
+                      data-testid="delivery-hub-advanced-candidate-status"
+                    >
+                      <span data-testid="delivery-hub-advanced-candidate-availability">
+                        Shipping option planner: {deliveryHubCutoverCandidatePreview.availability}; load status={deliveryHubCutoverCandidateState.status}.
+                      </span>
+                      <span data-testid="delivery-hub-advanced-candidate-summary">
+                        {deliveryHubCutoverCandidatePreview.status_label} · {deliveryHubCutoverCandidatePreview.detail_label}
+                      </span>
+                      <span data-testid="delivery-hub-advanced-candidate-commit-status">
+                        Planning evidence only; checkout handoff requires the explicit flag plus local readiness guard; canCommitShippingMethod={String(deliveryHubCommitEligibility.canCommitShippingMethod)}.
+                      </span>
+                      {deliveryHubCutoverCandidatePreview.candidate_label && (
+                        <span data-testid="delivery-hub-advanced-candidate-option">
+                          Candidate shipping option: {deliveryHubCutoverCandidatePreview.candidate_label}
+                        </span>
+                      )}
+                      {deliveryHubCutoverCandidatePreview.amount_label && (
+                        <span data-testid="delivery-hub-advanced-candidate-amount">
+                          Candidate amount: {deliveryHubCutoverCandidatePreview.amount_label}
+                        </span>
                       )}
                     </div>
-                    {deliveryHubSavedSelectionSummary.reconciliation_messages.length > 0 && (
-                      <ul className="mt-2 list-disc pl-4 text-ui-fg-muted txt-small">
-                        {deliveryHubSavedSelectionSummary.reconciliation_messages
-                          .slice(0, 4)
-                          .map((message) => (
-                            <li key={message}>{message}</li>
-                          ))}
-                      </ul>
-                    )}
-                    {deliveryHubSavedSelectionSummary.action_label && (
-                      <Text className="mt-2 text-ui-fg-muted txt-small">
-                        {deliveryHubSavedSelectionSummary.action_label}
-                      </Text>
-                    )}
-                  </div>
-                )}
-                {deliveryHubRehearsalState.status === "loading" && (
-                  <div className="flex items-center gap-x-2 text-ui-fg-muted txt-small">
-                    <Loader />
-                    <span>Loading read-only neutral preview…</span>
-                  </div>
-                )}
-                {deliveryHubRehearsalState.issue_message && (
-                  <Text className="text-ui-fg-subtle txt-small">
-                    {deliveryHubRehearsalState.issue_message}
-                  </Text>
-                )}
-                <div className="grid gap-y-1 text-ui-fg-muted txt-small">
-                  <span>{deliveryHubRehearsalState.model.status_label}</span>
-                  <span>{deliveryHubRehearsalState.model.active_commit_path_label}</span>
-                  <span>Dry-run guard: {deliveryHubRehearsalActionability.verdict}</span>
-                  {deliveryHubRehearsalState.model.modality_label && (
-                    <span>Neutral modality: {deliveryHubRehearsalState.model.modality_label}</span>
-                  )}
-                  {deliveryHubRehearsalState.model.quote_amount !== null && (
-                    <span data-testid="delivery-hub-buyer-visible-delivery-cost">
-                      Delivery Hub delivery cost: {formatPrice(
-                        deliveryHubRehearsalState.model.quote_amount,
-                        deliveryHubRehearsalState.model.currency_code
-                      )}
-                      {deliveryHubRehearsalState.model.quote_eta_label
-                        ? ` · ${deliveryHubRehearsalState.model.quote_eta_label}`
-                        : ""}
-                    </span>
-                  )}
-                  {deliveryHubRehearsalState.model.pickup_point_label && (
-                    <span>Pickup point preview: {deliveryHubRehearsalState.model.pickup_point_label}</span>
-                  )}
-                  {deliveryHubRehearsalState.model.pickup_window_label && (
-                    <span>Pickup window preview: {deliveryHubRehearsalState.model.pickup_window_label}</span>
-                  )}
-                </div>
-                {deliveryHubRehearsalState.model.hint_messages.length > 0 && (
-                  <ul className="list-disc pl-4 text-ui-fg-muted txt-small">
-                    {deliveryHubRehearsalState.model.hint_messages.slice(0, 3).map((message) => (
-                      <li key={message}>{message}</li>
-                    ))}
-                  </ul>
-                )}
-                <div className="rounded-rounded border border-ui-border-base bg-ui-bg-base p-3">
-                    <div className="flex flex-col gap-y-3">
-                      <div className="grid gap-y-1 text-ui-fg-muted txt-small">
-                        <span>
-                          Save cut-in guard: {deliveryHubSelectionSaveCutInGuard.status}
-                        </span>
-                        <span>{deliveryHubSelectionSaveCutInGuard.message}</span>
-                        {deliveryHubSelectionSaveCutInGuard.status === "ready" && (
-                          <span>
-                            POST payload is shaped from neutral cart id, connection id, quote reference, quote summary, pickup point and pickup window only.
-                          </span>
-                        )}
-                        {deliveryHubSelectionSaveCutInGuard.status === "blocked" && (
-                          <span>
-                            Blockers: {deliveryHubSelectionSaveCutInGuard.reason_codes.join(", ")}
-                          </span>
-                        )}
-                        {deliveryHubSelectionCutInState.message && (
-                          <span>{deliveryHubSelectionCutInState.message}</span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="small"
-                          variant="secondary"
-                          type="button"
-                          disabled={
-                            deliveryHubSelectionSaveCutInGuard.status !== "ready" ||
-                            deliveryHubSelectionMutationInFlight
-                          }
-                          onClick={() => {
-                            void handleSaveDeliveryHubSelectionCutIn()
-                          }}
-                        >
-                          {deliveryHubSelectionCutInState.status === "saving" ? (
-                            <span className="flex items-center gap-x-2">
-                              <Loader /> Saving neutral selection
-                            </span>
-                          ) : (
-                            "Save neutral selection"
-                          )}
-                        </Button>
-                        <Button
-                          size="small"
-                          variant="transparent"
-                          type="button"
-                          disabled={
-                            (!hasPersistedDeliveryHubSelection &&
-                              deliveryHubSelectionCutInState.status !== "saved") ||
-                            deliveryHubSelectionMutationInFlight
-                          }
-                          onClick={() => {
-                            void handleClearDeliveryHubSelectionCutIn()
-                          }}
-                        >
-                          {deliveryHubSelectionCutInState.status === "clearing" ? (
-                            <span className="flex items-center gap-x-2">
-                              <Loader /> Clearing neutral selection
-                            </span>
-                          ) : (
-                            "Clear neutral selection"
-                          )}
-                        </Button>
-                      </div>
-                      <div
-                        className="grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"
-                        data-testid="delivery-hub-checkout-commit-guard"
-                      >
-                        <span data-testid="delivery-hub-checkout-commit-guard-status">
-                          Commit guard: {deliveryHubCommitEligibility.status}; canCommitShippingMethod={String(deliveryHubCommitEligibility.canCommitShippingMethod)}.
-                        </span>
-                        <span>{deliveryHubCommitEligibility.status_label}</span>
-                        <span>{deliveryHubCommitEligibility.detail_label}</span>
-                        <span>Candidate shipping option: {deliveryHubCommitEligibility.shipping_option_id ?? "none"}</span>
-                        <span>Current shipping option: {deliveryHubCommitEligibility.current_shipping_option_id ?? "none"}</span>
-                        {deliveryHubCommitEligibility.reason_codes.length > 0 && (
-                          <span>Commit blockers: {deliveryHubCommitEligibility.reason_codes.join(", ")}</span>
-                        )}
-                        <Button
-                          size="small"
-                          variant="secondary"
-                          type="button"
-                          disabled={
-                            !deliveryHubCommitEligibility.canCommitShippingMethod ||
-                            isLoading ||
-                            deliveryHubSelectionMutationInFlight ||
-                            deliveryHubSelectionCutInState.status === "committing"
-                          }
-                          onClick={() => {
-                            void handleDeliveryHubCheckoutCutoverCommit()
-                          }}
-                          data-testid="delivery-hub-checkout-commit-button"
-                        >
-                          {deliveryHubSelectionCutInState.status === "committing" ? (
-                            <span className="flex items-center gap-x-2">
-                              <Loader /> Committing Delivery Hub shipping
-                            </span>
-                          ) : (
-                            "Commit Delivery Hub shipping option"
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-</div>
-              </div>
 
-              <div className="border-t border-ui-border-base pt-4">
-                <div className="flex flex-col gap-y-2">
-                  <Text className="text-ui-fg-base txt-medium-plus">
-                    Delivery Hub neutral shipping-option parity preview
-                  </Text>
-                  <Text className="text-ui-fg-muted txt-small">
-                    Preview-only parity seam. This block compares the neutral delivery candidate with the current storefront shipping-option context using shopper-safe structural signals only.
-                  </Text>
-                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
-                    <span>{deliveryHubShippingOptionParityPreview.verdict_label}</span>
-                    <span>{deliveryHubShippingOptionParityPreview.summary_label}</span>
-                    <span>Preview verdict: {deliveryHubShippingOptionParityPreview.verdict}</span>
-                    <span>
-                      candidate: {deliveryHubShippingOptionParityPreview.candidate_present ? "present" : "missing"}
-                    </span>
-                    <span>
-                      connection_id: {deliveryHubShippingOptionParityPreview.connection_id ?? "missing"}
-                      {` · ${deliveryHubShippingOptionParityPreview.connection_id_signal.status}`}
-                    </span>
-                    <span>
-                      mode_code: {deliveryHubShippingOptionParityPreview.mode_code ?? "missing"}
-                      {` · ${deliveryHubShippingOptionParityPreview.mode_code_signal.status}`}
-                    </span>
-                    {deliveryHubShippingOptionParityPreview.mode_label && (
-                      <span>Mode label: {deliveryHubShippingOptionParityPreview.mode_label}</span>
-                    )}
-                    <span>
-                      quote_reference: {deliveryHubShippingOptionParityPreview.quote_reference_present ? "present" : "missing"}
-                      {` · ${deliveryHubShippingOptionParityPreview.quote_reference_signal.status}`}
-                    </span>
-                    <span>
-                      pickup point: {deliveryHubShippingOptionParityPreview.pickup_point_present ? "present" : "missing"}
-                      {deliveryHubShippingOptionParityPreview.pickup_point_required ? " · required" : " · optional"}
-                      {` · ${deliveryHubShippingOptionParityPreview.pickup_point_signal.status}`}
-                    </span>
-                    <span>
-                      pickup window: {deliveryHubShippingOptionParityPreview.pickup_window_present ? "present" : "missing"}
-                      {deliveryHubShippingOptionParityPreview.pickup_window_required ? " · required" : " · optional"}
-                      {` · ${deliveryHubShippingOptionParityPreview.pickup_window_signal.status}`}
-                    </span>
-                  </div>
-                  {deliveryHubShippingOptionParityPreview.gap_codes.length > 0 && (
-                    <div className="text-ui-fg-muted txt-small">
-                      Gaps: {deliveryHubShippingOptionParityPreview.gap_codes.join(", ")}
-                    </div>
-                  )}
-                  {deliveryHubShippingOptionParityPreview.hint_messages.length > 0 && (
-                    <ul className="list-disc pl-4 text-ui-fg-muted txt-small">
-                      {deliveryHubShippingOptionParityPreview.hint_messages
-                        .slice(0, 3)
-                        .map((message) => (
-                          <li key={message}>{message}</li>
-                        ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-
-              <div className="border-t border-ui-border-base pt-4">
-                <div className="flex flex-col gap-y-2">
-                  <Text className="text-ui-fg-base txt-medium-plus">
-                    Delivery Hub persisted selection contract parity preview
-                  </Text>
-                  <Text className="text-ui-fg-muted txt-small">
-                    Preview-only persisted contract seam. This block compares the current neutral selection surfaces with a future persisted contract artifact using shopper-safe diagnostic fields only.
-                  </Text>
-                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
-                    <span>{deliveryHubPersistedSelectionContractParityPreview.verdict_label}</span>
-                    <span>{deliveryHubPersistedSelectionContractParityPreview.summary_label}</span>
-                    <span>{deliveryHubPersistedSelectionContractParityPreview.projected_contract_label}</span>
-                    <span>
-                      Preview verdict: {deliveryHubPersistedSelectionContractParityPreview.verdict}
-                    </span>
-                    <span>
-                      matched fields: {deliveryHubPersistedSelectionContractParityPreview.matched_field_count}
-                      {` · mismatched fields: ${deliveryHubPersistedSelectionContractParityPreview.mismatched_field_count}`}
-                    </span>
-                    <span>
-                      connection_id: {deliveryHubPersistedSelectionContractParityPreview.connection_id ?? "missing"}
-                    </span>
-                    <span>
-                      mode_code: {deliveryHubPersistedSelectionContractParityPreview.mode_code ?? "missing"}
-                    </span>
-                    {deliveryHubPersistedSelectionContractParityPreview.mode_label && (
-                      <span>
-                        Mode label: {deliveryHubPersistedSelectionContractParityPreview.mode_label}
+                    <div
+                      className="grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"
+                      data-testid="delivery-hub-advanced-approval-record"
+                    >
+                      <span data-testid="delivery-hub-advanced-approval-record-availability">
+                        Approval record: {deliveryHubCutoverApprovalArtifactPreview.availability}; load status={deliveryHubCutoverApprovalArtifactState.status}.
                       </span>
-                    )}
-                    <span>
-                      quote_reference: {deliveryHubPersistedSelectionContractParityPreview.quote_reference_present ? "present" : "missing"}
-                    </span>
-                    <span>
-                      pickup point: {deliveryHubPersistedSelectionContractParityPreview.pickup_point_present ? "present" : "missing"}
-                      {deliveryHubPersistedSelectionContractParityPreview.pickup_point_required
-                        ? " · required"
-                        : " · not required"}
-                    </span>
-                    <span>
-                      pickup window: {deliveryHubPersistedSelectionContractParityPreview.pickup_window_present ? "present" : "missing"}
-                      {deliveryHubPersistedSelectionContractParityPreview.pickup_window_required
-                        ? " · required"
-                        : " · not required"}
-                    </span>
-                    {deliveryHubPersistedSelectionContractParityPreview.fields.map((field) => (
-                      <span key={field.key}>
-                        {field.label}: {field.status} · {field.detail_label}
+                      <span data-testid="delivery-hub-advanced-approval-record-status">
+                        {deliveryHubCutoverApprovalArtifactPreview.status_label} · {deliveryHubCutoverApprovalArtifactPreview.detail_label}
                       </span>
-                    ))}
-                  </div>
-                  {deliveryHubPersistedSelectionContractParityPreview.mismatch_reasons.length > 0 && (
-                    <div className="text-ui-fg-muted txt-small">
-                      Mismatch reasons: {deliveryHubPersistedSelectionContractParityPreview.mismatch_reasons.join(" | ")}
-                    </div>
-                  )}
-                  {deliveryHubPersistedSelectionContractParityPreview.blocked_readiness_codes.length > 0 && (
-                    <div className="text-ui-fg-muted txt-small">
-                      Readiness blockers: shopper-safe preview remains unavailable until the current delivery selection context is ready.
-                    </div>
-                  )}
-                  {deliveryHubPersistedSelectionContractParityPreview.blocked_parity_codes.length > 0 && (
-                    <div className="text-ui-fg-muted txt-small">
-                      Parity blockers: shopper-safe preview remains unavailable until the current delivery option aligns with the committed checkout context.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="border-t border-ui-border-base pt-4">
-                <div className="flex flex-col gap-y-2">
-                  <Text className="text-ui-fg-base txt-medium-plus">
-                    Delivery Hub projected commit parity preview
-                  </Text>
-                  <Text className="text-ui-fg-muted txt-small">
-                    Preview-only projected commit seam. This block compares the current neutral delivery-hub selection preview with the future shipping-option commit contract shape using shopper-safe diagnostic fields only.
-                  </Text>
-                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
-                    <span>{deliveryHubProjectedCommitParityPreview.verdict_label}</span>
-                    <span>{deliveryHubProjectedCommitParityPreview.summary_label}</span>
-                    <span>{deliveryHubProjectedCommitParityPreview.projected_commit_label}</span>
-                    <span>Preview verdict: {deliveryHubProjectedCommitParityPreview.verdict}</span>
-                    <span>
-                      commit payload readiness: {deliveryHubProjectedCommitParityPreview.commit_payload_readiness}
-                    </span>
-                    <span>
-                      matched fields: {deliveryHubProjectedCommitParityPreview.matched_field_count}
-                      {` · mismatched fields: ${deliveryHubProjectedCommitParityPreview.mismatched_field_count}`}
-                    </span>
-                    <span>
-                      connection_id: {deliveryHubProjectedCommitParityPreview.connection_id ?? "missing"}
-                    </span>
-                    <span>
-                      mode_code: {deliveryHubProjectedCommitParityPreview.mode_code ?? "missing"}
-                    </span>
-                    {deliveryHubProjectedCommitParityPreview.mode_label && (
-                      <span>Mode label: {deliveryHubProjectedCommitParityPreview.mode_label}</span>
-                    )}
-                    <span>
-                      quote_reference: {deliveryHubProjectedCommitParityPreview.quote_reference_present ? "present" : "missing"}
-                    </span>
-                    <span>
-                      pickup point: {deliveryHubProjectedCommitParityPreview.pickup_point_present ? "present" : "missing"}
-                      {deliveryHubProjectedCommitParityPreview.pickup_point_required
-                        ? " · required"
-                        : " · not required"}
-                    </span>
-                    <span>
-                      pickup window: {deliveryHubProjectedCommitParityPreview.pickup_window_present ? "present" : "missing"}
-                      {deliveryHubProjectedCommitParityPreview.pickup_window_required
-                        ? " · required"
-                        : " · not required"}
-                    </span>
-                    {deliveryHubProjectedCommitParityPreview.fields.map((field) => (
-                      <span key={field.key}>
-                        {field.label}: {field.status} · {field.detail_label}
+                      <span data-testid="delivery-hub-advanced-approval-record-evidence">
+                        Evidence snapshot: {deliveryHubCutoverApprovalArtifactPreview.evidence_label}
                       </span>
-                    ))}
-                  </div>
-                  {deliveryHubProjectedCommitParityPreview.mismatch_reasons.length > 0 && (
-                    <div className="text-ui-fg-muted txt-small">
-                      Mismatch reasons: {deliveryHubProjectedCommitParityPreview.mismatch_reasons.join(" | ")}
-                    </div>
-                  )}
-                  {deliveryHubProjectedCommitParityPreview.blocked_readiness_codes.length > 0 && (
-                    <div className="text-ui-fg-muted txt-small">
-                      Readiness blockers: shopper-safe projected commit preview remains unavailable until the current delivery selection context is ready.
-                    </div>
-                  )}
-                  {deliveryHubProjectedCommitParityPreview.blocked_parity_codes.length > 0 && (
-                    <div className="text-ui-fg-muted txt-small">
-                      Parity blockers: shopper-safe projected commit preview remains unavailable until the current delivery option aligns with the committed checkout context.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="border-t border-ui-border-base pt-4">
-                <div className="flex flex-col gap-y-2">
-                  <Text className="text-ui-fg-base txt-medium-plus">
-                    Delivery Hub selection payload parity preview
-                  </Text>
-                  <Text className="text-ui-fg-muted txt-small">
-                    Preview-only selection payload parity seam. This block compares the projected storefront payload shape for POST /store/delivery/selection with the expected neutral save-contract shape using shopper-safe diagnostic fields only.
-                  </Text>
-                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
-                    <span>{deliveryHubSelectionPayloadParityPreview.verdict_label}</span>
-                    <span>{deliveryHubSelectionPayloadParityPreview.summary_label}</span>
-                    <span>{deliveryHubSelectionPayloadParityPreview.projected_payload_label}</span>
-                    <span>{deliveryHubSelectionPayloadParityPreview.expected_contract_label}</span>
-                    <span>{deliveryHubSelectionPayloadParityPreview.payload_target_label}</span>
-                    <span>Preview verdict: {deliveryHubSelectionPayloadParityPreview.verdict}</span>
-                    <span>
-                      matched fields: {deliveryHubSelectionPayloadParityPreview.matched_field_count}
-                      {` · incomplete fields: ${deliveryHubSelectionPayloadParityPreview.incomplete_field_count}`}
-                      {` · blocked fields: ${deliveryHubSelectionPayloadParityPreview.blocked_field_count}`}
-                    </span>
-                    <span>
-                      connection_id: {deliveryHubSelectionPayloadParityPreview.connection_id ?? "missing"}
-                    </span>
-                    <span>
-                      quote_type: {deliveryHubSelectionPayloadParityPreview.quote_type ?? "missing"}
-                    </span>
-                    {deliveryHubSelectionPayloadParityPreview.quote_type_label && (
-                      <span>
-                        Quote type label: {deliveryHubSelectionPayloadParityPreview.quote_type_label}
+                      <span data-testid="delivery-hub-advanced-approval-record-commit-controls">
+                        Commit controls: {deliveryHubCutoverApprovalArtifactPreview.commit_control_labels.join("; ")}; canCommitShippingMethod={String(deliveryHubCutoverApprovalArtifactPreview.canCommitShippingMethod)}.
                       </span>
-                    )}
-                    <span>
-                      quote_reference: {deliveryHubSelectionPayloadParityPreview.quote_reference_present ? "present" : "missing"}
-                    </span>
-                    <span>
-                      pickup point: {deliveryHubSelectionPayloadParityPreview.pickup_point_present ? "present" : "missing"}
-                      {deliveryHubSelectionPayloadParityPreview.pickup_point_required
-                        ? " · required"
-                        : " · not required"}
-                    </span>
-                    <span>
-                      pickup window: {deliveryHubSelectionPayloadParityPreview.pickup_window_present ? "present" : "missing"}
-                      {deliveryHubSelectionPayloadParityPreview.pickup_window_required
-                        ? " · required"
-                        : " · not required"}
-                    </span>
-                    <span>
-                      selection_version: {deliveryHubSelectionPayloadParityPreview.selection_version ?? "missing"}
-                    </span>
-                    <span>
-                      shape completeness: {deliveryHubSelectionPayloadParityPreview.shape_completeness}
-                    </span>
-                    {deliveryHubSelectionPayloadParityPreview.fields.map((field) => (
-                      <span key={field.key}>
-                        {field.label}: {field.status} · {field.detail_label}
-                      </span>
-                    ))}
-                  </div>
-                  {deliveryHubSelectionPayloadParityPreview.blocked_reasons.length > 0 && (
-                    <div className="text-ui-fg-muted txt-small">
-                      Parity notes: {deliveryHubSelectionPayloadParityPreview.blocked_reasons.join(", ")}
-                    </div>
-                  )}
-                  {deliveryHubSelectionPayloadParityPreview.hint_messages.length > 0 && (
-                    <ul className="list-disc pl-4 text-ui-fg-muted txt-small">
-                      {deliveryHubSelectionPayloadParityPreview.hint_messages
-                        .slice(0, 4)
-                        .map((message) => (
-                          <li key={message}>{message}</li>
-                        ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-
-              <div className="border-t border-ui-border-base pt-4">
-                <div className="flex flex-col gap-y-2">
-                  <Text className="text-ui-fg-base txt-medium-plus">
-                    Delivery Hub selection write seam preview
-                  </Text>
-                  <Text className="text-ui-fg-muted txt-small">
-                    Preview-only selection write seam. This block shows which shopper-safe request shape could someday be prepared for POST /store/delivery/selection using existing read-only preview surfaces only.
-                  </Text>
-                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
-                    <span>{deliveryHubSelectionWriteSeamPreview.verdict_label}</span>
-                    <span>{deliveryHubSelectionWriteSeamPreview.summary_label}</span>
-                    <span>{deliveryHubSelectionWriteSeamPreview.projected_request_label}</span>
-                    <span>Preview verdict: {deliveryHubSelectionWriteSeamPreview.verdict}</span>
-                    <span>
-                      shape completeness: {deliveryHubSelectionWriteSeamPreview.shape_completeness}
-                    </span>
-                    <span>
-                      projected fields: {deliveryHubSelectionWriteSeamPreview.projected_field_count}
-                      {` · missing fields: ${deliveryHubSelectionWriteSeamPreview.missing_field_count}`}
-                    </span>
-                    <span>cart_id: {deliveryHubSelectionWriteSeamPreview.cart_id ?? "missing"}</span>
-                    <span>
-                      connection_id: {deliveryHubSelectionWriteSeamPreview.connection_id ?? "missing"}
-                    </span>
-                    <span>
-                      quote_type: {deliveryHubSelectionWriteSeamPreview.quote_type ?? "missing"}
-                    </span>
-                    {deliveryHubSelectionWriteSeamPreview.quote_type_label && (
-                      <span>
-                        Quote type label: {deliveryHubSelectionWriteSeamPreview.quote_type_label}
-                      </span>
-                    )}
-                    <span>
-                      quote_reference: {deliveryHubSelectionWriteSeamPreview.quote_reference_present ? "present" : "missing"}
-                    </span>
-                    <span>
-                      quote: {deliveryHubSelectionWriteSeamPreview.quote_present ? "present" : "missing"}
-                    </span>
-                    <span>
-                      pickup point: {deliveryHubSelectionWriteSeamPreview.pickup_point_present ? "present" : "missing"}
-                      {deliveryHubSelectionWriteSeamPreview.pickup_point_required
-                        ? " · required"
-                        : " · not required"}
-                    </span>
-                    <span>
-                      pickup window: {deliveryHubSelectionWriteSeamPreview.pickup_window_present ? "present" : "missing"}
-                      {deliveryHubSelectionWriteSeamPreview.pickup_window_required
-                        ? " · required"
-                        : " · not required"}
-                    </span>
-                    <span>
-                      selection_version: {deliveryHubSelectionWriteSeamPreview.selection_version ?? "missing"}
-                    </span>
-                    {deliveryHubSelectionWriteSeamPreview.fields.map((field) => (
-                      <span key={field.key}>
-                        {field.label}: {field.status} · {field.detail_label}
-                      </span>
-                    ))}
-                  </div>
-                  {deliveryHubSelectionWriteSeamPreview.mismatch_reasons.length > 0 && (
-                    <div className="text-ui-fg-muted txt-small">
-                      Shape notes: {deliveryHubSelectionWriteSeamPreview.mismatch_reasons.join(" | ")}
-                    </div>
-                  )}
-                  {deliveryHubSelectionWriteSeamPreview.blocked_codes.length > 0 && (
-                    <div className="text-ui-fg-muted txt-small">
-                      Preview blockers: {deliveryHubSelectionWriteSeamPreview.blocked_codes.join(", ")}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {DELIVERY_HUB_PREVIEW_ENABLED && (
-                <div
-                  className="border-t border-ui-border-base pt-4"
-                  data-testid="delivery-hub-preview-shadow-block"
-                >
-                  <div className="flex flex-col gap-y-3 rounded-rounded border border-ui-border-base bg-ui-bg-base p-4">
-                    <div className="flex flex-col gap-y-2">
-                      <Text
-                        className="text-ui-fg-base txt-medium-plus"
-                        data-testid="delivery-hub-preview-heading"
-                      >
-                        Delivery Hub Preview/Shadow UI
-                      </Text>
-                      <Text className="text-ui-fg-muted txt-small">
-                        Operator/dev validation surface. It calls neutral Delivery Hub store endpoints and can save neutral metadata. The active checkout path is Delivery Hub only: shipping-method commit can call setShippingMethod() only when the explicit cutover flag is true and a ready Delivery Hub candidate maps to an available Medusa shipping option; otherwise checkout delivery fails closed with retry/operator action and no automatic legacy delivery fallback.
-                      </Text>
-                      <div
-                        className="grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"
-                        data-testid="delivery-hub-preview-guardrails"
-                      >
-                        <span data-testid="delivery-hub-preview-feature-flag-status">
-                          Feature flag: NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true.
-                        </span>
-                        <span data-testid="delivery-hub-preview-dev-defaults-status">
-                          Sandbox defaults: {DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED ? "enabled for local/dev ids" : "disabled; enter non-secret ids manually"}.
-                        </span>
-                        <span data-testid="delivery-hub-preview-source-of-truth-guardrail">
-                          Guardrail: checkout source-of-truth unchanged; Delivery Hub preview metadata does not commit a Medusa shipping method.
-                        </span>
-                        <span data-testid="delivery-hub-preview-no-provider-raw-guardrail">
-                          Diagnostics are shopper-safe only: quote/selection status, count, price, ETA and safe correlation id; no raw provider body, token, auth header, ciphertext or publishable key value is displayed.
-                        </span>
-                        <div
-                          className="mt-2 grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-base p-3"
-                          data-testid="delivery-hub-cutover-gate-status"
-                        >
-                          <span data-testid="delivery-hub-cutover-gate-flag-status">
-                            Checkout cutover flag: NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED={deliveryHubCheckoutCutoverGateStatus.enabled ? "true" : "false"}.
-                          </span>
-                          <span data-testid="delivery-hub-cutover-gate-mode">
-                            Cutover gate mode: {deliveryHubCheckoutCutoverGateStatus.mode}; canCommitShippingMethod={String(deliveryHubCheckoutCutoverGateStatus.canCommitShippingMethod)}.
-                          </span>
-                          <span data-testid="delivery-hub-cutover-gate-summary">
-                            {deliveryHubCheckoutCutoverGateStatus.status_label}
-                          </span>
-                          <span data-testid="delivery-hub-cutover-gate-detail">
-                            {deliveryHubCheckoutCutoverGateStatus.detail_label}
-                          </span>
-                          <span>
-                            Required readiness evidence: {deliveryHubCheckoutCutoverGateStatus.required_readiness_evidence.map((item) => item.label).join("; ")}.
-                          </span>
-                          <span>
-                            Commit guardrails: {deliveryHubCheckoutCutoverGateStatus.canCommitShippingMethod ? "ready candidate can commit matched shipping option" : deliveryHubCheckoutCutoverGateStatus.blocker_labels.join(" ")}
-                          </span>
-                        </div>
-                        <div
-                          className="mt-2 grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-base p-3"
-                          data-testid="delivery-hub-cutover-preconditions-status"
-                        >
-                          <span data-testid="delivery-hub-cutover-preconditions-availability">
-                            Preconditions verifier: {deliveryHubCutoverPreconditionsPreview.availability}; load status={deliveryHubCutoverPreconditionsState.status}.
-                          </span>
-                          <span data-testid="delivery-hub-cutover-preconditions-summary">
-                            {deliveryHubCutoverPreconditionsPreview.status_label} · {deliveryHubCutoverPreconditionsPreview.summary_label}
-                          </span>
-                          <span data-testid="delivery-hub-cutover-preconditions-commit-status">
-                            {deliveryHubCutoverPreconditionsPreview.commit_label}; canCommitShippingMethod={String(deliveryHubCutoverPreconditionsPreview.canCommitShippingMethod)}.
-                          </span>
-                          <span data-testid="delivery-hub-cutover-preconditions-guardrails">
-                            Guardrails: {deliveryHubCutoverPreconditionsPreview.guardrail_labels.join("; ")}.
-                          </span>
-                          <span data-testid="delivery-hub-cutover-preconditions-missing">
-                            Missing/required/blocked: {[
-                              ...deliveryHubCutoverPreconditionsPreview.missing_codes,
-                              ...deliveryHubCutoverPreconditionsPreview.required_codes,
-                              ...deliveryHubCutoverPreconditionsPreview.blocked_codes,
-                            ].join(", ") || "none"}.
-                          </span>
-                          {deliveryHubCutoverPreconditionsPreview.preconditions.slice(0, 10).map((precondition) => (
-                            <span key={precondition.code}>
-                              {precondition.code}: {precondition.status} · {precondition.detail}
-                            </span>
-                          ))}
-                        </div>
-                        <div
-                          className="mt-2 grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-base p-3"
-                          data-testid="delivery-hub-cutover-candidate-status"
-                        >
-                          <span data-testid="delivery-hub-cutover-candidate-availability">
-                            Candidate planner: {deliveryHubCutoverCandidatePreview.availability}; load status={deliveryHubCutoverCandidateState.status}.
-                          </span>
-                          <span data-testid="delivery-hub-cutover-candidate-summary">
-                            {deliveryHubCutoverCandidatePreview.status_label} · {deliveryHubCutoverCandidatePreview.detail_label}
-                          </span>
-                          <span data-testid="delivery-hub-cutover-candidate-commit-status">
-                            candidate evidence only; checkout commit requires explicit flag plus local commit guard; canCommitShippingMethod={String(deliveryHubCommitEligibility.canCommitShippingMethod)}.
-                          </span>
-                          {deliveryHubCutoverCandidatePreview.candidate_label && (
-                            <span data-testid="delivery-hub-cutover-candidate-option">
-                              Candidate shipping option: {deliveryHubCutoverCandidatePreview.candidate_label}
-                            </span>
-                          )}
-                          {deliveryHubCutoverCandidatePreview.amount_label && (
-                            <span data-testid="delivery-hub-cutover-candidate-amount">
-                              Candidate amount: {deliveryHubCutoverCandidatePreview.amount_label}
-                            </span>
-                          )}
-                          {deliveryHubCutoverCandidatePreview.pickup_point_label && (
-                            <span data-testid="delivery-hub-cutover-candidate-pickup-point">
-                              Candidate pickup point: {deliveryHubCutoverCandidatePreview.pickup_point_label}
-                            </span>
-                          )}
-                          <span data-testid="delivery-hub-cutover-candidate-blockers">
-                            Blocked reasons: {deliveryHubCutoverCandidatePreview.blocked_reasons.join(", ") || "none"}.
-                          </span>
-                          <span data-testid="delivery-hub-cutover-candidate-preconditions">
-                            Required preconditions: {deliveryHubCutoverCandidatePreview.required_preconditions.join(", ") || "none"}.
-                          </span>
-                          <span data-testid="delivery-hub-cutover-candidate-guardrails">
-                            Guardrails: {deliveryHubCutoverCandidatePreview.guardrail_labels.join("; ")}.
-                          </span>
-                          {deliveryHubCutoverCandidatePreview.hint_messages.slice(0, 4).map((message) => (
-                            <span key={message}>{message}</span>
-                          ))}
-                        </div>
-                        <div
-                          className="mt-2 grid gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-base p-3"
-                          data-testid="delivery-hub-cutover-approval-artifact"
-                        >
-                          <span data-testid="delivery-hub-cutover-approval-artifact-availability">
-                            Approval artifact: {deliveryHubCutoverApprovalArtifactPreview.availability}; load status={deliveryHubCutoverApprovalArtifactState.status}.
-                          </span>
-                          <span data-testid="delivery-hub-cutover-approval-artifact-status">
-                            {deliveryHubCutoverApprovalArtifactPreview.status_label} · {deliveryHubCutoverApprovalArtifactPreview.detail_label}
-                          </span>
-                          <span data-testid="delivery-hub-cutover-approval-artifact-evidence">
-                            Evidence snapshot: {deliveryHubCutoverApprovalArtifactPreview.evidence_label}
-                          </span>
-                          {deliveryHubCutoverApprovalArtifactPreview.cart_label && (
-                            <span data-testid="delivery-hub-cutover-approval-artifact-cart">
-                              Artifact cart scope: {deliveryHubCutoverApprovalArtifactPreview.cart_label}.
-                            </span>
-                          )}
-                          <span data-testid="delivery-hub-cutover-approval-artifact-candidate">
-                            Candidate summary: {deliveryHubCutoverApprovalArtifactPreview.candidate_label}
-                          </span>
-                          <span data-testid="delivery-hub-cutover-approval-artifact-commit-controls">
-                            Commit controls: {deliveryHubCutoverApprovalArtifactPreview.commit_control_labels.join("; ")}; canCommitShippingMethod={String(deliveryHubCutoverApprovalArtifactPreview.canCommitShippingMethod)}.
-                          </span>
-                          <span data-testid="delivery-hub-cutover-approval-artifact-signoffs">
-                            Required signoffs: {deliveryHubCutoverApprovalArtifactPreview.signoff_labels.join("; ")}.
-                          </span>
-                          <span data-testid="delivery-hub-cutover-approval-artifact-acknowledgements">
-                            Required acknowledgements placeholders: {deliveryHubCutoverApprovalArtifactPreview.acknowledgement_labels.join("; ")}.
-                          </span>
-                          {deliveryHubCutoverApprovalArtifactPreview.hint_messages.slice(0, 4).map((message) => (
-                            <span key={message}>{message}</span>
-                          ))}
-                        </div>
-                      </div>
                     </div>
 
                     <div className="grid gap-3 md:grid-cols-2">
@@ -2498,13 +1914,13 @@ const Shipping: React.FC<ShippingProps> = ({
                               event.target.value as DeliveryHubQuoteType
                             )
                           }
-                          data-testid="delivery-hub-preview-quote-type"
+                          data-testid="delivery-hub-diagnostics-quote-type"
                         >
                           <option value="warehouse_to_pickup_point">
                             Warehouse → pickup point (shopper default)
                           </option>
                           <option value="dropoff_point_to_pickup_point">
-                            Dropoff point → pickup point (diagnostic/advanced)
+                            Dropoff point → pickup point (advanced)
                           </option>
                         </select>
                       </label>
@@ -2520,7 +1936,7 @@ const Shipping: React.FC<ShippingProps> = ({
                             )
                           }
                           placeholder="Optional default connection id"
-                          data-testid="delivery-hub-preview-connection-id"
+                          data-testid="delivery-hub-diagnostics-connection-id"
                         />
                       </label>
                       <label className="flex flex-col gap-y-1 text-ui-fg-muted txt-small">
@@ -2535,7 +1951,7 @@ const Shipping: React.FC<ShippingProps> = ({
                             )
                           }
                           placeholder="PVZ/provider point id"
-                          data-testid="delivery-hub-preview-destination-point-id"
+                          data-testid="delivery-hub-diagnostics-destination-point-id"
                         />
                       </label>
                       <label className="flex flex-col gap-y-1 text-ui-fg-muted txt-small">
@@ -2550,11 +1966,11 @@ const Shipping: React.FC<ShippingProps> = ({
                             )
                           }
                           placeholder="Required for dropoff → pickup"
-                          data-testid="delivery-hub-preview-origin-point-id"
+                          data-testid="delivery-hub-diagnostics-origin-point-id"
                         />
                       </label>
                       <label className="flex flex-col gap-y-1 text-ui-fg-muted txt-small">
-                        Warehouse id (diagnostic override; empty uses backend default warehouse)
+                        Warehouse id (advanced override; empty uses backend default warehouse)
                         <input
                           className="rounded-rounded border border-ui-border-base bg-ui-bg-base px-3 py-2 text-ui-fg-base"
                           value={deliveryHubNeutralPreviewForm.warehouse_id}
@@ -2564,8 +1980,8 @@ const Shipping: React.FC<ShippingProps> = ({
                               event.target.value
                             )
                           }
-                          placeholder="Optional diagnostic override for warehouse → pickup"
-                          data-testid="delivery-hub-preview-warehouse-id"
+                          placeholder="Optional override for warehouse → pickup"
+                          data-testid="delivery-hub-diagnostics-warehouse-id"
                         />
                       </label>
                     </div>
@@ -2579,14 +1995,14 @@ const Shipping: React.FC<ShippingProps> = ({
                         onClick={() => {
                           void handleDeliveryHubNeutralPreviewQuote()
                         }}
-                        data-testid="delivery-hub-preview-get-quotes-button"
+                        data-testid="delivery-hub-diagnostics-get-quotes-button"
                       >
                         {deliveryHubNeutralPreviewBusy ? (
                           <span className="flex items-center gap-x-2">
-                            <Loader /> Loading preview quotes
+                            <Loader /> Loading validation quotes
                           </span>
                         ) : (
-                          "Get neutral preview quotes"
+                          "Get validation quotes"
                         )}
                       </Button>
                       <Button
@@ -2600,9 +2016,9 @@ const Shipping: React.FC<ShippingProps> = ({
                         onClick={() => {
                           void handleSaveDeliveryHubNeutralPreviewSelection()
                         }}
-                        data-testid="delivery-hub-preview-save-selection-button"
+                        data-testid="delivery-hub-diagnostics-save-selection-button"
                       >
-                        Save preview metadata
+                        Save validation metadata
                       </Button>
                       <Button
                         size="small"
@@ -2612,56 +2028,56 @@ const Shipping: React.FC<ShippingProps> = ({
                         onClick={() => {
                           void handleClearDeliveryHubNeutralPreviewSelection()
                         }}
-                        data-testid="delivery-hub-preview-clear-selection-button"
+                        data-testid="delivery-hub-diagnostics-clear-selection-button"
                       >
-                        Clear preview metadata
+                        Clear validation metadata
                       </Button>
                     </div>
 
                     <div
                       className="grid gap-y-1 text-ui-fg-muted txt-small"
-                      data-testid="delivery-hub-preview-results"
+                      data-testid="delivery-hub-diagnostics-results"
                     >
-                      <span data-testid="delivery-hub-preview-source-of-truth-status">
-                        checkout source-of-truth unchanged
+                      <span data-testid="delivery-hub-diagnostics-active-flow-status">
+                        Active checkout flow remains Delivery Hub delivery.
                       </span>
-                      <span data-testid="delivery-hub-preview-operation-status">
+                      <span data-testid="delivery-hub-diagnostics-operation-status">
                         Operation status: {deliveryHubNeutralPreviewState.status}
                       </span>
-                      <span data-testid="delivery-hub-preview-quote-count">
+                      <span data-testid="delivery-hub-diagnostics-quote-count">
                         Quote count: {deliveryHubNeutralPreviewQuotes.length}
                       </span>
-                      <span data-testid="delivery-hub-preview-quote-correlation-id">
+                      <span data-testid="delivery-hub-diagnostics-quote-correlation-id">
                         Quote correlation id: {deliveryHubNeutralPreviewState.quotes?.diagnostics?.correlation_id ?? "not returned"}
                       </span>
-                      <span data-testid="delivery-hub-preview-selection-status">
-                        Selection saved status: {deliveryHubNeutralPreviewState.selection?.selection ? "saved" : deliveryHubNeutralPreviewState.selection ? "cleared" : "not saved in this preview session"}
+                      <span data-testid="delivery-hub-diagnostics-selection-status">
+                        Selection saved status: {deliveryHubNeutralPreviewState.selection?.selection ? "saved" : deliveryHubNeutralPreviewState.selection ? "cleared" : "not saved in this validation session"}
                       </span>
-                      <span data-testid="delivery-hub-preview-selection-correlation-id">
+                      <span data-testid="delivery-hub-diagnostics-selection-correlation-id">
                         Selection correlation id: {deliveryHubNeutralPreviewState.selection?.diagnostics?.correlation_id ?? "not returned"}
                       </span>
                       {deliveryHubNeutralPreviewState.message && (
-                        <span data-testid="delivery-hub-preview-message">
+                        <span data-testid="delivery-hub-diagnostics-message">
                           {deliveryHubNeutralPreviewState.message}
                         </span>
                       )}
                     </div>
 
                     {deliveryHubNeutralPreviewQuotes.length > 0 && (
-                      <div className="grid gap-y-2" data-testid="delivery-hub-preview-quotes-list">
+                      <div className="grid gap-y-2" data-testid="delivery-hub-diagnostics-quotes-list">
                         <Text className="text-ui-fg-base txt-small-plus">
-                          Neutral quotes
+                          Validation quotes
                         </Text>
                         {deliveryHubNeutralPreviewQuotes.slice(0, 6).map((quote) => (
                           <label
                             key={quote.quote_reference.id}
                             className="flex cursor-pointer flex-col gap-y-1 rounded-rounded border border-ui-border-base bg-ui-bg-subtle p-3 text-ui-fg-muted txt-small"
-                            data-testid="delivery-hub-preview-quote-option"
+                            data-testid="delivery-hub-diagnostics-quote-option"
                           >
                             <span className="flex items-center gap-x-2 text-ui-fg-base">
                               <input
                                 type="radio"
-                                name="delivery-hub-preview-quote"
+                                name="delivery-hub-diagnostics-quote"
                                 checked={
                                   deliveryHubNeutralPreviewState.selected_quote_reference_id ===
                                   quote.quote_reference.id
@@ -2672,7 +2088,7 @@ const Shipping: React.FC<ShippingProps> = ({
                                     selected_quote_reference_id: quote.quote_reference.id,
                                   }))
                                 }
-                                data-testid="delivery-hub-preview-quote-radio"
+                                data-testid="delivery-hub-diagnostics-quote-radio"
                               />
                               {quote.carrier_label} · {formatPrice(quote.customer_price?.amount ?? quote.amount, quote.customer_price?.currency_code ?? quote.currency_code)}
                             </span>
@@ -2687,147 +2103,6 @@ const Shipping: React.FC<ShippingProps> = ({
                     )}
                   </div>
                 </div>
-              )}
-
-              <div className="border-t border-ui-border-base pt-4">
-                <div className="flex flex-col gap-y-2">
-                  <Text className="text-ui-fg-base txt-medium-plus">
-                    Delivery Hub write-intent contract preview
-                  </Text>
-                  <Text className="text-ui-fg-muted txt-small">
-                    Preview-only write-intent contract seam. This block truthfully shows how ready the storefront preview stack is for a future shopper-safe write intent targeting POST /store/delivery/selection, without submit wiring, persistence, or network activity.
-                  </Text>
-                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
-                    <span>{deliveryHubWriteIntentContractPreview.status_label}</span>
-                    <span>{deliveryHubWriteIntentContractPreview.summary_label}</span>
-                    <span>{deliveryHubWriteIntentContractPreview.preview_label}</span>
-                    <span>{deliveryHubWriteIntentContractPreview.intent_target_label}</span>
-                    <span>Preview status: {deliveryHubWriteIntentContractPreview.status}</span>
-                    <span>
-                      mutation_intent: {String(deliveryHubWriteIntentContractPreview.mutation_intent)}
-                      {` · submit_enabled: ${String(deliveryHubWriteIntentContractPreview.submit_enabled)}`}
-                      {` · network_required_now: ${String(deliveryHubWriteIntentContractPreview.network_required_now)}`}
-                    </span>
-                    <span>
-                      prerequisites satisfied: {deliveryHubWriteIntentContractPreview.satisfied_prerequisite_count}
-                      {` / ${deliveryHubWriteIntentContractPreview.required_prerequisite_count}`}
-                      {` · missing: ${deliveryHubWriteIntentContractPreview.missing_prerequisite_count}`}
-                      {` · blocked: ${deliveryHubWriteIntentContractPreview.blocked_prerequisite_count}`}
-                    </span>
-                    <span>
-                      intent target: {deliveryHubWriteIntentContractPreview.shopper_safe_intent_target}
-                    </span>
-                    {deliveryHubWriteIntentContractPreview.prerequisites.map((prerequisite) => (
-                      <span key={prerequisite.key}>
-                        {prerequisite.label}: {prerequisite.status} · {prerequisite.detail_label}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="text-ui-fg-muted txt-small">
-                    Disabled actions: {deliveryHubWriteIntentContractPreview.disabled_actions.join(", ")}
-                  </div>
-                  {deliveryHubWriteIntentContractPreview.blocked_reasons.length > 0 && (
-                    <div className="text-ui-fg-muted txt-small">
-                      Blocked reasons: {deliveryHubWriteIntentContractPreview.blocked_reasons.join(", ")}
-                    </div>
-                  )}
-                  {deliveryHubWriteIntentContractPreview.hint_messages.length > 0 && (
-                    <ul className="list-disc pl-4 text-ui-fg-muted txt-small">
-                      {deliveryHubWriteIntentContractPreview.hint_messages
-                        .slice(0, 4)
-                        .map((message) => (
-                          <li key={message}>{message}</li>
-                        ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-
-              <div className="border-t border-ui-border-base pt-4">
-                <div className="flex flex-col gap-y-2">
-                  <Text className="text-ui-fg-base txt-medium-plus">
-                    Delivery Hub storefront-to-backend handoff preview
-                  </Text>
-                  <Text className="text-ui-fg-muted txt-small">
-                    Pre-cutin read-only handoff preview seam only. This block shows shopper-safe structural readiness for a candidate backend handoff preview and does not commit checkout.
-                  </Text>
-                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
-                    <span>{deliveryHubHandoffPreview.verdict_label}</span>
-                    <span>{deliveryHubHandoffPreview.readiness_summary_label}</span>
-                    <span>Preview verdict: {deliveryHubHandoffPreview.verdict}</span>
-                    <span>connection_id: {deliveryHubHandoffPreview.connection_id ?? "missing"}</span>
-                    <span>mode_code: {deliveryHubHandoffPreview.mode_code ?? "missing"}</span>
-                    {deliveryHubHandoffPreview.mode_label && (
-                      <span>Mode label: {deliveryHubHandoffPreview.mode_label}</span>
-                    )}
-                    <span>
-                      quote_reference: {deliveryHubHandoffPreview.quote_reference_present ? "present" : "missing"}
-                    </span>
-                    <span>
-                      pickup point: {deliveryHubHandoffPreview.pickup_point_present ? "present" : "missing"}
-                      {deliveryHubHandoffPreview.pickup_point_required ? " · required" : " · optional"}
-                    </span>
-                    <span>
-                      pickup window: {deliveryHubHandoffPreview.pickup_window_present ? "present" : "missing"}
-                      {deliveryHubHandoffPreview.pickup_window_required ? " · required" : " · optional"}
-                    </span>
-                  </div>
-                  {deliveryHubHandoffPreview.hint_messages.length > 0 && (
-                    <ul className="list-disc pl-4 text-ui-fg-muted txt-small">
-                      {deliveryHubHandoffPreview.hint_messages.slice(0, 3).map((message) => (
-                        <li key={message}>{message}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-
-              <div className="border-t border-ui-border-base pt-4">
-                <div className="flex flex-col gap-y-2">
-                  <Text className="text-ui-fg-base txt-medium-plus">
-                    Delivery Hub handoff contract matrix preview
-                  </Text>
-                  <Text className="text-ui-fg-muted txt-small">
-                    Preview-only contract matrix seam. This block shows shopper-safe contract fragments, blocked readiness/parity conditions, and a read-only completeness verdict for the future neutral handoff contract.
-                  </Text>
-                  <div className="grid gap-y-1 text-ui-fg-muted txt-small">
-                    <span>{deliveryHubHandoffContractMatrixPreview.verdict_label}</span>
-                    <span>{deliveryHubHandoffContractMatrixPreview.completeness_label}</span>
-                    <span>Preview verdict: {deliveryHubHandoffContractMatrixPreview.verdict}</span>
-                    {deliveryHubHandoffContractMatrixPreview.fragments.map((fragment) => (
-                      <span key={fragment.key}>
-                        {fragment.key}: {fragment.status} · {fragment.detail_label}
-                      </span>
-                    ))}
-                  </div>
-                  {deliveryHubHandoffContractMatrixPreview.blocked_readiness_codes.length > 0 && (
-                    <div className="text-ui-fg-muted txt-small">
-                      Readiness blockers: {deliveryHubHandoffContractMatrixPreview.blocked_readiness_codes.join(", ")}
-                    </div>
-                  )}
-                  {deliveryHubHandoffContractMatrixPreview.blocked_parity_codes.length > 0 && (
-                    <div className="text-ui-fg-muted txt-small">
-                      Parity blockers: {deliveryHubHandoffContractMatrixPreview.blocked_parity_codes.join(", ")}
-                    </div>
-                  )}
-                  {deliveryHubHandoffContractMatrixPreview.missing_fragment_keys.length > 0 && (
-                    <div className="text-ui-fg-muted txt-small">
-                      Missing fragments: {deliveryHubHandoffContractMatrixPreview.missing_fragment_keys.join(", ")}
-                    </div>
-                  )}
-                  {deliveryHubHandoffContractMatrixPreview.hint_messages.length > 0 && (
-                    <ul className="list-disc pl-4 text-ui-fg-muted txt-small">
-                      {deliveryHubHandoffContractMatrixPreview.hint_messages
-                        .slice(0, 3)
-                        .map((message) => (
-                          <li key={message}>{message}</li>
-                        ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
               </div>
             </details>
           )}
