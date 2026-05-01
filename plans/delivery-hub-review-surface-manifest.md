@@ -197,7 +197,7 @@ These paths are documentation, evidence, planning, or captured review artifacts.
 | M | [`Docs/template_readiness_regression.md`](../Docs/template_readiness_regression.md) | reference-only | Template/readiness documentation; not current edit scope. |
 | M | [`Docs/template_release_handoff.md`](../Docs/template_release_handoff.md) | reference-only | Release handoff template; not current edit scope. |
 | ?? | obsolete historical delivery test-data document | reference-only | Legacy provider documentation/evidence; not current delivery-hub review. |
-| ?? | [`Docs/delivery_hub_agent_prompt.md`](../Docs/delivery_hub_agent_prompt.md) | reference-only | Delivery-hub prompt/planning artifact. |
+| removed | `Docs/delivery_hub_agent_prompt.md` | reference-only | Removed during 2026-05-01 Delivery Hub documentation cleanup; use `Docs/delivery_hub_documentation_index.md` for current document roles. |
 | ?? | [`Docs/delivery_hub_execution_ledger_evidence_bundle_packaging_convention.md`](../Docs/delivery_hub_execution_ledger_evidence_bundle_packaging_convention.md) | reference-only | Evidence packaging convention; planning/evidence context. |
 | ?? | [`Docs/delivery_hub_execution_ledger_evidence_submission_checklist.md`](../Docs/delivery_hub_execution_ledger_evidence_submission_checklist.md) | reference-only | Evidence submission checklist; planning/evidence context. |
 | ?? | [`Docs/delivery_hub_execution_ledger_manual_evidence_template.md`](../Docs/delivery_hub_execution_ledger_manual_evidence_template.md) | reference-only | Manual evidence template; planning/evidence context. |

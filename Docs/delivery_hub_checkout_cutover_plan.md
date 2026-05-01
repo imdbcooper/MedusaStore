@@ -1,7 +1,7 @@
 # Delivery Hub checkout cutover readiness plan and approval gate
 
 
-> Phase 0 reconciliation note (2026-04-30): this cutover/governance contour is now historical/diagnostic relative to the accepted Delivery Hub rework plan in [`delivery_hub_rework_plan.md`](delivery_hub_rework_plan.md). Use it as evidence and rollback context only; Phase 1 source-of-truth is customer pricing policy plus backend warehouse-origin resolution, and shipment execution remains gated.
+> Historical status update (2026-05-01): this cutover/governance document is evidence-only relative to the accepted Delivery Hub rework plan in [`delivery_hub_rework_plan.md`](delivery_hub_rework_plan.md). It must not be used to reintroduce shopper-visible preview/cutover language or legacy fallback behavior. Current document roles are defined in [`delivery_hub_documentation_index.md`](delivery_hub_documentation_index.md).
 
 > Status: formal readiness/approval gate plus default-off implementation status for the first controlled checkout commit path.
 >

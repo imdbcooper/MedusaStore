@@ -1,8 +1,8 @@
 # Delivery Hub rework plan
 
-> Status: accepted execution plan.
+> Status: accepted execution plan; phases 0/1 through 7 are implemented and reviewed. Phase 8 is the next implementation tranche after the documentation cleanup recorded in [current_work.md](./current_work.md).
 >
-> Date: 2026-04-30.
+> Last status update: 2026-05-01.
 >
 > Purpose: define the practical step-by-step rework needed to turn the current Delivery Hub contour into a clean merchant/admin/shopper/order/shipment flow for a Russian-market Medusa template.
 >
@@ -13,7 +13,7 @@
 > - [`delivery_hub_manual_testing_plan.md`](./delivery_hub_manual_testing_plan.md)
 > - [`yandex_delivery_test_api_summary.md`](./yandex_delivery_test_api_summary.md)
 >
-> This document is intentionally not a closure claim. It is the accepted execution plan for the next Delivery Hub rework tranche.
+> This document is the phase plan, not the live operational journal. Use [current_work.md](./current_work.md) for current status and [delivery_hub_documentation_index.md](./delivery_hub_documentation_index.md) for document roles.
 
 ---
 
