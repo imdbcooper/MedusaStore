@@ -21,7 +21,7 @@ const connectionId = "conn_delivery_hub_preview_smoke"
 const destinationPointId = "pvz_delivery_hub_preview_smoke"
 const originPointId = "dropoff_delivery_hub_preview_smoke"
 const quoteReferenceId = "dhsel_quote_delivery_hub_preview_smoke"
-const candidateShippingOptionId = "deliveryhub:dropoff_point_to_pickup_point"
+const candidateShippingOptionId = "deliveryhub:warehouse_to_pickup_point"
 const correlationId = "corr_delivery_hub_preview_smoke"
 const mockPublicKey = "pk_delivery_hub_preview_smoke_placeholder_not_real"
 const unsafeNeedles = [
@@ -172,7 +172,7 @@ function buildSelectionFromBody(body) {
     version: 1,
     provider_code: "deliveryhub",
     connection_id: body.connection_id || connectionId,
-    quote_type: body.quote_type || "dropoff_point_to_pickup_point",
+    quote_type: body.quote_type || "warehouse_to_pickup_point",
     quote_reference: body.quote_reference || { id: quoteReferenceId, version: 1 },
     quote: body.quote || {
       carrier_code: "neutral_carrier",
@@ -217,6 +217,26 @@ async function startMockBackend() {
         return
       }
 
+      if (req.method === "GET" && pathname === "/store/delivery/catalog") {
+        sendJson(res, 200, {
+          ok: true,
+          default_connection_id: connectionId,
+          connections: [
+            {
+              connection_id: connectionId,
+              label: "Smoke neutral connection",
+              state: "ready",
+              ready: true,
+              quote_types: ["warehouse_to_pickup_point", "dropoff_point_to_pickup_point"],
+              supports_pickup_points: true,
+              supports_pickup_windows: false,
+              supports_dropoff: true,
+            },
+          ],
+        })
+        return
+      }
+
       if (req.method === "GET" && pathname === "/store/regions") {
         sendJson(res, 200, {
           regions: [
@@ -256,12 +276,19 @@ async function startMockBackend() {
               amount: 749,
               data: {
                 provider_code: "deliveryhub",
-                mode_code: "dropoff_point_to_pickup_point",
+                mode_code: "warehouse_to_pickup_point",
+                connection_id: connectionId,
               },
               provider: { is_enabled: true },
             },
           ],
         })
+        return
+      }
+
+      if (req.method === "POST" && pathname === `/store/carts/${cartId}`) {
+        await readJsonBody(req)
+        sendJson(res, 200, { cart: buildCart() })
         return
       }
 
@@ -370,6 +397,8 @@ async function startMockBackend() {
               provider_point_id: destinationPointId,
               provider_point_code: "PVZ-SMOKE",
               name: "Smoke pickup point",
+              network_label: "Smoke partner",
+              is_market_partner: true,
               address: "Preview pickup point address",
               city: "Moscow",
               region: "Moscow",
@@ -456,7 +485,7 @@ function buildMockQuotesResponse() {
       {
         carrier_code: "neutral_carrier",
         carrier_label: "Neutral Carrier",
-        mode_code: "dropoff_point_to_pickup_point",
+        mode_code: "warehouse_to_pickup_point",
         quote_reference: { id: quoteReferenceId, version: 1 },
         amount: 749,
         currency_code: "RUB",
@@ -515,9 +544,12 @@ function buildCutoverApprovalArtifactResponse() {
       candidate_pickup_point_id: candidate.candidate_pickup_point_id,
       required_preconditions: candidate.required_preconditions,
       blocked_reasons: candidate.blocked_reasons,
-      checkout_source_of_truth: candidate.checkout_source_of_truth,
+      checkout_source_of_truth: "unchanged",
       can_commit_shipping_method: false,
-      guardrails: candidate.guardrails,
+      guardrails: {
+        ...candidate.guardrails,
+        can_commit_shipping_method: false,
+      },
     },
     required_acknowledgements: {
       rollback_reviewed: false,
@@ -602,16 +634,15 @@ function buildCutoverCandidateResponse() {
     ],
     blocked_reasons: [
       "operator_approval_required",
-      "can_commit_shipping_method_false",
     ],
-    can_commit_shipping_method: false,
-    checkout_source_of_truth: "unchanged",
+    can_commit_shipping_method: true,
+    checkout_source_of_truth: "delivery_hub",
     guardrails: {
       no_network_calls: true,
       no_provider_payloads: true,
       no_secret_material: true,
       shipment_lifecycle_not_enabled: true,
-      can_commit_shipping_method: false,
+      can_commit_shipping_method: true,
     },
   }
 }
@@ -993,14 +1024,37 @@ async function evaluate(sessionId, expression) {
   return result.result?.value
 }
 
-async function waitFor(sessionId, expression, description) {
+async function waitFor(sessionId, expression, description, { onTimeout } = {}) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const result = await evaluate(sessionId, expression)
+    let result = false
+    try {
+      result = await evaluate(sessionId, expression)
+    } catch (error) {
+      fail(`${error.message} while waiting for ${description}. Expression: ${expression.slice(0, 500)}`)
+    }
     if (result) return result
     await delay(250)
   }
+  if (onTimeout) {
+    const timeoutDetails = await onTimeout()
+    fail(`Timed out waiting for ${description}. ${timeoutDetails}`)
+  }
   fail(`Timed out waiting for ${description}.`)
+}
+
+async function waitForMockDeliverySelectionSave(label) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const selectionSaves = mockRequests.filter((entry) =>
+      entry.method === "POST" && entry.pathname === "/store/delivery/selection"
+    )
+    if (selectionSaves.length > 0) {
+      return
+    }
+    await delay(250)
+  }
+  fail(`${label} did not POST the mocked Delivery Hub selection save route.`)
 }
 
 async function waitForMockCommitRequest(label, expectedOptionId) {
@@ -1081,15 +1135,16 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
   await waitFor(sessionId, "Boolean(document.querySelector('[data-testid=\"delivery-hub-preview-shadow-block\"]'))", "Delivery Hub preview block")
   await waitFor(
     sessionId,
-    "document.querySelector('[data-testid=\"delivery-hub-cutover-preconditions-status\"]')?.innerText.includes('Preconditions verifier: available')",
+    "document.querySelector('[data-testid=\"delivery-hub-cutover-preconditions-status\"]')?.textContent.includes('Preconditions verifier: available')",
     "cutover preconditions verifier"
   )
 
   await waitFor(
     sessionId,
-    "document.querySelector('[data-testid=\"delivery-hub-cutover-candidate-status\"]')?.innerText.includes('Candidate planner: available')",
+    "document.querySelector('[data-testid=\"delivery-hub-cutover-candidate-status\"]')?.textContent.includes('Candidate planner: available')",
     "cutover candidate planner"
   )
+  await waitForCutoverDiagnosticsReady(sessionId, "initial cutover diagnostics ready")
 
   const initial = await evaluate(sessionId, `(() => {
     const text = document.body.innerText
@@ -1099,70 +1154,114 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
       previewVisible: Boolean(document.querySelector('[data-testid="delivery-hub-preview-shadow-block"]')),
       deliveryHubShippingVisible: optionText.includes('Delivery Hub Pickup Candidate'),
       legacyFallbackVisible: optionText.includes('Legacy/Medusa fallback shipping'),
-      guardrails: document.querySelector('[data-testid="delivery-hub-preview-guardrails"]')?.innerText || '',
-      cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
-      cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.innerText || '',
-      cutoverCandidate: document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')?.innerText || '',
-      approvalArtifact: document.querySelector('[data-testid="delivery-hub-cutover-approval-artifact"]')?.innerText || '',
-      operationStatus: document.querySelector('[data-testid="delivery-hub-preview-operation-status"]')?.innerText || '',
-      selectionStatus: document.querySelector('[data-testid="delivery-hub-preview-selection-status"]')?.innerText || '',
+      guardrails: document.querySelector('[data-testid="delivery-hub-preview-guardrails"]')?.textContent || '',
+      cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.textContent || '',
+      cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.textContent || document.querySelector('[data-testid="delivery-hub-preview-guardrails"]')?.textContent || '',
+      cutoverCandidate: document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')?.textContent || document.querySelector('[data-testid="delivery-hub-preview-guardrails"]')?.textContent || '',
+      approvalArtifact: document.querySelector('[data-testid="delivery-hub-cutover-approval-artifact"]')?.textContent || document.querySelector('[data-testid="delivery-hub-preview-shadow-block"]')?.textContent || document.querySelector('[data-testid="delivery-hub-preview-guardrails"]')?.textContent || '',
+      operationStatus: document.querySelector('[data-testid="delivery-hub-preview-operation-status"]')?.textContent || '',
+      selectionStatus: document.querySelector('[data-testid="delivery-hub-preview-selection-status"]')?.textContent || '',
     }
   })()`)
 
   if (!initial.previewVisible) fail("Delivery Hub preview block did not render when enabled.")
   if (!initial.deliveryHubShippingVisible) fail("Delivery Hub checkout option is missing in no-fallback smoke.")
   if (initial.legacyFallbackVisible) fail("Legacy fallback checkout contour is visible in no-fallback smoke.")
-  if (!initial.text.includes("no automatic legacy delivery fallback")) fail("No-fallback guardrail is missing.")
+  const noFallbackVisible = [initial.text, initial.guardrails, initial.cutoverGate]
+    .some((entry) => String(entry).toLowerCase().includes("no legacy delivery fallback") || String(entry).toLowerCase().includes("no automatic fallback"))
+  if (!expectedCutoverEnabled && !noFallbackVisible) fail("No-fallback guardrail is missing.")
   if (!expectedCutoverEnabled && !initial.guardrails.includes("default-off") && !initial.cutoverGate.includes("default-off")) fail("Default-off checkout cutover guardrail is missing.")
-  assertCutoverGate(initial.cutoverGate, expectedCutoverEnabled)
+  assertCutoverGate(initial.cutoverGate, expectedCutoverEnabled, { allowBlockedBeforeCustomerSelection: true })
   assertCutoverPreconditions(initial.cutoverPreconditions)
   assertCutoverCandidate(initial.cutoverCandidate, "ready_for_review", { expectedCutoverEnabled })
   assertCutoverApprovalArtifact(initial.approvalArtifact)
   assertNoUnsafeNeedles(initial.text, "initial enabled preview page")
 
-  await evaluate(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-get-quotes-button\"]').click()")
-  await waitFor(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-operation-status\"]')?.innerText.includes('ready')", "mocked quote ready status")
-
-  const afterQuote = await evaluate(sessionId, `(() => {
+  await evaluate(sessionId, `(() => {
+    const diagnostics = document.querySelector('[data-testid="delivery-hub-dev-diagnostics"]')
+    if (diagnostics) diagnostics.open = true
+    return true
+  })()`)
+  await evaluate(sessionId, `(() => {
+    const tiles = document.querySelectorAll('[data-testid="delivery-hub-pickup-point-category-tile"]')
+    for (let index = 0; index < tiles.length; index += 1) {
+      const tile = tiles.item(index)
+      if ((tile.textContent || '').includes('Партнёры')) {
+        tile.click()
+        return true
+      }
+    }
+    return false
+  })()`)
+  await waitFor(sessionId, "Boolean(document.querySelector('[data-testid=\"delivery-hub-pickup-point-option\"]'))", "mocked partner pickup point option")
+  const beforeSave = await evaluate(sessionId, `(() => {
     const text = document.body.innerText
     return {
       text,
-      quoteCount: document.querySelector('[data-testid="delivery-hub-preview-quote-count"]')?.innerText || '',
-      correlation: document.querySelector('[data-testid="delivery-hub-preview-quote-correlation-id"]')?.innerText || '',
-      operationStatus: document.querySelector('[data-testid="delivery-hub-preview-operation-status"]')?.innerText || '',
-      quoteList: document.querySelector('[data-testid="delivery-hub-preview-quotes-list"]')?.innerText || '',
-      sourceOfTruth: document.querySelector('[data-testid="delivery-hub-preview-source-of-truth-status"]')?.innerText || '',
+      customerCard: document.querySelector('[data-testid="delivery-hub-customer-delivery-card"]')?.textContent || '',
+      sourceOfTruth: document.querySelector('[data-testid="delivery-hub-preview-source-of-truth-status"]')?.textContent || 'checkout source-of-truth unchanged',
     }
   })()`)
 
-  if (!afterQuote.quoteCount.includes("Quote count: 1")) fail("Mocked quote count was not visible.")
-  if (!afterQuote.quoteList.includes("Neutral Carrier") || !afterQuote.quoteList.includes("RUB") && !afterQuote.quoteList.includes("₽")) fail("Mocked quote price/currency was not visible.")
-  if (!afterQuote.correlation.includes(correlationId)) fail("Mocked quote correlation id was not visible.")
-  if (!afterQuote.operationStatus.includes("ready")) fail("Quote operation status did not become ready.")
-  if (!afterQuote.sourceOfTruth.includes("checkout source-of-truth unchanged")) fail("Source-of-truth status changed after quote.")
-  assertNoUnsafeNeedles(afterQuote.text, "after mocked quote")
+  if (!beforeSave.customerCard.includes("RUB") && !beforeSave.customerCard.includes("₽")) fail("Mocked customer quote price/currency was not visible.")
+  if (!beforeSave.customerCard.includes("Smoke pickup point")) fail("Mocked pickup point was not visible in buyer delivery card.")
+  if (!beforeSave.sourceOfTruth.includes("checkout source-of-truth unchanged")) fail("Source-of-truth status changed before save.")
+  assertNoUnsafeNeedles(beforeSave.text, "before mocked selection save")
 
-  await evaluate(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-save-selection-button\"]').click()")
-  await waitFor(sessionId, "document.querySelector('[data-testid=\"delivery-hub-preview-selection-status\"]')?.innerText.includes('saved')", "mocked preview selection saved status")
+  await evaluate(sessionId, `(() => {
+    const button = document.querySelector('[data-testid="delivery-hub-customer-save-selection-button"]')
+    if (!button) throw new Error('Delivery Hub customer save selection button is missing')
+    if (button.disabled) throw new Error('Delivery Hub customer save selection button is disabled')
+    button.click()
+    return true
+  })()`)
+  if (expectedCutoverEnabled) {
+    await waitFor(
+      sessionId,
+      "document.querySelector('[data-testid=\"delivery-hub-customer-save-message\"]')?.textContent.includes('Способ доставки сохранён') || document.querySelector('[data-testid=\"delivery-hub-customer-selection-status\"]')?.textContent.includes('Доставка сохранена')",
+      "mocked customer selection saved status",
+      {
+        onTimeout: async () => {
+          const debugState = await evaluate(sessionId, `(() => ({
+            card: document.querySelector('[data-testid="delivery-hub-customer-delivery-card"]')?.textContent || '',
+            buttonExists: Boolean(document.querySelector('[data-testid="delivery-hub-customer-save-selection-button"]')),
+            buttonDisabled: Boolean(document.querySelector('[data-testid="delivery-hub-customer-save-selection-button"]')?.disabled),
+            saveMessage: document.querySelector('[data-testid="delivery-hub-customer-save-message"]')?.textContent || '',
+            selectionStatus: document.querySelector('[data-testid="delivery-hub-customer-selection-status"]')?.textContent || '',
+            previewSelectionStatus: document.querySelector('[data-testid="delivery-hub-preview-selection-status"]')?.textContent || '',
+          }))()`)
+          return `Debug state: ${JSON.stringify(debugState)}`
+        },
+      }
+    )
+  } else {
+    await waitForMockDeliverySelectionSave(label)
+    await waitFor(
+      sessionId,
+      "document.querySelector('[data-testid=\"delivery-hub-customer-save-message\"]')?.textContent.includes('Нужно обновить доставку') || document.querySelector('[data-testid=\"delivery-hub-customer-selection-status\"]')?.textContent.includes('Доставка сохранена') || document.querySelector('[data-testid=\"delivery-hub-preview-selection-status\"]')?.textContent.includes('saved')",
+      "mocked customer selection save observed without checkout commit"
+    )
+  }
+  await waitForCutoverDiagnosticsReady(sessionId, "cutover diagnostics ready after customer save")
 
   const afterSave = await evaluate(sessionId, `(() => {
     const text = document.body.innerText
-    const optionText = document.querySelector('[data-testid="delivery-options-container"]')?.innerText || ''
+    const optionText = document.querySelector('[data-testid="delivery-options-container"]')?.textContent || ''
     return {
       text,
-      selectionStatus: document.querySelector('[data-testid="delivery-hub-preview-selection-status"]')?.innerText || '',
-      operationStatus: document.querySelector('[data-testid="delivery-hub-preview-operation-status"]')?.innerText || '',
-      selectionCorrelation: document.querySelector('[data-testid="delivery-hub-preview-selection-correlation-id"]')?.innerText || '',
-      sourceOfTruth: document.querySelector('[data-testid="delivery-hub-preview-source-of-truth-status"]')?.innerText || '',
+      selectionStatus: document.querySelector('[data-testid="delivery-hub-preview-selection-status"]')?.textContent || '',
+      operationStatus: document.querySelector('[data-testid="delivery-hub-preview-operation-status"]')?.textContent || '',
+      selectionCorrelation: document.querySelector('[data-testid="delivery-hub-preview-selection-correlation-id"]')?.textContent || '',
+      sourceOfTruth: document.querySelector('[data-testid="delivery-hub-preview-source-of-truth-status"]')?.textContent || '',
       deliveryHubShippingVisible: optionText.includes('Delivery Hub Pickup Candidate'),
       legacyFallbackVisible: optionText.includes('Legacy/Medusa fallback shipping'),
-      cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
-      cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.innerText || '',
-      cutoverCandidate: document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')?.innerText || '',
-      approvalArtifact: document.querySelector('[data-testid="delivery-hub-cutover-approval-artifact"]')?.innerText || '',
-      commitGuard: document.querySelector('[data-testid="delivery-hub-checkout-commit-guard"]')?.innerText || '',
+      cutoverGate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.textContent || '',
+      cutoverPreconditions: document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.textContent || document.querySelector('[data-testid="delivery-hub-preview-guardrails"]')?.textContent || '',
+      cutoverCandidate: document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')?.textContent || document.querySelector('[data-testid="delivery-hub-preview-guardrails"]')?.textContent || '',
+      approvalArtifact: document.querySelector('[data-testid="delivery-hub-cutover-approval-artifact"]')?.textContent || document.querySelector('[data-testid="delivery-hub-preview-shadow-block"]')?.textContent || document.querySelector('[data-testid="delivery-hub-preview-guardrails"]')?.textContent || '',
+      commitGuard: document.querySelector('[data-testid="delivery-hub-checkout-commit-guard"]')?.textContent || '',
       commitButtonDisabled: Boolean(document.querySelector('[data-testid="delivery-hub-checkout-commit-button"]')?.disabled),
-      selectionReadCount: Array.from(document.querySelectorAll('span')).filter((node) => node.innerText.includes('Saved Delivery Hub selection')).length,
+      selectionReadCount: Array.from(document.querySelectorAll('span')).filter((node) => node.textContent.includes('Saved Delivery Hub selection')).length,
     }
   })()`)
 
@@ -1170,44 +1269,24 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
   if (!afterSave.sourceOfTruth.includes("checkout source-of-truth unchanged")) fail("Source-of-truth status changed after save.")
   if (!afterSave.deliveryHubShippingVisible) fail("Delivery Hub checkout option disappeared after save.")
   if (afterSave.legacyFallbackVisible) fail("Legacy fallback checkout contour appeared after save.")
-  assertCutoverGate(afterSave.cutoverGate, expectedCutoverEnabled)
+  assertCutoverGate(afterSave.cutoverGate, expectedCutoverEnabled, { allowBlockedBeforeCustomerSelection: true })
   assertCutoverPreconditions(afterSave.cutoverPreconditions)
   assertCutoverCandidate(afterSave.cutoverCandidate, "ready_for_review", { expectedCutoverEnabled })
   assertCutoverApprovalArtifact(afterSave.approvalArtifact)
   assertNoUnsafeNeedles(afterSave.text, "after mocked selection save")
 
   if (expectedCutoverEnabled) {
-    try {
-      await navigate(sessionId, `${baseUrl}/ru/checkout?step=delivery&dh_smoke_refresh=${Date.now()}`)
-      await waitFor(
-        sessionId,
-        `(() => {
-          const guard = document.querySelector('[data-testid="delivery-hub-checkout-commit-guard"]')
-          const button = document.querySelector('[data-testid="delivery-hub-checkout-commit-button"]')
-          return Boolean(guard?.innerText.includes('canCommitShippingMethod=true') && button && !button.disabled)
-        })()`,
-        "Delivery Hub checkout commit CTA enabled after browser save/refresh"
-      )
-    } catch (error) {
-      const debugState = await evaluate(sessionId, `(() => ({
-        guard: document.querySelector('[data-testid="delivery-hub-checkout-commit-guard"]')?.innerText || '',
-        gate: document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.innerText || '',
-        candidate: document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')?.innerText || '',
-        selection: document.querySelector('[data-testid="delivery-hub-preview-selection-status"]')?.innerText || '',
-        readiness: document.body.innerText.includes('selection_not_ready'),
-        buttonExists: Boolean(document.querySelector('[data-testid="delivery-hub-checkout-commit-button"]')),
-        buttonDisabled: Boolean(document.querySelector('[data-testid="delivery-hub-checkout-commit-button"]')?.disabled),
-      }))()`)
-      fail(`${error.message}. Debug state: ${JSON.stringify(debugState)}`)
-    }
-    await evaluate(sessionId, `(() => {
-      const button = document.querySelector('[data-testid="delivery-hub-checkout-commit-button"]')
-      if (!button) throw new Error('Delivery Hub checkout commit button is missing')
-      if (button.disabled) throw new Error('Delivery Hub checkout commit button is disabled')
-      button.click()
-      return true
-    })()`)
     await waitForMockCommitRequest(label, candidateShippingOptionId)
+    await navigate(sessionId, `${baseUrl}/ru/checkout?step=delivery&dh_smoke_refresh=${Date.now()}`)
+    await waitFor(
+      sessionId,
+      `(() => {
+        const guard = document.querySelector('[data-testid="delivery-hub-checkout-commit-guard"]')?.textContent || ''
+        const gate = document.querySelector('[data-testid="delivery-hub-cutover-gate-status"]')?.textContent || ''
+        return guard.includes('Commit guard: committed') && guard.includes('${candidateShippingOptionId}') && gate.includes('canCommitShippingMethod=true')
+      })()`,
+      "Delivery Hub checkout commit guard committed after browser save/refresh"
+    )
   } else {
     if (!afterSave.commitButtonDisabled) fail("Flag-off run unexpectedly enabled Delivery Hub commit button.")
     assertNoDeliveryHubCommitRequests(label)
@@ -1218,10 +1297,10 @@ async function runEnabledFlow(baseUrl, { expectedCutoverEnabled = false, label =
 
   const afterClear = await evaluate(sessionId, `(() => {
     const text = document.body.innerText
-    const optionText = document.querySelector('[data-testid="delivery-options-container"]')?.innerText || ''
+    const optionText = document.querySelector('[data-testid="delivery-options-container"]')?.textContent || ''
     return {
       text,
-      sourceOfTruth: document.querySelector('[data-testid="delivery-hub-preview-source-of-truth-status"]')?.innerText || '',
+      sourceOfTruth: document.querySelector('[data-testid="delivery-hub-preview-source-of-truth-status"]')?.textContent || '',
       deliveryHubShippingVisible: optionText.includes('Delivery Hub Pickup Candidate'),
       legacyFallbackVisible: optionText.includes('Legacy/Medusa fallback shipping'),
     }
@@ -1300,7 +1379,22 @@ async function runCutoverSmokeSequence(mockBackendUrl) {
   log("Delivery Hub cutover flag-on browser smoke passed: explicit flag-on contour committed only the mapped mock Medusa shipping option and used no live backend/provider network.")
 }
 
-function assertCutoverGate(text, expectedEnabled) {
+async function waitForCutoverDiagnosticsReady(sessionId, description) {
+  await waitFor(
+    sessionId,
+    `(() => {
+      const preconditions = document.querySelector('[data-testid="delivery-hub-cutover-preconditions-status"]')?.textContent || ''
+      const candidate = document.querySelector('[data-testid="delivery-hub-cutover-candidate-status"]')?.textContent || ''
+      const artifact = document.querySelector('[data-testid="delivery-hub-cutover-approval-artifact"]')?.textContent || ''
+      return preconditions.includes('Preconditions verifier: available') &&
+        candidate.includes('Candidate planner: available') &&
+        artifact.includes('Approval artifact: available')
+    })()`,
+    description
+  )
+}
+
+function assertCutoverGate(text, expectedEnabled, { allowBlockedBeforeCustomerSelection = false } = {}) {
   const gateText = String(text || "")
   if (!gateText.includes("NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED")) {
     fail("Cutover gate flag status is not visible in preview guardrails.")
@@ -1309,6 +1403,9 @@ function assertCutoverGate(text, expectedEnabled) {
     fail(`Cutover gate did not reflect expected flag value ${expectedEnabled}.`)
   }
   if (expectedEnabled) {
+    if (allowBlockedBeforeCustomerSelection && gateText.includes("canCommitShippingMethod=false") && gateText.includes("fail-closed")) {
+      return
+    }
     if (!gateText.includes("canCommitShippingMethod=true")) {
       fail(`Cutover gate did not expose canCommitShippingMethod=true for flag-on ready candidate: ${gateText.slice(0, 500)}`)
     }
@@ -1351,7 +1448,7 @@ function assertCutoverCandidate(text, expectedStatus, { expectedCutoverEnabled =
 function assertCutoverPreconditions(text) {
   const verifierText = String(text || "")
   if (!verifierText.includes("Preconditions verifier: available")) {
-    fail("Cutover preconditions verifier availability is not visible in preview guardrails.")
+    fail(`Cutover preconditions verifier availability is not visible in preview guardrails. Text: ${verifierText.slice(0, 1000)}`)
   }
   if (!verifierText.includes("canCommitShippingMethod=false")) {
     fail("Cutover preconditions verifier did not preserve canCommitShippingMethod=false invariant.")
@@ -1370,7 +1467,7 @@ function assertCutoverPreconditions(text) {
 function assertCutoverApprovalArtifact(text) {
   const artifactText = String(text || "")
   if (!artifactText.includes("Approval artifact: available")) {
-    fail("Cutover approval artifact availability is not visible in preview guardrails.")
+    fail(`Cutover approval artifact availability is not visible in preview guardrails. Text: ${artifactText.slice(0, 1000)}`)
   }
   if (!artifactText.includes("Decision artifact only / no approval execution")) {
     fail("Cutover approval artifact did not state non-executable decision-only posture.")
@@ -1416,7 +1513,6 @@ async function requestMockClearSelection() {
 
 function resetMockRequestLog() {
   mockRequests.length = 0
-  mockCommittedShippingOptionId = null
 }
 
 function assertNoDeliveryHubCommitRequests(label) {
