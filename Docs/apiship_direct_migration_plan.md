@@ -106,6 +106,8 @@ Exit criteria:
 
 ### Phase 3 — Model baseline delivery method
 
+Status: complete for canonical contour contract in commit scope; shipping-option creation/sync remains Phase 4+ runtime work.
+
 Goal: define the buyer-facing delivery method for the first ApiShip baseline.
 
 Actions:
@@ -117,8 +119,10 @@ Actions:
 
 Exit criteria:
 
+- Canonical default fulfillment contour is now ApiShip/Gorgo with provider id `apiship_apiship`, provider code `apiship`, primary adapter `gorgo_apiship`, `live_execution_enabled: false`, buyer-facing mode `pickup_point_first`, and courier delivery marked `optional_later`.
 - Fresh template has one clear buyer-facing ApiShip pickup-point path.
 - Courier can be added later without blocking the baseline cutover.
+- Medusa shipping option creation/sync, stock-location/provider linking, storefront `/store/apiship/*` checkout flow, and `apishipData` shipping-method commit are explicitly deferred to Phase 4+ implementation tasks.
 
 ### Phase 4 — Storefront ApiShip quote and pickup-point selection
 
