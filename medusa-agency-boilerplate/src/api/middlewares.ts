@@ -4,6 +4,10 @@ import {
   validateAndTransformBody,
   validateAndTransformQuery,
 } from "@medusajs/framework/http"
+import {
+  enforceApishipCheckoutReadinessForCartCompletion,
+  enforceApishipCheckoutReadinessForPaymentSession,
+} from "../modules/apiship-checkout-readiness"
 
 import { AdminCreateDeliveryConnectionSchema } from "./admin/delivery/connections/route"
 import { AdminUpdateDeliveryConnectionSchema } from "./admin/delivery/connections/[id]/route"
@@ -384,6 +388,16 @@ export default defineMiddlewares({
       matcher: "/store/delivery/selection",
       methods: ["DELETE"],
       middlewares: [validateAndTransformBody(StoreDeliveryDeleteCartSelectionBodySchema)],
+    },
+    {
+      matcher: "/store/payment-collections/:id/payment-sessions",
+      methods: ["POST"],
+      middlewares: [enforceApishipCheckoutReadinessForPaymentSession],
+    },
+    {
+      matcher: "/store/carts/:id/complete",
+      methods: ["POST"],
+      middlewares: [enforceApishipCheckoutReadinessForCartCompletion],
     },
     {
       matcher: "/store/payment/yookassa",

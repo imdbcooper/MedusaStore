@@ -214,20 +214,26 @@ Exit criteria:
 - Frontend-only payment progression gate is active in the shipping step, payment step, and place-order buttons.
 - Backend readiness/payment guard is not added in this phase and remains deferred to Phase 7+.
 
-### Phase 7 — Frontend readiness gate
+### Phase 7 — Backend payment/readiness guard
 
-Goal: prevent shoppers from moving forward before ApiShip pickup-point selection is complete.
+Status: complete for backend checkout hardening; live fulfillment/shipment execution remains Phase 8+.
+
+Goal: prevent shoppers from initializing payment or placing an order unless the cart has a valid saved ApiShip pickup-point delivery selection.
 
 Actions:
 
-- Gate payment progression in the storefront until an ApiShip pickup point is selected and saved.
-- Treat this as an acceptable first-stage frontend gate for the pre-production cutover.
-- Do not block the first release on a backend readiness wrapper.
+- Add an ApiShip-first server-side checkout readiness predicate in `medusa-agency-boilerplate/src/modules/apiship-checkout-readiness.ts`.
+- Enforce the guard from `medusa-agency-boilerplate/src/api/middlewares.ts` on `POST /store/payment-collections/:id/payment-sessions` before payment session creation and on `POST /store/carts/:id/complete` before order placement.
+- Validate that the selected shipping method belongs to ApiShip (`apiship_apiship`, provider code `apiship`, or option data id `apiship_doortopoint`), contains `data.apishipData`, has `tariff.tariffId`, `tariff.providerKey`, numeric `tariff.deliveryCost`, and a PVZ `point.id`.
+- When `apishipData.contextKey` is persisted by the Phase 6 frontend gate, compare it against the current cart/address/shipping-option context and fail closed on explicit mismatch.
+- Keep the normal checkout path ApiShip-first; do not reintroduce `/store/delivery/*` as the canonical readiness facade.
+- Do not execute live shipment creation, fulfillment execution, tracking, cancellation, labels/documents, or cleanup of Delivery Hub residue in this phase.
 
 Exit criteria:
 
-- Shopper cannot proceed to payment without saved ApiShip delivery selection.
-- The first-stage guard is simple and visible in the checkout UX.
+- Frontend gate from Phase 6 is complemented by backend enforcement on payment-session initialization and order placement.
+- Server-side guard rejects missing shipping method, non-ApiShip/manual shipping method, missing `apishipData`, missing tariff/point contract fields, and explicit context mismatch.
+- Phase 7 remains checkout readiness hardening only; live shipment execution and smoke/regression expansion stay Phase 8+.
 
 ### Phase 8 — Smoke and regression verification
 
@@ -235,7 +241,7 @@ Goal: prove the ApiShip baseline works before deleting Delivery Hub residue.
 
 Actions:
 
-- Add or update browser smoke coverage for cart -> checkout delivery -> ApiShip pickup point -> add shipping method -> payment readiness.
+- Add or update browser smoke coverage for cart -> checkout delivery -> ApiShip pickup point -> add shipping method -> backend-enforced payment readiness.
 - Verify fresh bootstrap path.
 - Verify typecheck/lint/test commands required by the repository at the time of implementation.
 - Capture evidence that normal checkout uses `/store/apiship/*`, not `/store/delivery/*`.
