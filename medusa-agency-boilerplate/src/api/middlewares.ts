@@ -8,6 +8,12 @@ import {
   enforceApishipCheckoutReadinessForCartCompletion,
   enforceApishipCheckoutReadinessForPaymentSession,
 } from "../modules/apiship-checkout-readiness"
+import {
+  enforceApishipDirectFulfillmentCancelExecutionGuard,
+  enforceApishipDirectFulfillmentCreateExecutionGuard,
+  enforceApishipOrderFulfillmentCancelExecutionGuard,
+  enforceApishipOrderFulfillmentCreateExecutionGuard,
+} from "../modules/apiship-shipment-execution-guard"
 
 import { AdminCreateDeliveryConnectionSchema } from "./admin/delivery/connections/route"
 import { AdminUpdateDeliveryConnectionSchema } from "./admin/delivery/connections/[id]/route"
@@ -79,6 +85,26 @@ export default defineMiddlewares({
       matcher: "/admin/delivery/shipping-options/sync",
       methods: ["POST"],
       middlewares: [adminAuth, validateAndTransformBody(AdminDeliveryShippingOptionManualSyncSchema)],
+    },
+    {
+      matcher: "/admin/fulfillments",
+      methods: ["POST"],
+      middlewares: [adminAuth, enforceApishipDirectFulfillmentCreateExecutionGuard],
+    },
+    {
+      matcher: "/admin/fulfillments/:id/cancel",
+      methods: ["POST"],
+      middlewares: [adminAuth, enforceApishipDirectFulfillmentCancelExecutionGuard],
+    },
+    {
+      matcher: "/admin/orders/:id/fulfillments",
+      methods: ["POST"],
+      middlewares: [adminAuth, enforceApishipOrderFulfillmentCreateExecutionGuard],
+    },
+    {
+      matcher: "/admin/orders/:id/fulfillments/:fulfillment_id/cancel",
+      methods: ["POST"],
+      middlewares: [adminAuth, enforceApishipOrderFulfillmentCancelExecutionGuard],
     },
     {
       matcher: "/admin/orders/:id/delivery-hub",

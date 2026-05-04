@@ -235,22 +235,28 @@ Exit criteria:
 - Server-side guard rejects missing shipping method, non-ApiShip/manual shipping method, missing `apishipData`, missing tariff/point contract fields, and explicit context mismatch.
 - Phase 7 remains checkout readiness hardening only; live shipment execution and smoke/regression expansion stay Phase 8+.
 
-### Phase 8 — Smoke and regression verification
+### Phase 8 — ApiShip shipment execution safety guard
 
-Goal: prove the ApiShip baseline works before deleting Delivery Hub residue.
+Status: complete for default-off fulfillment/shipment execution hardening; browser smoke and fresh bootstrap regression remain deferred to Phase 9+.
+
+Goal: prevent accidental live ApiShip shipment execution while keeping checkout shipping-method commit, payment readiness, and order placement operational.
 
 Actions:
 
-- Add or update browser smoke coverage for cart -> checkout delivery -> ApiShip pickup point -> add shipping method -> backend-enforced payment readiness.
-- Verify fresh bootstrap path.
-- Verify typecheck/lint/test commands required by the repository at the time of implementation.
-- Capture evidence that normal checkout uses `/store/apiship/*`, not `/store/delivery/*`.
+- Confirmed installed `@gorgo/medusa-fulfillment-apiship@0.5.1` calls external ApiShip APIs from fulfillment provider execution methods: `ordersApi.addOrder` in `createFulfillment`, `ordersApi.cancelOrder` in `cancelFulfillment`, `ordersApi.getOrderInfo` and `orderDocsApi.getLabels` for tracking/labels, and `orderDocsApi.getWaybills` for documents.
+- Confirmed the plugin chooses sandbox vs live by persisted ApiShip `is_test`: `true` maps to `http://api.dev.apiship.ru/v1`, `false` maps to `https://api.apiship.ru/v1`.
+- Added project-level route-boundary guard in `medusa-agency-boilerplate/src/modules/apiship-shipment-execution-guard.ts` and wired it through `medusa-agency-boilerplate/src/api/middlewares.ts` before known Medusa Admin fulfillment creation/cancellation boundaries.
+- Added explicit opt-in env `APISHIP_SHIPMENT_EXECUTION_ENABLED`; only the exact value `true` allows ApiShip fulfillment execution. Missing, `false`, or truthy-looking values such as `1`, `yes`, or `TRUE` fail closed.
+- Kept checkout shipping-method commit separate from shipment execution: `/store/apiship/*` calculation, cart shipping-method commit with `apishipData`, payment readiness, and order placement are not disabled by this guard.
+- Added targeted unit coverage in `medusa-agency-boilerplate/src/workflows/__tests__/apiship-shipment-execution-guard.unit.spec.ts` for missing/false env blocking, explicit `true` allowing, manual/non-ApiShip execution not blocked, and invalid truthy values failing closed.
 
 Exit criteria:
 
-- ApiShip checkout smoke passes.
-- Fresh bootstrap smoke passes.
-- No normal checkout request depends on Delivery Hub Store API routes.
+- ApiShip fulfillment/shipment creation through the known Admin fulfillment routes is blocked by default unless `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` is explicitly set.
+- ApiShip cancellation, and therefore external cancel API usage, is blocked by the same default-off guard on known fulfillment cancellation routes.
+- Tracking, labels, and documents remain effectively disabled/deferred because plugin fulfillment creation is blocked before `addOrder` can trigger follow-up tracking/label retrieval; later explicit opt-in and smoke are required before live shipment execution parity is considered enabled.
+- Manual/non-ApiShip fulfillment is not blocked by the ApiShip guard.
+- Browser smoke, fresh bootstrap smoke, and Delivery Hub residue cleanup are not part of this Phase 8 commit and remain Phase 9+ work.
 
 ### Phase 9 — Physical Delivery Hub cleanup after smoke
 
