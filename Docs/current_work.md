@@ -1,6 +1,6 @@
 # Current Work
 
-> Status updated: `2026-05-01`.
+> Status updated: `2026-05-04`.
 >
 > Purpose: this is the short operational source of truth for agents entering the repository with no context. It answers what is current, what is already closed, and what must not be reopened without new evidence.
 
@@ -8,11 +8,11 @@
 
 ## Current Focus
 
-Delivery Hub Phase 8 is accepted; the non-blocking diagnostic-fetch isolation follow-up is implemented and verified in the current workspace.
+The active delivery planning focus is the documented pre-production baseline pivot from Delivery Hub to ApiShip/Gorgo. The accepted migration decision is [apiship_direct_migration_plan.md](./apiship_direct_migration_plan.md).
 
-Phase 8 scope: remove or quarantine obsolete legacy/preview/cutover surfaces so the shopper checkout reads as one normal Delivery Hub delivery flow, while keeping diagnostics available only behind dev/admin/advanced boundaries.
+Phase 5 is fixed as Variant A: the storefront should cut over directly to plugin-specific `/store/apiship/*` endpoints and should not keep `/store/delivery/*` as a facade in the first ApiShip baseline.
 
-Do not reopen closed phases or old one-off prompt artifacts unless new runtime evidence proves a regression.
+Do not implement runtime migration work from this note alone; use the dedicated plan as the source of truth for the future implementation breakdown.
 
 ---
 
@@ -25,15 +25,42 @@ The repository remains a Russian-market Medusa template:
 - notification baseline: local provider by default, UniSender and VK messaging are opt-in integration paths;
 - payment baseline: YooKassa-first for the current Russian-market scope;
 - storefront customization baseline: preset-driven storefront stack is closed and should not be reopened without regression evidence;
-- delivery baseline: Delivery Hub/direct Yandex is the selected delivery contour for fresh templates.
+- delivery baseline target: ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship`; Delivery Hub is no longer the target baseline for fresh templates.
 
 Historical legacy delivery rows/provider ids may still exist in old local/staging databases. Treat them as database residue that needs separate operator-approved cleanup, not as active template behavior.
 
 ---
 
+## ApiShip/Gorgo Direct Migration Status
+
+The accepted pre-production baseline pivot is [apiship_direct_migration_plan.md](./apiship_direct_migration_plan.md).
+
+Phase 0 freeze is recorded: this repository has not started ApiShip runtime migration work in this phase, and the baseline decision should not be reopened during Phase 1 inventory.
+
+Key fixed decisions:
+
+- Delivery Hub is no longer the baseline delivery contour; the new target baseline is `@gorgo/medusa-fulfillment-apiship`.
+- This is a pre-production migration, so there is no requirement to preserve backward compatibility for old Delivery Hub carts/orders.
+- Phase 5 selects Variant A: storefront uses `/store/apiship/*` directly, commits the standard Medusa cart shipping method with `apishipData`, and does not preserve `/store/delivery/*` as a first-version facade.
+- Initial customer-facing price is the ApiShip tariff unless a separate pricing-policy requirement is added.
+- Initial baseline is PVZ/pickup-point; courier can be added later.
+- Delivery Hub should be deactivated from the baseline before physical cleanup, and cleanup should wait for successful ApiShip smoke evidence.
+- Frontend checkout gating is acceptable for the first cutover; backend guard/readiness wrapper is later boilerplate-grade hardening.
+
+Phase 0 acceptance for later phases:
+
+- The direct migration plan is linked from this current-work map.
+- Delivery Hub is frozen as the previous baseline, not the fresh-template target baseline.
+- `@gorgo/medusa-fulfillment-apiship` is frozen as the new target baseline.
+- The migration is pre-production and does not require backward compatibility for old Delivery Hub carts/orders.
+- Future checkout API shape is Phase 5 Variant A: direct `/store/apiship/*`, no first-version `/store/delivery/*` facade, and standard Medusa shipping-method commit with `apishipData`.
+- Phase 0 is documentation/status only; runtime source, package manifests, and environment files are out of scope for this phase.
+
+---
+
 ## Delivery Hub Status
 
-Delivery Hub rework is the current delivery roadmap. The accepted plan is [delivery_hub_rework_plan.md](./delivery_hub_rework_plan.md).
+Delivery Hub rework is now historical baseline context. The previous accepted plan is [delivery_hub_rework_plan.md](./delivery_hub_rework_plan.md).
 
 Closed implementation phases:
 
@@ -99,13 +126,14 @@ Phase 8 follow-up status:
 Use these documents in this order:
 
 1. [current_work.md](./current_work.md) - operational status and next action.
-2. [delivery_hub_documentation_index.md](./delivery_hub_documentation_index.md) - Delivery Hub documentation roles and historical/evidence classification.
-3. [delivery_hub_rework_plan.md](./delivery_hub_rework_plan.md) - accepted Delivery Hub phase plan.
-4. [delivery_hub_spec.md](./delivery_hub_spec.md) - detailed architecture/reference material; older preview/cutover sections should be treated as historical unless the cleaned docs say otherwise.
-5. [delivery_hub_manual_testing_plan.md](./delivery_hub_manual_testing_plan.md) - operator validation, including product-flow smokes and advanced diagnostics.
-6. [env_contract.md](./env_contract.md) - environment/startup contract.
-7. [master_repo_plan_v2.md](./master_repo_plan_v2.md) - overall repository roadmap.
-8. [plan_analysis.md](./plan_analysis.md) - factual audit and historical reality check.
+2. [apiship_direct_migration_plan.md](./apiship_direct_migration_plan.md) - accepted ApiShip/Gorgo direct migration plan and Phase 0 baseline freeze.
+3. [delivery_hub_documentation_index.md](./delivery_hub_documentation_index.md) - Delivery Hub documentation roles and historical/evidence classification.
+4. [delivery_hub_rework_plan.md](./delivery_hub_rework_plan.md) - accepted Delivery Hub phase plan.
+5. [delivery_hub_spec.md](./delivery_hub_spec.md) - detailed architecture/reference material; older preview/cutover sections should be treated as historical unless the cleaned docs say otherwise.
+6. [delivery_hub_manual_testing_plan.md](./delivery_hub_manual_testing_plan.md) - operator validation, including product-flow smokes and advanced diagnostics.
+7. [env_contract.md](./env_contract.md) - environment/startup contract.
+8. [master_repo_plan_v2.md](./master_repo_plan_v2.md) - overall repository roadmap.
+9. [plan_analysis.md](./plan_analysis.md) - factual audit and historical reality check.
 
 Old phase prompt files are not source-of-truth. Completed prompt artifacts should not be used to infer current status.
 
