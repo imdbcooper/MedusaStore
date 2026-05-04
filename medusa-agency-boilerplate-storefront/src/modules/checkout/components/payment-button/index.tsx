@@ -2,10 +2,8 @@
 
 import { isManual, isStripeLike, isYooKassa } from "@lib/constants"
 import { placeOrder } from "@lib/data/cart"
-import { retrieveDeliveryHubReadiness } from "@lib/data/delivery-hub"
 import { getYooKassaPaymentStatus } from "@lib/data/payment"
 import { storefrontConfig } from "@lib/storefront-config"
-import { buildDeliveryHubPaymentBlockerModel } from "@lib/util/delivery-hub"
 import {
   getYooKassaConfirmationUrl,
   getYooKassaPaymentId,
@@ -79,13 +77,6 @@ const YooKassaPaymentButton = ({
     setErrorMessage(null)
 
     try {
-      const readiness = await retrieveDeliveryHubReadiness(cart.id)
-      const deliveryBlocker = buildDeliveryHubPaymentBlockerModel({ readiness, cart })
-
-      if (deliveryBlocker.blocked) {
-        throw new Error(deliveryBlocker.message ?? "Сохраните способ доставки перед оплатой.")
-      }
-
       const paymentId = getYooKassaPaymentId(cart)
 
       if (!paymentId) {
@@ -195,15 +186,6 @@ const StripePaymentButton = ({
     setSubmitting(true)
     setErrorMessage(null)
 
-    const readiness = await retrieveDeliveryHubReadiness(cart.id)
-    const deliveryBlocker = buildDeliveryHubPaymentBlockerModel({ readiness, cart })
-
-    if (deliveryBlocker.blocked) {
-      setErrorMessage(deliveryBlocker.message)
-      setSubmitting(false)
-      return
-    }
-
     if (!stripe || !elements || !card || !cart) {
       setSubmitting(false)
       return
@@ -300,15 +282,6 @@ const ManualTestPaymentButton = ({
   const handlePayment = async () => {
     setSubmitting(true)
     setErrorMessage(null)
-
-    const readiness = await retrieveDeliveryHubReadiness(cart.id)
-    const deliveryBlocker = buildDeliveryHubPaymentBlockerModel({ readiness, cart })
-
-    if (deliveryBlocker.blocked) {
-      setErrorMessage(deliveryBlocker.message)
-      setSubmitting(false)
-      return
-    }
 
     onPaymentCompleted()
   }

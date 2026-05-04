@@ -46,9 +46,22 @@ export type ApishipPoint = {
 }
 
 export type ApishipTariff = {
+  id?: string | number
   tariffId?: number
+  tariff_id?: number
   providerKey?: string
   deliveryCost?: number
+  delivery_cost?: number
+  amount?: number
+  price?: number
+  daysMin?: number
+  days_min?: number
+  daysMax?: number
+  days_max?: number
+  deliveryMin?: number
+  delivery_min?: number
+  deliveryMax?: number
+  delivery_max?: number
   [key: string]: unknown
 }
 

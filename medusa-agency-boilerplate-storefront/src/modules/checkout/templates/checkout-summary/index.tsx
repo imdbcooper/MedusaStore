@@ -1,10 +1,5 @@
-import {
-  retrieveDeliveryHubReadiness,
-  retrieveDeliveryHubSelection,
-} from "@lib/data/delivery-hub"
 import { listCartShippingMethods } from "@lib/data/fulfillment"
 import { storefrontConfig } from "@lib/storefront-config"
-import { buildDeliveryHubSavedSelectionSummaryModel } from "@lib/util/delivery-hub"
 import { Heading, Text } from "@medusajs/ui"
 import ItemsPreviewTemplate from "@modules/cart/templates/preview"
 import DiscountCode from "@modules/checkout/components/discount-code"
@@ -13,17 +8,7 @@ import CartTotals from "@modules/common/components/cart-totals"
 import Divider from "@modules/common/components/divider"
 
 const CheckoutSummary = async ({ cart }: { cart: any }) => {
-  const [shippingMethods, deliveryHubSelection, deliveryHubReadiness] = cart?.id
-    ? await Promise.all([
-        listCartShippingMethods(cart.id),
-        retrieveDeliveryHubSelection(cart.id),
-        retrieveDeliveryHubReadiness(cart.id),
-      ])
-    : [null, null, null]
-  const deliveryHubSavedSelectionSummary = buildDeliveryHubSavedSelectionSummaryModel(
-    deliveryHubSelection,
-    deliveryHubReadiness
-  )
+  const shippingMethods = cart?.id ? await listCartShippingMethods(cart.id) : null
 
   return (
     <div className="sticky top-0 flex flex-col-reverse small:flex-col gap-y-8 py-8 small:py-0 ">
@@ -36,8 +21,7 @@ const CheckoutSummary = async ({ cart }: { cart: any }) => {
           {storefrontConfig.copy.checkout.inYourCart}
         </Heading>
         <Divider className="my-6" />
-        {((cart.shipping_methods?.length ?? 0) > 0 ||
-          deliveryHubSavedSelectionSummary.state !== "missing") && (
+        {(cart.shipping_methods?.length ?? 0) > 0 && (
           <div className="mb-6">
             <Text className="txt-medium-plus text-ui-fg-base mb-1">
               {storefrontConfig.copy.checkout.delivery}
@@ -45,7 +29,6 @@ const CheckoutSummary = async ({ cart }: { cart: any }) => {
             <ShippingSummary
               cart={cart}
               availableShippingMethods={shippingMethods}
-              deliveryHubSavedSelectionSummary={deliveryHubSavedSelectionSummary}
             />
           </div>
         )}

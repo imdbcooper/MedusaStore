@@ -191,21 +191,27 @@ Exit criteria:
 - The selected shipping method is added to the cart with `apishipData` through the standard Medusa Store API cart shipping-method flow.
 - The Phase 5 implementation does not contain a new Delivery Hub compatibility facade.
 
-### Phase 6 — Deactivate Delivery Hub from fresh baseline
+### Phase 6 — Storefront checkout migration to direct ApiShip
 
-Goal: make ApiShip/Gorgo the active baseline without prematurely deleting historical code/data.
+Status: complete for storefront checkout UI cutover in Phase 6 scope; backend payment/readiness guard remains deferred to Phase 7+ hardening.
+
+Goal: make the buyer-facing checkout delivery step ApiShip/Gorgo-first without deleting historical Delivery Hub code/data.
 
 Actions:
 
-- Disable Delivery Hub baseline wiring in fresh bootstrap/seed/config paths.
-- Stop presenting Delivery Hub as the current default in operational docs.
-- Keep existing Delivery Hub docs as historical/evidence until cleanup is safe.
-- Avoid destructive cleanup before ApiShip smoke passes.
+- Wire normal checkout delivery UI directly to the Phase 5 `/store/apiship/*` Store API helpers for providers, pickup points, and cart shipping-option calculation.
+- Detect the ApiShip pickup-point shipping option by provider id `apiship_apiship` and/or option data id `apiship_doortopoint` when these fields are present on the storefront option.
+- Implement the initial PVZ/pickup-point-first fallback UI as a list/search selector plus tariff selector; map UI is optional later hardening because it requires separate map integration and key management.
+- Save the selected ApiShip tariff/PVZ through the standard Medusa add-shipping-method flow with `data.apishipData`.
+- Gate payment progression in the storefront delivery step until a valid ApiShip tariff and PVZ are selected and the shipping method is saved.
+- Keep legacy Delivery Hub Store API routes/modules in the repository as inactive historical residue; do not use `/store/delivery/*` in the normal checkout path.
 
 Exit criteria:
 
-- Fresh bootstrap uses ApiShip/Gorgo as the delivery baseline.
-- Delivery Hub is inactive for new templates.
+- Normal checkout delivery UI calls direct ApiShip helpers instead of Delivery Hub data helpers/facades.
+- Shopper can choose an ApiShip PVZ and tariff and save the shipping method with `apishipData`.
+- Frontend-only payment progression gate is active in the shipping step.
+- Backend readiness/payment guard is not added in this phase and remains deferred to Phase 7+.
 
 ### Phase 7 — Frontend readiness gate
 

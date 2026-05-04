@@ -1,4 +1,4 @@
-import { type DeliveryHubSavedSelectionSummaryModel } from "@lib/util/delivery-hub"
+import { type ApishipPoint } from "@lib/util/apiship"
 import { convertToLocale } from "@lib/util/money"
 import { HttpTypes } from "@medusajs/types"
 import { Text } from "@medusajs/ui"
@@ -6,23 +6,29 @@ import { Text } from "@medusajs/ui"
 type ShippingSummaryProps = {
   cart: HttpTypes.StoreCart
   availableShippingMethods?: HttpTypes.StoreCartShippingOption[] | null
-  deliveryHubSavedSelectionSummary?: DeliveryHubSavedSelectionSummaryModel | null
   className?: string
+}
+
+function getApishipSummaryPointLabel(point?: ApishipPoint | null) {
+  return [point?.name, point?.address].filter(Boolean).join(" · ")
 }
 
 const ShippingSummary = ({
   cart,
   availableShippingMethods,
-  deliveryHubSavedSelectionSummary,
   className,
 }: ShippingSummaryProps) => {
   const shippingMethod = cart.shipping_methods?.at(-1)
 
-  if (!shippingMethod && !deliveryHubSavedSelectionSummary) {
+  if (!shippingMethod) {
     return null
   }
 
   const title = shippingMethod?.name ?? null
+  const apishipData = shippingMethod.data?.apishipData as
+    | { point?: ApishipPoint | null }
+    | undefined
+  const apishipPointLabel = getApishipSummaryPointLabel(apishipData?.point)
 
   return (
     <div className={className}>
@@ -35,24 +41,11 @@ const ShippingSummary = ({
           })}
         </Text>
       )}
-      {deliveryHubSavedSelectionSummary &&
-        deliveryHubSavedSelectionSummary.state !== "missing" && (
-          <Text className="txt-medium text-ui-fg-subtle">
-            {deliveryHubSavedSelectionSummary.pickup_point_label
-              ? `${deliveryHubSavedSelectionSummary.title}: ${deliveryHubSavedSelectionSummary.pickup_point_label}`
-              : `${deliveryHubSavedSelectionSummary.title}: ${deliveryHubSavedSelectionSummary.status_label}`}
-            {deliveryHubSavedSelectionSummary.quote_amount !== null &&
-              deliveryHubSavedSelectionSummary.currency_code
-              ? ` · ${convertToLocale({
-                  amount: deliveryHubSavedSelectionSummary.quote_amount,
-                  currency_code: deliveryHubSavedSelectionSummary.currency_code,
-                })}`
-              : ""}
-            {deliveryHubSavedSelectionSummary.quote_eta_label
-              ? ` · ${deliveryHubSavedSelectionSummary.quote_eta_label}`
-              : ""}
-          </Text>
-        )}
+      {apishipPointLabel && (
+        <Text className="txt-medium text-ui-fg-subtle">
+          ApiShip ПВЗ: {apishipPointLabel}
+        </Text>
+      )}
     </div>
   )
 }
