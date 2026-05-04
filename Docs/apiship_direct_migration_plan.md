@@ -124,22 +124,24 @@ Exit criteria:
 - Courier can be added later without blocking the baseline cutover.
 - Medusa shipping option creation/sync, stock-location/provider linking, storefront `/store/apiship/*` checkout flow, and `apishipData` shipping-method commit are explicitly deferred to Phase 4+ implementation tasks.
 
-### Phase 4 — Storefront ApiShip quote and pickup-point selection
+### Phase 4 — Seed/bootstrap ApiShip shipping option baseline
 
-Goal: move checkout UX to ApiShip/Gorgo data directly.
+Status: complete in runtime scope for fresh bootstrap seed; checkout UX remains Phase 5/6.
+
+Goal: make fresh bootstrap create the Medusa shipping option needed for the first ApiShip/Gorgo pickup-point baseline.
 
 Actions:
 
-- Replace Delivery Hub quote/PVZ reads with `/store/apiship/*` calls.
-- Render pickup-point choices from ApiShip responses.
-- Use the ApiShip tariff as the displayed customer-facing delivery price at first.
-- Keep a pricing-policy layer out of scope unless a new requirement is added.
+- Link the baseline stock location to ApiShip provider id `apiship_apiship`.
+- Keep the baseline stock location / fulfillment set / service zone relationship intact.
+- Create the calculated ApiShip pickup-point/PVZ-first shipping option with plugin option data `id: "apiship_doortopoint"`, `deliveryType: 2`, and `pickupType: 1`.
+- Do not create a courier baseline until checkout/API requirements for courier are explicitly added.
 
 Exit criteria:
 
-- Shopper can load ApiShip pickup points in checkout.
-- Shopper sees the ApiShip tariff as the delivery price.
-- Delivery Hub quote/PVZ routes are no longer required by the normal checkout path.
+- Fresh bootstrap produces an ApiShip/Gorgo pickup-point shipping option for provider `apiship_apiship`.
+- Fresh bootstrap no longer relies on Delivery Hub/manual shipping-option seeding for the delivery contour.
+- Storefront checkout flow, direct `/store/apiship/*` reads, and `apishipData` shipping-method commit remain deferred to Phase 5/6.
 
 ### Phase 5 — Checkout commit API shape: Variant A selected
 

@@ -23,6 +23,7 @@ import {
   updateStoresWorkflow,
 } from "@medusajs/medusa/core-flows";
 import { ApiKey } from "../../.medusa/types/query-entry-points";
+import { APISHIP_FULFILLMENT_PROVIDER_ID } from "../modules/fulfillment-contour-contract";
 
 type RegionRecord = {
   id: string;
@@ -48,17 +49,19 @@ type FulfillmentSetRecord = {
   service_zones?: { id: string }[] | null;
 };
 
+type ShippingProfileRecord = {
+  id: string;
+  name?: string | null;
+  type?: string | null;
+};
+
 type ShippingOptionRecord = {
   id: string;
   name?: string | null;
   provider_id?: string | null;
   data?: Record<string, unknown> | null;
-};
-
-type ShippingProfileRecord = {
-  id: string;
-  name?: string | null;
-  type?: string | null;
+  service_zone_id?: string | null;
+  shipping_profile_id?: string | null;
 };
 
 type ProductRecord = {
@@ -101,11 +104,16 @@ const DEFAULT_SALES_CHANNEL_NAME = "Default Sales Channel";
 const DEFAULT_STOCK_LOCATION_NAME = "Template RU Warehouse";
 const DEFAULT_FULFILLMENT_SET_NAME = "Template RU Fulfillment";
 const DEFAULT_SHIPPING_PROFILE_NAME = "Default Shipping Profile";
-const DEFAULT_SHIPPING_OPTION_NAME = "Template Standard Shipping";
 const DEFAULT_PUBLISHABLE_KEY_TITLE = "Webshop";
 const DEFAULT_PAYMENT_PROVIDER_ID = "pp_system_default";
 const YOOKASSA_PAYMENT_PROVIDER_ID = "pp_yookassa_yookassa";
-const MANUAL_FULFILLMENT_PROVIDER_ID = "manual_manual";
+const APISHIP_PICKUP_POINT_OPTION_ID = "apiship_doortopoint";
+const APISHIP_PICKUP_POINT_SHIPPING_OPTION_NAME = "ApiShip — Пункт выдачи";
+const APISHIP_PICKUP_POINT_SHIPPING_OPTION_TYPE = {
+  label: "ApiShip pickup point",
+  description: "ApiShip pickup-point/PVZ delivery baseline.",
+  code: "apiship-pickup-point",
+};
 const BASELINE_HARDENING_HINT =
   "Resolve the conflicting baseline entities on this database or rerun bootstrap on a clean clone.";
 const SHOPPER_FACING_CATALOG: CatalogSeedDefinition[] = [
@@ -368,31 +376,22 @@ const regionMatchesBaseline = (candidate: RegionRecord) => {
   );
 };
 
-const findReusableShippingOption = (
-  existingShippingOptions: ShippingOptionRecord[],
-  name: string,
-  expectedProviderId: string
+const buildApiShipPickupPointShippingOptionData = () => ({
+  id: APISHIP_PICKUP_POINT_OPTION_ID,
+  deliveryType: 2,
+  pickupType: 1,
+  baseline: "apiship_pickup_point_first",
+});
+
+const shippingOptionMatchesApiShipPickupPointBaseline = (
+  candidate: ShippingOptionRecord
 ) => {
-  const nameMatches = existingShippingOptions.filter(
-    (candidate) => candidate.name === name
+  return (
+    candidate.provider_id === APISHIP_FULFILLMENT_PROVIDER_ID &&
+    candidate.data?.id === APISHIP_PICKUP_POINT_OPTION_ID &&
+    candidate.data?.deliveryType === 2 &&
+    candidate.data?.pickupType === 1
   );
-
-  const reusableOption = ensureUniqueMatch(
-    nameMatches,
-    `shipping options named "${name}"`
-  );
-
-  if (!reusableOption) {
-    return null;
-  }
-
-  if (reusableOption.provider_id !== expectedProviderId) {
-    throw new Error(
-      `Bootstrap found shipping option "${name}" bound to provider "${reusableOption.provider_id ?? "unknown"}" instead of "${expectedProviderId}". ${BASELINE_HARDENING_HINT}`
-    );
-  }
-
-  return reusableOption;
 };
 
 const toUniqueImageRecords = (thumbnail: string, images: string[]) => {
@@ -744,15 +743,14 @@ export default async function seedDemoData({ container }: ExecArgs) {
     },
   });
 
-  await ensureDirectLink("stock location to manual fulfillment provider", {
+  await ensureDirectLink("stock location to ApiShip fulfillment provider", {
     [Modules.STOCK_LOCATION]: {
       stock_location_id: stockLocation.id,
     },
     [Modules.FULFILLMENT]: {
-      fulfillment_provider_id: MANUAL_FULFILLMENT_PROVIDER_ID,
+      fulfillment_provider_id: APISHIP_FULFILLMENT_PROVIDER_ID,
     },
   });
-
 
   logger.info("Seeding fulfillment data...");
   const shippingProfiles = (await fulfillmentModuleService.listShippingProfiles({
@@ -841,7 +839,6 @@ export default async function seedDemoData({ container }: ExecArgs) {
   });
 
   const serviceZoneId = fulfillmentSet.service_zones?.[0]?.id;
-
   if (!serviceZoneId) {
     throw new Error(
       `Template fulfillment set "${DEFAULT_FULFILLMENT_SET_NAME}" is missing a service zone. ${BASELINE_HARDENING_HINT}`
@@ -850,62 +847,45 @@ export default async function seedDemoData({ container }: ExecArgs) {
 
   const { data: existingShippingOptions } = await query.graph({
     entity: "shipping_option",
-    fields: ["id", "name", "provider_id", "data"],
+    fields: [
+      "id",
+      "name",
+      "provider_id",
+      "data",
+      "service_zone_id",
+      "shipping_profile_id",
+    ],
   });
 
-  const shippingOptions =
-    (existingShippingOptions as ShippingOptionRecord[] | undefined) ?? [];
-  const reusableDefaultShippingOption = findReusableShippingOption(
-    shippingOptions,
-    DEFAULT_SHIPPING_OPTION_NAME,
-    MANUAL_FULFILLMENT_PROVIDER_ID
+  const apiShipPickupPointShippingOption = ensureUniqueMatch(
+    ((existingShippingOptions as ShippingOptionRecord[] | undefined) ?? []).filter(
+      shippingOptionMatchesApiShipPickupPointBaseline
+    ),
+    `ApiShip pickup-point shipping options for provider "${APISHIP_FULFILLMENT_PROVIDER_ID}"`
   );
 
-  const shippingOptionsToCreate: any[] = [];
-
-  if (!reusableDefaultShippingOption) {
-    shippingOptionsToCreate.push({
-      name: DEFAULT_SHIPPING_OPTION_NAME,
-      price_type: "flat",
-      provider_id: MANUAL_FULFILLMENT_PROVIDER_ID,
-      service_zone_id: serviceZoneId,
-      shipping_profile_id: shippingProfile.id,
-      type: {
-        label: "Default",
-        description: "Template-ready shipping option.",
-        code: "default",
-      },
-      prices: [
-        {
-          region_id: region.id,
-          amount: 0,
-        },
-      ],
-      rules: [
-        {
-          attribute: "enabled_in_store",
-          value: "true",
-          operator: "eq" as const,
-        },
-        {
-          attribute: "is_return",
-          value: "false",
-          operator: "eq" as const,
-        },
-      ],
-    });
-  } else {
-    logger.info(`Reusing shipping option "${DEFAULT_SHIPPING_OPTION_NAME}".`);
-  }
-
-
-  if (shippingOptionsToCreate.length) {
+  if (!apiShipPickupPointShippingOption) {
     await createShippingOptionsWorkflow(container).run({
-      input: shippingOptionsToCreate,
+      input: [
+        {
+          name: APISHIP_PICKUP_POINT_SHIPPING_OPTION_NAME,
+          price_type: "calculated",
+          provider_id: APISHIP_FULFILLMENT_PROVIDER_ID,
+          service_zone_id: serviceZoneId,
+          shipping_profile_id: shippingProfile.id,
+          type: APISHIP_PICKUP_POINT_SHIPPING_OPTION_TYPE,
+          data: buildApiShipPickupPointShippingOptionData(),
+        },
+      ],
     });
-    logger.info(`Created ${shippingOptionsToCreate.length} missing shipping option(s).`);
+    logger.info(
+      `Created ApiShip pickup-point shipping option "${APISHIP_PICKUP_POINT_SHIPPING_OPTION_NAME}".`
+    );
+  } else {
+    logger.info(
+      `Reusing ApiShip pickup-point shipping option "${apiShipPickupPointShippingOption.name ?? apiShipPickupPointShippingOption.id}".`
+    );
   }
-
 
   await ensureWorkflowLink("sales channel to stock location", async () => {
     await linkSalesChannelsToStockLocationWorkflow(container).run({
