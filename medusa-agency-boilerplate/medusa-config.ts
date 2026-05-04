@@ -13,10 +13,13 @@ import {
 } from "./src/modules/notification-vk"
 import { getVkIdRuntime } from "./src/modules/vk-id"
 import { isYooKassaConfigured } from "./src/modules/yookassa"
-import { DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE } from "./src/modules/delivery-hub/provider-surface"
-import { getDefaultFulfillmentContourContract } from "./src/modules/fulfillment-contour-contract"
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd())
+
+const APISHIP_FULFILLMENT_PROVIDER_CODE = "apiship"
+const APISHIP_FULFILLMENT_PROVIDER_MODULE =
+  "@gorgo/medusa-fulfillment-apiship/providers/fulfillment-apiship"
+const APISHIP_SETTINGS_MODULE = "@gorgo/medusa-fulfillment-apiship/modules/apiship"
 
 const notificationEmailRuntime = getNotificationEmailRuntime()
 const emailNotificationProvider = getNotificationEmailProviderDefinition()
@@ -76,19 +79,14 @@ const paymentProviders = isYooKassaConfigured(yookassaProviderOptions)
     ]
   : []
 
-const defaultFulfillmentContour = getDefaultFulfillmentContourContract()
-
 const fulfillmentProviders = [
   {
     resolve: "@medusajs/medusa/fulfillment-manual",
     id: "manual",
   },
   {
-    resolve: "./src/modules/deliveryhub",
-    id: DELIVERY_HUB_FULFILLMENT_PROVIDER_CODE,
-    options: {
-      default_contour: defaultFulfillmentContour,
-    },
+    resolve: APISHIP_FULFILLMENT_PROVIDER_MODULE,
+    id: APISHIP_FULFILLMENT_PROVIDER_CODE,
   },
 ]
 
@@ -132,6 +130,9 @@ module.exports = defineConfig({
       options: {
         providers: paymentProviders,
       },
+    },
+    {
+      resolve: APISHIP_SETTINGS_MODULE,
     },
     {
       resolve: "@medusajs/medusa/fulfillment",

@@ -26,11 +26,15 @@
     "test:unit": "TEST_TYPE=unit NODE_OPTIONS=--experimental-vm-modules jest --silent --runInBand --forceExit"
   },
   "dependencies": {
+    "@gorgo/medusa-fulfillment-apiship": "0.5.1",
     "@medusajs/admin-sdk": "2.13.6",
     "@medusajs/cli": "2.13.6",
+    "@medusajs/draft-order": "2.13.6",
     "@medusajs/framework": "2.13.6",
+    "@medusajs/icons": "2.13.6",
     "@medusajs/medusa": "2.13.6",
-    "@medusajs/notification-local": "2.13.6"
+    "@medusajs/notification-local": "2.13.6",
+    "@medusajs/ui": "4.1.6"
   },
   "devDependencies": {
     "@medusajs/test-utils": "2.13.6",
