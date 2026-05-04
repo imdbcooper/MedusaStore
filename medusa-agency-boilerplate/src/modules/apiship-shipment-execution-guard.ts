@@ -43,8 +43,13 @@ export function assertApishipShipmentExecutionAllowed(input: {
   provider_id?: unknown
   operation: ApishipShipmentExecutionOperation
   env?: ApishipShipmentExecutionEnv
+  is_apiship_risk?: boolean
+  disabled_reason?: string
 }) {
-  if (!isApishipFulfillmentProviderId(input.provider_id)) {
+  const isApishipRisk =
+    input.is_apiship_risk || isApishipFulfillmentProviderId(input.provider_id)
+
+  if (!isApishipRisk) {
     return
   }
 
@@ -52,9 +57,13 @@ export function assertApishipShipmentExecutionAllowed(input: {
     return
   }
 
+  const disabledReason = input.disabled_reason
+    ? ` ${input.disabled_reason}`
+    : ""
+
   throw new MedusaError(
     MedusaError.Types.INVALID_DATA,
-    `ApiShip shipment execution is disabled by default (${APISHIP_SHIPMENT_EXECUTION_ENV}=true is required for ${input.operation}). Checkout shipping-method commit is still allowed; live ApiShip fulfillment creation, cancellation, tracking and documents remain blocked until explicit opt-in.`
+    `ApiShip shipment execution is disabled by default (${APISHIP_SHIPMENT_EXECUTION_ENV}=true is required for ${input.operation}). Checkout shipping-method commit is still allowed; live ApiShip fulfillment creation, cancellation, tracking and documents remain blocked until explicit opt-in.${disabledReason}`
   )
 }
 
@@ -78,11 +87,13 @@ export async function enforceApishipOrderFulfillmentCreateExecutionGuard(
   _res: MedusaResponse,
   next: MedusaNextFunction
 ) {
-  const providerId = await getOrderFulfillmentCreateProviderId(req)
+  const context = await getOrderFulfillmentCreateProviderContext(req)
 
   assertApishipShipmentExecutionAllowed({
-    provider_id: providerId,
+    provider_id: context.provider_id,
     operation: "create_fulfillment",
+    is_apiship_risk: context.is_apiship_risk,
+    disabled_reason: context.disabled_reason,
   })
 
   next()
@@ -118,32 +129,41 @@ export async function enforceApishipOrderFulfillmentCancelExecutionGuard(
   next()
 }
 
-async function getOrderFulfillmentCreateProviderId(req: MedusaRequest) {
+async function getOrderFulfillmentCreateProviderContext(req: MedusaRequest) {
   const body = getRequestBody(req)
-  const shippingOptionId =
-    toNonEmptyString(body.shipping_option_id) ??
-    (await getFirstOrderShippingOptionId(req, req.params.id))
+  const explicitShippingOptionId = toNonEmptyString(body.shipping_option_id)
 
-  if (!shippingOptionId) {
-    return null
+  if (explicitShippingOptionId) {
+    return {
+      provider_id: await getShippingOptionProviderId(req, explicitShippingOptionId),
+    }
   }
 
-  const fulfillmentModuleService = req.scope.resolve(Modules.FULFILLMENT)
-  const shippingOption = await fulfillmentModuleService.retrieveShippingOption(
-    shippingOptionId
-  )
+  const providerIds = await getOrderShippingMethodProviderIds(req, req.params.id)
+  const hasApishipProvider = providerIds.some(isApishipFulfillmentProviderId)
 
-  return shippingOption?.provider_id ?? null
+  if (!hasApishipProvider) {
+    return {
+      provider_id: null,
+    }
+  }
+
+  return {
+    provider_id: null,
+    is_apiship_risk: true,
+    disabled_reason:
+      "POST /admin/orders/:id/fulfillments omitted explicit shipping_option_id while the order contains an ApiShip shipping method; provide an explicit non-ApiShip shipping_option_id for manual fulfillment or set APISHIP_SHIPMENT_EXECUTION_ENABLED=true before allowing ApiShip shipment execution.",
+  }
 }
 
-async function getFirstOrderShippingOptionId(
+async function getOrderShippingMethodProviderIds(
   req: MedusaRequest,
   orderId?: string
 ) {
   const normalizedOrderId = toNonEmptyString(orderId)
 
   if (!normalizedOrderId) {
-    return null
+    return []
   }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
@@ -157,8 +177,35 @@ async function getFirstOrderShippingOptionId(
   const order = data[0] as
     | { shipping_methods?: { shipping_option_id?: string | null }[] | null }
     | undefined
+  const shippingOptionIds = Array.from(
+    new Set(
+      (order?.shipping_methods ?? [])
+        .map((shippingMethod) =>
+          toNonEmptyString(shippingMethod.shipping_option_id)
+        )
+        .filter((shippingOptionId): shippingOptionId is string =>
+          Boolean(shippingOptionId)
+        )
+    )
+  )
 
-  return toNonEmptyString(order?.shipping_methods?.[0]?.shipping_option_id)
+  return Promise.all(
+    shippingOptionIds.map((shippingOptionId) =>
+      getShippingOptionProviderId(req, shippingOptionId)
+    )
+  )
+}
+
+async function getShippingOptionProviderId(
+  req: MedusaRequest,
+  shippingOptionId: string
+) {
+  const fulfillmentModuleService = req.scope.resolve(Modules.FULFILLMENT)
+  const shippingOption = await fulfillmentModuleService.retrieveShippingOption(
+    shippingOptionId
+  )
+
+  return shippingOption?.provider_id ?? null
 }
 
 async function getFulfillmentProviderId(
