@@ -145,6 +145,8 @@ Exit criteria:
 
 ### Phase 5 — Checkout commit API shape: Variant A selected
 
+Status: complete for Store API contract and storefront helper stubs; UI migration remains Phase 6+.
+
 Decision: choose Variant A, fast cutover to ApiShip API.
 
 Variant A means:
@@ -156,6 +158,27 @@ Variant A means:
 - Any Delivery Hub-specific readiness wrapper is not part of the first cutover.
 - A backend readiness wrapper can be reintroduced later as a separate boilerplate-grade hardening stage if the template needs a stable provider-neutral API again.
 
+Confirmed ApiShip/Gorgo Store API contract from installed `@gorgo/medusa-fulfillment-apiship@0.5.1`:
+
+| Purpose | Endpoint | Request | Response | Notes |
+| --- | --- | --- | --- | --- |
+| Delivery providers | `GET /store/apiship/providers` | No body/query required. | `{ providers: StoreApishipProvider[] }`, where provider fields include `key`, `name`, and `description`. | Route exists in the plugin Store API and is the source for provider metadata. |
+| Pickup points / PVZ | `GET /store/apiship/points` | Optional query: `key`, `filter`, `fields`, `limit`, `offset`. | `{ points: StoreApishipPoint[] }`, where points follow ApiShip `PointObject`. | Plugin middleware validates the query with default `limit: 50`, `offset: 0`; `key` enables plugin cache lookup. |
+| Shipping calculation | `POST /store/apiship/:shipping_option_id/calculate` | JSON body `{ cart_id: string }`. | `{ calculation: StoreApishipCalculation }`, following ApiShip calculator response. | The route calls Medusa `calculateShippingOptionsPricesWorkflow` for the provided ApiShip shipping option and returns the provider calculation data. |
+| Shipping method commit | Standard Medusa Store API add-shipping-method-to-cart flow, e.g. `POST /store/carts/:cart_id/shipping-methods`. | Body contains `option_id: <shipping_option_id>` and `data: { apishipData: { tariff, point? } }`. | Standard Medusa cart/shipping-method response. | ApiShip provider reads `data.apishipData.tariff` for customer-facing price and fulfillment, plus optional `data.apishipData.point.id` for PVZ delivery. |
+| Shipping method removal | `DELETE /store/shipping-methods/:sm_id` | Path parameter `sm_id`. | `{ id, object: "shipping_method", deleted: true }`. | Plugin route exists for storefront cleanup when replacing/removing a selected shipping method. |
+
+Backend routing note:
+
+- The installed plugin ships its own Store API middleware for `GET /store/apiship/points` and `POST /store/apiship/:shipping_option_id/calculate`; `GET /store/apiship/providers` is exposed as a plugin Store route without additional auth middleware.
+- No project-level `middlewares.ts` change is required for Phase 5 because these routes are under the normal Store API namespace and use the same `storeCors` project configuration as other Store endpoints.
+- Existing `/store/delivery/*` routes may remain in the repository temporarily as inactive Delivery Hub residue and deferred cleanup, but they are not the canonical first-version storefront API and must not be used by the normal ApiShip checkout path.
+
+Phase 5 storefront contract helpers:
+
+- New helper stubs may call `GET /store/apiship/providers`, `GET /store/apiship/points`, `POST /store/apiship/:shipping_option_id/calculate`, and standard Medusa cart shipping-method commit with `data.apishipData`.
+- Phase 6 must wire checkout UI directly to these helpers/endpoints, not to `/store/delivery/*`.
+
 Non-selected alternative:
 
 - Variant B, keeping `/store/delivery/*` as a provider-neutral facade, is intentionally not selected for the first version.
@@ -163,8 +186,9 @@ Non-selected alternative:
 
 Exit criteria:
 
-- The normal checkout path no longer depends on `/store/delivery/*`.
-- The selected shipping method is added to the cart with `apishipData`.
+- The canonical Store API contract is `/store/apiship/*` first for providers, pickup points, and calculation.
+- The normal checkout path no longer depends on `/store/delivery/*` after Phase 6 UI wiring.
+- The selected shipping method is added to the cart with `apishipData` through the standard Medusa Store API cart shipping-method flow.
 - The Phase 5 implementation does not contain a new Delivery Hub compatibility facade.
 
 ### Phase 6 — Deactivate Delivery Hub from fresh baseline
