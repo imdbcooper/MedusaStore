@@ -5,7 +5,6 @@ import { Text } from "@medusajs/ui"
 
 type ShippingSummaryProps = {
   cart: HttpTypes.StoreCart
-  availableShippingMethods?: HttpTypes.StoreCartShippingOption[] | null
   className?: string
 }
 
@@ -13,11 +12,7 @@ function getApishipSummaryPointLabel(point?: ApishipPoint | null) {
   return [point?.name, point?.address].filter(Boolean).join(" · ")
 }
 
-const ShippingSummary = ({
-  cart,
-  availableShippingMethods,
-  className,
-}: ShippingSummaryProps) => {
+const ShippingSummary = ({ cart, className }: ShippingSummaryProps) => {
   const shippingMethod = cart.shipping_methods?.at(-1)
 
   if (!shippingMethod) {

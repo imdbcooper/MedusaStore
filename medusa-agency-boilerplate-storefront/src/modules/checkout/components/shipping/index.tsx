@@ -12,6 +12,14 @@ import { storefrontConfig } from "@lib/storefront-config"
 import {
   APISHIP_PICKUP_POINT_PROVIDER_ID,
   APISHIP_PICKUP_POINT_SHIPPING_OPTION_PROVIDER_DATA_ID,
+  getApishipCheckoutAddressRequestKey,
+  getApishipCheckoutContextKey,
+  getApishipPersistablePointId,
+  getApishipPointId,
+  getApishipTariffCost,
+  getApishipTariffId,
+  isApishipCheckoutReady,
+  normalizeApishipTariffForCheckout,
   type ApishipCalculation,
   type ApishipPoint,
   type ApishipProvider,
@@ -84,23 +92,6 @@ function formatPrice(
 }
 
 
-function getCheckoutAddressRequestKey(cart: HttpTypes.StoreCart) {
-  const address = cart.shipping_address
-
-  if (!address?.country_code || !address.city) {
-    return null
-  }
-
-  return [
-    address.country_code.toUpperCase(),
-    address.city,
-    address.postal_code,
-    address.address_1,
-  ]
-    .filter(Boolean)
-    .join("|")
-}
-
 function normalizeStorefrontCity(value?: string | null) {
   const normalized = value?.trim().toLocaleLowerCase("ru-RU")
 
@@ -115,27 +106,12 @@ function normalizeStorefrontCity(value?: string | null) {
     .trim()
 }
 
-function getApishipPointId(point?: ApishipPoint | null) {
-  const id = point?.id ?? point?.code
-  return id === undefined || id === null ? null : String(id)
-}
-
 function getApishipPointLabel(point: ApishipPoint) {
   return [point.name, point.address].filter(Boolean).join(" · ") || getApishipPointId(point) || "ПВЗ ApiShip"
 }
 
 function getApishipPointAddressLabel(point: ApishipPoint) {
   return [point.city, point.street, point.address].filter(Boolean).join(", ") || point.address || "Адрес уточняется"
-}
-
-function getApishipTariffId(tariff?: ApishipTariff | null) {
-  const id = tariff?.tariffId ?? tariff?.tariff_id ?? tariff?.id
-  return id === undefined || id === null ? null : String(id)
-}
-
-function getApishipTariffCost(tariff: ApishipTariff) {
-  const cost = tariff.deliveryCost ?? tariff.delivery_cost ?? tariff.amount ?? tariff.price
-  return typeof cost === "number" ? cost : null
 }
 
 function getApishipTariffEtaLabel(tariff: ApishipTariff) {
@@ -266,19 +242,13 @@ const Shipping: React.FC<ShippingProps> = ({
   const [shippingMethodId, setShippingMethodId] = useState<string | null>(
     preferredCartShippingMethodId
   )
-  const addressRequestKey = useMemo(() => getCheckoutAddressRequestKey(cart), [
+  const addressRequestKey = useMemo(() => getApishipCheckoutAddressRequestKey(cart), [
     cart.shipping_address?.address_1,
     cart.shipping_address?.city,
     cart.shipping_address?.country_code,
     cart.shipping_address?.postal_code,
   ])
-  const apishipContextKey = [
-    cart.id,
-    cart.currency_code,
-    String(cart.subtotal ?? ""),
-    addressRequestKey ?? "missing_address",
-    apishipShippingOption?.id ?? "missing_apiship_option",
-  ].join("|")
+  const apishipContextKey = getApishipCheckoutContextKey(cart, apishipShippingOption?.id)
   const savedApishipData = getSavedApishipData(cart)
 
   useEffect(() => {
@@ -406,15 +376,32 @@ const Shipping: React.FC<ShippingProps> = ({
     apishipTariffs.find(
       (tariff) => getApishipTariffId(tariff) === apishipState.selected_tariff_id
     ) ?? null
+  const normalizedSelectedApishipTariff = normalizeApishipTariffForCheckout(
+    selectedApishipTariff
+  )
+  const savedApishipPointId = getApishipPersistablePointId(savedApishipData?.point)
+  const savedApishipTariffId = getApishipTariffId(savedApishipData?.tariff)
+  const currentSavedApishipPoint = savedApishipPointId
+    ? apishipState.points.find(
+        (point) => getApishipPersistablePointId(point) === savedApishipPointId
+      ) ?? null
+    : null
+  const currentSavedApishipTariff = savedApishipTariffId
+    ? apishipTariffs.find((tariff) => getApishipTariffId(tariff) === savedApishipTariffId) ?? null
+    : null
   const isApishipSelectionCommitted = Boolean(
     apishipShippingOption?.id &&
       cartShippingMethod?.shipping_option_id === apishipShippingOption.id &&
-      savedApishipData?.tariff &&
-      (savedApishipData?.point || selectedApishipPoint)
+      currentSavedApishipPoint &&
+      currentSavedApishipTariff &&
+      isApishipCheckoutReady(cart, { contextKey: apishipContextKey })
   )
   const apishipMutationInFlight = apishipState.commit_status === "committing"
   const canSaveApishipSelection = Boolean(
-    apishipShippingOption && selectedApishipPoint && selectedApishipTariff
+    apishipShippingOption &&
+      selectedApishipPoint &&
+      getApishipPersistablePointId(selectedApishipPoint) &&
+      normalizedSelectedApishipTariff
   )
   const canContinueToPayment = isApishipSelectionCommitted || canSaveApishipSelection
   const visibleShippingMethods = shippingMethods
@@ -468,11 +455,16 @@ const Shipping: React.FC<ShippingProps> = ({
   const handleSaveApishipSelection = async (options?: {
     continue_to_payment?: boolean
   }) => {
-    if (!apishipShippingOption || !selectedApishipPoint || !selectedApishipTariff) {
+    if (
+      !apishipShippingOption ||
+      !selectedApishipPoint ||
+      !getApishipPersistablePointId(selectedApishipPoint) ||
+      !normalizedSelectedApishipTariff
+    ) {
       setApishipState((current) => ({
         ...current,
         commit_status: "blocked",
-        message: "Выберите валидный тариф и ПВЗ ApiShip перед переходом к оплате.",
+        message: "Выберите валидный тариф ApiShip с tariffId/providerKey/deliveryCost и ПВЗ с id перед переходом к оплате.",
       }))
       return false
     }
@@ -489,8 +481,9 @@ const Shipping: React.FC<ShippingProps> = ({
         cartId: cart.id,
         shippingOptionId: apishipShippingOption.id,
         apishipData: {
-          tariff: selectedApishipTariff,
+          tariff: normalizedSelectedApishipTariff,
           point: selectedApishipPoint,
+          contextKey: apishipContextKey,
         },
       })
       setShippingMethodId(apishipShippingOption.id)
@@ -815,15 +808,21 @@ const Shipping: React.FC<ShippingProps> = ({
                   {apishipTariffs.length > 0 ? (
                     <div className="grid gap-y-2">
                       {apishipTariffs.slice(0, 6).map((tariff, index) => {
-                        const tariffId = getApishipTariffId(tariff) ?? `tariff-${index}`
+                        const tariffId = getApishipTariffId(tariff)
+                        const isPersistable = Boolean(normalizeApishipTariffForCheckout(tariff))
                         const isSelected = tariffId === apishipState.selected_tariff_id
                         const cost = getApishipTariffCost(tariff)
+
+                        if (!tariffId) {
+                          return null
+                        }
 
                         return (
                           <label
                             key={tariffId}
                             className={clx(
-                              "flex cursor-pointer items-center justify-between rounded-rounded border p-3 text-ui-fg-muted txt-small",
+                              "flex items-center justify-between rounded-rounded border p-3 text-ui-fg-muted txt-small",
+                              isPersistable ? "cursor-pointer" : "cursor-not-allowed opacity-60",
                               isSelected
                                 ? "border-ui-border-interactive bg-ui-bg-base"
                                 : "border-ui-border-base bg-ui-bg-subtle"
@@ -835,7 +834,12 @@ const Shipping: React.FC<ShippingProps> = ({
                                 type="radio"
                                 name="apiship-tariff"
                                 checked={isSelected}
+                                disabled={!isPersistable}
                                 onChange={() => {
+                                  if (!isPersistable) {
+                                    return
+                                  }
+
                                   setApishipState((current) => ({
                                     ...current,
                                     selected_tariff_id: tariffId,
@@ -914,10 +918,7 @@ const Shipping: React.FC<ShippingProps> = ({
               <Text className="mb-1 text-ui-fg-base txt-medium-plus">
                 {checkoutCopy.method}
               </Text>
-                <ShippingSummary
-                  cart={cart}
-                  availableShippingMethods={shippingMethods}
-                />
+                <ShippingSummary cart={cart} />
             </div>
           )}
         </div>

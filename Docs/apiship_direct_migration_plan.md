@@ -204,13 +204,14 @@ Actions:
 - Implement the initial PVZ/pickup-point-first fallback UI as a list/search selector plus tariff selector; map UI is optional later hardening because it requires separate map integration and key management.
 - Save the selected ApiShip tariff/PVZ through the standard Medusa add-shipping-method flow with `data.apishipData`.
 - Gate payment progression in the storefront delivery step until a valid ApiShip tariff and PVZ are selected and the shipping method is saved.
+- Phase 6 fix hardens the frontend gate with a shared ApiShip checkout readiness predicate and normalizes persisted tariffs to the provider contract shape (`tariffId`, `providerKey`, `deliveryCost`); backend readiness/payment guard remains deferred to Phase 7+ hardening.
 - Keep legacy Delivery Hub Store API routes/modules in the repository as inactive historical residue; do not use `/store/delivery/*` in the normal checkout path.
 
 Exit criteria:
 
 - Normal checkout delivery UI calls direct ApiShip helpers instead of Delivery Hub data helpers/facades.
-- Shopper can choose an ApiShip PVZ and tariff and save the shipping method with `apishipData`.
-- Frontend-only payment progression gate is active in the shipping step.
+- Shopper can choose an ApiShip PVZ and tariff and save the shipping method with contract-shaped `apishipData`.
+- Frontend-only payment progression gate is active in the shipping step, payment step, and place-order buttons.
 - Backend readiness/payment guard is not added in this phase and remains deferred to Phase 7+.
 
 ### Phase 7 — Frontend readiness gate

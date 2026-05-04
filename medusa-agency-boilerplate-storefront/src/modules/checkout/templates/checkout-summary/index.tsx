@@ -1,4 +1,3 @@
-import { listCartShippingMethods } from "@lib/data/fulfillment"
 import { storefrontConfig } from "@lib/storefront-config"
 import { Heading, Text } from "@medusajs/ui"
 import ItemsPreviewTemplate from "@modules/cart/templates/preview"
@@ -8,8 +7,6 @@ import CartTotals from "@modules/common/components/cart-totals"
 import Divider from "@modules/common/components/divider"
 
 const CheckoutSummary = async ({ cart }: { cart: any }) => {
-  const shippingMethods = cart?.id ? await listCartShippingMethods(cart.id) : null
-
   return (
     <div className="sticky top-0 flex flex-col-reverse small:flex-col gap-y-8 py-8 small:py-0 ">
       <div className="w-full bg-white flex flex-col">
@@ -26,10 +23,7 @@ const CheckoutSummary = async ({ cart }: { cart: any }) => {
             <Text className="txt-medium-plus text-ui-fg-base mb-1">
               {storefrontConfig.copy.checkout.delivery}
             </Text>
-            <ShippingSummary
-              cart={cart}
-              availableShippingMethods={shippingMethods}
-            />
+            <ShippingSummary cart={cart} />
           </div>
         )}
         <CartTotals totals={cart} />

@@ -9,6 +9,7 @@ import {
 } from "@lib/constants"
 import { initiatePaymentSession } from "@lib/data/cart"
 import { storefrontConfig } from "@lib/storefront-config"
+import { isApishipCheckoutReady } from "@lib/util/apiship"
 import { CheckCircleSolid, CreditCard } from "@medusajs/icons"
 import { Button, Container, Heading, Text, clx } from "@medusajs/ui"
 import ErrorMessage from "@modules/checkout/components/error-message"
@@ -58,8 +59,8 @@ const Payment = ({
   const paidByGiftcard =
     cart?.gift_cards && cart?.gift_cards?.length > 0 && cart?.total === 0
 
-  const paymentReady =
-    (activeSession && cart?.shipping_methods.length !== 0) || paidByGiftcard
+  const apishipReady = isApishipCheckoutReady(cart)
+  const paymentReady = (activeSession && apishipReady) || paidByGiftcard
 
   const createQueryString = useCallback(
     (name: string, value: string) => {
@@ -78,6 +79,14 @@ const Payment = ({
   }
 
   const handleSubmit = async () => {
+    if (!paidByGiftcard && !apishipReady) {
+      setError("Выберите и сохраните валидную доставку ApiShip перед оплатой.")
+      router.push(pathname + "?" + createQueryString("step", "delivery"), {
+        scroll: false,
+      })
+      return
+    }
+
     setIsLoading(true)
 
     try {
@@ -120,8 +129,16 @@ const Payment = ({
   }
 
   useEffect(() => {
+    if (isOpen && !paidByGiftcard && !apishipReady) {
+      setError("Выберите и сохраните валидную доставку ApiShip перед оплатой.")
+      router.replace(pathname + "?" + createQueryString("step", "delivery"), {
+        scroll: false,
+      })
+      return
+    }
+
     setError(null)
-  }, [isOpen])
+  }, [apishipReady, createQueryString, isOpen, paidByGiftcard, pathname, router])
 
   const checkoutCopy = storefrontConfig.copy.checkout
   const commonCopy = storefrontConfig.copy.common
@@ -172,7 +189,13 @@ const Payment = ({
       </div>
       <div>
         <div className={isOpen ? "block" : "hidden"}>
-          {!paidByGiftcard && availablePaymentMethods?.length && (
+          {!paidByGiftcard && !apishipReady && (
+            <Text className="mb-4 text-ui-fg-muted txt-small">
+              Для оплаты нужно вернуться к доставке и сохранить валидный тариф и ПВЗ ApiShip.
+            </Text>
+          )}
+
+          {!paidByGiftcard && apishipReady && availablePaymentMethods?.length && (
             <>
               <RadioGroup
                 value={selectedPaymentMethod}
@@ -227,6 +250,7 @@ const Payment = ({
             onClick={handleSubmit}
             isLoading={isLoading}
             disabled={
+              (!paidByGiftcard && !apishipReady) ||
               (isStripeLike(selectedPaymentMethod) && !cardComplete) ||
               (!selectedPaymentMethod && !paidByGiftcard)
             }

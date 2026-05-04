@@ -4,6 +4,7 @@ import { isManual, isStripeLike, isYooKassa } from "@lib/constants"
 import { placeOrder } from "@lib/data/cart"
 import { getYooKassaPaymentStatus } from "@lib/data/payment"
 import { storefrontConfig } from "@lib/storefront-config"
+import { isApishipCheckoutReady } from "@lib/util/apiship"
 import {
   getYooKassaConfirmationUrl,
   getYooKassaPaymentId,
@@ -28,7 +29,7 @@ const PaymentButton: React.FC<PaymentButtonProps> = ({
     !cart.shipping_address ||
     !cart.billing_address ||
     !cart.email ||
-    (cart.shipping_methods?.length ?? 0) < 1
+    !isApishipCheckoutReady(cart)
 
   const paymentSession = cart.payment_collection?.payment_sessions?.[0]
   const checkoutCopy = storefrontConfig.copy.checkout
@@ -73,6 +74,11 @@ const YooKassaPaymentButton = ({
   const checkoutCopy = storefrontConfig.copy.checkout
 
   const handlePayment = async () => {
+    if (notReady) {
+      setErrorMessage("Выберите и сохраните валидную доставку ApiShip перед оформлением заказа.")
+      return
+    }
+
     setSubmitting(true)
     setErrorMessage(null)
 
@@ -183,6 +189,11 @@ const StripePaymentButton = ({
   const disabled = !stripe || !elements ? true : false
 
   const handlePayment = async () => {
+    if (notReady) {
+      setErrorMessage("Выберите и сохраните валидную доставку ApiShip перед оформлением заказа.")
+      return
+    }
+
     setSubmitting(true)
     setErrorMessage(null)
 
@@ -280,6 +291,11 @@ const ManualTestPaymentButton = ({
   }
 
   const handlePayment = async () => {
+    if (notReady) {
+      setErrorMessage("Выберите и сохраните валидную доставку ApiShip перед оформлением заказа.")
+      return
+    }
+
     setSubmitting(true)
     setErrorMessage(null)
 
