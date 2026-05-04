@@ -268,7 +268,10 @@ async function getCartIdForPaymentCollection(
   return cartId
 }
 
-async function getApishipReadinessCart(req: MedusaRequest, cartId?: string) {
+export async function getApishipReadinessCart(
+  req: MedusaRequest,
+  cartId?: string
+) {
   const normalizedCartId = toNonEmptyString(cartId)
 
   if (!normalizedCartId) {
@@ -296,7 +299,6 @@ async function getApishipReadinessCart(req: MedusaRequest, cartId?: string) {
       "shipping_methods.shipping_option.id",
       "shipping_methods.shipping_option.provider_id",
       "shipping_methods.shipping_option.data",
-      "shipping_methods.provider.id",
     ],
     filters: {
       id: normalizedCartId,
@@ -320,7 +322,6 @@ function isApishipShippingMethodLike(method?: unknown) {
   }
 
   const methodData = asRecord(method.data)
-  const provider = asRecord(method.provider)
   const shippingOption = asRecord(method.shipping_option)
   const shippingOptionData = asRecord(shippingOption?.data)
   const providerDataId =
@@ -335,7 +336,6 @@ function isApishipShippingMethodLike(method?: unknown) {
 
   return Boolean(
     method.provider_id === APISHIP_PICKUP_POINT_PROVIDER_ID ||
-      provider?.id === APISHIP_PICKUP_POINT_PROVIDER_ID ||
       shippingOption?.provider_id === APISHIP_PICKUP_POINT_PROVIDER_ID ||
       methodData?.provider_id === APISHIP_PICKUP_POINT_PROVIDER_ID ||
       providerDataId === APISHIP_PICKUP_POINT_SHIPPING_OPTION_PROVIDER_DATA_ID ||

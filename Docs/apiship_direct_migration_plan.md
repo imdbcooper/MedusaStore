@@ -216,7 +216,7 @@ Exit criteria:
 
 ### Phase 7 — Backend payment/readiness guard
 
-Status: complete for backend checkout hardening; live fulfillment/shipment execution remains Phase 8+.
+Status: complete for backend checkout hardening; Phase 7 review fix removed an invalid Query Graph field from the readiness cart retrieval; live fulfillment/shipment execution remains Phase 8+.
 
 Goal: prevent shoppers from initializing payment or placing an order unless the cart has a valid saved ApiShip pickup-point delivery selection.
 
