@@ -16,7 +16,7 @@
    - `GET /store/payment/yookassa`;
    - `GET /store/payment/yookassa/return`;
    - `POST /yookassa/webhook`;
-4. текущий поддерживаемый legacy provider scope через `GET /store/delivery/rates` как `provider_aware_v1` + safe-by-default env semantics;
+4. current delivery baseline smoke/evidence for ApiShip/Gorgo via direct `/store/apiship/*`, with live shipment execution default-off through `APISHIP_SHIPMENT_EXECUTION_ENABLED=false`;
 5. baseline integrity gates для `Phase 8 / tranche 1`:
    - root aggregated lint/typecheck path;
    - existing build + HTTP smoke path;
@@ -285,38 +285,29 @@ Expected behavior, который не считается регрессией:
 
 Проверяется только следующее:
 
-1. clean onboarding и startup не зависят от removed-provider env activation surface;
-2. historical DB residue from removed delivery provider остаётся только operator cleanup concern;
-3. route contract `GET /store/delivery/rates`;
-4. текущая selection semantics как `provider_aware_v1`, включая grouped provider/tariff selection и persistence в cart shipping method data.
+1. clean onboarding и startup не зависят от Delivery Hub/removed-provider env activation surface;
+2. historical DB residue from removed Delivery Hub provider остаётся только operator cleanup concern;
+3. direct `/store/apiship/*` remains the canonical Store API contract for current checkout;
+4. live external shipment execution stays default-off unless `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` is explicitly set.
 
 ### Канонические ожидания по env
 
-- отсутствие removed-provider env activation surface не должно ломать bootstrap, preflight и baseline runtime;
-- Delivery Hub/direct Yandex остаётся selected/default delivery contour;
-- historical delivery rows/provider ids в старых базах не считаются runtime env contract и очищаются отдельно только operator-approved процедурой.
+- отсутствие Delivery Hub/removed-provider env activation surface не должно ломать bootstrap, preflight и baseline runtime;
+- ApiShip/Gorgo remains the selected/default delivery contour for fresh templates;
+- historical Delivery Hub rows/provider ids в старых базах не считаются runtime env contract и очищаются отдельно только operator-approved процедурой.
 
 ### Канонический route contract
 
-Route: `GET /store/delivery/rates?cart_id=<id>&shipping_option_id=<id>`
+Current route family: direct `/store/apiship/*` Store API surfaces. Historical `GET /store/delivery/rates` belongs to the superseded provider-aware slice and is not current baseline guidance.
 
 Что должно быть true:
 
-- response всегда остается честным JSON contract, а не необработанным crash path;
-- при наличии тарифов route возвращает:
-  - `quotes`;
-  - `grouped_quotes`;
-  - `selected_quote`;
-  - `selection_mode: "provider_aware_v1"`;
-- `selected_quote` по контракту route остаётся default cheapest quote в flattened list, а grouped provider/tariff selection и persistence происходят storefront-side;
-- ETA mapping допускает legacy `daysMin/daysMax` и fallback на `workDays*` / `calendarDays*`.
-
-Expected non-crash responses:
-
-- `404`-style contract через JSON `code: cart_not_found`;
-- `200` + `code: shipping_address_incomplete`;
-- `200` + `code: legacy_provider_option_not_found`;
-- `200` + `code: legacy_provider_calculation_unavailable`.
+- current ApiShip Store API responses remain controlled JSON contracts, not raw crash paths;
+- checkout uses direct `/store/apiship/*` surfaces and standard Medusa shipping-method commit with ApiShip data;
+- no public `/store/delivery/*` compatibility facade is required for normal checkout;
+- absence of live ApiShip credentials must not turn into silent live shipment execution;
+- `APISHIP_SHIPMENT_EXECUTION_ENABLED=false` keeps external shipment creation disabled by default, and only exact `true` is treated as live-execution opt-in;
+- errors remain controlled and must not leak provider secrets, raw provider payloads, raw quote keys, or auth material.
 
 ### Что deliberately не считается regression внутри этого pack
 

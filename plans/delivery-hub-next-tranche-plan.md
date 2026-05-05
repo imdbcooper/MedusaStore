@@ -25,11 +25,11 @@
 
 ### 2. Keep storefront delivery boundary neutral and Delivery Hub first
 
-Поддержать current storefront boundary без восстановления удалённых provider-specific helpers/routes: Delivery Hub/direct Yandex остаётся selected/default delivery contour, а standard shipping method commit остаётся generic/provider-neutral.
+Поддержать current storefront boundary без восстановления удалённых provider-specific helpers/routes: Delivery Hub/direct Yandex is now previous-baseline historical context after ApiShip/Gorgo migration, а standard shipping method commit остаётся generic/provider-neutral.
 
 - Убедиться, что storefront call-sites используют neutral Delivery Hub save/clear/summary helpers и не зависят от удалённых provider-specific routes/helpers.
 - Держать neutral handoff mapping рядом с `delivery-hub` helper path; commit должен принимать только existing Medusa shipping option ids без provider-specific payloads.
-- Добавить explicit comments or contract docs у storefront call-sites: Delivery Hub/direct Yandex = selected/default contour, neutral save/clear/summary present, live shipment dispatch gated/not enabled.
+- Добавить explicit comments or contract docs у storefront call-sites: Delivery Hub/direct Yandex = previous-baseline historical contour; current baseline = ApiShip/Gorgo, neutral save/clear/summary present, live shipment dispatch gated/not enabled.
 
 ### 3. Add reviewable contract fixtures and focused tests
 

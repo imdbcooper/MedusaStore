@@ -1,6 +1,6 @@
 ---
 name: medusa-master-repo
-description: Use when working in this medusa-agency-boilerplate repository on planning, implementation, architecture, integrations, storefront strategy, Delivery Hub, or status tracking. This skill defines the local source-of-truth documents, current confirmed reality, and mandatory doc-update rules.
+description: Use when working in this medusa-agency-boilerplate repository on planning, implementation, architecture, integrations, storefront strategy, ApiShip/Gorgo delivery baseline, Delivery Hub historical context, or status tracking. This skill defines the local source-of-truth documents, current confirmed reality, and mandatory doc-update rules.
 ---
 
 # Medusa Master Repo
@@ -13,19 +13,23 @@ Read documents in this order:
 
 1. `Docs/current_work.md`
    - Canonical operational status: what is current, what is next, and what must not be reopened.
-2. `Docs/delivery_hub_documentation_index.md`
-   - Required when working on Delivery Hub. Defines current, historical, and evidence-only Delivery Hub docs.
-3. `Docs/delivery_hub_rework_plan.md`
-   - Accepted Delivery Hub phase plan.
-4. `Docs/master_repo_plan_v2.md`
+2. `Docs/apiship_direct_migration_plan.md`
+   - Accepted ApiShip/Gorgo direct baseline plan and canonical Store API decision.
+3. `Docs/apiship_baseline_smoke_evidence.md`
+   - Final deterministic evidence for the current ApiShip/Gorgo delivery baseline.
+4. `Docs/delivery_hub_physical_cleanup_manifest.md`
+   - Cleanup/quarantine manifest for previous Delivery Hub runtime residue.
+5. `Docs/delivery_hub_documentation_index.md`
+   - Delivery Hub historical/evidence documentation map.
+6. `Docs/master_repo_plan_v2.md`
    - Main repository roadmap and long-term direction.
-5. `Docs/plan_analysis.md`
+7. `Docs/plan_analysis.md`
    - Historical audit and factual gap analysis. Treat old sections as audit history when `current_work.md` is newer.
-6. `Docs/env_contract.md`
+8. `Docs/env_contract.md`
    - Read when working on startup, ports, env files, orchestration, or delivery/payment/notification env behavior.
-7. Relevant code, tests, package scripts, and config.
+9. Relevant code, tests, package scripts, and config.
    - Verified repository state wins over narrative docs.
-8. `Docs/master_repo_guide.md`, `Docs/medusa_project_summary.md`, and `Docs/Medusa.md`
+10. `Docs/master_repo_guide.md`, `Docs/medusa_project_summary.md`, and `Docs/Medusa.md`
    - Background only. Do not use their status tables as canonical.
 
 ## Current Known Reality
@@ -48,41 +52,33 @@ Before making claims, keep these verified facts in mind:
 - Payment baseline is YooKassa-first for this repository's default market.
 - The hosted YooKassa checkout return path was validated through review, order placement, and confirmed order page.
 - Historical legacy delivery/provider-aware work existed and may matter for history, but it is not the fresh-template default delivery contour.
-- Delivery Hub/direct Yandex is the selected delivery contour for fresh templates.
-- Old local/staging databases may contain historical delivery rows/provider ids. Treat them as operator-approved cleanup work, not active template behavior.
+- Current delivery baseline is ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship`; direct `/store/apiship/*` is the canonical Store API contract for normal checkout.
+- Delivery Hub/direct Yandex is previous-baseline/historical/quarantined context, not the fresh-template baseline. Old local/staging databases may contain historical delivery rows/provider ids. Treat them as operator-approved cleanup work, not active template behavior.
 - The preset-driven storefront customization stack is closed. Do not reopen it without new regression evidence.
 
-## Delivery Hub Reality
+## Delivery Baseline Reality
 
-Delivery Hub is governed by:
+Current ApiShip/Gorgo baseline is governed by:
 
 - `Docs/current_work.md`
-- `Docs/delivery_hub_documentation_index.md`
-- `Docs/delivery_hub_rework_plan.md`
-- `Docs/delivery_hub_spec.md`
+- `Docs/apiship_direct_migration_plan.md`
+- `Docs/apiship_baseline_smoke_evidence.md`
+- `Docs/env_contract.md`
 
-Current Delivery Hub status:
+Current delivery status:
 
-- Phases 0/1 through 8 are implemented and reviewed.
-- The Phase 8 diagnostic-fetch isolation follow-up is implemented: advanced diagnostic Store API reads are no longer part of the ordinary checkout product-flow effect and load only after diagnostics are explicitly requested.
-- Latest relevant commits:
-  - `fbf7a6d feat(delivery-hub): harden gated shipment execution`
-  - `aedaa6f test(delivery-hub): restore browser smoke coverage`
-- Browser-smoke gap is closed:
-  - `npm run smoke:delivery-hub-cutover:browser` PASS
-  - `npm run smoke:delivery-hub-rollback:browser` PASS
-  - `npm run typecheck` PASS
-  - `git diff --check` PASS
-- Phase 8 follow-up focused storefront utility/source test: `node --test src/lib/util/delivery-hub.spec.ts` PASS (`147/147`).
-- Shopper default mode is `warehouse_to_pickup_point`.
-- `dropoff_point_to_pickup_point` remains admin/diagnostic or advanced until explicitly validated for the intended live contour.
-- Customer-facing delivery price is separate from provider operational quote.
-- Checkout origin/warehouse resolution belongs to backend/admin settings, not public storefront env.
-- `Settings -> Delivery` is merchant setup plus advanced diagnostics, not the normal order shipment console.
-- Order shipment operations belong to the order admin surface.
-- Direct Yandex shipment execution remains gated and default-off through `DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED=false`.
+- Delivery Hub -> ApiShip/Gorgo migration is completed and confirmed for the committed baseline.
+- ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship` is the fresh-template delivery baseline.
+- Direct `/store/apiship/*` endpoints are the canonical Store API contract for normal checkout; do not reintroduce `/store/delivery/*` as the first-version facade.
+- `APISHIP_SHIPMENT_EXECUTION_ENABLED=false` is the safe default. Live external shipment execution requires the exact opt-in value `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` plus the existing readiness/idempotency guardrails.
+- Final baseline evidence is `Docs/apiship_baseline_smoke_evidence.md`.
 
-Do not treat old prompt files or old preview/cutover prose as current Delivery Hub instructions. Completed prompt artifacts were removed during the 2026-05-01 documentation cleanup.
+Delivery Hub previous-baseline status:
+
+- Delivery Hub/direct Yandex is historical/quarantined context, not current fresh-template guidance.
+- Runtime residue cleanup is recorded in `Docs/delivery_hub_physical_cleanup_manifest.md`.
+- Historical doc roles are indexed in `Docs/delivery_hub_documentation_index.md`.
+- Older Delivery Hub plans/specs/evidence may remain useful for audit history, but must not be copied as current operational instructions.
 
 ## Working Rules
 
@@ -92,8 +88,8 @@ Do not treat old prompt files or old preview/cutover prose as current Delivery H
 - Do not describe closed workstreams as open without new evidence.
 - Do not expose or write real credentials, tokens, auth headers, ciphertext, raw provider request/response bodies, raw Yandex DTOs, raw quote keys, raw offer ids, publishable key values, or secret admin keys into docs, logs, tests, admin responses, or storefront responses.
 - Do not silently flip local/dev provider traffic to live.
-- Do not enable `DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED=true` by default.
-- Do not reintroduce a legacy delivery fallback as an active checkout path.
+- Do not enable `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` by default; the only live-shipment opt-in is the exact value `true`.
+- Do not reintroduce Delivery Hub/direct Yandex or `/store/delivery/*` as an active checkout path.
 - Do not patch or fork official Medusa Admin unless explicitly scoped.
 - For unstable integration claims, verify against code, tests, official docs, or current runtime evidence.
 - Keep the distinction clear between:
@@ -106,12 +102,18 @@ Do not treat old prompt files or old preview/cutover prose as current Delivery H
 
 - `Docs/current_work.md`
   - Short operational source of truth.
+- `Docs/apiship_direct_migration_plan.md`
+  - Accepted ApiShip/Gorgo baseline migration plan and direct Store API decision.
+- `Docs/apiship_baseline_smoke_evidence.md`
+  - Final deterministic baseline smoke/evidence for ApiShip/Gorgo.
+- `Docs/delivery_hub_physical_cleanup_manifest.md`
+  - Cleanup/quarantine manifest for removed Delivery Hub runtime residue.
 - `Docs/delivery_hub_documentation_index.md`
-  - Delivery Hub doc map: current, historical, evidence-only, and removed prompt artifacts.
+  - Delivery Hub historical/evidence doc map.
 - `Docs/delivery_hub_rework_plan.md`
-  - Delivery Hub accepted phase plan.
+  - Previous-baseline Delivery Hub accepted phase plan; historical unless explicitly referenced for audit.
 - `Docs/delivery_hub_spec.md`
-  - Detailed Delivery Hub architecture/reference. Older preview/cutover sections may be historical.
+  - Detailed previous-baseline Delivery Hub architecture/reference. Treat as historical unless a current doc says otherwise.
 - `Docs/master_repo_plan_v2.md`
   - Main repository roadmap.
 - `Docs/plan_analysis.md`
@@ -135,14 +137,15 @@ Update `Docs/current_work.md` when:
 
 Update `Docs/delivery_hub_documentation_index.md` when:
 
-- Delivery Hub document roles change;
-- a Delivery Hub document is archived, removed, or becomes current;
+- Delivery Hub historical/evidence document roles change;
+- a Delivery Hub document is archived, removed, quarantined, or reclassified;
 - historical/evidence-only classification changes.
 
-Update `Docs/delivery_hub_rework_plan.md` when:
+Update `Docs/apiship_direct_migration_plan.md` / `Docs/apiship_baseline_smoke_evidence.md` when:
 
-- a Delivery Hub phase starts, is re-scoped, or is completed;
-- the phase order, Definition of Done, or validation policy changes.
+- ApiShip/Gorgo baseline decisions, Store API shape, evidence, or validation policy changes.
+
+Update Delivery Hub historical docs only when previous-baseline evidence/classification changes; do not make them current runtime guidance.
 
 Update `Docs/master_repo_plan_v2.md` when:
 
@@ -174,9 +177,10 @@ Update this skill when:
 When the user asks what is done, what is next, where to look, or asks for a prompt:
 
 1. Answer from `Docs/current_work.md`.
-2. Use `Docs/delivery_hub_documentation_index.md` for Delivery Hub doc roles.
-3. Use `Docs/delivery_hub_rework_plan.md` or `Docs/master_repo_plan_v2.md` for direction.
-4. Use `Docs/plan_analysis.md` only for audit/history.
-5. Verify code/tests before making fresh technical claims.
+2. Use `Docs/apiship_direct_migration_plan.md` and `Docs/apiship_baseline_smoke_evidence.md` for current delivery baseline direction/evidence.
+3. Use `Docs/delivery_hub_physical_cleanup_manifest.md` and `Docs/delivery_hub_documentation_index.md` for Delivery Hub quarantine/history.
+4. Use `Docs/master_repo_plan_v2.md` for broader roadmap direction.
+5. Use `Docs/plan_analysis.md` only for audit/history.
+6. Verify code/tests before making fresh technical claims.
 
-Current default next step after Phase 8 and its diagnostic-fetch follow-up is manual/local Delivery Hub verification on the full runtime: backend containers/database, backend app, and storefront, with live provider operations still gated and default-off.
+Current default delivery answer after the migration is: ApiShip/Gorgo is the baseline, direct `/store/apiship/*` is canonical, Delivery Hub is previous-baseline/quarantined, and live ApiShip shipment execution stays default-off unless `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` is explicitly set.

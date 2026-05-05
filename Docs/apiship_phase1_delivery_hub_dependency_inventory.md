@@ -1,10 +1,10 @@
 # ApiShip/Gorgo Migration Phase 1 — Delivery Hub Dependency Inventory
 
-> Status: Phase 1 discovery complete; documentation-only inventory.
+> Status: superseded historical discovery snapshot after ApiShip/Gorgo migration and Delivery Hub cleanup/quarantine.
 >
 > Date: 2026-05-04.
 >
-> Scope: current Delivery Hub dependency surfaces that must be deactivated, replaced, archived, or cleaned during the direct Delivery Hub -> ApiShip/Gorgo baseline pivot.
+> Scope: historical Phase 1 view of Delivery Hub dependency surfaces before runtime cutover/cleanup. Do not use this document as current baseline guidance; current status lives in [current_work.md](./current_work.md), [apiship_baseline_smoke_evidence.md](./apiship_baseline_smoke_evidence.md), and [delivery_hub_physical_cleanup_manifest.md](./delivery_hub_physical_cleanup_manifest.md).
 >
 > Source plan: [apiship_direct_migration_plan.md](./apiship_direct_migration_plan.md).
 
@@ -12,9 +12,9 @@
 
 ## Executive summary
 
-Phase 1 found Delivery Hub dependencies across backend fulfillment/provider configuration, backend Store API routes, admin diagnostics/order shipment surfaces, storefront checkout/data utilities, environment contracts, bootstrap/seed wiring, scripts/smokes/tests, and historical documentation.
+Phase 1 found Delivery Hub dependencies across backend fulfillment/provider configuration, backend Store API routes, admin diagnostics/order shipment surfaces, storefront checkout/data utilities, environment contracts, bootstrap/seed wiring, scripts/smokes/tests, and historical documentation. This inventory is now a superseded historical snapshot retained for audit traceability.
 
-The active fresh-template delivery baseline is still materially wired to Delivery Hub in runtime source. The key baseline blockers for Phase 2+ are:
+At the time of Phase 1, the active fresh-template delivery baseline was still materially wired to Delivery Hub in runtime source. Those blockers have since been superseded by the completed ApiShip/Gorgo migration and Delivery Hub cleanup/quarantine. Historical blockers captured at that time were:
 
 - backend fulfillment provider registration still resolves `./src/modules/deliveryhub` with provider code `deliveryhub` in [medusa-config.ts](../medusa-agency-boilerplate/medusa-config.ts);
 - the default fulfillment contour still declares `contour: "delivery_hub"`, provider code `deliveryhub`, and Yandex adapter posture in [fulfillment-contour-contract.ts](../medusa-agency-boilerplate/src/modules/fulfillment-contour-contract.ts);
@@ -84,7 +84,7 @@ Primary backend directories/files to revisit in Phase 2+:
 
 ### 2. Store API
 
-Delivery Hub owns the current public delivery Store API namespace. Phase 5 of the migration plan explicitly selects direct ApiShip `/store/apiship/*` endpoints and does not preserve `/store/delivery/*` as a first-version facade.
+Historical Phase 1 snapshot: Delivery Hub owned the public delivery Store API namespace at that time. The completed migration now uses direct ApiShip `/store/apiship/*` endpoints and does not preserve `/store/delivery/*` as a first-version facade.
 
 Current `/store/delivery/*` route files:
 
@@ -127,7 +127,7 @@ Current Delivery Hub env variables discovered:
 
 | File | Variables / contract | Phase 2+ disposition |
 | --- | --- | --- |
-| [.env.example](../.env.example) | `DELIVERY_HUB_ENCRYPTION_KEY`, `DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED`; comments state Delivery Hub/direct Yandex is default fulfillment contour. | Replace comments and variables with ApiShip/Gorgo env contract in runtime/env phase; do not keep Delivery Hub as fresh-template default. |
+| [.env.example](../.env.example) | Historical Phase 1 snapshot: at that time it listed `DELIVERY_HUB_ENCRYPTION_KEY`, `DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED`, and comments that treated Delivery Hub/direct Yandex as default fulfillment contour. | Superseded: current templates use ApiShip/Gorgo env contract with `APISHIP_SHIPMENT_EXECUTION_ENABLED=false`; do not use Delivery Hub as fresh-template default. |
 | [.env.template](../medusa-agency-boilerplate/.env.template) | Same backend Delivery Hub variables and default-contour comments. | Same as root env template. |
 | [.env.local.example](../medusa-agency-boilerplate-storefront/.env.local.example) | `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED`, `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED`, `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_CONNECTION_ID`, `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_DESTINATION_POINT_ID`, `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_ORIGIN_POINT_ID`, `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_WAREHOUSE_ID`, `NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED`. | Remove from fresh storefront baseline after ApiShip checkout is in place; introduce ApiShip public variables only if plugin/UI requires them. |
 | [docker-compose.yml](../docker-compose.yml) | Passes `DELIVERY_HUB_ENCRYPTION_KEY` and `DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED` to backend container. | Replace with ApiShip backend env if needed. |
@@ -207,7 +207,7 @@ Current source-of-truth and historical docs with Delivery Hub references:
 - Evidence/runbook docs: [delivery_hub_cutover_evidence_bundle.md](./delivery_hub_cutover_evidence_bundle.md), [delivery_hub_cutover_decision_record_template.md](./delivery_hub_cutover_decision_record_template.md), [delivery_hub_cutover_go_no_go_index.md](./delivery_hub_cutover_go_no_go_index.md), [delivery_hub_staging_unblock_handoff_runbook.md](./delivery_hub_staging_unblock_handoff_runbook.md), [delivery_hub_yandex_provider_contract_validation_runbook.md](./delivery_hub_yandex_provider_contract_validation_runbook.md), [delivery_hub_yandex_provider_contract_validation_evidence_20260424.md](./delivery_hub_yandex_provider_contract_validation_evidence_20260424.md), [delivery_hub_yandex_other_day_api_diagnostics_20260427.md](./delivery_hub_yandex_other_day_api_diagnostics_20260427.md).
 - Broader docs with Delivery Hub baseline mentions: [env_contract.md](./env_contract.md), [master_repo_plan_v2.md](./master_repo_plan_v2.md), [plan_analysis.md](./plan_analysis.md), [template_readiness_regression.md](./template_readiness_regression.md), [master_repo_guide.md](./master_repo_guide.md), [template_release_handoff.md](./template_release_handoff.md).
 
-Phase 2+ documentation rule: after ApiShip runtime cutover, mark Delivery Hub docs historical and update active docs so they no longer state Delivery Hub/direct Yandex as the fresh-template default.
+Post-cutover documentation rule: Delivery Hub docs are historical/evidence context. Active docs must state ApiShip/Gorgo as the fresh-template baseline and direct `/store/apiship/*` as canonical.
 
 ---
 
@@ -273,11 +273,11 @@ Do not delete these before ApiShip backend boot, checkout smoke, and fresh boots
 
 ---
 
-## Readiness for Phase 2
+## Historical readiness for Phase 2
 
-Phase 1 is ready for Phase 2 planning/implementation because the primary Delivery Hub dependency surfaces are identified and categorized.
+Phase 1 was ready for Phase 2 planning/implementation because the primary Delivery Hub dependency surfaces were identified and categorized. This section is retained as historical planning context only; the ApiShip/Gorgo baseline and cleanup have since completed.
 
-Phase 2 may start by preparing ApiShip/Gorgo backend baseline, but must keep the following guardrails:
+Historical Phase 2 guardrails were:
 
 - do not delete Delivery Hub runtime residue until ApiShip smoke/regression passes;
 - stage only Phase 2 files in the Phase 2 commit;

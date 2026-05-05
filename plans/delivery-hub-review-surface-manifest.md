@@ -1,6 +1,6 @@
 # Delivery Hub review-surface quarantine manifest
 
-> Cleanup status: legacy provider/runtime routes have been removed from the master template. Delivery Hub/direct Yandex is the selected delivery contour; live dispatch remains gated/not enabled; backend startup must not require new delivery env secrets. Existing old databases may still contain obsolete delivery rows/provider ids and require separate operator-approved cleanup if relevant.
+> Historical status: Delivery Hub/direct Yandex is previous-baseline context after the ApiShip/Gorgo migration. Current fresh-template delivery baseline is ApiShip/Gorgo with direct `/store/apiship/*`; retained Delivery Hub material is historical/evidence only unless a newer source-of-truth doc says otherwise.
 
 Generated: 2026-04-23T01:03:47Z
 Workspace: [`medusa-agency-boilerplate`](../)

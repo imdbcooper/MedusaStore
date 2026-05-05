@@ -1,6 +1,6 @@
 # Анализ плана репозитория-шаблона
 
-> Cleanup status: legacy provider/runtime routes have been removed from the master template. Delivery Hub/direct Yandex is the selected delivery contour; live dispatch remains gated/not enabled; backend startup must not require new delivery env secrets. Existing old databases may still contain obsolete delivery rows/provider ids and require separate operator-approved cleanup if relevant.
+> Delivery baseline status: this is an audit/history document. Current fresh-template delivery baseline is ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship`; direct `/store/apiship/*` is canonical. Delivery Hub/direct Yandex references below are historical unless explicitly marked current by newer source-of-truth docs.
 
 > Где смотреть текущий операционный статус:
 > [current_work.md](./current_work.md)
@@ -19,12 +19,12 @@
 Простыми словами:
 репозиторий уже не находится в статусе `поднимается только как демо-заготовка`, notification slice как первый integration slice Фазы 3 уже подтвержден, notification hardening v1 тоже закрыт и проверен, payment path v1 по YooKassa ранее подтвержден end-to-end для текущего scope, shipping track v1 подтвержден в рамках текущего slice: legacy provider `provider_aware_v1` прошёл runtime validation `2026-04-20`, provider активирован, route path подтверждён, grouped rates из the historical Yandex-backed rate path возвращаются, storefront сохраняет provider/tariff selection в cart shipping method data, а live multi-provider switching на одном тестовом адресе пока не подтверждено. **Checkout end-to-end validation v1** закрыт, **bootstrap idempotency hardening v1** подтвержден runtime validation, `storefront core baseline v1`, `VK ID v1`, `MTS Exolve`, `marketing layer v1`, `Payload CMS v1`, [`preset-driven-global-shell-contract-v1.md`](../plans/preset-driven-global-shell-contract-v1.md) и [`preset-driven-catalog-shell-contract-v1.md`](../plans/preset-driven-catalog-shell-contract-v1.md) уже закрыты как materialized workstreams. Template-readiness regression-pack уже формализован и больше не является следующим шагом. Финальный cross-preset regression pass по storefront browse matrix теперь тоже завершён verdict **PASS**, так что roadmap reality больше не читается как `Phase 6 started, broader customization still pending`: truthfully зафиксировано, что sanctioned **Фаза 6 storefront customization** закрыла весь preset-driven stack от [`NEXT_PUBLIC_STOREFRONT_PRESET`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:21) до typed [`landingSurfaces`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:317), adjacent [`productSurfaces.supportHighlights`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:323), [`listingSurfaces.productCard`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:324), typed global shell contract [`StorefrontShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:74) и typed catalog shell contract [`StorefrontCatalogShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:298), а readiness verdict для этой фазы уже = готово к следующему roadmap stage. Дополнительно closure-check `2026-04-20` truthfully закрыл и **Фазу 7**: tranche 3 больше не находится в docs-remediation состоянии, потому что repeat RC smoke pass прошёл после targeted fix в [`scripts/notification-smoke.sh`](../scripts/notification-smoke.sh), а активная реальность roadmap теперь уже = стартовавшая **Фаза 8** с materialized baseline integrity contour.
 
-Новый audit update `2026-04-21`:
+Historical audit update `2026-04-21`:
 
-- это не отменяет подтвержденный исторический legacy provider slice;
-- но direct Yandex investigation показал, что `Yandex Delivery` API умеет `warehouse -> PVZ` и `dropoff point -> PVZ` напрямую, а значит долгосрочный shipping direction truthfully смещается от агрегатор-зависимой архитектуры к собственному `delivery-hub`;
-- новый целевой foundation step для shipping теперь = свой расширяемый слой доставки с первым adapter `Yandex Delivery`, merchant-managed настройкой через admin extensions и без форка official admin;
-- source-of-truth спецификация зафиксирована в [delivery_hub_spec.md](./delivery_hub_spec.md).
+- это не отменяло подтвержденный исторический legacy provider slice;
+- direct Yandex investigation тогда сместил direction к собственному `delivery-hub` с первым adapter `Yandex Delivery`;
+- после завершённой миграции Delivery Hub -> ApiShip/Gorgo этот блок является historical context, not current baseline guidance;
+- current source of truth for delivery baseline is [current_work.md](./current_work.md), [apiship_direct_migration_plan.md](./apiship_direct_migration_plan.md), and [apiship_baseline_smoke_evidence.md](./apiship_baseline_smoke_evidence.md).
 
 
 ## Обновление статуса после подтверждения Фазы 2

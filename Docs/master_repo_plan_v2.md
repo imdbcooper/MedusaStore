@@ -1,6 +1,6 @@
 # Master Repo Plan v2
 
-> Cleanup status: legacy provider/runtime routes have been removed from the master template. Delivery Hub/direct Yandex is the selected delivery contour; live dispatch remains gated/not enabled; backend startup must not require new delivery env secrets. Existing old databases may still contain obsolete delivery rows/provider ids and require separate operator-approved cleanup if relevant.
+> Delivery baseline status: ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship` is the current fresh-template delivery baseline; direct `/store/apiship/*` is canonical. Delivery Hub/direct Yandex is previous-baseline historical/quarantined context, and old databases may still contain operator-cleanup residue.
 
 > Статус документа: рабочий план, синхронизированный с проверенным состоянием репозитория по состоянию на `2026-04-19`
 >
@@ -70,8 +70,8 @@
 - все core-решения первой версии по умолчанию выбираются для типового интернет-магазина в РФ;
 - пригодность для российского рынка важнее, чем наличие у Medusa более подробно задокументированного или более удобного first-party примера;
 - для payment track текущим направлением v1 считается **YooKassa-first path**;
-- исторический `historical provider-aware` slice остается подтвержденным промежуточным результатом, но для долгосрочного shipping track целевым следующим направлением теперь считается **собственный `delivery-hub` с первым adapter `Yandex Delivery`**;
-- принятое направление Delivery Hub rework `2026-04-30` зафиксировано в [`delivery_hub_rework_plan.md`](./delivery_hub_rework_plan.md): default shopper path = `warehouse_to_pickup_point`, customer-facing shipping price must be separated from provider operational quote, warehouse resolution belongs to backend/admin settings, and order shipment processing must move to order admin instead of living only in delivery settings diagnostics;
+- исторические `provider_aware_v1` и Delivery Hub/direct Yandex slices остаются подтвержденными промежуточными результатами, но current fresh-template shipping baseline теперь **ApiShip/Gorgo через `@gorgo/medusa-fulfillment-apiship`**;
+- принятое направление Delivery Hub rework `2026-04-30` теперь является previous-baseline history; current delivery direction and evidence are [`apiship_direct_migration_plan.md`](./apiship_direct_migration_plan.md) and [`apiship_baseline_smoke_evidence.md`](./apiship_baseline_smoke_evidence.md);
 - нецелевые для РФ решения можно изучать как reference pattern для архитектуры Medusa, но нельзя выбирать как `default v1 choice`, если пользователь явно не сменил рынок проекта.
 
 ---
