@@ -1,5 +1,7 @@
 import { describe, expect, it } from "@jest/globals"
 import {
+  APISHIP_CUSTOMER_PRICE_POLICY_ID,
+  APISHIP_CUSTOMER_PRICE_POLICY_VERSION,
   APISHIP_FULFILLMENT_PROVIDER_CODE,
   APISHIP_PICKUP_POINT_PROVIDER_ID,
   APISHIP_PICKUP_POINT_SHIPPING_OPTION_PROVIDER_DATA_ID,
@@ -175,6 +177,58 @@ describe("ApiShip checkout readiness guard", () => {
     expect(result.ready).toBe(false)
     expect(issueCodes(result)).toContain("context_mismatch")
   })
+
+  it("accepts absent customer price policy metadata for legacy carts", () => {
+    const cart = buildCartWithApishipData(buildApishipData())
+
+    expect(buildApishipCheckoutReadiness(cart)).toEqual({
+      ready: true,
+      issues: [],
+      contextKey: getApishipCheckoutContextKey(cart, "so_apiship"),
+    })
+  })
+
+  it("accepts well-formed customer price policy metadata when present", () => {
+    const cart = buildCartWithApishipData(
+      buildApishipData({
+        customerPricePolicy: buildCustomerPricePolicy(450),
+      })
+    )
+
+    expect(buildApishipCheckoutReadiness(cart)).toEqual({
+      ready: true,
+      issues: [],
+      contextKey: getApishipCheckoutContextKey(cart, "so_apiship"),
+    })
+  })
+
+  it("rejects malformed customer price policy metadata when present", () => {
+    const malformed = buildApishipCheckoutReadiness(
+      buildCartWithApishipData(
+        buildApishipData({
+          customerPricePolicy: {
+            policyId: "custom_policy",
+            policyVersion: 999,
+            source: "manual_override",
+            customerPriceAmount: "free",
+            providerDeliveryCost: 450,
+          },
+        })
+      )
+    )
+    const mismatched = buildApishipCheckoutReadiness(
+      buildCartWithApishipData(
+        buildApishipData({
+          customerPricePolicy: buildCustomerPricePolicy(499),
+        })
+      )
+    )
+
+    expect(malformed.ready).toBe(false)
+    expect(issueCodes(malformed)).toContain("customer_price_policy_malformed")
+    expect(mismatched.ready).toBe(false)
+    expect(issueCodes(mismatched)).toContain("customer_price_policy_mismatch")
+  })
 })
 
 function issueCodes(result: ReturnType<typeof buildApishipCheckoutReadiness>) {
@@ -231,6 +285,16 @@ function buildShippingMethod(overrides: Record<string, unknown> = {}) {
       id: APISHIP_PICKUP_POINT_PROVIDER_ID,
     },
     ...overrides,
+  }
+}
+
+function buildCustomerPricePolicy(amount: number) {
+  return {
+    policyId: APISHIP_CUSTOMER_PRICE_POLICY_ID,
+    policyVersion: APISHIP_CUSTOMER_PRICE_POLICY_VERSION,
+    source: "provider_delivery_cost",
+    customerPriceAmount: amount,
+    providerDeliveryCost: amount,
   }
 }
 

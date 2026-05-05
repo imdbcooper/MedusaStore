@@ -99,11 +99,29 @@ export type ApishipCalculationResponse = {
   calculation: ApishipCalculation
 }
 
+export const APISHIP_CUSTOMER_PRICE_POLICY_ID =
+  "apiship_delivery_cost_passthrough" as const
+export const APISHIP_CUSTOMER_PRICE_POLICY_VERSION = 1 as const
+
+export type ApishipCustomerPricePolicyMetadata = {
+  policyId: typeof APISHIP_CUSTOMER_PRICE_POLICY_ID
+  policyVersion: typeof APISHIP_CUSTOMER_PRICE_POLICY_VERSION
+  source: "provider_delivery_cost"
+  customerPriceAmount: number
+  providerDeliveryCost: number
+}
+
+export type ApishipCustomerPricePolicyResult = {
+  amount: number
+  metadata: ApishipCustomerPricePolicyMetadata
+}
+
 export type ApishipSelectedDeliveryData = {
   tariff: ApishipTariff
   point?: ApishipPoint
   mode?: ApishipDeliveryMode
   contextKey?: string
+  customerPricePolicy?: ApishipCustomerPricePolicyMetadata
 }
 
 export type ApishipAddShippingMethodData = {
@@ -212,6 +230,37 @@ export function getApishipTariffCost(tariff: ApishipTariff) {
     tariff.deliveryCost ?? tariff.delivery_cost ?? tariff.amount ?? tariff.price
 
   return typeof cost === "number" && Number.isFinite(cost) ? cost : null
+}
+
+export function applyApishipCustomerPricePolicy(
+  tariff?: ApishipTariff | null
+): ApishipCustomerPricePolicyResult | null {
+  if (!tariff) {
+    return null
+  }
+
+  const providerDeliveryCost = getApishipTariffCost(tariff)
+
+  if (providerDeliveryCost === null) {
+    return null
+  }
+
+  return {
+    amount: providerDeliveryCost,
+    metadata: {
+      policyId: APISHIP_CUSTOMER_PRICE_POLICY_ID,
+      policyVersion: APISHIP_CUSTOMER_PRICE_POLICY_VERSION,
+      source: "provider_delivery_cost",
+      customerPriceAmount: providerDeliveryCost,
+      providerDeliveryCost,
+    },
+  }
+}
+
+export function getApishipCustomerPricePolicyMetadata(
+  tariff?: ApishipTariff | null
+) {
+  return applyApishipCustomerPricePolicy(tariff)?.metadata ?? null
 }
 
 export function normalizeApishipTariffForCheckout(
@@ -481,7 +530,14 @@ export function shapeApishipCalculatePayload(
 export function shapeApishipAddShippingMethodData(
   input: ApishipSelectedDeliveryData
 ): ApishipAddShippingMethodData {
+  const customerPricePolicy = getApishipCustomerPricePolicyMetadata(input.tariff)
+
   return {
-    apishipData: input,
+    apishipData: customerPricePolicy
+      ? {
+          ...input,
+          customerPricePolicy,
+        }
+      : input,
   }
 }

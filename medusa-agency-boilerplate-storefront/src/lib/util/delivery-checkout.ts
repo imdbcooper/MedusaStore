@@ -8,6 +8,8 @@ import {
   hasApishipDeliveryModeConflict,
   isApishipShippingMethodLike,
   normalizeApishipTariffForCheckout,
+  applyApishipCustomerPricePolicy,
+  type ApishipCustomerPricePolicyMetadata,
   type ApishipDeliveryMode,
   type ApishipPoint,
   type ApishipTariff,
@@ -31,6 +33,8 @@ export type DeliveryCheckoutSummary = {
   point_label: string | null
   tariff_label: string | null
   mode: ApishipDeliveryMode
+  customer_price_amount: number | null
+  customer_price_policy: ApishipCustomerPricePolicyMetadata | null
 }
 
 export type DeliveryCheckoutReadinessState = {
@@ -213,6 +217,7 @@ function buildApishipDeliverySummary(
   selection: ApishipCheckoutSelection
 ): DeliveryCheckoutSummary {
   const mode = selection.mode ?? APISHIP_PICKUP_POINT_DELIVERY_MODE
+  const customerPricePolicy = applyApishipCustomerPricePolicy(selection.tariff)
 
   return {
     provider: DELIVERY_CHECKOUT_PROVIDER_APISHIP,
@@ -220,6 +225,8 @@ function buildApishipDeliverySummary(
     point_label: mode === APISHIP_COURIER_DELIVERY_MODE ? null : getApishipPointLabel(selection.point),
     tariff_label: getApishipTariffLabel(selection.tariff),
     mode,
+    customer_price_amount: customerPricePolicy?.amount ?? null,
+    customer_price_policy: customerPricePolicy?.metadata ?? null,
   }
 }
 

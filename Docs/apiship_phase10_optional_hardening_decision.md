@@ -70,6 +70,29 @@ UI scope is intentionally minimal: utilities and seed/bootstrap contract can rec
 
 ---
 
+## Richer pricing policy follow-up
+
+Follow-up status: an internal ApiShip customer-facing pricing policy layer has been added as a narrow hardening task.
+
+Policy contract:
+
+- policy id: `apiship_delivery_cost_passthrough`;
+- policy version: `1`;
+- semantics: customer-facing delivery price is a deterministic passthrough of the provider tariff `deliveryCost`;
+- metadata stores both `customerPriceAmount` and `providerDeliveryCost` so display/validation code does not have to treat provider operational tariff as the implicit buyer price.
+
+Guardrails for this follow-up:
+
+- direct `/store/apiship/*` remains the canonical Store API surface, with no public `/store/delivery/*` facade reintroduced;
+- the standard Medusa add-shipping-method payload remains `data.apishipData`; the new `customerPricePolicy` object is additive and non-breaking;
+- backend readiness accepts legacy carts without `customerPricePolicy`, but rejects malformed or mismatched policy metadata when present;
+- checkout summaries use the policy result for `customer_price_amount` and expose policy metadata for display/summary callers;
+- live ApiShip shipment execution remains default-off.
+
+Enforcement limit: this follow-up does not override the final Medusa shipping amount/payment amount calculation. Until a separately scoped provider override or plugin fork is approved, final shipping amount enforcement remains determined by the existing ApiShip/Gorgo provider and Medusa shipping-method flow; the new layer provides deterministic display metadata and backend consistency guardrails only.
+
+---
+
 ## Optional hardening backlog
 
 The following items remain allowed only as separately scoped post-cutover tasks:
@@ -79,7 +102,7 @@ The following items remain allowed only as separately scoped post-cutover tasks:
 | Backend readiness wrapper | Still covered by the ApiShip checkout readiness guard for the current pickup-point baseline; no backend-neutral wrapper was added in this follow-up. | Revisit only if backend routes need a stable provider-neutral contract again. |
 | Internal storefront provider-neutral checkout helpers | Implemented as a separately scoped post-smoke follow-up. | Keep this internal; direct `/store/apiship/*` remains canonical for Store API calls. |
 | Provider-neutral Store API facade | Not needed for the first baseline. | Do not reintroduce `/store/delivery/*` as a first-version ApiShip facade. |
-| Richer pricing policy | Not needed for the first baseline. | Keep customer-facing shipping price equal to the ApiShip tariff until a pricing-policy requirement is approved. |
+| Richer pricing policy | Implemented as a separately scoped internal passthrough policy follow-up. | Keep the policy additive and deterministic; final Medusa shipping amount enforcement still requires a separate provider override/plugin follow-up if product pricing diverges from provider `deliveryCost`. |
 | Courier delivery mode | Implemented as optional ApiShip courier contract/readiness/seed scaffold. | Keep pickup-point baseline-first; defer richer courier UI unless explicitly scoped; live execution stays default-off. |
 | ApiShip admin/operator diagnostics | Useful later, but not part of Phase 10. | Add only in a separate diagnostics task; do not expose credentials, auth headers, labels, documents, or live execution by default. |
 
@@ -119,6 +142,6 @@ Only separately approved follow-up tasks remain:
 
 - optional backend-neutral readiness wrappers, if backend routes need a stable provider-neutral contract beyond the current ApiShip guard;
 - richer courier buyer UI, if product requirements require an explicit storefront selector/toggle beyond the current contract/readiness scaffold;
-- optional pricing-policy work, if tariff passthrough is no longer sufficient;
+- optional pricing-policy provider override/plugin follow-up, if customer-facing price must diverge from ApiShip tariff passthrough and be enforced as the final Medusa shipping amount;
 - optional ApiShip admin/operator diagnostics;
 - optional physical cleanup of quarantined Delivery Hub residue with explicit safe scope and operator approval.

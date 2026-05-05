@@ -12,8 +12,12 @@ import {
   isDeliveryCheckoutReady,
 } from "./delivery-checkout.ts"
 import {
+  APISHIP_CUSTOMER_PRICE_POLICY_ID,
+  APISHIP_CUSTOMER_PRICE_POLICY_VERSION,
+  applyApishipCustomerPricePolicy,
   getApishipCheckoutContextKey,
   isApishipShippingMethodReady,
+  shapeApishipAddShippingMethodData,
 } from "./apiship.ts"
 
 const workspaceRoot = resolve(process.cwd(), "..")
@@ -46,6 +50,8 @@ test("valid ApiShip method maps to provider-neutral ready state and summary", ()
         point_label: "ПВЗ ApiShip · ул. Ленина, 1",
         tariff_label: "cdek · 123",
         mode: "pickup_point",
+        customer_price_amount: 450,
+        customer_price_policy: buildCustomerPricePolicy(450),
       },
     }
   )
@@ -56,6 +62,66 @@ test("valid ApiShip method maps to provider-neutral ready state and summary", ()
     point_label: "ПВЗ ApiShip · ул. Ленина, 1",
     tariff_label: "cdek · 123",
     mode: "pickup_point",
+    customer_price_amount: 450,
+    customer_price_policy: buildCustomerPricePolicy(450),
+  })
+})
+
+test("passthrough customer pricing policy returns deliveryCost with policy metadata", () => {
+  assert.deepEqual(
+    applyApishipCustomerPricePolicy({
+      tariffId: 123,
+      providerKey: "cdek",
+      deliveryCost: 450,
+    }),
+    {
+      amount: 450,
+      metadata: buildCustomerPricePolicy(450),
+    }
+  )
+})
+
+test("invalid customer pricing policy input fails on non-numeric deliveryCost", () => {
+  assert.equal(
+    applyApishipCustomerPricePolicy({
+      tariffId: 123,
+      providerKey: "cdek",
+      deliveryCost: Number.NaN,
+    }),
+    null
+  )
+  assert.equal(
+    applyApishipCustomerPricePolicy({
+      tariffId: 123,
+      providerKey: "cdek",
+      deliveryCost: "450" as never,
+    }),
+    null
+  )
+})
+
+test("saved ApiShip metadata adds non-breaking customerPricePolicy shape", () => {
+  const payload = shapeApishipAddShippingMethodData({
+    tariff: {
+      tariffId: 123,
+      providerKey: "cdek",
+      deliveryCost: 450,
+    },
+    point: { id: "pvz_apiship" },
+    contextKey: "context_1",
+  })
+
+  assert.deepEqual(payload, {
+    apishipData: {
+      tariff: {
+        tariffId: 123,
+        providerKey: "cdek",
+        deliveryCost: 450,
+      },
+      point: { id: "pvz_apiship" },
+      contextKey: "context_1",
+      customerPricePolicy: buildCustomerPricePolicy(450),
+    },
   })
 })
 
@@ -126,6 +192,8 @@ test("courier ApiShip readiness requires tariff but does not require a PVZ point
         point_label: null,
         tariff_label: "cdek · 456",
         mode: "courier",
+        customer_price_amount: 750,
+        customer_price_policy: buildCustomerPricePolicy(750),
       },
     }
   )
@@ -136,6 +204,8 @@ test("courier ApiShip readiness requires tariff but does not require a PVZ point
     point_label: null,
     tariff_label: "cdek · 456",
     mode: "courier",
+    customer_price_amount: 750,
+    customer_price_policy: buildCustomerPricePolicy(750),
   })
 
   assert.equal(
@@ -200,6 +270,8 @@ test("courier summary derives mode from shipping option contract without persist
     point_label: null,
     tariff_label: "cdek · 456",
     mode: "courier",
+    customer_price_amount: 750,
+    customer_price_policy: buildCustomerPricePolicy(750),
   })
   assert.deepEqual(
     buildDeliveryCheckoutReadinessState({
@@ -212,6 +284,8 @@ test("courier summary derives mode from shipping option contract without persist
       point_label: null,
       tariff_label: "cdek · 456",
       mode: "courier",
+      customer_price_amount: 750,
+      customer_price_policy: buildCustomerPricePolicy(750),
     }
   )
 })
@@ -244,6 +318,8 @@ test("default cart-shaped courier method derives summary mode from shipping opti
     point_label: null,
     tariff_label: "cdek · 456",
     mode: "courier",
+    customer_price_amount: 750,
+    customer_price_policy: buildCustomerPricePolicy(750),
   })
   assert.deepEqual(
     buildDeliveryCheckoutReadinessState({
@@ -256,6 +332,8 @@ test("default cart-shaped courier method derives summary mode from shipping opti
       point_label: null,
       tariff_label: "cdek · 456",
       mode: "courier",
+      customer_price_amount: 750,
+      customer_price_policy: buildCustomerPricePolicy(750),
     }
   )
 })
@@ -343,6 +421,16 @@ test("provider-neutral checkout layer does not introduce a public /store/deliver
     false
   )
 })
+
+function buildCustomerPricePolicy(amount: number) {
+  return {
+    policyId: APISHIP_CUSTOMER_PRICE_POLICY_ID,
+    policyVersion: APISHIP_CUSTOMER_PRICE_POLICY_VERSION,
+    source: "provider_delivery_cost",
+    customerPriceAmount: amount,
+    providerDeliveryCost: amount,
+  }
+}
 
 function buildReadyApishipCart() {
   return {

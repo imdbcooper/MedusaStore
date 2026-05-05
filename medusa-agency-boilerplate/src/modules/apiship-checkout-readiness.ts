@@ -15,6 +15,9 @@ export const APISHIP_COURIER_DELIVERY_MODE = "courier" as const
 
 export const APISHIP_CHECKOUT_READINESS_ERROR_CODE =
   "apiship_checkout_not_ready" as const
+export const APISHIP_CUSTOMER_PRICE_POLICY_ID =
+  "apiship_delivery_cost_passthrough" as const
+export const APISHIP_CUSTOMER_PRICE_POLICY_VERSION = 1 as const
 
 export type ApishipCheckoutReadinessIssueCode =
   | "shipping_method_missing"
@@ -28,6 +31,8 @@ export type ApishipCheckoutReadinessIssueCode =
   | "pickup_point_id_missing"
   | "delivery_mode_conflict"
   | "context_mismatch"
+  | "customer_price_policy_malformed"
+  | "customer_price_policy_mismatch"
 
 export type ApishipDeliveryMode =
   | typeof APISHIP_PICKUP_POINT_DELIVERY_MODE
@@ -149,6 +154,7 @@ export function buildApishipCheckoutReadiness(
   }
 
   const tariff = asRecord(apishipData?.tariff)
+  let providerDeliveryCost: number | null = null
 
   if (!tariff) {
     issues.push({
@@ -173,7 +179,9 @@ export function buildApishipCheckoutReadiness(
       })
     }
 
-    if (toFiniteNumber(tariff.deliveryCost) === null) {
+    providerDeliveryCost = toFiniteNumber(tariff.deliveryCost)
+
+    if (providerDeliveryCost === null) {
       issues.push({
         code: "delivery_cost_missing",
         message: "ApiShip numeric deliveryCost is required before payment.",
@@ -181,6 +189,12 @@ export function buildApishipCheckoutReadiness(
       })
     }
   }
+
+  validateCustomerPricePolicyMetadata({
+    apishipData,
+    providerDeliveryCost,
+    issues,
+  })
 
   const point = asRecord(apishipData?.point)
 
@@ -343,6 +357,61 @@ export async function getApishipReadinessCart(
   }
 
   return cart
+}
+
+function validateCustomerPricePolicyMetadata({
+  apishipData,
+  providerDeliveryCost,
+  issues,
+}: {
+  apishipData: Record<string, unknown> | null
+  providerDeliveryCost: number | null
+  issues: ApishipCheckoutReadinessIssue[]
+}) {
+  if (!apishipData || apishipData.customerPricePolicy === undefined) {
+    return
+  }
+
+  const metadata = asRecord(apishipData.customerPricePolicy)
+
+  if (!metadata) {
+    issues.push({
+      code: "customer_price_policy_malformed",
+      message: "ApiShip customer price policy metadata must be an object when present.",
+      field: "shipping_methods.data.apishipData.customerPricePolicy",
+    })
+    return
+  }
+
+  const customerPriceAmount = toFiniteNumber(metadata.customerPriceAmount)
+  const metadataProviderDeliveryCost = toFiniteNumber(metadata.providerDeliveryCost)
+  const hasExpectedShape =
+    metadata.policyId === APISHIP_CUSTOMER_PRICE_POLICY_ID &&
+    metadata.policyVersion === APISHIP_CUSTOMER_PRICE_POLICY_VERSION &&
+    metadata.source === "provider_delivery_cost" &&
+    customerPriceAmount !== null &&
+    metadataProviderDeliveryCost !== null
+
+  if (!hasExpectedShape) {
+    issues.push({
+      code: "customer_price_policy_malformed",
+      message: "ApiShip customer price policy metadata has an unsupported id, version, source, or amount shape.",
+      field: "shipping_methods.data.apishipData.customerPricePolicy",
+    })
+    return
+  }
+
+  if (
+    providerDeliveryCost !== null &&
+    (customerPriceAmount !== providerDeliveryCost ||
+      metadataProviderDeliveryCost !== providerDeliveryCost)
+  ) {
+    issues.push({
+      code: "customer_price_policy_mismatch",
+      message: "ApiShip customer price policy metadata must match the persisted tariff deliveryCost passthrough amount.",
+      field: "shipping_methods.data.apishipData.customerPricePolicy",
+    })
+  }
 }
 
 function getApishipDeliveryModeResolutionFromShippingMethod(
