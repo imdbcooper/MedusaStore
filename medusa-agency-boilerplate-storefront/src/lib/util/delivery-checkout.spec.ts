@@ -42,6 +42,7 @@ test("valid ApiShip method maps to provider-neutral ready state and summary", ()
         label: "ApiShip",
         point_label: "ПВЗ ApiShip · ул. Ленина, 1",
         tariff_label: "cdek · 123",
+        mode: "pickup_point",
       },
     }
   )
@@ -51,6 +52,7 @@ test("valid ApiShip method maps to provider-neutral ready state and summary", ()
     label: "ApiShip",
     point_label: "ПВЗ ApiShip · ул. Ленина, 1",
     tariff_label: "cdek · 123",
+    mode: "pickup_point",
   })
 })
 
@@ -98,6 +100,57 @@ test("missing tariff/point/context mismatch maps to not-ready with provider-neut
       contextKey: "different_checkout_context",
     }).reason,
     "context_mismatch"
+  )
+})
+
+test("courier ApiShip readiness requires tariff but does not require a PVZ point", () => {
+  const cart = buildReadyApishipCourierCart()
+  const contextKey = getApishipCheckoutContextKey(cart, "so_apiship_courier")
+
+  assert.deepEqual(
+    buildDeliveryCheckoutReadinessState(cart, {
+      contextKey,
+      shippingOptionId: "so_apiship_courier",
+    }),
+    {
+      provider: "apiship",
+      ready: true,
+      reason: null,
+      contextKey,
+      summary: {
+        provider: "apiship",
+        label: "ApiShip courier",
+        point_label: null,
+        tariff_label: "cdek · 456",
+        mode: "courier",
+      },
+    }
+  )
+  assert.equal(isDeliveryCheckoutReady(cart, { contextKey }), true)
+  assert.deepEqual(buildDeliveryCheckoutSummary(cart.shipping_methods[0]), {
+    provider: "apiship",
+    label: "ApiShip courier",
+    point_label: null,
+    tariff_label: "cdek · 456",
+    mode: "courier",
+  })
+
+  assert.equal(
+    buildDeliveryCheckoutReadinessState({
+      ...cart,
+      shipping_methods: [
+        {
+          ...cart.shipping_methods[0],
+          data: {
+            apishipData: {
+              mode: "courier",
+              contextKey: cart.shipping_methods[0].data.apishipData.contextKey,
+            },
+          },
+        },
+      ],
+    }).reason,
+    "tariff_missing"
   )
 })
 
@@ -201,6 +254,62 @@ function buildReadyApishipCart() {
           provider_id: "apiship_apiship",
           data: {
             id: "apiship_doortopoint",
+            provider_code: "apiship",
+          },
+        },
+      },
+    ],
+  }
+}
+
+function buildReadyApishipCourierCart() {
+  return {
+    id: "cart_delivery_checkout_courier",
+    currency_code: "rub",
+    subtotal: 2400,
+    shipping_address: {
+      country_code: "ru",
+      city: "Moscow",
+      postal_code: "101000",
+      address_1: "Courier street 1",
+    },
+    shipping_methods: [
+      {
+        id: "sm_apiship_courier",
+        shipping_option_id: "so_apiship_courier",
+        provider_id: "apiship_apiship",
+        data: {
+          apishipData: {
+            tariff: {
+              tariffId: 456,
+              providerKey: "cdek",
+              deliveryCost: 750,
+            },
+            mode: "courier",
+            contextKey: getApishipCheckoutContextKey(
+              {
+                id: "cart_delivery_checkout_courier",
+                currency_code: "rub",
+                subtotal: 2400,
+                shipping_address: {
+                  country_code: "ru",
+                  city: "Moscow",
+                  postal_code: "101000",
+                  address_1: "Courier street 1",
+                },
+              },
+              "so_apiship_courier"
+            ),
+          },
+          provider_code: "apiship",
+        },
+        shipping_option: {
+          id: "so_apiship_courier",
+          provider_id: "apiship_apiship",
+          data: {
+            id: "apiship_doortodoor",
+            deliveryType: 1,
+            pickupType: 1,
             provider_code: "apiship",
           },
         },

@@ -6,8 +6,12 @@ import {
 
 export const APISHIP_PICKUP_POINT_SHIPPING_OPTION_PROVIDER_DATA_ID =
   "apiship_doortopoint" as const
+export const APISHIP_COURIER_SHIPPING_OPTION_PROVIDER_DATA_ID =
+  "apiship_doortodoor" as const
 export const APISHIP_PICKUP_POINT_PROVIDER_ID = "apiship_apiship" as const
 export const APISHIP_FULFILLMENT_PROVIDER_CODE = "apiship" as const
+export const APISHIP_PICKUP_POINT_DELIVERY_MODE = "pickup_point" as const
+export const APISHIP_COURIER_DELIVERY_MODE = "courier" as const
 
 export const APISHIP_CHECKOUT_READINESS_ERROR_CODE =
   "apiship_checkout_not_ready" as const
@@ -23,6 +27,10 @@ export type ApishipCheckoutReadinessIssueCode =
   | "pickup_point_missing"
   | "pickup_point_id_missing"
   | "context_mismatch"
+
+export type ApishipDeliveryMode =
+  | typeof APISHIP_PICKUP_POINT_DELIVERY_MODE
+  | typeof APISHIP_COURIER_DELIVERY_MODE
 
 export type ApishipCheckoutReadinessIssue = {
   code: ApishipCheckoutReadinessIssueCode
@@ -106,10 +114,12 @@ export function buildApishipCheckoutReadiness(
   if (!isApishipShippingMethodLike(method)) {
     issues.push({
       code: "shipping_method_not_apiship",
-      message: "Selected shipping method is not an ApiShip pickup-point method.",
+      message: "Selected shipping method is not an ApiShip method.",
       field: "shipping_methods",
     })
   }
+
+  const deliveryMode = getApishipDeliveryModeFromShippingMethod(method)
 
   const apishipData = getApishipDataFromShippingMethod(method)
 
@@ -157,18 +167,20 @@ export function buildApishipCheckoutReadiness(
 
   const point = asRecord(apishipData?.point)
 
-  if (!point) {
-    issues.push({
-      code: "pickup_point_missing",
-      message: "ApiShip pickup point is required before payment.",
-      field: "shipping_methods.data.apishipData.point",
-    })
-  } else if (!toNonEmptyString(point.id)) {
-    issues.push({
-      code: "pickup_point_id_missing",
-      message: "ApiShip pickup point id is required before payment.",
-      field: "shipping_methods.data.apishipData.point.id",
-    })
+  if (deliveryMode === APISHIP_PICKUP_POINT_DELIVERY_MODE) {
+    if (!point) {
+      issues.push({
+        code: "pickup_point_missing",
+        message: "ApiShip pickup point is required before payment.",
+        field: "shipping_methods.data.apishipData.point",
+      })
+    } else if (!toNonEmptyString(point.id)) {
+      issues.push({
+        code: "pickup_point_id_missing",
+        message: "ApiShip pickup point id is required before payment.",
+        field: "shipping_methods.data.apishipData.point.id",
+      })
+    }
   }
 
   const shippingOptionId = getShippingMethodOptionId(method)
@@ -316,6 +328,31 @@ export async function getApishipReadinessCart(
   return cart
 }
 
+function getApishipDeliveryModeFromShippingMethod(
+  method?: unknown
+): ApishipDeliveryMode {
+  if (!isRecord(method)) {
+    return APISHIP_PICKUP_POINT_DELIVERY_MODE
+  }
+
+  const methodData = asRecord(method.data)
+  const shippingOption = asRecord(method.shipping_option)
+  const shippingOptionData = asRecord(shippingOption?.data)
+  const apishipData = getApishipDataFromShippingMethod(method)
+  const providerDataId = getShippingMethodProviderDataId(method)
+  const deliveryType = shippingOptionData?.deliveryType ?? methodData?.deliveryType
+
+  if (
+    apishipData?.mode === APISHIP_COURIER_DELIVERY_MODE ||
+    providerDataId === APISHIP_COURIER_SHIPPING_OPTION_PROVIDER_DATA_ID ||
+    deliveryType === 1
+  ) {
+    return APISHIP_COURIER_DELIVERY_MODE
+  }
+
+  return APISHIP_PICKUP_POINT_DELIVERY_MODE
+}
+
 function isApishipShippingMethodLike(method?: unknown) {
   if (!isRecord(method)) {
     return false
@@ -324,21 +361,14 @@ function isApishipShippingMethodLike(method?: unknown) {
   const methodData = asRecord(method.data)
   const shippingOption = asRecord(method.shipping_option)
   const shippingOptionData = asRecord(shippingOption?.data)
-  const providerDataId =
-    methodData?.id ??
-    methodData?.provider_data_id ??
-    methodData?.providerDataId ??
-    methodData?.code ??
-    shippingOptionData?.id ??
-    shippingOptionData?.provider_data_id ??
-    shippingOptionData?.providerDataId ??
-    shippingOptionData?.code
+  const providerDataId = getShippingMethodProviderDataId(method)
 
   return Boolean(
     method.provider_id === APISHIP_PICKUP_POINT_PROVIDER_ID ||
       shippingOption?.provider_id === APISHIP_PICKUP_POINT_PROVIDER_ID ||
       methodData?.provider_id === APISHIP_PICKUP_POINT_PROVIDER_ID ||
       providerDataId === APISHIP_PICKUP_POINT_SHIPPING_OPTION_PROVIDER_DATA_ID ||
+      providerDataId === APISHIP_COURIER_SHIPPING_OPTION_PROVIDER_DATA_ID ||
       methodData?.provider_code === APISHIP_FULFILLMENT_PROVIDER_CODE ||
       shippingOptionData?.provider_code === APISHIP_FULFILLMENT_PROVIDER_CODE
   )
@@ -353,6 +383,28 @@ function getApishipDataFromShippingMethod(method?: unknown) {
   const apishipData = asRecord(methodData?.apishipData)
 
   return apishipData
+}
+
+function getShippingMethodProviderDataId(method?: unknown) {
+  if (!isRecord(method)) {
+    return null
+  }
+
+  const methodData = asRecord(method.data)
+  const shippingOption = asRecord(method.shipping_option)
+  const shippingOptionData = asRecord(shippingOption?.data)
+
+  return (
+    methodData?.id ??
+    methodData?.provider_data_id ??
+    methodData?.providerDataId ??
+    methodData?.code ??
+    shippingOptionData?.id ??
+    shippingOptionData?.provider_data_id ??
+    shippingOptionData?.providerDataId ??
+    shippingOptionData?.code ??
+    null
+  )
 }
 
 function getShippingMethodOptionId(method?: unknown) {

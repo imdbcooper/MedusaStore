@@ -108,11 +108,18 @@ const DEFAULT_PUBLISHABLE_KEY_TITLE = "Webshop";
 const DEFAULT_PAYMENT_PROVIDER_ID = "pp_system_default";
 const YOOKASSA_PAYMENT_PROVIDER_ID = "pp_yookassa_yookassa";
 const APISHIP_PICKUP_POINT_OPTION_ID = "apiship_doortopoint";
+const APISHIP_COURIER_OPTION_ID = "apiship_doortodoor";
 const APISHIP_PICKUP_POINT_SHIPPING_OPTION_NAME = "ApiShip — Пункт выдачи";
+const APISHIP_COURIER_SHIPPING_OPTION_NAME = "ApiShip — Курьер";
 const APISHIP_PICKUP_POINT_SHIPPING_OPTION_TYPE = {
   label: "ApiShip pickup point",
   description: "ApiShip pickup-point/PVZ delivery baseline.",
   code: "apiship-pickup-point",
+};
+const APISHIP_COURIER_SHIPPING_OPTION_TYPE = {
+  label: "ApiShip courier",
+  description: "ApiShip courier door-to-door delivery optional mode.",
+  code: "apiship-courier",
 };
 const BASELINE_HARDENING_HINT =
   "Resolve the conflicting baseline entities on this database or rerun bootstrap on a clean clone.";
@@ -383,12 +390,22 @@ const buildApiShipPickupPointShippingOptionData = () => ({
   baseline: "apiship_pickup_point_first",
 });
 
+const buildApiShipCourierShippingOptionData = () => ({
+  id: APISHIP_COURIER_OPTION_ID,
+  deliveryType: 1,
+  pickupType: 1,
+  baseline: "apiship_courier_optional",
+});
+
 export const __APISHIP_BASELINE_SMOKE_CONTRACT__ = {
   provider_id: APISHIP_FULFILLMENT_PROVIDER_ID,
   shipping_option_data_id: APISHIP_PICKUP_POINT_OPTION_ID,
   shipping_option_data: buildApiShipPickupPointShippingOptionData(),
+  courier_shipping_option_data_id: APISHIP_COURIER_OPTION_ID,
+  courier_shipping_option_data: buildApiShipCourierShippingOptionData(),
   price_type: "calculated",
   shipping_option_name: APISHIP_PICKUP_POINT_SHIPPING_OPTION_NAME,
+  courier_shipping_option_name: APISHIP_COURIER_SHIPPING_OPTION_NAME,
 } as const;
 
 const shippingOptionMatchesApiShipPickupPointBaseline = (
@@ -398,6 +415,17 @@ const shippingOptionMatchesApiShipPickupPointBaseline = (
     candidate.provider_id === APISHIP_FULFILLMENT_PROVIDER_ID &&
     candidate.data?.id === APISHIP_PICKUP_POINT_OPTION_ID &&
     candidate.data?.deliveryType === 2 &&
+    candidate.data?.pickupType === 1
+  );
+};
+
+const shippingOptionMatchesApiShipCourierContract = (
+  candidate: ShippingOptionRecord
+) => {
+  return (
+    candidate.provider_id === APISHIP_FULFILLMENT_PROVIDER_ID &&
+    candidate.data?.id === APISHIP_COURIER_OPTION_ID &&
+    candidate.data?.deliveryType === 1 &&
     candidate.data?.pickupType === 1
   );
 };
@@ -892,6 +920,36 @@ export default async function seedDemoData({ container }: ExecArgs) {
   } else {
     logger.info(
       `Reusing ApiShip pickup-point shipping option "${apiShipPickupPointShippingOption.name ?? apiShipPickupPointShippingOption.id}".`
+    );
+  }
+
+  const apiShipCourierShippingOption = ensureUniqueMatch(
+    ((existingShippingOptions as ShippingOptionRecord[] | undefined) ?? []).filter(
+      shippingOptionMatchesApiShipCourierContract
+    ),
+    `ApiShip courier shipping options for provider "${APISHIP_FULFILLMENT_PROVIDER_ID}"`
+  );
+
+  if (!apiShipCourierShippingOption) {
+    await createShippingOptionsWorkflow(container).run({
+      input: [
+        {
+          name: APISHIP_COURIER_SHIPPING_OPTION_NAME,
+          price_type: "calculated",
+          provider_id: APISHIP_FULFILLMENT_PROVIDER_ID,
+          service_zone_id: serviceZoneId,
+          shipping_profile_id: shippingProfile.id,
+          type: APISHIP_COURIER_SHIPPING_OPTION_TYPE,
+          data: buildApiShipCourierShippingOptionData(),
+        },
+      ],
+    });
+    logger.info(
+      `Created ApiShip courier shipping option "${APISHIP_COURIER_SHIPPING_OPTION_NAME}".`
+    );
+  } else {
+    logger.info(
+      `Reusing ApiShip courier shipping option "${apiShipCourierShippingOption.name ?? apiShipCourierShippingOption.id}".`
     );
   }
 

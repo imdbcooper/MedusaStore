@@ -1,9 +1,13 @@
 import {
   getApishipCheckoutContextKey,
+  APISHIP_COURIER_DELIVERY_MODE,
+  APISHIP_PICKUP_POINT_DELIVERY_MODE,
   getApishipDataFromShippingMethod,
+  getApishipDeliveryModeFromShippingMethod,
   getApishipPersistablePointId,
   isApishipShippingMethodLike,
   normalizeApishipTariffForCheckout,
+  type ApishipDeliveryMode,
   type ApishipPoint,
   type ApishipTariff,
 } from "./apiship.ts"
@@ -25,6 +29,7 @@ export type DeliveryCheckoutSummary = {
   label: string
   point_label: string | null
   tariff_label: string | null
+  mode: ApishipDeliveryMode
 }
 
 export type DeliveryCheckoutReadinessState = {
@@ -52,11 +57,13 @@ type DeliveryCheckoutReadinessOptions = {
   provider?: DeliveryCheckoutProvider
   contextKey?: string | null
   shippingOptionId?: string | null
+  mode?: ApishipDeliveryMode | null
 }
 
 type ApishipCheckoutSelection = {
   tariff?: ApishipTariff | null
   point?: ApishipPoint | null
+  mode?: ApishipDeliveryMode | null
   contextKey?: string | null
 }
 
@@ -129,6 +136,7 @@ function buildApishipDeliveryCheckoutReadinessState(
   }
 
   const selection = getApishipDeliverySelection(method)
+  const deliveryMode = options.mode ?? getApishipDeliveryModeFromShippingMethod(method)
 
   if (!selection) {
     return buildNotReadyState(
@@ -150,7 +158,7 @@ function buildApishipDeliveryCheckoutReadinessState(
 
   const pointId = getApishipPersistablePointId(selection.point)
 
-  if (!pointId) {
+  if (deliveryMode === APISHIP_PICKUP_POINT_DELIVERY_MODE && !pointId) {
     return buildNotReadyState(
       DELIVERY_CHECKOUT_PROVIDER_APISHIP,
       "pickup_point_missing",
@@ -173,6 +181,7 @@ function buildApishipDeliveryCheckoutReadinessState(
     contextKey,
     summary: buildApishipDeliverySummary({
       ...selection,
+      mode: deliveryMode,
       tariff,
     }),
   }
@@ -187,11 +196,14 @@ function getApishipDeliverySelection(
 function buildApishipDeliverySummary(
   selection: ApishipCheckoutSelection
 ): DeliveryCheckoutSummary {
+  const mode = selection.mode ?? APISHIP_PICKUP_POINT_DELIVERY_MODE
+
   return {
     provider: DELIVERY_CHECKOUT_PROVIDER_APISHIP,
-    label: "ApiShip",
-    point_label: getApishipPointLabel(selection.point),
+    label: mode === APISHIP_COURIER_DELIVERY_MODE ? "ApiShip courier" : "ApiShip",
+    point_label: mode === APISHIP_COURIER_DELIVERY_MODE ? null : getApishipPointLabel(selection.point),
     tariff_label: getApishipTariffLabel(selection.tariff),
+    mode,
   }
 }
 

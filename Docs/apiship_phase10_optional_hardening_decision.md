@@ -47,6 +47,29 @@ This follow-up does not enable courier delivery, richer pricing policy, ApiShip 
 
 ---
 
+## Courier delivery follow-up
+
+Follow-up status: ApiShip courier delivery is now implemented as an **optional contract/scaffold** next to the pickup-point baseline.
+
+Confirmed installed Gorgo provider contract:
+
+- courier option id: `apiship_doortodoor`;
+- courier option data: `deliveryType: 1`, `pickupType: 1`, name `From door to door`;
+- pickup-point baseline remains `apiship_doortopoint` with `deliveryType: 2`, `pickupType: 1`.
+
+Guardrails for this follow-up:
+
+- pickup-point/PVZ remains the baseline-first buyer flow;
+- direct `/store/apiship/*` remains the canonical Store API surface, with no public `/store/delivery/*` facade reintroduced;
+- checkout/order commits still use the standard Medusa shipping-method data payload with `data.apishipData`;
+- courier readiness requires a valid ApiShip tariff but intentionally does not require a PVZ point id;
+- pickup-point readiness still requires a PVZ point id;
+- live ApiShip shipment execution remains default-off and still requires `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` before fulfillment/shipment execution.
+
+UI scope is intentionally minimal: utilities and seed/bootstrap contract can recognize courier mode, but a richer buyer-facing courier selector/toggle remains deferred to a dedicated checkout UI task.
+
+---
+
 ## Optional hardening backlog
 
 The following items remain allowed only as separately scoped post-cutover tasks:
@@ -57,7 +80,7 @@ The following items remain allowed only as separately scoped post-cutover tasks:
 | Internal storefront provider-neutral checkout helpers | Implemented as a separately scoped post-smoke follow-up. | Keep this internal; direct `/store/apiship/*` remains canonical for Store API calls. |
 | Provider-neutral Store API facade | Not needed for the first baseline. | Do not reintroduce `/store/delivery/*` as a first-version ApiShip facade. |
 | Richer pricing policy | Not needed for the first baseline. | Keep customer-facing shipping price equal to the ApiShip tariff until a pricing-policy requirement is approved. |
-| Courier delivery mode | Not needed for the first baseline. | Keep courier out of baseline until UI/API/product requirements are explicitly added. |
+| Courier delivery mode | Implemented as optional ApiShip courier contract/readiness/seed scaffold. | Keep pickup-point baseline-first; defer richer courier UI unless explicitly scoped; live execution stays default-off. |
 | ApiShip admin/operator diagnostics | Useful later, but not part of Phase 10. | Add only in a separate diagnostics task; do not expose credentials, auth headers, labels, documents, or live execution by default. |
 
 ---
@@ -95,7 +118,7 @@ Post-Phase 10 baseline smoke evidence is recorded in [apiship_baseline_smoke_evi
 Only separately approved follow-up tasks remain:
 
 - optional backend-neutral readiness wrappers, if backend routes need a stable provider-neutral contract beyond the current ApiShip guard;
-- optional courier delivery, if product requirements are added;
+- richer courier buyer UI, if product requirements require an explicit storefront selector/toggle beyond the current contract/readiness scaffold;
 - optional pricing-policy work, if tariff passthrough is no longer sufficient;
 - optional ApiShip admin/operator diagnostics;
 - optional physical cleanup of quarantined Delivery Hub residue with explicit safe scope and operator approval.

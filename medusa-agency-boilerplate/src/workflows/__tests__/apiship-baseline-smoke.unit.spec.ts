@@ -10,6 +10,7 @@ import {
 } from "../../modules/fulfillment-contour-contract"
 import {
   APISHIP_FULFILLMENT_PROVIDER_CODE as APISHIP_READINESS_PROVIDER_CODE,
+  APISHIP_COURIER_SHIPPING_OPTION_PROVIDER_DATA_ID,
   APISHIP_PICKUP_POINT_PROVIDER_ID,
   APISHIP_PICKUP_POINT_SHIPPING_OPTION_PROVIDER_DATA_ID,
   buildApishipCheckoutReadiness,
@@ -25,6 +26,13 @@ const backendRoot = path.resolve(__dirname, "../../..")
 
 const medusaConfigSource = fs.readFileSync(
   path.join(backendRoot, "medusa-config.ts"),
+  "utf8"
+)
+const gorgoApishipProviderSource = fs.readFileSync(
+  path.join(
+    backendRoot,
+    "node_modules/@gorgo/medusa-fulfillment-apiship/.medusa/server/src/providers/fulfillment-apiship/services/apiship.js"
+  ),
   "utf8"
 )
 const seedScript = require(path.join(backendRoot, "src/scripts/seed.ts"))
@@ -64,7 +72,20 @@ describe("ApiShip baseline smoke evidence", () => {
     expect(APISHIP_FULFILLMENT_PROVIDER_ID).toBe("apiship_apiship")
   })
 
-  it("exports the seed contract for ApiShip pickup-point shipping option bootstrap", () => {
+  it("confirms the ApiShip courier option id/data from the installed Gorgo provider", () => {
+    expect(gorgoApishipProviderSource).toContain('id: "apiship_doortodoor"')
+    expect(gorgoApishipProviderSource).toContain("deliveryType: 1")
+    expect(gorgoApishipProviderSource).toContain("pickupType: 1")
+    expect(gorgoApishipProviderSource).toContain("From door to door")
+    expect(APISHIP_COURIER_SHIPPING_OPTION_PROVIDER_DATA_ID).toBe(
+      "apiship_doortodoor"
+    )
+    expect(APISHIP_COURIER_SHIPPING_OPTION_PROVIDER_DATA_ID).not.toBe(
+      APISHIP_PICKUP_POINT_SHIPPING_OPTION_PROVIDER_DATA_ID
+    )
+  })
+
+  it("exports the seed contract for ApiShip pickup-point and courier shipping option bootstrap", () => {
     expect(seedScript.__APISHIP_BASELINE_SMOKE_CONTRACT__).toEqual({
       provider_id: "apiship_apiship",
       shipping_option_data_id: "apiship_doortopoint",
@@ -74,8 +95,16 @@ describe("ApiShip baseline smoke evidence", () => {
         pickupType: 1,
         baseline: "apiship_pickup_point_first",
       },
+      courier_shipping_option_data_id: "apiship_doortodoor",
+      courier_shipping_option_data: {
+        id: "apiship_doortodoor",
+        deliveryType: 1,
+        pickupType: 1,
+        baseline: "apiship_courier_optional",
+      },
       price_type: "calculated",
       shipping_option_name: "ApiShip — Пункт выдачи",
+      courier_shipping_option_name: "ApiShip — Курьер",
     })
   })
 
@@ -87,6 +116,22 @@ describe("ApiShip baseline smoke evidence", () => {
       issues: [],
       contextKey: getApishipCheckoutContextKey(cart, "so_apiship"),
     })
+
+    expect(
+      buildApishipCheckoutReadiness({
+        ...cart,
+        shipping_methods: [
+          {
+            ...cart.shipping_methods[0],
+            data: {
+              apishipData: {
+                tariff: cart.shipping_methods[0].data.apishipData.tariff,
+              },
+            },
+          },
+        ],
+      }).issues.map((issue) => issue.code)
+    ).toContain("pickup_point_missing")
 
     expect(
       buildApishipCheckoutReadiness({
@@ -108,6 +153,32 @@ describe("ApiShip baseline smoke evidence", () => {
         ],
       }).issues.map((issue) => issue.code)
     ).toContain("shipping_method_not_apiship")
+  })
+
+  it("allows courier readiness with a valid tariff and no PVZ point", () => {
+    const cart = buildReadyApishipCourierCart()
+
+    expect(buildApishipCheckoutReadiness(cart)).toEqual({
+      ready: true,
+      issues: [],
+      contextKey: getApishipCheckoutContextKey(cart, "so_apiship_courier"),
+    })
+
+    expect(
+      buildApishipCheckoutReadiness({
+        ...cart,
+        shipping_methods: [
+          {
+            ...cart.shipping_methods[0],
+            data: {
+              apishipData: {
+                mode: "courier",
+              },
+            },
+          },
+        ],
+      }).issues.map((issue) => issue.code)
+    ).toContain("tariff_missing")
   })
 
   it("keeps live ApiShip shipment execution default-off unless exact opt-in is provided", () => {
@@ -166,6 +237,48 @@ function buildReadyApishipCart() {
           provider_id: APISHIP_PICKUP_POINT_PROVIDER_ID,
           data: {
             id: APISHIP_PICKUP_POINT_SHIPPING_OPTION_PROVIDER_DATA_ID,
+            provider_code: APISHIP_READINESS_PROVIDER_CODE,
+          },
+        },
+      },
+    ],
+  }
+}
+
+function buildReadyApishipCourierCart() {
+  return {
+    id: "cart_apiship_courier_smoke",
+    currency_code: "rub",
+    subtotal: 2400,
+    shipping_address: {
+      country_code: "ru",
+      city: "Moscow",
+      postal_code: "101000",
+      address_1: "Courier street 1",
+    },
+    shipping_methods: [
+      {
+        id: "sm_apiship_courier_smoke",
+        shipping_option_id: "so_apiship_courier",
+        provider_id: APISHIP_PICKUP_POINT_PROVIDER_ID,
+        data: {
+          apishipData: {
+            tariff: {
+              tariffId: 456,
+              providerKey: "cdek",
+              deliveryCost: 750,
+            },
+            mode: "courier",
+          },
+          provider_code: APISHIP_READINESS_PROVIDER_CODE,
+        },
+        shipping_option: {
+          id: "so_apiship_courier",
+          provider_id: APISHIP_PICKUP_POINT_PROVIDER_ID,
+          data: {
+            id: APISHIP_COURIER_SHIPPING_OPTION_PROVIDER_DATA_ID,
+            deliveryType: 1,
+            pickupType: 1,
             provider_code: APISHIP_READINESS_PROVIDER_CODE,
           },
         },
