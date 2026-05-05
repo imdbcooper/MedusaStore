@@ -276,6 +276,8 @@ Exit criteria:
 
 ### Phase 10 — Optional boilerplate-grade hardening
 
+Status: complete as decision/evidence scope in [apiship_phase10_optional_hardening_decision.md](./apiship_phase10_optional_hardening_decision.md); no optional hardening item is promoted into the baseline by Phase 10.
+
 Goal: decide whether to add provider-neutral hardening after the direct cutover is stable.
 
 Possible later work:
