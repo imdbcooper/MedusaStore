@@ -128,6 +128,13 @@ type ApishipReadinessOptions = {
   mode?: ApishipDeliveryMode | null
 }
 
+type ApishipDeliveryModeResolution = {
+  mode: ApishipDeliveryMode
+  optionMode: ApishipDeliveryMode | null
+  modeHint: ApishipDeliveryMode | null
+  hasConflict: boolean
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value))
 }
@@ -245,8 +252,33 @@ export function getApishipDataFromShippingMethod(method?: unknown) {
 }
 
 export function getApishipDeliveryModeFromShippingMethod(method?: unknown) {
+  return getApishipDeliveryModeResolutionFromShippingMethod(method).mode
+}
+
+export function hasApishipDeliveryModeConflict(method?: unknown) {
+  return getApishipDeliveryModeResolutionFromShippingMethod(method).hasConflict
+}
+
+function getApishipDeliveryModeResolutionFromShippingMethod(
+  method?: unknown
+): ApishipDeliveryModeResolution {
+  const optionMode = getApishipDeliveryModeFromShippingOptionContract(method)
+  const modeHint = getApishipDeliveryModeHintFromShippingMethod(method)
+  const hasConflict = Boolean(optionMode && modeHint && optionMode !== modeHint)
+
+  return {
+    mode: optionMode ?? modeHint ?? APISHIP_PICKUP_POINT_DELIVERY_MODE,
+    optionMode,
+    modeHint,
+    hasConflict,
+  }
+}
+
+function getApishipDeliveryModeFromShippingOptionContract(
+  method?: unknown
+): ApishipDeliveryMode | null {
   if (!isRecord(method)) {
-    return APISHIP_PICKUP_POINT_DELIVERY_MODE
+    return null
   }
 
   const methodData = isRecord(method.data) ? method.data : null
@@ -254,28 +286,79 @@ export function getApishipDeliveryModeFromShippingMethod(method?: unknown) {
   const shippingOptionData = isRecord(shippingOption?.data)
     ? shippingOption.data
     : null
-  const apishipData = getApishipDataFromShippingMethod(method)
-  const selectedMode = apishipData?.mode
-  const providerDataId =
-    methodData?.id ??
-    methodData?.provider_data_id ??
-    methodData?.providerDataId ??
-    methodData?.code ??
+  const shippingOptionProviderDataId = getApishipDeliveryModeFromProviderDataId(
     shippingOptionData?.id ??
-    shippingOptionData?.provider_data_id ??
-    shippingOptionData?.providerDataId ??
-    shippingOptionData?.code
-  const deliveryType = shippingOptionData?.deliveryType ?? methodData?.deliveryType
+      shippingOptionData?.provider_data_id ??
+      shippingOptionData?.providerDataId ??
+      shippingOptionData?.code
+  )
+  const methodProviderDataId = getApishipDeliveryModeFromProviderDataId(
+    methodData?.id ??
+      methodData?.provider_data_id ??
+      methodData?.providerDataId ??
+      methodData?.code
+  )
+  const shippingOptionDeliveryType = getApishipDeliveryModeFromDeliveryType(
+    shippingOptionData?.deliveryType
+  )
+  const methodDeliveryType = getApishipDeliveryModeFromDeliveryType(
+    methodData?.deliveryType
+  )
 
-  if (
-    selectedMode === APISHIP_COURIER_DELIVERY_MODE ||
-    providerDataId === APISHIP_COURIER_SHIPPING_OPTION_PROVIDER_DATA_ID ||
-    deliveryType === 1
-  ) {
+  return (
+    shippingOptionProviderDataId ??
+    shippingOptionDeliveryType ??
+    methodProviderDataId ??
+    methodDeliveryType
+  )
+}
+
+function getApishipDeliveryModeHintFromShippingMethod(
+  method?: unknown
+): ApishipDeliveryMode | null {
+  const apishipData = getApishipDataFromShippingMethod(method)
+
+  if (apishipData?.mode === APISHIP_COURIER_DELIVERY_MODE) {
     return APISHIP_COURIER_DELIVERY_MODE
   }
 
-  return APISHIP_PICKUP_POINT_DELIVERY_MODE
+  if (apishipData?.mode === APISHIP_PICKUP_POINT_DELIVERY_MODE) {
+    return APISHIP_PICKUP_POINT_DELIVERY_MODE
+  }
+
+  return null
+}
+
+function getApishipDeliveryModeFromProviderDataId(
+  value: unknown
+): ApishipDeliveryMode | null {
+  const providerDataId = toNonEmptyString(value)
+
+  if (providerDataId === APISHIP_COURIER_SHIPPING_OPTION_PROVIDER_DATA_ID) {
+    return APISHIP_COURIER_DELIVERY_MODE
+  }
+
+  if (providerDataId === APISHIP_PICKUP_POINT_SHIPPING_OPTION_PROVIDER_DATA_ID) {
+    return APISHIP_PICKUP_POINT_DELIVERY_MODE
+  }
+
+  return null
+}
+
+function getApishipDeliveryModeFromDeliveryType(
+  value: unknown
+): ApishipDeliveryMode | null {
+  const deliveryType = toFiniteNumber(value)
+
+  if (deliveryType === 1) {
+    return APISHIP_COURIER_DELIVERY_MODE
+  }
+
+  if (deliveryType === 2) {
+    return APISHIP_PICKUP_POINT_DELIVERY_MODE
+  }
+
+  return null
 }
 
 export function isApishipShippingMethodLike(method?: unknown) {
@@ -322,8 +405,17 @@ export function isApishipShippingMethodReady(
 
   const apishipData = getApishipDataFromShippingMethod(method)
   const tariff = normalizeApishipTariffForCheckout(apishipData?.tariff)
-  const deliveryMode = options.mode ?? getApishipDeliveryModeFromShippingMethod(method)
+  const resolvedDeliveryMode = getApishipDeliveryModeFromShippingMethod(method)
+  const deliveryMode = options.mode ?? resolvedDeliveryMode
   const pointId = getApishipPersistablePointId(apishipData?.point)
+
+  if (hasApishipDeliveryModeConflict(method)) {
+    return false
+  }
+
+  if (options.mode && options.mode !== resolvedDeliveryMode) {
+    return false
+  }
 
   if (!tariff) {
     return false

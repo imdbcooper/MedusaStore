@@ -5,6 +5,7 @@ import {
   getApishipDataFromShippingMethod,
   getApishipDeliveryModeFromShippingMethod,
   getApishipPersistablePointId,
+  hasApishipDeliveryModeConflict,
   isApishipShippingMethodLike,
   normalizeApishipTariffForCheckout,
   type ApishipDeliveryMode,
@@ -103,11 +104,14 @@ export function buildDeliveryCheckoutSummary(
 
   const selection = getApishipDeliverySelection(method)
 
-  if (!selection) {
+  if (!selection || hasApishipDeliveryModeConflict(method)) {
     return null
   }
 
-  return buildApishipDeliverySummary(selection)
+  return buildApishipDeliverySummary({
+    ...selection,
+    mode: getApishipDeliveryModeFromShippingMethod(method),
+  })
 }
 
 function buildApishipDeliveryCheckoutReadinessState(
@@ -136,12 +140,24 @@ function buildApishipDeliveryCheckoutReadinessState(
   }
 
   const selection = getApishipDeliverySelection(method)
-  const deliveryMode = options.mode ?? getApishipDeliveryModeFromShippingMethod(method)
+  const resolvedDeliveryMode = getApishipDeliveryModeFromShippingMethod(method)
+  const deliveryMode = options.mode ?? resolvedDeliveryMode
 
   if (!selection) {
     return buildNotReadyState(
       DELIVERY_CHECKOUT_PROVIDER_APISHIP,
       "selection_missing",
+      contextKey
+    )
+  }
+
+  if (
+    hasApishipDeliveryModeConflict(method) ||
+    (options.mode && options.mode !== resolvedDeliveryMode)
+  ) {
+    return buildNotReadyState(
+      DELIVERY_CHECKOUT_PROVIDER_APISHIP,
+      "shipping_method_provider_mismatch",
       contextKey
     )
   }

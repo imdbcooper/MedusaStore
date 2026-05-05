@@ -11,7 +11,10 @@ import {
   buildDeliveryCheckoutSummary,
   isDeliveryCheckoutReady,
 } from "./delivery-checkout.ts"
-import { getApishipCheckoutContextKey } from "./apiship.ts"
+import {
+  getApishipCheckoutContextKey,
+  isApishipShippingMethodReady,
+} from "./apiship.ts"
 
 const workspaceRoot = resolve(process.cwd(), "..")
 const storefrontRoot = process.cwd()
@@ -151,6 +154,65 @@ test("courier ApiShip readiness requires tariff but does not require a PVZ point
       ],
     }).reason,
     "tariff_missing"
+  )
+})
+
+test("client-controlled courier mode cannot bypass pickup-point PVZ readiness", () => {
+  const cart = buildReadyApishipCart()
+  const method = {
+    ...cart.shipping_methods[0],
+    data: {
+      ...cart.shipping_methods[0].data,
+      apishipData: {
+        tariff: cart.shipping_methods[0].data.apishipData.tariff,
+        mode: "courier",
+        contextKey: cart.shipping_methods[0].data.apishipData.contextKey,
+      },
+    },
+  }
+
+  assert.equal(isApishipShippingMethodReady(method), false)
+  assert.equal(
+    buildDeliveryCheckoutReadinessState({
+      ...cart,
+      shipping_methods: [method],
+    }).reason,
+    "shipping_method_provider_mismatch"
+  )
+})
+
+test("courier summary derives mode from shipping option contract without persisted mode", () => {
+  const cart = buildReadyApishipCourierCart()
+  const method = {
+    ...cart.shipping_methods[0],
+    data: {
+      ...cart.shipping_methods[0].data,
+      apishipData: {
+        tariff: cart.shipping_methods[0].data.apishipData.tariff,
+        contextKey: cart.shipping_methods[0].data.apishipData.contextKey,
+      },
+    },
+  }
+
+  assert.deepEqual(buildDeliveryCheckoutSummary(method), {
+    provider: "apiship",
+    label: "ApiShip courier",
+    point_label: null,
+    tariff_label: "cdek · 456",
+    mode: "courier",
+  })
+  assert.deepEqual(
+    buildDeliveryCheckoutReadinessState({
+      ...cart,
+      shipping_methods: [method],
+    }).summary,
+    {
+      provider: "apiship",
+      label: "ApiShip courier",
+      point_label: null,
+      tariff_label: "cdek · 456",
+      mode: "courier",
+    }
   )
 })
 

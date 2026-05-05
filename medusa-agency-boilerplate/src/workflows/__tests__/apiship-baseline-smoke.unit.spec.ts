@@ -181,6 +181,54 @@ describe("ApiShip baseline smoke evidence", () => {
     ).toContain("tariff_missing")
   })
 
+  it("does not let client-controlled mode bypass pickup-point PVZ readiness", () => {
+    const cart = buildReadyApishipCart()
+    const readiness = buildApishipCheckoutReadiness({
+      ...cart,
+      shipping_methods: [
+        {
+          ...cart.shipping_methods[0],
+          data: {
+            ...cart.shipping_methods[0].data,
+            apishipData: {
+              tariff: cart.shipping_methods[0].data.apishipData.tariff,
+              mode: "courier",
+            },
+          },
+        },
+      ],
+    })
+
+    expect(readiness.ready).toBe(false)
+    expect(readiness.issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(["delivery_mode_conflict", "pickup_point_missing"])
+    )
+  })
+
+  it("fails closed when persisted mode hint conflicts with courier shipping option contract", () => {
+    const cart = buildReadyApishipCourierCart()
+    const readiness = buildApishipCheckoutReadiness({
+      ...cart,
+      shipping_methods: [
+        {
+          ...cart.shipping_methods[0],
+          data: {
+            ...cart.shipping_methods[0].data,
+            apishipData: {
+              ...cart.shipping_methods[0].data.apishipData,
+              mode: "pickup_point",
+            },
+          },
+        },
+      ],
+    })
+
+    expect(readiness.ready).toBe(false)
+    expect(readiness.issues.map((issue) => issue.code)).toContain(
+      "delivery_mode_conflict"
+    )
+  })
+
   it("keeps live ApiShip shipment execution default-off unless exact opt-in is provided", () => {
     for (const value of [undefined, "", "false", "1", "TRUE", "yes"]) {
       const env = value === undefined ? {} : { [APISHIP_SHIPMENT_EXECUTION_ENV]: value }
