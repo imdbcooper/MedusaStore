@@ -93,6 +93,37 @@ Enforcement limit: this follow-up does not override the final Medusa shipping am
 
 ---
 
+## ApiShip admin/operator diagnostics follow-up
+
+Follow-up status: a safe backend-only ApiShip operator diagnostics endpoint has been added for the current baseline.
+
+Operator route:
+
+```bash
+GET /admin/apiship/diagnostics
+```
+
+Recommended local checks from the repository root:
+
+```bash
+npm --prefix ./medusa-agency-boilerplate run test:unit -- --runTestsByPath src/workflows/__tests__/apiship-operator-diagnostics.unit.spec.ts
+npm --prefix ./medusa-agency-boilerplate run typecheck
+```
+
+The endpoint is protected by the existing Admin auth middleware and intentionally has no Admin UI widget in this follow-up. It returns a redacted diagnostics snapshot only:
+
+- provider registration posture for ApiShip/Gorgo;
+- canonical contour `apiship_gorgo` and provider id `apiship_apiship`;
+- expected seeded pickup-point and courier shipping option contracts;
+- checkout readiness guard status and guarded checkout routes;
+- shipment execution guard status with default-off posture and explicit `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` opt-in state reduced to enabled/disabled/source metadata;
+- Delivery Hub previous-baseline quarantine status;
+- hard limitations confirming no external ApiShip health call, no live shipment execution, no online auth validation, and no returned sensitive values.
+
+Limitations: diagnostics are offline/static by design. They do not call ApiShip, do not validate merchant auth online, do not create/cancel shipments, do not fetch labels/documents, do not re-enable Delivery Hub runtime endpoints, and do not expose sensitive values, auth headers, or raw confidential values.
+
+---
+
 ## Optional hardening backlog
 
 The following items remain allowed only as separately scoped post-cutover tasks:
@@ -104,7 +135,7 @@ The following items remain allowed only as separately scoped post-cutover tasks:
 | Provider-neutral Store API facade | Not needed for the first baseline. | Do not reintroduce `/store/delivery/*` as a first-version ApiShip facade. |
 | Richer pricing policy | Implemented as a separately scoped internal passthrough policy follow-up. | Keep the policy additive and deterministic; final Medusa shipping amount enforcement still requires a separate provider override/plugin follow-up if product pricing diverges from provider `deliveryCost`. |
 | Courier delivery mode | Implemented as optional ApiShip courier contract/readiness/seed scaffold. | Keep pickup-point baseline-first; defer richer courier UI unless explicitly scoped; live execution stays default-off. |
-| ApiShip admin/operator diagnostics | Useful later, but not part of Phase 10. | Add only in a separate diagnostics task; do not expose credentials, auth headers, labels, documents, or live execution by default. |
+| ApiShip admin/operator diagnostics | Implemented as a separately scoped backend admin diagnostics endpoint. | Keep it offline/static and secret-safe: no credentials, auth headers, labels, documents, external health calls, or live execution by default. |
 
 ---
 
@@ -143,5 +174,5 @@ Only separately approved follow-up tasks remain:
 - optional backend-neutral readiness wrappers, if backend routes need a stable provider-neutral contract beyond the current ApiShip guard;
 - richer courier buyer UI, if product requirements require an explicit storefront selector/toggle beyond the current contract/readiness scaffold;
 - optional pricing-policy provider override/plugin follow-up, if customer-facing price must diverge from ApiShip tariff passthrough and be enforced as the final Medusa shipping amount;
-- optional ApiShip admin/operator diagnostics;
-- optional physical cleanup of quarantined Delivery Hub residue with explicit safe scope and operator approval.
+- optional physical cleanup of quarantined Delivery Hub residue with explicit safe scope and operator approval;
+- optional browser/runtime smoke with isolated runtime scope and no live shipment execution unless separately approved.

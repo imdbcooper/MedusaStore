@@ -44,6 +44,11 @@ const adminAuth = authenticate("user", ["session", "bearer", "api-key"])
 export default defineMiddlewares({
   routes: [
     {
+      matcher: "/admin/apiship/diagnostics",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
       matcher: "/admin/delivery/providers",
       methods: ["GET"],
       middlewares: [adminAuth],
