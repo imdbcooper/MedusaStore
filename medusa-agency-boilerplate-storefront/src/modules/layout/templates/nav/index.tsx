@@ -1,11 +1,12 @@
 import { Suspense } from "react"
 
+import { appendFallbackContentLinks } from "@lib/content/links"
+import { ContentLinkRow } from "@lib/content/types"
 import { getNavigation, getSiteSettings } from "@lib/data/content/globals"
 import { getLocale } from "@lib/data/locale-actions"
 import { listLocales } from "@lib/data/locales"
 import { listRegions } from "@lib/data/regions"
 import { storefrontConfig } from "@lib/storefront-config"
-import { ContentLinkRow } from "@lib/content/types"
 import { StoreRegion } from "@medusajs/types"
 import { clx } from "@medusajs/ui"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
@@ -26,7 +27,9 @@ export default async function Nav() {
 
   const navigationCopy = storefrontConfig.copy.navigation
   const brandName = siteSettings?.siteName || storefrontConfig.storeName
-  const contentItems = (navigation?.items || []).filter(Boolean) as ContentLinkRow[]
+  const contentItems = appendFallbackContentLinks(
+    (navigation?.items || []).filter(Boolean) as ContentLinkRow[]
+  )
   const navSurface = resolveNavShellSurface()
   const isFloating = navSurface.variant === "floating"
   const isInverseTone = navSurface.tone === "inverse"

@@ -1,7 +1,11 @@
-const DEFAULT_MEDUSA_BACKEND_PORT = process.env.MEDUSA_BACKEND_PORT || "9000"
+const DEFAULT_MEDUSA_BACKEND_PORT =
+  process.env.NEXT_PUBLIC_MEDUSA_BACKEND_PORT ||
+  process.env.MEDUSA_BACKEND_PORT ||
+  "9000"
 const STOREFRONT_PRESET_CANDIDATES = ["atelier", "market"] as const
 
 export const MEDUSA_BACKEND_URL =
+  process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL ||
   process.env.MEDUSA_BACKEND_URL ||
   `http://localhost:${DEFAULT_MEDUSA_BACKEND_PORT}`
 

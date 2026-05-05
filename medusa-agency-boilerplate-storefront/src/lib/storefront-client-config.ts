@@ -1255,7 +1255,11 @@ export const storefrontPresetCatalog = {
   },
 } satisfies Record<StorefrontPreset, StorefrontClientConfig>
 
-if (!STOREFRONT_PRESET_IS_VALID && process.env.NODE_ENV === "development") {
+if (
+  STOREFRONT_PRESET_RAW &&
+  !STOREFRONT_PRESET_IS_VALID &&
+  process.env.NODE_ENV === "development"
+) {
   console.warn(
     `Unknown NEXT_PUBLIC_STOREFRONT_PRESET="${STOREFRONT_PRESET_RAW}". Falling back to "${STOREFRONT_PRESET}".`
   )
@@ -1277,6 +1281,8 @@ export const storefrontClientInitSurfaceContract = {
     bootstrapGenerated: ["NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY"],
     optional: [
       "MEDUSA_BACKEND_URL",
+      "NEXT_PUBLIC_MEDUSA_BACKEND_URL",
+      "NEXT_PUBLIC_MEDUSA_BACKEND_PORT",
       "NEXT_PUBLIC_BASE_URL",
       "NEXT_PUBLIC_DEFAULT_REGION",
       "NEXT_PUBLIC_YOOKASSA_ENABLED",

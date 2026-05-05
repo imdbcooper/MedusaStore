@@ -8,6 +8,49 @@ const isContentLinkRow = (
   value: ContentLink | ContentLinkRow
 ): value is ContentLinkRow => "link" in value
 
+export const INFORMATIONAL_PAGE_LINKS: ContentLinkRow[] = [
+  {
+    id: "fallback-about",
+    link: {
+      type: "page",
+      label: "О компании",
+      pageSlug: "about",
+    },
+  },
+  {
+    id: "fallback-promotions",
+    link: {
+      type: "page",
+      label: "Акции",
+      pageSlug: "promotions",
+    },
+  },
+  {
+    id: "fallback-delivery-and-payment",
+    link: {
+      type: "page",
+      label: "Доставка и оплата",
+      pageSlug: "delivery-and-payment",
+    },
+  },
+  {
+    id: "fallback-contacts",
+    link: {
+      type: "page",
+      label: "Контакты",
+      pageSlug: "contacts",
+    },
+  },
+  {
+    id: "fallback-loyalty",
+    link: {
+      type: "page",
+      label: "Лояльность",
+      pageSlug: "loyalty",
+    },
+  },
+]
+
 export const unwrapContentLink = (
   value?: ContentLink | ContentLinkRow | null
 ): ContentLink | null => {
@@ -66,6 +109,30 @@ export const resolveContentLinkHref = (
     default:
       return link.url ? normalizeCustomPath(link.url) : null
   }
+}
+
+export const appendFallbackContentLinks = (
+  items: ContentLinkRow[] = [],
+  fallbackItems: ContentLinkRow[] = INFORMATIONAL_PAGE_LINKS
+) => {
+  const seenHrefs = new Set(
+    items
+      .map((item) => resolveContentLinkHref(item))
+      .filter((href): href is string => Boolean(href))
+  )
+
+  const missingFallbackItems = fallbackItems.filter((item) => {
+    const href = resolveContentLinkHref(item)
+
+    if (!href || seenHrefs.has(href)) {
+      return false
+    }
+
+    seenHrefs.add(href)
+    return true
+  })
+
+  return [...items, ...missingFallbackItems]
 }
 
 export const isReservedContentPath = (segments: string[]) => {

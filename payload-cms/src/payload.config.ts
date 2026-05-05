@@ -22,10 +22,10 @@ const parseList = (value?: string) =>
 
 export default buildConfig({
   secret: process.env.PAYLOAD_SECRET || '',
-  serverURL: process.env.PAYLOAD_PUBLIC_SERVER_URL,
+  serverURL: process.env.PAYLOAD_PUBLIC_SERVER_URL || process.env.PAYLOAD_CMS_URL,
   db: postgresAdapter({
     pool: {
-      connectionString: process.env.DATABASE_URL,
+      connectionString: process.env.PAYLOAD_DATABASE_URL || process.env.DATABASE_URL,
     },
   }),
   editor: lexicalEditor(),

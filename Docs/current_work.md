@@ -24,6 +24,7 @@ The repository remains a Russian-market Medusa template:
 - baseline region/currency: `ru` / `rub`;
 - notification baseline: local provider by default, UniSender and VK messaging are opt-in integration paths;
 - payment baseline: YooKassa-first for the current Russian-market scope;
+- Payload CMS content layer is materialized as a separate app in [payload-cms](../payload-cms); use [payload_cms_runbook.md](./payload_cms_runbook.md) for lifecycle commands, build guard, seed pages, and admin troubleshooting;
 - storefront customization baseline: preset-driven storefront stack is closed and should not be reopened without regression evidence;
 - delivery baseline target: ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship`; Delivery Hub is no longer the target baseline for fresh templates.
 
@@ -77,15 +78,16 @@ Important retained facts:
 Use these documents in this order:
 
 1. [current_work.md](./current_work.md) - operational status and next action.
-2. [apiship_direct_migration_plan.md](./apiship_direct_migration_plan.md) - accepted ApiShip/Gorgo direct migration plan and Phase 0 baseline freeze.
-3. [apiship_baseline_smoke_evidence.md](./apiship_baseline_smoke_evidence.md) - deterministic ApiShip baseline smoke/evidence runbook without live credentials or external ApiShip calls.
-4. [delivery_hub_physical_cleanup_manifest.md](./delivery_hub_physical_cleanup_manifest.md) - committed Delivery Hub runtime cleanup/quarantine manifest.
-5. [delivery_hub_documentation_index.md](./delivery_hub_documentation_index.md) - Delivery Hub historical/evidence classification.
-6. [delivery_hub_rework_plan.md](./delivery_hub_rework_plan.md) - previous-baseline Delivery Hub phase plan; historical unless explicitly referenced for audit.
-7. [delivery_hub_spec.md](./delivery_hub_spec.md) - detailed previous-baseline architecture/reference material; treat as historical unless the cleaned docs say otherwise.
-8. [env_contract.md](./env_contract.md) - environment/startup contract.
-9. [master_repo_plan_v2.md](./master_repo_plan_v2.md) - overall repository roadmap.
-10. [plan_analysis.md](./plan_analysis.md) - factual audit and historical reality check.
+2. [payload_cms_runbook.md](./payload_cms_runbook.md) - Payload CMS architecture, lifecycle commands, build guard, seed URLs, env basics, and admin troubleshooting.
+3. [apiship_direct_migration_plan.md](./apiship_direct_migration_plan.md) - accepted ApiShip/Gorgo direct migration plan and Phase 0 baseline freeze.
+4. [apiship_baseline_smoke_evidence.md](./apiship_baseline_smoke_evidence.md) - deterministic ApiShip baseline smoke/evidence runbook without live credentials or external ApiShip calls.
+5. [delivery_hub_physical_cleanup_manifest.md](./delivery_hub_physical_cleanup_manifest.md) - committed Delivery Hub runtime cleanup/quarantine manifest.
+6. [delivery_hub_documentation_index.md](./delivery_hub_documentation_index.md) - Delivery Hub historical/evidence classification.
+7. [delivery_hub_rework_plan.md](./delivery_hub_rework_plan.md) - previous-baseline Delivery Hub phase plan; historical unless explicitly referenced for audit.
+8. [delivery_hub_spec.md](./delivery_hub_spec.md) - detailed previous-baseline architecture/reference material; treat as historical unless the cleaned docs say otherwise.
+9. [env_contract.md](./env_contract.md) - environment/startup contract.
+10. [master_repo_plan_v2.md](./master_repo_plan_v2.md) - overall repository roadmap.
+11. [plan_analysis.md](./plan_analysis.md) - factual audit and historical reality check.
 
 Old phase prompt files are not source-of-truth. Completed prompt artifacts should not be used to infer current status.
 

@@ -8,12 +8,14 @@
     "start": "next start -p ${PAYLOAD_PORT:-3100}",
     "payload": "payload",
     "payload:generate:types": "node ./scripts/generate-types.mjs",
-    "payload:generate:importmap": "node ./scripts/generate-importmap.mjs"
+    "payload:generate:importmap": "node ./scripts/generate-importmap.mjs",
+    "seed": "node ./scripts/seed-marketing-content.mjs"
   },
   "dependencies": {
     "@payloadcms/db-postgres": "3.83.0",
     "@payloadcms/next": "3.83.0",
     "@payloadcms/richtext-lexical": "3.83.0",
+    "date-fns": "^4.1.0",
     "next": "15.3.9",
     "payload": "3.83.0",
     "react": "19.0.5",

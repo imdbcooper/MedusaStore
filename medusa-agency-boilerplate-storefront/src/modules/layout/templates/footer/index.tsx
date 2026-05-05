@@ -1,3 +1,4 @@
+import { appendFallbackContentLinks, INFORMATIONAL_PAGE_LINKS } from "@lib/content/links"
 import { listCategories } from "@lib/data/categories"
 import { listCollections } from "@lib/data/collections"
 import { getFooter, getSiteSettings } from "@lib/data/content/globals"
@@ -35,6 +36,10 @@ export default async function Footer() {
   const isInverseTone = footerSurface.tone === "inverse"
   const categoryLinkLimit = footerSurface.content.categoryLinksLimit
   const collectionLinkLimit = footerSurface.content.collectionLinksLimit
+  const informationalLinks = appendFallbackContentLinks(
+    footerColumns.flatMap((column) => column.links || []),
+    INFORMATIONAL_PAGE_LINKS
+  ).slice(footerColumns.flatMap((column) => column.links || []).length)
 
   return (
     <footer
@@ -277,6 +282,40 @@ export default async function Footer() {
                       >
                         {c.title}
                       </LocalizedClientLink>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {informationalLinks.length > 0 && (
+              <div className="flex flex-col gap-y-2">
+                <span
+                  className={clx(
+                    "txt-small-plus",
+                    isInverseTone ? "text-[var(--theme-accent-contrast)]" : "txt-ui-fg-base"
+                  )}
+                >
+                  {footerCopy.information}
+                </span>
+                <ul
+                  className={clx(
+                    "grid grid-cols-1 gap-y-2 txt-small",
+                    isInverseTone
+                      ? "text-[color:rgba(247,251,255,0.72)]"
+                      : "text-ui-fg-subtle"
+                  )}
+                >
+                  {informationalLinks.map((item, index) => (
+                    <li key={String(item.id || index)}>
+                      <ContentLinkItem
+                        item={item}
+                        className={clx(
+                          "transition",
+                          isInverseTone
+                            ? "hover:text-[var(--theme-accent-contrast)]"
+                            : "hover:text-[var(--theme-foreground)]"
+                        )}
+                      />
                     </li>
                   ))}
                 </ul>

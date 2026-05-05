@@ -14,6 +14,8 @@ fi
 backend_env="$ROOT_DIR/medusa-agency-boilerplate/.env"
 storefront_env="$ROOT_DIR/medusa-agency-boilerplate-storefront/.env.local"
 storefront_example="$ROOT_DIR/medusa-agency-boilerplate-storefront/.env.local.example"
+payload_env="$ROOT_DIR/payload-cms/.env"
+payload_example="$ROOT_DIR/payload-cms/.env.example"
 
 upsert_env_value() {
   local file_path="$1"
@@ -76,6 +78,24 @@ ensure_storefront_env_exists() {
   log_info "Created empty storefront env: ${storefront_env#$ROOT_DIR/}"
 }
 
+ensure_payload_env_exists() {
+  if [[ -f "$payload_env" ]]; then
+    return
+  fi
+
+  if [[ -f "$payload_example" ]]; then
+    cp "$payload_example" "$payload_env"
+    log_info "Created payload env from template: ${payload_env#$ROOT_DIR/}"
+    return
+  fi
+
+  : > "$payload_env"
+  log_info "Created empty payload env: ${payload_env#$ROOT_DIR/}"
+}
+
+payload_database_url="${PAYLOAD_DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/payload_cms}"
+payload_cms_url="${PAYLOAD_CMS_URL:-http://localhost:${PAYLOAD_PORT:-3100}}"
+
 log_info "Syncing backend env with root orchestration values..."
 upsert_env_value "$backend_env" "DATABASE_URL" "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}"
 upsert_env_value "$backend_env" "REDIS_URL" "redis://localhost:${REDIS_PORT}"
@@ -121,6 +141,24 @@ upsert_env_value "$storefront_env" "PAYLOAD_CONTENT_PREVIEW_TOKEN" "${PAYLOAD_CO
 upsert_env_value "$storefront_env" "PAYLOAD_PREVIEW_SECRET" "${PAYLOAD_PREVIEW_SECRET:-}"
 upsert_env_value "$storefront_env" "PAYLOAD_REVALIDATE_SECRET" "${PAYLOAD_REVALIDATE_SECRET:-}"
 
+ensure_payload_env_exists
+
+log_info "Syncing payload-cms env with root orchestration values..."
+upsert_env_value "$payload_env" "PAYLOAD_PORT" "${PAYLOAD_PORT:-3100}"
+upsert_env_value "$payload_env" "PAYLOAD_PUBLIC_SERVER_URL" "${PAYLOAD_PUBLIC_SERVER_URL:-$payload_cms_url}"
+upsert_env_value "$payload_env" "PAYLOAD_CMS_URL" "$payload_cms_url"
+upsert_env_value "$payload_env" "DATABASE_URL" "$payload_database_url"
+upsert_env_value "$payload_env" "PAYLOAD_DATABASE_URL" "$payload_database_url"
+upsert_env_value "$payload_env" "PAYLOAD_SECRET" "${PAYLOAD_SECRET:-CHANGE_ME_PAYLOAD_SECRET}"
+upsert_env_value "$payload_env" "PAYLOAD_CONTENT_PREVIEW_TOKEN" "${PAYLOAD_CONTENT_PREVIEW_TOKEN:-CHANGE_ME_PAYLOAD_CONTENT_PREVIEW_TOKEN}"
+upsert_env_value "$payload_env" "PAYLOAD_PREVIEW_SECRET" "${PAYLOAD_PREVIEW_SECRET:-CHANGE_ME_PAYLOAD_PREVIEW_SECRET}"
+upsert_env_value "$payload_env" "PAYLOAD_REVALIDATE_SECRET" "${PAYLOAD_REVALIDATE_SECRET:-CHANGE_ME_PAYLOAD_REVALIDATE_SECRET}"
+upsert_env_value "$payload_env" "STOREFRONT_PREVIEW_URL" "${STOREFRONT_PREVIEW_URL:-http://localhost:${STOREFRONT_PORT}}"
+upsert_env_value "$payload_env" "STOREFRONT_PREVIEW_LOCALE" "${STOREFRONT_PREVIEW_LOCALE:-ru}"
+upsert_env_value "$payload_env" "STOREFRONT_REVALIDATE_URL" "${STOREFRONT_REVALIDATE_URL:-http://localhost:${STOREFRONT_PORT}/api/content/revalidate}"
+upsert_env_value "$payload_env" "PAYLOAD_CORS" "${PAYLOAD_CORS:-http://localhost:${STOREFRONT_PORT}}"
+upsert_env_value "$payload_env" "PAYLOAD_CSRF" "${PAYLOAD_CSRF:-$payload_cms_url}"
+
 if ! env_file_has_value "$storefront_env" "NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY"; then
   upsert_env_value "$storefront_env" "NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY" "REPLACE_WITH_ROOT_BOOTSTRAP"
 fi
@@ -128,3 +166,4 @@ fi
 log_info "Application env sync completed."
 log_info "Backend env: ${backend_env#$ROOT_DIR/}"
 log_info "Storefront env: ${storefront_env#$ROOT_DIR/}"
+log_info "Payload env: ${payload_env#$ROOT_DIR/}"

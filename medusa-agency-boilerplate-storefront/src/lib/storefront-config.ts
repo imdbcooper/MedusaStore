@@ -69,6 +69,7 @@ export const storefrontConfig = {
     footer: {
       categories: "Категории",
       collections: "Коллекции",
+      information: "Информация",
       customerCare: "Покупателям",
       social: "Соцсети",
     },
