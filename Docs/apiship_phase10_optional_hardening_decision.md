@@ -169,10 +169,13 @@ Post-Phase 10 baseline smoke evidence is recorded in [apiship_baseline_smoke_evi
 
 ## Remaining work after Phase 10
 
-Only separately approved follow-up tasks remain:
+The requested post-Phase 10 follow-up stack is now closed through the browser/runtime preflight evidence artifact in [apiship_baseline_smoke_evidence.md](./apiship_baseline_smoke_evidence.md).
 
-- optional backend-neutral readiness wrappers, if backend routes need a stable provider-neutral contract beyond the current ApiShip guard;
+Only future, separately approved product hardening tasks remain:
+
 - richer courier buyer UI, if product requirements require an explicit storefront selector/toggle beyond the current contract/readiness scaffold;
 - optional pricing-policy provider override/plugin follow-up, if customer-facing price must diverge from ApiShip tariff passthrough and be enforced as the final Medusa shipping amount;
-- optional physical cleanup of quarantined Delivery Hub residue with explicit safe scope and operator approval;
-- optional browser/runtime smoke with isolated runtime scope and no live shipment execution unless separately approved.
+- full browser checkout smoke with isolated seeded runtime or local mocked ApiShip Store API responses;
+- live ApiShip shipment execution parity, online auth validation, tracking, labels/documents, or shipment lifecycle work under an explicit opt-in phase.
+
+Current limitation: the final browser/runtime evidence is intentionally preflight-only and does not claim a full browser checkout run against live services or external ApiShip.
