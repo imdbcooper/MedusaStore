@@ -259,6 +259,12 @@ Exit criteria:
 - Order-scoped fulfillment creation without explicit `shipping_option_id` no longer falls back to the first order shipping method: if any order shipping method resolves to ApiShip, the context is treated as ApiShip-risk and remains blocked unless `APISHIP_SHIPMENT_EXECUTION_ENABLED=true`; non-ApiShip-only orders continue through.
 - Browser smoke, fresh bootstrap smoke, and Delivery Hub residue cleanup are not part of this Phase 8 commit and remain Phase 9+ work.
 
+Post-Phase 10 follow-up smoke/evidence:
+
+- Baseline smoke evidence now lives in [apiship_baseline_smoke_evidence.md](./apiship_baseline_smoke_evidence.md) and `medusa-agency-boilerplate/src/workflows/__tests__/apiship-baseline-smoke.unit.spec.ts`.
+- The smoke is deterministic and non-destructive: it checks ApiShip provider registration, contour `apiship_gorgo`, provider id `apiship_apiship`, seed shipping option data id `apiship_doortopoint`, checkout readiness guard behavior, and default-off shipment execution guard without live credentials or external ApiShip calls.
+- A full browser checkout smoke remains deferred until a scoped runtime/mock API task is approved; live shipment execution stays disabled by default.
+
 ### Phase 9 — Physical Delivery Hub cleanup after smoke
 
 Goal: remove Delivery Hub runtime residue only after ApiShip is proven.

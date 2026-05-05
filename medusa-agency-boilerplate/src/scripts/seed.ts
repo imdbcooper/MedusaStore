@@ -383,6 +383,14 @@ const buildApiShipPickupPointShippingOptionData = () => ({
   baseline: "apiship_pickup_point_first",
 });
 
+export const __APISHIP_BASELINE_SMOKE_CONTRACT__ = {
+  provider_id: APISHIP_FULFILLMENT_PROVIDER_ID,
+  shipping_option_data_id: APISHIP_PICKUP_POINT_OPTION_ID,
+  shipping_option_data: buildApiShipPickupPointShippingOptionData(),
+  price_type: "calculated",
+  shipping_option_name: APISHIP_PICKUP_POINT_SHIPPING_OPTION_NAME,
+} as const;
+
 const shippingOptionMatchesApiShipPickupPointBaseline = (
   candidate: ShippingOptionRecord
 ) => {

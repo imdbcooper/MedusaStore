@@ -61,6 +61,8 @@ Relevant non-destructive checks for this phase:
 - `git diff --check` / `git diff --cached --check` whitespace checks.
 - Targeted typecheck/test commands may be run as smoke evidence if they do not require package changes or live external shipment execution.
 
+Post-Phase 10 baseline smoke evidence is recorded in [apiship_baseline_smoke_evidence.md](./apiship_baseline_smoke_evidence.md). Its targeted unit smoke checks ApiShip provider registration, contour `apiship_gorgo`, provider id `apiship_apiship`, seed shipping option data id `apiship_doortopoint`, checkout readiness guard behavior, and default-off shipment execution guard without requiring credentials, running services, browser automation, or external ApiShip calls.
+
 ---
 
 ## Exit criteria mapping

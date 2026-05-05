@@ -35,6 +35,8 @@ Historical legacy delivery rows/provider ids may still exist in old local/stagin
 
 The accepted pre-production baseline pivot is [apiship_direct_migration_plan.md](./apiship_direct_migration_plan.md).
 
+Post-Phase 10 baseline smoke evidence is [apiship_baseline_smoke_evidence.md](./apiship_baseline_smoke_evidence.md). It uses a deterministic backend unit smoke for the current ApiShip baseline and does not require live ApiShip credentials, external ApiShip calls, running browser services, or live shipment execution.
+
 Phase 0 freeze is recorded: this repository has not started ApiShip runtime migration work in this phase, and the baseline decision should not be reopened during Phase 1 inventory.
 
 Key fixed decisions:
@@ -127,8 +129,9 @@ Use these documents in this order:
 
 1. [current_work.md](./current_work.md) - operational status and next action.
 2. [apiship_direct_migration_plan.md](./apiship_direct_migration_plan.md) - accepted ApiShip/Gorgo direct migration plan and Phase 0 baseline freeze.
-3. [delivery_hub_documentation_index.md](./delivery_hub_documentation_index.md) - Delivery Hub documentation roles and historical/evidence classification.
-4. [delivery_hub_rework_plan.md](./delivery_hub_rework_plan.md) - accepted Delivery Hub phase plan.
+3. [apiship_baseline_smoke_evidence.md](./apiship_baseline_smoke_evidence.md) - deterministic ApiShip baseline smoke/evidence runbook without live credentials or external ApiShip calls.
+4. [delivery_hub_documentation_index.md](./delivery_hub_documentation_index.md) - Delivery Hub documentation roles and historical/evidence classification.
+5. [delivery_hub_rework_plan.md](./delivery_hub_rework_plan.md) - accepted Delivery Hub phase plan.
 5. [delivery_hub_spec.md](./delivery_hub_spec.md) - detailed architecture/reference material; older preview/cutover sections should be treated as historical unless the cleaned docs say otherwise.
 6. [delivery_hub_manual_testing_plan.md](./delivery_hub_manual_testing_plan.md) - operator validation, including product-flow smokes and advanced diagnostics.
 7. [env_contract.md](./env_contract.md) - environment/startup contract.
