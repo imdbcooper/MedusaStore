@@ -380,18 +380,19 @@ export function isApishipShippingMethodLike(method?: unknown) {
     shippingOptionData?.id ??
     shippingOptionData?.provider_data_id ??
     shippingOptionData?.providerDataId ??
-    shippingOptionData?.code
+    shippingOptionData?.code ??
+    method.shipping_option_id ??
+    shippingOption?.id
+  const providerCode = methodData?.provider_code ?? shippingOptionData?.provider_code
 
   return Boolean(
-    getApishipDataFromShippingMethod(method) ||
-      method.provider_id === APISHIP_PICKUP_POINT_PROVIDER_ID ||
+    method.provider_id === APISHIP_PICKUP_POINT_PROVIDER_ID ||
       provider?.id === APISHIP_PICKUP_POINT_PROVIDER_ID ||
       shippingOption?.provider_id === APISHIP_PICKUP_POINT_PROVIDER_ID ||
       methodData?.provider_id === APISHIP_PICKUP_POINT_PROVIDER_ID ||
       providerDataId === APISHIP_PICKUP_POINT_SHIPPING_OPTION_PROVIDER_DATA_ID ||
       providerDataId === APISHIP_COURIER_SHIPPING_OPTION_PROVIDER_DATA_ID ||
-      methodData?.provider_code === APISHIP_FULFILLMENT_PROVIDER_CODE ||
-      shippingOptionData?.provider_code === APISHIP_FULFILLMENT_PROVIDER_CODE
+      providerCode === APISHIP_FULFILLMENT_PROVIDER_CODE
   )
 }
 

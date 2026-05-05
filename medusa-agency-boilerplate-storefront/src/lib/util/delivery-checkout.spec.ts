@@ -216,6 +216,84 @@ test("courier summary derives mode from shipping option contract without persist
   )
 })
 
+test("default cart-shaped courier method derives summary mode from shipping option fields", () => {
+  const cart = buildReadyApishipCourierCart()
+  const method = {
+    id: "sm_apiship_courier_default_fields",
+    shipping_option_id: "so_apiship_courier",
+    data: {
+      apishipData: {
+        tariff: cart.shipping_methods[0].data.apishipData.tariff,
+        contextKey: cart.shipping_methods[0].data.apishipData.contextKey,
+      },
+    },
+    shipping_option: {
+      id: "so_apiship_courier",
+      provider_id: "apiship_apiship",
+      data: {
+        id: "apiship_doortodoor",
+        deliveryType: 1,
+        provider_code: "apiship",
+      },
+    },
+  }
+
+  assert.deepEqual(buildDeliveryCheckoutSummary(method), {
+    provider: "apiship",
+    label: "ApiShip courier",
+    point_label: null,
+    tariff_label: "cdek · 456",
+    mode: "courier",
+  })
+  assert.deepEqual(
+    buildDeliveryCheckoutReadinessState({
+      ...cart,
+      shipping_methods: [method],
+    }).summary,
+    {
+      provider: "apiship",
+      label: "ApiShip courier",
+      point_label: null,
+      tariff_label: "cdek · 456",
+      mode: "courier",
+    }
+  )
+})
+
+test("manual method with injected ApiShip courier data fails closed without immutable evidence", () => {
+  const cart = buildReadyApishipCourierCart()
+  const method = {
+    id: "sm_manual_injected_apiship",
+    shipping_option_id: "so_manual",
+    provider_id: "manual_manual",
+    data: {
+      apishipData: {
+        tariff: cart.shipping_methods[0].data.apishipData.tariff,
+        mode: "courier",
+        contextKey: cart.shipping_methods[0].data.apishipData.contextKey,
+      },
+    },
+    shipping_option: {
+      id: "so_manual",
+      provider_id: "manual_manual",
+      data: { id: "manual_flat_rate", provider_code: "manual" },
+    },
+  }
+
+  assert.equal(isApishipShippingMethodReady(method), false)
+  assert.equal(buildDeliveryCheckoutSummary(method), null)
+  assert.deepEqual(buildDeliveryCheckoutReadinessState({
+    ...cart,
+    shipping_methods: [method],
+  }), {
+    provider: "apiship",
+    ready: false,
+    reason: "shipping_method_provider_mismatch",
+    contextKey: getApishipCheckoutContextKey(cart, undefined),
+    summary: null,
+  })
+})
+
 test("non-ApiShip/manual method does not produce false ready for ApiShip baseline", () => {
   const cart = {
     ...buildReadyApishipCart(),
