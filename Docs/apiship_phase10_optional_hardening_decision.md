@@ -32,13 +32,29 @@ No optional hardening item is promoted into the baseline by Phase 10.
 
 ---
 
+## Provider-neutral abstractions follow-up
+
+Follow-up status: provider-neutral delivery checkout abstraction has been implemented as an **internal storefront utility layer** after the deterministic smoke/evidence block.
+
+The layer keeps the current ApiShip-first public contract intact:
+
+- storefront Store API reads and calculations remain direct `/store/apiship/*` helpers;
+- no canonical public `/store/delivery/*` facade is introduced;
+- the ordinary cart commit still stores the selected ApiShip payload as `data.apishipData` through the standard Medusa add-shipping-method flow;
+- checkout payment/readiness/summary callers can now consume provider-neutral readiness/summary helpers backed by the ApiShip adapter, so future providers can add adapters without rewriting every checkout guard.
+
+This follow-up does not enable courier delivery, richer pricing policy, ApiShip admin/operator diagnostics, physical Delivery Hub cleanup, browser/runtime smoke, or live shipment execution by default.
+
+---
+
 ## Optional hardening backlog
 
 The following items remain allowed only as separately scoped post-cutover tasks:
 
 | Candidate | Phase 10 decision | Guardrail |
 | --- | --- | --- |
-| Backend readiness wrapper | Already covered by the ApiShip checkout readiness guard for the current pickup-point baseline; do not add another provider-neutral wrapper now. | Revisit only if checkout needs a stable provider-neutral contract again. |
+| Backend readiness wrapper | Still covered by the ApiShip checkout readiness guard for the current pickup-point baseline; no backend-neutral wrapper was added in this follow-up. | Revisit only if backend routes need a stable provider-neutral contract again. |
+| Internal storefront provider-neutral checkout helpers | Implemented as a separately scoped post-smoke follow-up. | Keep this internal; direct `/store/apiship/*` remains canonical for Store API calls. |
 | Provider-neutral Store API facade | Not needed for the first baseline. | Do not reintroduce `/store/delivery/*` as a first-version ApiShip facade. |
 | Richer pricing policy | Not needed for the first baseline. | Keep customer-facing shipping price equal to the ApiShip tariff until a pricing-policy requirement is approved. |
 | Courier delivery mode | Not needed for the first baseline. | Keep courier out of baseline until UI/API/product requirements are explicitly added. |
@@ -78,7 +94,7 @@ Post-Phase 10 baseline smoke evidence is recorded in [apiship_baseline_smoke_evi
 
 Only separately approved follow-up tasks remain:
 
-- optional provider-neutral abstractions, if multi-provider needs appear;
+- optional backend-neutral readiness wrappers, if backend routes need a stable provider-neutral contract beyond the current ApiShip guard;
 - optional courier delivery, if product requirements are added;
 - optional pricing-policy work, if tariff passthrough is no longer sufficient;
 - optional ApiShip admin/operator diagnostics;

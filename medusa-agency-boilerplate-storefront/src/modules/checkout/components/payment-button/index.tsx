@@ -4,7 +4,7 @@ import { isManual, isStripeLike, isYooKassa } from "@lib/constants"
 import { placeOrder } from "@lib/data/cart"
 import { getYooKassaPaymentStatus } from "@lib/data/payment"
 import { storefrontConfig } from "@lib/storefront-config"
-import { isApishipCheckoutReady } from "@lib/util/apiship"
+import { isDeliveryCheckoutReady } from "@lib/util/delivery-checkout"
 import {
   getYooKassaConfirmationUrl,
   getYooKassaPaymentId,
@@ -29,7 +29,7 @@ const PaymentButton: React.FC<PaymentButtonProps> = ({
     !cart.shipping_address ||
     !cart.billing_address ||
     !cart.email ||
-    !isApishipCheckoutReady(cart)
+    !isDeliveryCheckoutReady(cart)
 
   const paymentSession = cart.payment_collection?.payment_sessions?.[0]
   const checkoutCopy = storefrontConfig.copy.checkout

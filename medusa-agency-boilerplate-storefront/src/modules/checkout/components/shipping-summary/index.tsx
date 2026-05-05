@@ -1,4 +1,4 @@
-import { type ApishipPoint } from "@lib/util/apiship"
+import { buildDeliveryCheckoutSummary } from "@lib/util/delivery-checkout"
 import { convertToLocale } from "@lib/util/money"
 import { HttpTypes } from "@medusajs/types"
 import { Text } from "@medusajs/ui"
@@ -6,10 +6,6 @@ import { Text } from "@medusajs/ui"
 type ShippingSummaryProps = {
   cart: HttpTypes.StoreCart
   className?: string
-}
-
-function getApishipSummaryPointLabel(point?: ApishipPoint | null) {
-  return [point?.name, point?.address].filter(Boolean).join(" · ")
 }
 
 const ShippingSummary = ({ cart, className }: ShippingSummaryProps) => {
@@ -20,10 +16,7 @@ const ShippingSummary = ({ cart, className }: ShippingSummaryProps) => {
   }
 
   const title = shippingMethod?.name ?? null
-  const apishipData = shippingMethod.data?.apishipData as
-    | { point?: ApishipPoint | null }
-    | undefined
-  const apishipPointLabel = getApishipSummaryPointLabel(apishipData?.point)
+  const deliverySummary = buildDeliveryCheckoutSummary(shippingMethod)
 
   return (
     <div className={className}>
@@ -36,9 +29,9 @@ const ShippingSummary = ({ cart, className }: ShippingSummaryProps) => {
           })}
         </Text>
       )}
-      {apishipPointLabel && (
+      {deliverySummary?.point_label && (
         <Text className="txt-medium text-ui-fg-subtle">
-          ApiShip ПВЗ: {apishipPointLabel}
+          {deliverySummary.label} ПВЗ: {deliverySummary.point_label}
         </Text>
       )}
     </div>

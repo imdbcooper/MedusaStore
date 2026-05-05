@@ -18,13 +18,13 @@ import {
   getApishipPointId,
   getApishipTariffCost,
   getApishipTariffId,
-  isApishipCheckoutReady,
   normalizeApishipTariffForCheckout,
   type ApishipCalculation,
   type ApishipPoint,
   type ApishipProvider,
   type ApishipTariff,
 } from "@lib/util/apiship"
+import { isDeliveryCheckoutReady } from "@lib/util/delivery-checkout"
 import { convertToLocale } from "@lib/util/money"
 import { CheckCircleSolid, Loader } from "@medusajs/icons"
 import { HttpTypes } from "@medusajs/types"
@@ -394,7 +394,7 @@ const Shipping: React.FC<ShippingProps> = ({
       cartShippingMethod?.shipping_option_id === apishipShippingOption.id &&
       currentSavedApishipPoint &&
       currentSavedApishipTariff &&
-      isApishipCheckoutReady(cart, { contextKey: apishipContextKey })
+      isDeliveryCheckoutReady(cart, { contextKey: apishipContextKey })
   )
   const apishipMutationInFlight = apishipState.commit_status === "committing"
   const canSaveApishipSelection = Boolean(
