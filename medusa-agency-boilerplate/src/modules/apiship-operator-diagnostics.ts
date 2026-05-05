@@ -122,7 +122,7 @@ export function buildApishipOperatorDiagnosticsSnapshot(
       active_baseline: "apiship_gorgo",
       runtime_http_status: DELIVERY_HUB_RUNTIME_QUARANTINE_STATUS,
       error_code: DELIVERY_HUB_RUNTIME_QUARANTINE_ERROR_CODE,
-      physical_cleanup_performed: false,
+      physical_cleanup_performed: true,
       public_store_facade_returned: false,
     },
     limitations: {

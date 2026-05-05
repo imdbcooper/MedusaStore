@@ -16,16 +16,6 @@ import {
 } from "../modules/apiship-shipment-execution-guard"
 import { enforceDeliveryHubRuntimeQuarantine } from "../modules/delivery-hub-runtime-quarantine"
 
-import { AdminCreateDeliveryConnectionSchema } from "./admin/delivery/connections/route"
-import { AdminUpdateDeliveryConnectionSchema } from "./admin/delivery/connections/[id]/route"
-import { AdminDeliveryConnectionTestSchema } from "./admin/delivery/connections/[id]/test/route"
-import { AdminDeliveryEventLogsQuerySchema } from "./admin/delivery/logs/route"
-import { AdminDeliveryPickupPointsQuerySchema } from "./admin/delivery/pickup-points/route"
-import { AdminDeliveryPickupWindowsQuerySchema } from "./admin/delivery/pickup-windows/route"
-import { AdminDeliveryShippingOptionManualSyncSchema } from "./admin/delivery/shipping-options/sync/route"
-import { AdminDeliveryTestQuoteSchema } from "./admin/delivery/test-quote/route"
-import { AdminCreateDeliveryWarehouseSchema } from "./admin/delivery/warehouses/route"
-import { AdminUpdateDeliveryWarehouseSchema } from "./admin/delivery/warehouses/[id]/route"
 import {
   AdminCreateMarketingCampaignSchema,
   AdminUpdateCustomerMarketingPreferencesSchema,
@@ -47,31 +37,6 @@ export default defineMiddlewares({
       matcher: "/admin/apiship/diagnostics",
       methods: ["GET"],
       middlewares: [adminAuth],
-    },
-    {
-      matcher: "/admin/delivery/providers",
-      methods: ["GET"],
-      middlewares: [adminAuth],
-    },
-    {
-      matcher: "/admin/delivery/shipping-options/preview",
-      methods: ["GET"],
-      middlewares: [adminAuth],
-    },
-    {
-      matcher: "/admin/delivery/fulfillment-bridge/preview",
-      methods: ["GET"],
-      middlewares: [adminAuth],
-    },
-    {
-      matcher: "/admin/delivery/execution-plan/preview",
-      methods: ["GET"],
-      middlewares: [adminAuth],
-    },
-    {
-      matcher: "/admin/delivery/shipping-options/sync",
-      methods: ["POST"],
-      middlewares: [adminAuth, validateAndTransformBody(AdminDeliveryShippingOptionManualSyncSchema)],
     },
     {
       matcher: "/admin/fulfillments",
@@ -117,104 +82,6 @@ export default defineMiddlewares({
       matcher: "/admin/orders/:id/delivery-hub/shipments/:shipment_id/retry",
       methods: ["POST"],
       middlewares: [adminAuth, enforceDeliveryHubRuntimeQuarantine],
-    },
-    {
-      matcher: "/admin/delivery/shipments/:execution_reference/operations",
-      methods: ["GET"],
-      middlewares: [adminAuth],
-    },
-    {
-      matcher: "/admin/delivery/shipments/:execution_reference/operations/refresh-status",
-      methods: ["POST"],
-      middlewares: [adminAuth],
-    },
-    {
-      matcher: "/admin/delivery/shipments/:execution_reference/operations/cancel",
-      methods: ["POST"],
-      middlewares: [adminAuth],
-    },
-    {
-      matcher: "/admin/delivery/shipments/:execution_reference/operations/retry",
-      methods: ["POST"],
-      middlewares: [adminAuth],
-    },
-    {
-      matcher: "/admin/delivery/connections",
-      methods: ["GET"],
-      middlewares: [adminAuth],
-    },
-    {
-      matcher: "/admin/delivery/connections",
-      methods: ["POST"],
-      middlewares: [adminAuth, validateAndTransformBody(AdminCreateDeliveryConnectionSchema)],
-    },
-    {
-      matcher: "/admin/delivery/connections/:id",
-      methods: ["PUT"],
-      middlewares: [adminAuth, validateAndTransformBody(AdminUpdateDeliveryConnectionSchema)],
-    },
-    {
-      matcher: "/admin/delivery/connections/:id",
-      methods: ["DELETE"],
-      middlewares: [adminAuth],
-    },
-    {
-      matcher: "/admin/delivery/connections/:id/test",
-      methods: ["POST"],
-      middlewares: [adminAuth, validateAndTransformBody(AdminDeliveryConnectionTestSchema)],
-    },
-    {
-      matcher: "/admin/delivery/logs",
-      methods: ["GET"],
-      middlewares: [
-        adminAuth,
-        validateAndTransformQuery(AdminDeliveryEventLogsQuerySchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
-    },
-    {
-      matcher: "/admin/delivery/pickup-points",
-      methods: ["GET"],
-      middlewares: [
-        adminAuth,
-        validateAndTransformQuery(AdminDeliveryPickupPointsQuerySchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
-    },
-    {
-      matcher: "/admin/delivery/pickup-windows",
-      methods: ["GET"],
-      middlewares: [
-        adminAuth,
-        validateAndTransformQuery(AdminDeliveryPickupWindowsQuerySchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
-    },
-    {
-      matcher: "/admin/delivery/test-quote",
-      methods: ["POST"],
-      middlewares: [adminAuth, validateAndTransformBody(AdminDeliveryTestQuoteSchema)],
-    },
-    {
-      matcher: "/admin/delivery/warehouses",
-      methods: ["GET"],
-      middlewares: [adminAuth],
-    },
-    {
-      matcher: "/admin/delivery/warehouses",
-      methods: ["POST"],
-      middlewares: [adminAuth, validateAndTransformBody(AdminCreateDeliveryWarehouseSchema)],
-    },
-    {
-      matcher: "/admin/delivery/warehouses/:id",
-      methods: ["PUT"],
-      middlewares: [adminAuth, validateAndTransformBody(AdminUpdateDeliveryWarehouseSchema)],
     },
     {
       matcher: "/admin/marketing/campaigns",

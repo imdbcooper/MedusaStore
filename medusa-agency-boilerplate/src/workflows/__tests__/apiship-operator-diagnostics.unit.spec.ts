@@ -113,7 +113,7 @@ describe("ApiShip operator diagnostics", () => {
       active_baseline: "apiship_gorgo",
       runtime_http_status: 410,
       error_code: "delivery_hub_runtime_quarantined",
-      physical_cleanup_performed: false,
+      physical_cleanup_performed: true,
       public_store_facade_returned: false,
     })
   })
