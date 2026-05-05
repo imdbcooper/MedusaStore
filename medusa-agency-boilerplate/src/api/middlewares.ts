@@ -14,6 +14,7 @@ import {
   enforceApishipOrderFulfillmentCancelExecutionGuard,
   enforceApishipOrderFulfillmentCreateExecutionGuard,
 } from "../modules/apiship-shipment-execution-guard"
+import { enforceDeliveryHubRuntimeQuarantine } from "../modules/delivery-hub-runtime-quarantine"
 
 import { AdminCreateDeliveryConnectionSchema } from "./admin/delivery/connections/route"
 import { AdminUpdateDeliveryConnectionSchema } from "./admin/delivery/connections/[id]/route"
@@ -25,8 +26,6 @@ import { AdminDeliveryShippingOptionManualSyncSchema } from "./admin/delivery/sh
 import { AdminDeliveryTestQuoteSchema } from "./admin/delivery/test-quote/route"
 import { AdminCreateDeliveryWarehouseSchema } from "./admin/delivery/warehouses/route"
 import { AdminUpdateDeliveryWarehouseSchema } from "./admin/delivery/warehouses/[id]/route"
-import { AdminOrderDeliveryHubCreateShipmentSchema } from "./admin/orders/[id]/delivery-hub/shipments/route"
-import { AdminOrderDeliveryHubShipmentActionSchema } from "./admin/orders/[id]/delivery-hub/shipments/[shipment_id]/refresh/route"
 import {
   AdminCreateMarketingCampaignSchema,
   AdminUpdateCustomerMarketingPreferencesSchema,
@@ -35,23 +34,6 @@ import { AdminNotificationSmokeSchema } from "./admin/notifications/smoke/route"
 import { AdminSmsNotificationSmokeSchema } from "./admin/notifications/smoke/sms/route"
 import { AdminVkNotificationSmokeSchema } from "./admin/notifications/smoke/vk/route"
 import { StoreCustomerMarketingPreferencesSchema } from "./store/customers/me/marketing-preferences/route"
-import { StoreDeliveryCatalogQuerySchema } from "./store/delivery/catalog/route"
-import { StoreDeliveryPickupPointsQuerySchema } from "./store/delivery/pickup-points/route"
-import { StoreDeliveryPickupWindowsQuerySchema } from "./store/delivery/pickup-windows/route"
-import {
-  StoreDeliveryQuotesBodySchema,
-  StoreDeliveryQuotesQuerySchema,
-} from "./store/delivery/quotes/route"
-import { StoreDeliveryCutoverApprovalArtifactQuerySchema } from "./store/delivery/cutover-approval-template/route"
-import { StoreDeliveryCutoverCandidateQuerySchema } from "./store/delivery/cutover-candidate/route"
-import { StoreDeliveryCutoverPreconditionsQuerySchema } from "./store/delivery/cutover-preconditions/route"
-import { StoreDeliverySelectionReadinessQuerySchema } from "./store/delivery/readiness/route"
-import { StoreDeliverySettingsQuerySchema } from "./store/delivery/settings/route"
-import {
-  StoreDeliveryCartSelectionQuerySchema,
-  StoreDeliveryDeleteCartSelectionBodySchema,
-  StoreDeliveryUpsertCartSelectionBodySchema,
-} from "./store/delivery/selection/route"
 import { StoreVkIdStartLinkSchema } from "./store/customers/me/vk-id/start/route"
 import { StoreYooKassaPaymentStatusSchema } from "./store/payment/yookassa/route"
 import { StoreYooKassaReturnSchema } from "./store/payment/yookassa/return/route"
@@ -109,27 +91,27 @@ export default defineMiddlewares({
     {
       matcher: "/admin/orders/:id/delivery-hub",
       methods: ["GET"],
-      middlewares: [adminAuth],
+      middlewares: [adminAuth, enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/admin/orders/:id/delivery-hub/shipments",
       methods: ["POST"],
-      middlewares: [adminAuth, validateAndTransformBody(AdminOrderDeliveryHubCreateShipmentSchema)],
+      middlewares: [adminAuth, enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/admin/orders/:id/delivery-hub/shipments/:shipment_id/refresh",
       methods: ["POST"],
-      middlewares: [adminAuth, validateAndTransformBody(AdminOrderDeliveryHubShipmentActionSchema)],
+      middlewares: [adminAuth, enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/admin/orders/:id/delivery-hub/shipments/:shipment_id/cancel",
       methods: ["POST"],
-      middlewares: [adminAuth, validateAndTransformBody(AdminOrderDeliveryHubShipmentActionSchema)],
+      middlewares: [adminAuth, enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/admin/orders/:id/delivery-hub/shipments/:shipment_id/retry",
       methods: ["POST"],
-      middlewares: [adminAuth, validateAndTransformBody(AdminOrderDeliveryHubShipmentActionSchema)],
+      middlewares: [adminAuth, enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/admin/delivery/shipments/:execution_reference/operations",
@@ -303,117 +285,72 @@ export default defineMiddlewares({
     {
       matcher: "/store/delivery/catalog",
       methods: ["GET"],
-      middlewares: [
-        validateAndTransformQuery(StoreDeliveryCatalogQuerySchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
+      middlewares: [enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/store/delivery/settings",
       methods: ["GET"],
-      middlewares: [
-        validateAndTransformQuery(StoreDeliverySettingsQuerySchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
+      middlewares: [enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/store/delivery/cutover-preconditions",
       methods: ["GET"],
-      middlewares: [
-        validateAndTransformQuery(StoreDeliveryCutoverPreconditionsQuerySchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
+      middlewares: [enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/store/delivery/cutover-candidate",
       methods: ["GET"],
-      middlewares: [
-        validateAndTransformQuery(StoreDeliveryCutoverCandidateQuerySchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
+      middlewares: [enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/store/delivery/cutover-approval-template",
       methods: ["GET"],
-      middlewares: [
-        validateAndTransformQuery(StoreDeliveryCutoverApprovalArtifactQuerySchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
+      middlewares: [enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/store/delivery/quotes",
       methods: ["GET"],
-      middlewares: [
-        validateAndTransformQuery(StoreDeliveryQuotesQuerySchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
+      middlewares: [enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/store/delivery/quotes",
       methods: ["POST"],
-      middlewares: [validateAndTransformBody(StoreDeliveryQuotesBodySchema)],
+      middlewares: [enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/store/delivery/pickup-points",
       methods: ["GET"],
-      middlewares: [
-        validateAndTransformQuery(StoreDeliveryPickupPointsQuerySchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
+      middlewares: [enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/store/delivery/pickup-windows",
       methods: ["GET"],
-      middlewares: [
-        validateAndTransformQuery(StoreDeliveryPickupWindowsQuerySchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
+      middlewares: [enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/store/delivery/selection",
       methods: ["GET"],
-      middlewares: [
-        validateAndTransformQuery(StoreDeliveryCartSelectionQuerySchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
+      middlewares: [enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/store/delivery/readiness",
       methods: ["GET"],
-      middlewares: [
-        validateAndTransformQuery(StoreDeliverySelectionReadinessQuerySchema, {
-          defaults: [],
-          isList: false,
-        }),
-      ],
+      middlewares: [enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/store/delivery/selection",
       methods: ["POST"],
-      middlewares: [validateAndTransformBody(StoreDeliveryUpsertCartSelectionBodySchema)],
+      middlewares: [enforceDeliveryHubRuntimeQuarantine],
+    },
+    {
+      matcher: "/store/delivery/selection/commit",
+      methods: ["POST"],
+      middlewares: [enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/store/delivery/selection",
       methods: ["DELETE"],
-      middlewares: [validateAndTransformBody(StoreDeliveryDeleteCartSelectionBodySchema)],
+      middlewares: [enforceDeliveryHubRuntimeQuarantine],
     },
     {
       matcher: "/store/payment-collections/:id/payment-sessions",

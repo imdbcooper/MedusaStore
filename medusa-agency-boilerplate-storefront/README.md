@@ -1,23 +1,17 @@
 # Storefront
 
-Next.js storefront for the Medusa agency boilerplate. Delivery uses the active Delivery Hub/direct Yandex flow exposed by the backend; live dispatch remains disabled unless a later scoped tranche enables it.
+Next.js storefront for the Medusa agency boilerplate. Delivery uses the ApiShip/Gorgo pickup-point baseline exposed through the backend and the plugin Store API. Live ApiShip shipment execution remains disabled unless a later scoped phase explicitly enables `APISHIP_SHIPMENT_EXECUTION_ENABLED=true`.
 
 Run `npm run typecheck` and `npm run build` from this directory for validation.
 
-## Delivery Hub checkout flow
+## ApiShip/Gorgo checkout flow
 
-Checkout presents one active shopper delivery flow: Delivery Hub quote/PVZ selection, saved delivery method, matched Medusa shipping option, then payment only after delivery is ready. The buyer-facing checkout should not describe preview, shadow, cutover, debug mechanics, or a legacy delivery fallback path.
+Checkout presents one active shopper delivery flow: ApiShip pickup-point/PVZ selection, tariff selection, saved Medusa shipping method with `apishipData`, then payment only after the saved selection is ready.
 
-The public storefront can save Delivery Hub selection metadata through `POST /store/delivery/selection` and clear it through `DELETE /store/delivery/selection`. The Medusa shipping-method handoff uses only the matched Delivery Hub shipping option id; it must not send raw provider payloads, tokens, auth headers, ciphertext, quote keys, offer ids, execution references, or secrets.
+The public storefront reads ApiShip provider, point, and calculation data from plugin-specific `/store/apiship/*` endpoints and commits the selected delivery through the standard Medusa cart shipping-method flow. The checkout path must not call `/store/delivery/*` as a Delivery Hub facade and must not send raw provider credentials, auth headers, ciphertext, execution references, labels, or documents.
 
-`NEXT_PUBLIC_DELIVERY_HUB_CHECKOUT_CUTOVER_ENABLED=false` is parsed with explicit-true semantics only. False/absent keeps the Medusa shipping-method handoff disabled; true can enable the guarded Delivery Hub `setShippingMethod()` handoff only when a saved selection, readiness, candidate planner, and available Delivery Hub Medusa shipping option all align. There is no active legacy delivery fallback handoff in checkout.
+## Historical Delivery Hub diagnostics
 
-## Advanced diagnostics
+Delivery Hub/direct Yandex runtime endpoints are previous-baseline residue after the ApiShip/Gorgo baseline migration. They are quarantined from the active checkout/runtime surface and should not be used for normal storefront validation.
 
-Optional diagnostics remain available only behind `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_ENABLED=true` in a collapsed `data-testid="delivery-hub-dev-diagnostics"` details block. This surface is for dev/admin validation, uses sanitized Store API responses, and is not required for the shopper product flow.
-
-Optional sandbox defaults can be prefilled only with `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEV_DEFAULTS_ENABLED=true` plus the documented `NEXT_PUBLIC_DELIVERY_HUB_PREVIEW_DEFAULT_*` ids. Do not put secrets, tokens, auth headers, provider raw payloads, or production identifiers in these variables.
-
-Manual/runtime diagnostic hooks are intentionally stable for advanced validation and screenshots, but product-flow smoke automation must rely on buyer-facing hooks such as `delivery-hub-customer-delivery-card`, `delivery-hub-pickup-point-selector`, `delivery-hub-pickup-point-option`, `delivery-hub-customer-save-selection-button`, `delivery-hub-customer-save-message`, and `delivery-hub-customer-selection-status`.
-
-From the repository root, run `npm run smoke:delivery-hub-cutover:browser` for the explicit shipping-method handoff smoke and `npm run smoke:delivery-hub-rollback:browser` for the rollback/no-fallback drill. Both commands start local mocked Store API and temporary storefront dev servers; they must not require live Yandex/provider APIs, must not perform shipment execution, and must not depend on shopper-visible diagnostic labels.
+Historical Delivery Hub docs and scripts may remain in the repository only as previous-baseline evidence until a later physical cleanup phase removes obsolete residue. Do not use the old Delivery Hub browser smokes as proof of the current delivery baseline.

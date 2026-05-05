@@ -1,40 +1,22 @@
 # Delivery Hub Documentation Index
 
-> Status updated: `2026-05-01`.
+> Status updated: `2026-05-05`.
 >
-> Purpose: define which Delivery Hub documents are current source of truth, which are reference material, and which are historical/evidence-only. This prevents old preview/cutover wording from being treated as active product guidance.
+> Purpose: identify Delivery Hub documents as previous-baseline historical/evidence material after the ApiShip/Gorgo baseline migration. This prevents old preview/cutover wording from being treated as active product guidance.
 
 ---
 
 ## Current Sources Of Truth
 
-Use these documents for current Delivery Hub work:
+Do not start new Delivery Hub product-flow work from these documents. The current delivery baseline source of truth is [apiship_direct_migration_plan.md](./apiship_direct_migration_plan.md), with ApiShip/Gorgo as the active fresh-template delivery contour.
 
-1. [current_work.md](./current_work.md)
-   - Current operational status and next action.
-   - This is the first document for a new agent.
-
-2. [delivery_hub_rework_plan.md](./delivery_hub_rework_plan.md)
-   - Accepted phase plan for the Delivery Hub rework.
-   - Phases 0/1 through 8 are implemented and reviewed; the Phase 8 diagnostic-fetch isolation follow-up is implemented.
-
-3. [delivery_hub_spec.md](./delivery_hub_spec.md)
-   - Detailed architecture/reference material.
-   - Older preview, shadow, pre-cutover, and legacy-provider sections must be read as historical/dev-diagnostic context unless the rework plan/current status confirms they are active.
-
-4. [delivery_hub_manual_testing_plan.md](./delivery_hub_manual_testing_plan.md)
-   - Operator validation commands and manual testing contours.
-   - Product-flow smokes should use shopper delivery hooks; diagnostic labels are dev/admin-only and must not be required for the active checkout path.
-
-5. [env_contract.md](./env_contract.md)
-   - Delivery Hub env and startup contract.
-   - `DELIVERY_HUB_SHIPMENT_EXECUTION_ENABLED=false` remains the committed default/baseline.
+Delivery Hub runtime endpoints, checkout helpers, scripts, smokes, and docs are previous-baseline residue after the ApiShip/Gorgo migration. Use the documents below only when reviewing historical evidence or a later explicitly scoped cleanup task.
 
 ---
 
 ## Historical Or Evidence-Only Docs
 
-These documents are useful, but they are not the current product-flow source of truth:
+These documents are previous-baseline references and are not the current product-flow source of truth:
 
 - [delivery_hub_checkout_cutover_plan.md](./delivery_hub_checkout_cutover_plan.md)
   Historical/default-off cutover governance evidence. Do not use it to reintroduce shopper-visible cutover language.
@@ -67,7 +49,7 @@ These documents are useful, but they are not the current product-flow source of 
 
 ## Execution Ledger Evidence Docs
 
-The execution-ledger docs remain relevant for gated shipment execution review and external evidence handling. They do not imply runtime activation by themselves.
+The execution-ledger docs remain historical evidence for the previous Delivery Hub contour and external evidence handling. They do not imply runtime activation by themselves.
 
 Use this entry point first:
 
@@ -103,14 +85,12 @@ Future prompts should be short-lived conversation artifacts unless the operator 
 
 ---
 
-## Phase 8 Status
+## ApiShip migration Phase 9 status
 
-Phase 8 is accepted after review:
+Delivery Hub is no longer the active fresh-template delivery baseline:
 
-- shopper-facing docs describe one Delivery Hub delivery flow, not preview/cutover mechanics;
-- admin docs distinguish merchant setup, order shipment operations, and advanced diagnostics;
-- historical approval/evidence docs stay clearly labeled as historical or evidence-only;
-- fresh-template docs do not require legacy delivery env or runtime routes;
-- remaining `preview`, `shadow`, `cutover`, and legacy terms in current docs must be interpreted as historical/evidence/admin/dev-only unless explicitly attached to the active shopper checkout flow.
-
-Follow-up status: advanced diagnostic Store API fetches are now isolated from the ordinary checkout product-flow effect. They load only after diagnostics are explicitly requested, while shopper UI, docs, and product-flow smokes remain independent from diagnostic labels.
+- ApiShip/Gorgo is the current delivery baseline for fresh templates.
+- Delivery Hub runtime endpoints are quarantined from normal Store/Admin execution instead of physically deleted in this phase.
+- Historical docs remain available as previous-baseline evidence only.
+- Delivery Hub scripts, smokes, and runtime code must not be treated as required baseline proof for the ApiShip checkout path.
+- Physical deletion and any local/staging data cleanup remain separate later cleanup work and require explicit scope/operator approval.
