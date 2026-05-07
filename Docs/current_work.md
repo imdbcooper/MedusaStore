@@ -1,6 +1,6 @@
 # Current Work
 
-> Status updated: `2026-05-05`.
+> Status updated: `2026-05-08`.
 >
 > Purpose: this is the short operational source of truth for agents entering the repository with no context. It answers what is current, what is already closed, and what must not be reopened without new evidence.
 
@@ -12,6 +12,8 @@ The active delivery baseline is ApiShip/Gorgo via `@gorgo/medusa-fulfillment-api
 
 Direct plugin-specific `/store/apiship/*` endpoints are the canonical Store API contract for normal checkout. `/store/delivery/*` is not a current canonical facade.
 
+The active storefront visual baseline is the StudioPro/Stitch integration recorded in [stitch_frontend_gap_log.md](./stitch_frontend_gap_log.md). Header, catalog, product/offer, contacts, checkout shell, home and editorial surfaces have been aligned to Stitch references while keeping Medusa cart/catalog/product/checkout/account logic intact.
+
 Delivery Hub/direct Yandex is previous-baseline historical/quarantined context only; use [delivery_hub_physical_cleanup_manifest.md](./delivery_hub_physical_cleanup_manifest.md) and [delivery_hub_documentation_index.md](./delivery_hub_documentation_index.md) for retained history/evidence roles.
 
 ---
@@ -21,11 +23,12 @@ Delivery Hub/direct Yandex is previous-baseline historical/quarantined context o
 The repository remains a Russian-market Medusa template:
 
 - canonical local path: `cp .env.example .env` -> `npm run bootstrap` -> `npm run preflight` -> `npm run dev`;
+- stable storefront production-preview path for browser/smoke verification: `npm run storefront:build` -> `npm run storefront:start` or `bash scripts/manage.sh start:storefront`;
 - baseline region/currency: `ru` / `rub`;
 - notification baseline: local provider by default, UniSender and VK messaging are opt-in integration paths;
 - payment baseline: YooKassa-first for the current Russian-market scope;
 - Payload CMS content layer is materialized as a separate app in [payload-cms](../payload-cms); use [payload_cms_runbook.md](./payload_cms_runbook.md) for lifecycle commands, build guard, seed pages, and admin troubleshooting;
-- storefront customization baseline: preset-driven storefront stack is closed and should not be reopened without regression evidence;
+- storefront customization baseline: StudioPro/Stitch visual system over the preset-driven storefront stack is current; gaps/backlog are tracked in [stitch_frontend_gap_log.md](./stitch_frontend_gap_log.md) and should not be reopened without regression evidence or a scoped backlog item;
 - delivery baseline target: ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship`; Delivery Hub is no longer the target baseline for fresh templates.
 
 Historical legacy delivery rows/provider ids may still exist in old local/staging databases. Treat them as database residue that needs separate operator-approved cleanup, not as active template behavior.
@@ -78,16 +81,17 @@ Important retained facts:
 Use these documents in this order:
 
 1. [current_work.md](./current_work.md) - operational status and next action.
-2. [payload_cms_runbook.md](./payload_cms_runbook.md) - Payload CMS architecture, lifecycle commands, build guard, seed URLs, env basics, and admin troubleshooting.
-3. [apiship_direct_migration_plan.md](./apiship_direct_migration_plan.md) - accepted ApiShip/Gorgo direct migration plan and Phase 0 baseline freeze.
-4. [apiship_baseline_smoke_evidence.md](./apiship_baseline_smoke_evidence.md) - deterministic ApiShip baseline smoke/evidence runbook without live credentials or external ApiShip calls.
-5. [delivery_hub_physical_cleanup_manifest.md](./delivery_hub_physical_cleanup_manifest.md) - committed Delivery Hub runtime cleanup/quarantine manifest.
-6. [delivery_hub_documentation_index.md](./delivery_hub_documentation_index.md) - Delivery Hub historical/evidence classification.
-7. [delivery_hub_rework_plan.md](./delivery_hub_rework_plan.md) - previous-baseline Delivery Hub phase plan; historical unless explicitly referenced for audit.
-8. [delivery_hub_spec.md](./delivery_hub_spec.md) - detailed previous-baseline architecture/reference material; treat as historical unless the cleaned docs say otherwise.
-9. [env_contract.md](./env_contract.md) - environment/startup contract.
-10. [master_repo_plan_v2.md](./master_repo_plan_v2.md) - overall repository roadmap.
-11. [plan_analysis.md](./plan_analysis.md) - factual audit and historical reality check.
+2. [stitch_frontend_gap_log.md](./stitch_frontend_gap_log.md) - current StudioPro/Stitch frontend alignment, code-vs-interface gaps, UI-vs-backend gaps, validation status, and backlog.
+3. [payload_cms_runbook.md](./payload_cms_runbook.md) - Payload CMS architecture, lifecycle commands, build guard, seed URLs, env basics, and admin troubleshooting.
+4. [apiship_direct_migration_plan.md](./apiship_direct_migration_plan.md) - accepted ApiShip/Gorgo direct migration plan and Phase 0 baseline freeze.
+5. [apiship_baseline_smoke_evidence.md](./apiship_baseline_smoke_evidence.md) - deterministic ApiShip baseline smoke/evidence runbook without live credentials or external ApiShip calls.
+6. [delivery_hub_physical_cleanup_manifest.md](./delivery_hub_physical_cleanup_manifest.md) - committed Delivery Hub runtime cleanup/quarantine manifest.
+7. [delivery_hub_documentation_index.md](./delivery_hub_documentation_index.md) - Delivery Hub historical/evidence classification.
+8. [delivery_hub_rework_plan.md](./delivery_hub_rework_plan.md) - previous-baseline Delivery Hub phase plan; historical unless explicitly referenced for audit.
+9. [delivery_hub_spec.md](./delivery_hub_spec.md) - detailed previous-baseline architecture/reference material; treat as historical unless the cleaned docs say otherwise.
+10. [env_contract.md](./env_contract.md) - environment/startup contract.
+11. [master_repo_plan_v2.md](./master_repo_plan_v2.md) - overall repository roadmap.
+12. [plan_analysis.md](./plan_analysis.md) - factual audit and historical reality check.
 
 Old phase prompt files are not source-of-truth. Completed prompt artifacts should not be used to infer current status.
 
