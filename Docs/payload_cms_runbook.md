@@ -28,9 +28,10 @@ Root orchestration commands are exposed from [`package.json`](../package.json) a
 | --- | --- |
 | `npm run payload:dev` | Start Payload/Next development server in foreground, usually at `http://localhost:3100`. |
 | `npm run payload:status` | Print env/runtime status, active Payload/Next processes, port state, admin healthcheck, and known `.next` corruption warnings. |
-| `npm run payload:clean` | Stop active Payload/Next dev processes and remove [`payload-cms/.next`](../payload-cms/.next). |
-| `npm run payload:restart` | Stop active Payload/Next dev, remove [`payload-cms/.next`](../payload-cms/.next), then start `payload:dev` in foreground. This is the safest recovery command for local admin chunk/style issues. |
-| `npm run payload:build` | Run production build for Payload. Guarded: it refuses to build while a Payload/Next dev process is active. |
+| `npm run payload:stop` | Stop active Payload/Next dev/start processes only. Does **not** remove [`payload-cms/.next`](../payload-cms/.next). |
+| `npm run payload:clean` | Stop active Payload/Next dev/start processes and remove [`payload-cms/.next`](../payload-cms/.next). Use this when cache/build output must be reset. |
+| `npm run payload:restart` | Stop active Payload/Next dev/start, remove [`payload-cms/.next`](../payload-cms/.next), then start `payload:dev` in foreground. This is the safest recovery command for local admin chunk/style issues. |
+| `npm run payload:build` | Run production build for Payload. Guarded: it refuses to build while a Payload/Next dev/start process is active. |
 | `npm run payload:start` | Start the production server after a successful production build. |
 | `npm run payload:types` | Generate Payload types. |
 | `npm run payload:importmap` | Generate Payload import map. |
@@ -44,10 +45,13 @@ Interactive lifecycle is also available through [`scripts/manage.sh`](../scripts
 - menu item `24` — Payload production start;
 - menu item `25` — Payload types + importmap;
 - menu item `26` — Payload seed test content;
-- menu item `27` — Payload clean;
-- menu item `28` — Payload restart.
+- menu item `27` — Payload stop without cache cleanup;
+- menu item `28` — Payload clean;
+- menu item `29` — Payload restart.
 
-The same commands are available as direct manager arguments where useful, for example `bash scripts/manage.sh payload:status` or `bash scripts/manage.sh payload:restart`.
+The same commands are available as direct manager arguments where useful, for example `bash scripts/manage.sh payload:status`, `bash scripts/manage.sh payload:stop`, or `bash scripts/manage.sh payload:restart`.
+
+To only stop Payload without deleting cache/build output, use `bash scripts/manage.sh payload:stop` or menu item `27`. `payload:clean` is intentionally stronger: it stops Payload and additionally removes [`payload-cms/.next`](../payload-cms/.next).
 
 ---
 
@@ -64,10 +68,11 @@ Why this matters:
 Correct local build flow:
 
 1. Check state: `npm run payload:status`.
-2. Stop/clean dev output: `npm run payload:clean`.
-3. Run production build: `npm run payload:build`.
-4. Optional production start after build: `npm run payload:start`.
-5. To return to development mode later: `npm run payload:restart`.
+2. Stop active Payload/Next first: `npm run payload:stop` or `bash scripts/manage.sh payload:stop`.
+3. If cache/build output must also be reset, run `npm run payload:clean` instead; it stops Payload and removes [`payload-cms/.next`](../payload-cms/.next).
+4. Run production build: `npm run payload:build`.
+5. Optional production start after build: `npm run payload:start`.
+6. To return to development mode later: `npm run payload:restart`.
 
 The guard is implemented in [`scripts/payload-run.sh`](../scripts/payload-run.sh). If it finds active Payload/Next dev processes before build, it exits with an explanation instead of risking another [`payload-cms/.next`](../payload-cms/.next) corruption.
 
@@ -156,8 +161,9 @@ Quick checks:
 
 1. `npm run payload:status` for port/process/env/admin health.
 2. Confirm `PAYLOAD_DATABASE_URL` and `PAYLOAD_SECRET` are configured locally.
-3. Confirm no old Payload/Next process is still listening on port `3100`.
-4. Use `npm run payload:clean` before another `npm run payload:dev` if the status command reports a missing vendor chunk.
+3. Stop old Payload/Next dev/start processes without deleting cache via `bash scripts/manage.sh payload:stop` or `npm run payload:stop`.
+4. Confirm no old Payload/Next process is still listening on port `3100`.
+5. Use `npm run payload:clean` before another `npm run payload:dev` if the status command reports a missing vendor chunk; unlike stop, clean also removes [`payload-cms/.next`](../payload-cms/.next).
 
 ---
 
