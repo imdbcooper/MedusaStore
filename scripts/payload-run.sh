@@ -13,7 +13,7 @@ PAYLOAD_NEXT_DIR="$PAYLOAD_DIR/.next"
 
 if [[ -z "$PAYLOAD_COMMAND" ]]; then
   log_error "Usage: bash ./scripts/payload-run.sh <payload-script>"
-  log_error "Examples: dev, build, start, clean, restart, payload:generate:types, payload:generate:importmap, seed, status"
+  log_error "Examples: dev, build, start, stop, clean, restart, payload:generate:types, payload:generate:importmap, seed, status"
   exit 1
 fi
 
@@ -45,7 +45,7 @@ case "$PAYLOAD_COMMAND" in
   build | start)
     export NODE_ENV=production
     ;;
-  dev | seed | status | clean | restart)
+  dev | seed | status | stop | clean | restart)
     export NODE_ENV=development
     ;;
 esac
@@ -56,7 +56,7 @@ payload_dependencies_ready() {
 
 payload_next_pid_list() {
   ps -eo pid=,ppid=,cmd= | awk -v dir="$PAYLOAD_DIR" '
-    index($0, dir) && $0 !~ /awk -v dir=/ && ($0 ~ /next dev/ || $0 ~ /next-server \(v/ || $0 ~ /next start/ || $0 ~ /npm run payload:dev/ || $0 ~ /payload-run\.sh dev/) {
+    index($0, dir) && $0 !~ /awk -v dir=/ && ($0 ~ /next dev/ || $0 ~ /next-server \(v/ || $0 ~ /next start/ || $0 ~ /npm run payload:dev/ || $0 ~ /npm run payload:start/ || $0 ~ /payload-run\.sh dev/ || $0 ~ /payload-run\.sh start/) {
       print $1
     }
   ' | sort -n | uniq
@@ -64,7 +64,7 @@ payload_next_pid_list() {
 
 payload_next_process_details() {
   ps -eo pid=,ppid=,lstart=,cmd= | awk -v dir="$PAYLOAD_DIR" '
-    index($0, dir) && $0 !~ /awk -v dir=/ && ($0 ~ /next dev/ || $0 ~ /next-server \(v/ || $0 ~ /next start/ || $0 ~ /npm run payload:dev/ || $0 ~ /payload-run\.sh dev/) {
+    index($0, dir) && $0 !~ /awk -v dir=/ && ($0 ~ /next dev/ || $0 ~ /next-server \(v/ || $0 ~ /next start/ || $0 ~ /npm run payload:dev/ || $0 ~ /npm run payload:start/ || $0 ~ /payload-run\.sh dev/ || $0 ~ /payload-run\.sh start/) {
       print
     }
   '
@@ -88,6 +88,7 @@ payload_stop_dev() {
   pids="$(payload_next_pid_list || true)"
 
   if [[ -z "$pids" ]]; then
+    log_info "No active Payload/Next dev/start processes detected."
     return 0
   fi
 
@@ -161,7 +162,7 @@ payload_guard_no_active_dev_for_build() {
   exit 1
 }
 
-if [[ "$PAYLOAD_COMMAND" != "status" && "$PAYLOAD_COMMAND" != "clean" ]] && ! payload_dependencies_ready; then
+if [[ "$PAYLOAD_COMMAND" != "status" && "$PAYLOAD_COMMAND" != "stop" && "$PAYLOAD_COMMAND" != "clean" ]] && ! payload_dependencies_ready; then
   log_info "Installing payload-cms dependencies with npm to ensure local runtime readiness."
   (
     cd "$PAYLOAD_DIR"
@@ -222,6 +223,10 @@ if [[ "$PAYLOAD_COMMAND" == "status" ]]; then
 fi
 
 case "$PAYLOAD_COMMAND" in
+  stop)
+    payload_stop_dev
+    exit 0
+    ;;
   clean)
     payload_stop_dev
     payload_clean_next_cache
