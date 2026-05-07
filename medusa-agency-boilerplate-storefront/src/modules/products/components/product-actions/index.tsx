@@ -4,7 +4,6 @@ import { addToCart } from "@lib/data/cart"
 import { useIntersection } from "@lib/hooks/use-in-view"
 import { HttpTypes } from "@medusajs/types"
 import { Button } from "@medusajs/ui"
-import Divider from "@modules/common/components/divider"
 import OptionSelect from "@modules/products/components/product-actions/option-select"
 import { isEqual } from "lodash"
 import {
@@ -145,28 +144,25 @@ export default function ProductActions({
 
   return (
     <>
-      <div className="flex flex-col gap-y-2" ref={actionsRef}>
-        <div>
-          {(product.variants?.length ?? 0) > 1 && (
-            <div className="flex flex-col gap-y-4">
-              {(product.options || []).map((option) => {
-                return (
-                  <div key={option.id}>
-                    <OptionSelect
-                      option={option}
-                      current={options[option.id]}
-                      updateOption={setOptionValue}
-                      title={option.title ?? ""}
-                      data-testid="product-options"
-                      disabled={!!disabled || isAdding}
-                    />
-                  </div>
-                )
-              })}
-              <Divider />
-            </div>
-          )}
-        </div>
+      <div className="flex flex-col gap-y-6" ref={actionsRef}>
+        {(product.variants?.length ?? 0) > 1 && (
+          <div className="flex flex-col gap-y-4 rounded-[var(--theme-radius-card)] border border-[var(--theme-border)] bg-[rgba(247,244,238,0.5)] p-4">
+            {(product.options || []).map((option) => {
+              return (
+                <div key={option.id}>
+                  <OptionSelect
+                    option={option}
+                    current={options[option.id]}
+                    updateOption={setOptionValue}
+                    title={option.title ?? ""}
+                    data-testid="product-options"
+                    disabled={!!disabled || isAdding}
+                  />
+                </div>
+              )
+            })}
+          </div>
+        )}
 
         <ProductPrice product={product} variant={selectedVariant} />
 
@@ -180,7 +176,7 @@ export default function ProductActions({
             !isValidVariant
           }
           variant="primary"
-          className="w-full h-10"
+          className="h-14 w-full rounded-[8px] bg-[var(--theme-accent)] text-xs font-bold uppercase tracking-[0.14em] text-[var(--theme-accent-contrast)] shadow-none transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--theme-accent-strong)] hover:shadow-[0_4px_12px_rgba(23,26,31,0.08)]"
           isLoading={isAdding}
           data-testid="add-product-button"
         >
@@ -188,8 +184,11 @@ export default function ProductActions({
             ? "Select variant"
             : !inStock || !isValidVariant
             ? "Out of stock"
-            : "Add to cart"}
+            : "Start Setup Process"}
         </Button>
+        <p className="text-center text-sm leading-6 text-[var(--theme-muted)]">
+          No commitment required. We typically respond within 24 hours.
+        </p>
         <MobileActions
           product={product}
           variant={selectedVariant}

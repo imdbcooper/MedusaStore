@@ -73,8 +73,10 @@ const SideMenu = ({
                 <Popover.Button
                   data-testid="nav-menu-button"
                   className={clx(
-                    "relative h-full flex items-center transition-all ease-out duration-200 focus:outline-none",
-                    isInverseTone ? "hover:text-[var(--theme-accent-contrast)]" : "hover:text-ui-fg-base"
+                    "relative h-full flex items-center text-[11px] font-medium leading-none tracking-[-0.01em] transition-all ease-out duration-200 focus:outline-none",
+                    isInverseTone
+                      ? "hover:text-[var(--theme-accent-contrast)]"
+                      : "text-[var(--theme-foreground)] hover:text-[var(--theme-accent-strong)]"
                   )}
                 >
                   {navigationCopy.menu}

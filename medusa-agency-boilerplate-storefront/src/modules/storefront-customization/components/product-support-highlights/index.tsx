@@ -12,13 +12,7 @@ export default function ProductSupportHighlights() {
       {surface.items.map((item) => (
         <div
           key={item.title}
-          className="border p-4"
-          style={{
-            borderColor: "var(--theme-border)",
-            borderRadius: "var(--theme-radius-card)",
-            background: "var(--theme-surface)",
-            boxShadow: "var(--theme-shadow-card)",
-          }}
+          className="rounded-[8px] border border-[var(--theme-border)] bg-[rgba(247,244,238,0.54)] p-4 transition-colors hover:border-[var(--theme-muted)]"
         >
           <h3 className="text-sm font-semibold text-[var(--theme-foreground)]">
             {item.title}

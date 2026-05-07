@@ -1,5 +1,6 @@
 import { ReactNode } from "react"
 
+import { stitchCatalogPills } from "../../../data/mockData"
 import { HttpTypes } from "@medusajs/types"
 import { Text, clx } from "@medusajs/ui"
 
@@ -18,6 +19,7 @@ type CatalogSpacing = "compact" | "comfortable"
 
 type CatalogIntroSurfaceProps = {
   surface: StorefrontStoreCatalogIntroSurface
+  sortControl?: ReactNode
 }
 
 type CategoryCatalogIntroSurfaceProps = {
@@ -86,37 +88,65 @@ const getIntroDescriptionClassName = (variant: "simple" | "editorial") =>
 
 export function StoreCatalogIntroSurface({
   surface,
+  sortControl,
 }: CatalogIntroSurfaceProps) {
-  const wrapperClassName = getIntroWrapperClassName(surface)
-
   return (
-    <section className="mb-8">
-      <div
-        className={wrapperClassName}
-        style={{
-          borderColor: "var(--theme-border)",
-        }}
-      >
-        {surface.eyebrow && (
-          <span className="text-sm font-medium uppercase tracking-[0.24em] text-[var(--theme-muted)]">
-            {surface.eyebrow}
-          </span>
-        )}
-        <div className={surface.eyebrow ? "pt-3" : undefined}>
-          <h1
-            className={getIntroTitleClassName(surface.variant)}
-            data-testid="store-page-title"
-          >
-            {surface.title}
-          </h1>
-          {surface.description && (
-            <Text className={getIntroDescriptionClassName(surface.variant)}>
-              {surface.description}
-            </Text>
-          )}
+    <>
+      <section className="py-24 small:py-[120px]" data-testid="store-catalog-hero">
+        <div className="grid gap-12 lg:grid-cols-2 lg:items-start">
+          <div>
+            <h1
+              className="max-w-3xl text-[44px] font-bold leading-[1.1] tracking-[-0.02em] text-[#171A1F] small:text-[48px]"
+              data-testid="store-page-title"
+            >
+              {surface.title}
+            </h1>
+            {surface.description && (
+              <Text className="max-w-[560px] pt-6 text-lg leading-[1.6] text-[#4A607D] small:text-[18px]">
+                {surface.description}
+              </Text>
+            )}
+          </div>
+          <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-surface)] p-8">
+            <div className="flex items-start gap-8 small:gap-6">
+              <div className="flex h-[68px] w-[68px] shrink-0 items-center justify-center rounded-lg bg-[var(--theme-surface-muted)] text-3xl text-[var(--theme-accent)]">
+                ◴
+              </div>
+              <div>
+                <h2 className="text-[32px] font-semibold leading-[1.2] tracking-[-0.01em] text-[#171A1F]">
+                  Быстрый запуск
+                </h2>
+                <p className="pt-4 text-[18px] leading-[1.6] text-[#4A607D]">
+                  Вам не нужно ждать месяцами. Системный подход позволяет запустить проект в 3 раза быстрее.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+      <section className="mb-12 border-b border-[var(--theme-border)] pb-6" data-testid="store-catalog-controls">
+        <div className="flex flex-wrap items-center gap-4">
+          <span className="mr-2 text-xs font-semibold uppercase leading-none tracking-[0.2em] text-[#737780]">
+            {surface.eyebrow || "Категории:"}
+          </span>
+          {stitchCatalogPills.map((pill, index) => (
+            <button
+              key={pill}
+              className={clx(
+                "rounded-full border px-4 py-2 text-xs font-semibold uppercase leading-none tracking-[0.18em] transition-colors",
+                index === 0
+                  ? "border-[var(--theme-accent)] bg-[var(--theme-accent)] text-[var(--theme-accent-contrast)]"
+                  : "border-[var(--theme-border)] bg-[var(--theme-surface)] text-[#4A607D] hover:border-[#171A1F]"
+              )}
+              type="button"
+            >
+              {pill}
+            </button>
+          ))}
+          {sortControl ? <div className="ml-auto">{sortControl}</div> : null}
+        </div>
+      </section>
+    </>
   )
 }
 
@@ -192,7 +222,7 @@ export function CatalogResultsShellSurface({
   children,
 }: CatalogResultsShellSurfaceProps) {
   if (surface.variant === "plain") {
-    return <div className={clx("w-full", getSectionSpacingClassName(surface.spacing))}>{children}</div>
+    return <div className="w-full">{children}</div>
   }
 
   return (
@@ -210,6 +240,29 @@ export function CatalogResultsShellSurface({
         {children}
       </div>
     </div>
+  )
+}
+
+export function CatalogTrustSection() {
+  return (
+    <section className="pb-24 pt-20 small:pb-[120px] small:pt-[120px]" data-testid="store-catalog-trust">
+      <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-surface)] p-8 small:p-10">
+        <div className="flex flex-col items-start justify-between gap-8 md:flex-row md:items-center">
+          <div className="max-w-[900px]">
+            <h2 className="text-[32px] font-semibold leading-[1.2] tracking-[-0.01em] text-[#171A1F]">
+              Профессиональный контроль качества
+            </h2>
+            <p className="pt-4 text-[18px] leading-[1.6] text-[#4A607D]">
+              Каждое решение проходит ручную модерацию экспертами. Мы не просто продаем шаблоны — мы обеспечиваем техническую надежность и соответствие современным стандартам UI/UX. Человеческая экспертиза поверх системной эффективности.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3 rounded-xl bg-[#6F8F7A] px-6 py-4 text-[#171A1F]">
+            <span className="text-3xl" aria-hidden="true">▣</span>
+            <span className="text-2xl font-semibold leading-[1.3]">Expert Check</span>
+          </div>
+        </div>
+      </div>
+    </section>
   )
 }
 

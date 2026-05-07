@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Предложение: Расширенные характеристики (Вариант 1)</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600&amp;family=Manrope:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-bright": "#f7faf8",
+                      "on-tertiary-container": "#fff6f3",
+                      "on-secondary": "#ffffff",
+                      "tertiary-container": "#a26146",
+                      "surface-container-high": "#e6e9e7",
+                      "on-tertiary-fixed-variant": "#6f3820",
+                      "surface-tint": "#136965",
+                      "on-surface": "#181c1c",
+                      "inverse-surface": "#2d3131",
+                      "tertiary": "#854930",
+                      "primary-fixed": "#a5f0ea",
+                      "on-error-container": "#93000a",
+                      "surface-container-low": "#f1f4f3",
+                      "canvas-warm": "#F7F4EE",
+                      "graphite-ink": "#171A1F",
+                      "on-error": "#ffffff",
+                      "primary": "#07645f",
+                      "error": "#ba1a1a",
+                      "surface": "#f7faf8",
+                      "background": "#f7faf8",
+                      "secondary": "#4a607d",
+                      "secondary-fixed-dim": "#b2c8ea",
+                      "on-tertiary-fixed": "#370e00",
+                      "on-primary-fixed-variant": "#00504c",
+                      "on-secondary-fixed": "#031c36",
+                      "on-primary-container": "#dafffb",
+                      "soft-shadow": "rgba(23, 26, 31, 0.08)",
+                      "on-background": "#181c1c",
+                      "on-surface-variant": "#3f4947",
+                      "ink-blue": "#1E344F",
+                      "thin-line": "#E4DED4",
+                      "surface-container-highest": "#e0e3e2",
+                      "surface-dim": "#d8dbd9",
+                      "outline-variant": "#bec9c7",
+                      "secondary-container": "#c5dbfe",
+                      "inverse-on-surface": "#eff1f0",
+                      "on-primary": "#ffffff",
+                      "tertiary-fixed-dim": "#ffb598",
+                      "primary-container": "#2f7d78",
+                      "on-secondary-container": "#4b607e",
+                      "on-secondary-fixed-variant": "#334864",
+                      "surface-container-lowest": "#ffffff",
+                      "surface-container": "#eceeed",
+                      "muted-sage": "#6F8F7A",
+                      "surface-white": "#FFFFFF",
+                      "primary-fixed-dim": "#89d4ce",
+                      "teal-accent": "#2F7D78",
+                      "steel-gray": "#737780",
+                      "on-primary-fixed": "#00201e",
+                      "tertiary-fixed": "#ffdbce",
+                      "surface-variant": "#e0e3e2",
+                      "inverse-primary": "#89d4ce",
+                      "outline": "#6f7978",
+                      "on-tertiary": "#ffffff",
+                      "error-container": "#ffdad6",
+                      "secondary-fixed": "#d3e4ff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "section-gap": "120px",
+                      "element-gap": "16px",
+                      "card-padding": "32px",
+                      "container-max": "1280px",
+                      "gutter": "24px"
+              },
+              "fontFamily": {
+                      "price-mono": [
+                              "inter"
+                      ],
+                      "headline-lg": [
+                              "manrope"
+                      ],
+                      "label-caps": [
+                              "inter"
+                      ],
+                      "display-xl": [
+                              "manrope"
+                      ],
+                      "body-md": [
+                              "manrope"
+                      ],
+                      "body-lg": [
+                              "manrope"
+                      ],
+                      "headline-md": [
+                              "manrope"
+                      ]
+              },
+              "fontSize": {
+                      "price-mono": [
+                              "20px",
+                              {
+                                      "lineHeight": "1.0",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "label-caps": [
+                              "12px",
+                              {
+                                      "lineHeight": "1.0",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "display-xl": [
+                              "48px",
+                              {
+                                      "lineHeight": "1.1",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-lg": [
+                              "18px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+</head>
+<body class="bg-canvas-warm text-on-surface font-body-md antialiased min-h-screen flex flex-col">
+<!-- TopNavBar -->
+<header class="bg-canvas-warm dark:bg-inverse-surface border-b border-thin-line dark:border-outline-variant w-full sticky top-0 z-50">
+<div class="flex justify-between items-center w-full px-gutter py-4 max-w-container-max mx-auto">
+<div class="flex items-center gap-8">
+<a class="text-headline-md font-headline-md font-bold text-graphite-ink dark:text-on-surface tracking-tight" href="#">StudioPro</a>
+<nav class="hidden md:flex gap-6 items-center">
+<a class="text-secondary dark:text-secondary-fixed-dim font-body-md hover:text-primary dark:hover:text-primary-fixed transition-colors duration-200" href="#">Catalog</a>
+<a class="text-primary dark:text-primary-fixed-dim font-bold border-b-2 border-primary dark:border-primary-fixed-dim pb-1 hover:text-primary dark:hover:text-primary-fixed transition-colors duration-200" href="#">Solutions</a>
+<a class="text-secondary dark:text-secondary-fixed-dim font-body-md hover:text-primary dark:hover:text-primary-fixed transition-colors duration-200" href="#">Process</a>
+<a class="text-secondary dark:text-secondary-fixed-dim font-body-md hover:text-primary dark:hover:text-primary-fixed transition-colors duration-200" href="#">Pricing</a>
+<a class="text-secondary dark:text-secondary-fixed-dim font-body-md hover:text-primary dark:hover:text-primary-fixed transition-colors duration-200" href="#">Portfolio</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<a class="hidden md:block font-label-caps text-label-caps text-primary hover:text-teal-accent transition-colors" href="#">Login</a>
+<button class="bg-primary-container text-surface-white font-label-caps text-label-caps px-6 py-3 rounded hover:bg-surface-tint transition-all hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(23,26,31,0.08)] scale-95 active:opacity-80">Launch Project</button>
+</div>
+</div>
+</header>
+<main class="flex-grow">
+<!-- Hero Offer Section -->
+<section class="max-w-container-max mx-auto px-gutter py-section-gap">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
+<!-- Left: Content & Form -->
+<div class="lg:col-span-5 flex flex-col gap-8">
+<div>
+<span class="inline-block bg-muted-sage text-surface-white font-label-caps text-label-caps px-3 py-1 rounded-full mb-6">Expert Setup</span>
+<h1 class="font-display-xl text-display-xl text-graphite-ink mb-6">E-Commerce Platform Setup</h1>
+<p class="font-body-lg text-body-lg text-secondary mb-8">Comprehensive digital storefront development including inventory management, payment gateway integration, and tailored user flows for modern retail.</p>
+<div class="flex items-end gap-4 mb-8">
+<span class="font-price-mono text-price-mono text-graphite-ink text-4xl">$4,500</span>
+<span class="font-body-md text-body-md text-secondary pb-1">/ one-time setup</span>
+</div>
+</div>
+<!-- Lead Capture Form -->
+<div class="bg-surface-white border border-thin-line rounded-lg p-card-padding shadow-[0_4px_24px_rgba(23,26,31,0.04)]">
+<h3 class="font-headline-md text-headline-md text-graphite-ink mb-6">Request Consultation</h3>
+<form class="flex flex-col gap-element-gap">
+<div class="flex flex-col gap-2">
+<label class="font-label-caps text-label-caps text-steel-gray" for="email">Work Email</label>
+<input class="border border-thin-line rounded px-4 py-3 font-body-md text-body-md focus:outline-none focus:border-teal-accent focus:ring-1 focus:ring-teal-accent transition-colors bg-canvas-warm/50" id="email" placeholder="hello@company.com" type="email"/>
+</div>
+<div class="flex flex-col gap-2">
+<label class="font-label-caps text-label-caps text-steel-gray" for="timeline">Expected Timeline</label>
+<select class="border border-thin-line rounded px-4 py-3 font-body-md text-body-md focus:outline-none focus:border-teal-accent focus:ring-1 focus:ring-teal-accent transition-colors bg-canvas-warm/50 text-graphite-ink appearance-none" id="timeline">
+<option>1-2 Months</option>
+<option>3-4 Months</option>
+<option>6+ Months</option>
+</select>
+</div>
+<button class="mt-4 bg-teal-accent text-surface-white font-label-caps text-label-caps px-6 py-4 rounded hover:bg-surface-tint transition-all hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(23,26,31,0.08)] flex justify-center items-center gap-2" type="submit">
+                                Start Setup Process
+                                <span class="material-symbols-outlined" style="font-size: 16px;">arrow_forward</span>
+</button>
+<p class="text-center font-body-md text-sm text-secondary mt-2">No commitment required. We typically respond within 24 hours.</p>
+</form>
+</div>
+</div>
+<!-- Right: High Quality Mockup -->
+<div class="lg:col-span-7">
+<div class="relative w-full aspect-[4/3] rounded-xl overflow-hidden border border-thin-line bg-surface-white shadow-[0_8px_32px_rgba(23,26,31,0.06)] group">
+<!-- Simulated Shimmer / Loading Quality Effect before image load -->
+<div class="absolute inset-0 bg-gradient-to-r from-transparent via-surface-container-high/20 to-transparent -translate-x-full group-hover:animate-[shimmer_2s_infinite]"></div>
+<img alt="High-quality mockup of a modern e-commerce dashboard showing analytics, revenue charts, and inventory status." class="w-full h-full object-cover" data-alt="A pristine, high-resolution mockup of a modern e-commerce analytics dashboard displayed on a sleek monitor in a bright, professional studio setting. The screen shows detailed data visualizations, clean white graphs, and a sophisticated teal accent color scheme. The lighting is soft and natural, casting minimal shadows, emphasizing a premium corporate aesthetic and technological transparency. The environment feels organized, systematic, and focused on business growth." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBD5ZRj62-EojdIlaLdpK_LoJ8ub7ENReELIrmZbsFVDRgujm9tuhEY8XdWodF4jF34TFCI69MLx6LsuEkzpygFRKSmcqrAZ9zMf-pcjw21UzChv5f72v1Nhj6xrSBbbfSB99upm1VUaPg6zueQ64c215OrlskjbtyDf22ZM5HMXfGal4hoDXlEL1t2dEeCRNBEITb5p1g6b7K_q2O8wJK_W-hzNJX0sD7za_sLM1TVBS8zywkkBqRvouV0vFGmBbyLEDHyEtGFE5k"/>
+</div><div class="mt-6 flex items-center gap-4 p-2 bg-canvas-warm/50 border border-thin-line rounded-lg flex-wrap">
+<button class="flex-1 min-w-[120px] flex items-center justify-center gap-2 py-3 px-4 rounded bg-surface-white border border-teal-accent shadow-sm transition-all">
+<span class="material-symbols-outlined text-teal-accent" style="font-size: 20px;">shopping_bag</span>
+<span class="font-label-caps text-label-caps text-graphite-ink">Retail</span>
+</button>
+<button class="flex-1 min-w-[120px] flex items-center justify-center gap-2 py-3 px-4 rounded border border-transparent hover:bg-surface-white/50 transition-all group">
+<span class="material-symbols-outlined text-steel-gray group-hover:text-teal-accent" style="font-size: 20px;">apparel</span>
+<span class="font-label-caps text-label-caps text-steel-gray group-hover:text-graphite-ink">Fashion</span>
+</button>
+<button class="flex-1 min-w-[120px] flex items-center justify-center gap-2 py-3 px-4 rounded border border-transparent hover:bg-surface-white/50 transition-all group">
+<span class="material-symbols-outlined text-steel-gray group-hover:text-teal-accent" style="font-size: 20px;">devices</span>
+<span class="font-label-caps text-label-caps text-steel-gray group-hover:text-graphite-ink">Digital</span>
+</button>
+<button class="flex-1 min-w-[120px] flex items-center justify-center gap-2 py-3 px-4 rounded border border-transparent hover:bg-surface-white/50 transition-all group">
+<span class="material-symbols-outlined text-steel-gray group-hover:text-teal-accent" style="font-size: 20px;">memory</span>
+<span class="font-label-caps text-label-caps text-steel-gray group-hover:text-graphite-ink">Electronics</span>
+</button>
+<button class="flex-1 min-w-[120px] flex items-center justify-center gap-2 py-3 px-4 rounded border border-transparent hover:bg-surface-white/50 transition-all group">
+<span class="material-symbols-outlined text-steel-gray group-hover:text-teal-accent" style="font-size: 20px;">chair</span>
+<span class="font-label-caps text-label-caps text-steel-gray group-hover:text-graphite-ink">Home Decor</span>
+</button>
+<button class="flex-1 min-w-[120px] flex items-center justify-center gap-2 py-3 px-4 rounded border border-transparent hover:bg-surface-white/50 transition-all group">
+<span class="material-symbols-outlined text-steel-gray group-hover:text-teal-accent" style="font-size: 20px;">sports_basketball</span>
+<span class="font-label-caps text-label-caps text-steel-gray group-hover:text-graphite-ink">Sports</span>
+</button>
+<button class="flex-1 min-w-[120px] flex items-center justify-center gap-2 py-3 px-4 rounded border border-transparent hover:bg-surface-white/50 transition-all group">
+<span class="material-symbols-outlined text-steel-gray group-hover:text-teal-accent" style="font-size: 20px;">face_4</span>
+<span class="font-label-caps text-label-caps text-steel-gray group-hover:text-graphite-ink">Beauty</span>
+</button>
+</div>
+<!-- Value Props Below Image -->
+<div class="grid grid-cols-2 gap-6 mt-6">
+<div class="flex items-start gap-4">
+<div class="bg-surface-white border border-thin-line rounded-full p-2 flex-shrink-0 text-teal-accent">
+<span class="material-symbols-outlined">speed</span>
+</div>
+<div>
+<h4 class="font-headline-md text-base text-graphite-ink mb-1">Optimized Performance</h4>
+<p class="font-body-md text-sm text-secondary">Sub-second load times for crucial storefront pages.</p>
+</div>
+</div>
+<div class="flex items-start gap-4">
+<div class="bg-surface-white border border-thin-line rounded-full p-2 flex-shrink-0 text-teal-accent">
+<span class="material-symbols-outlined">security</span>
+</div>
+<div>
+<h4 class="font-headline-md text-base text-graphite-ink mb-1">Secure Transactions</h4>
+<p class="font-body-md text-sm text-secondary">PCI compliant architecture and secure data handling.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- New Section: Description & Specifications -->
+<section class="bg-surface-white border-y border-thin-line py-section-gap">
+<div class="max-w-container-max mx-auto px-gutter">
+<div class="mb-12">
+<h2 class="font-headline-lg text-headline-lg text-graphite-ink mb-4">Описание и характеристики</h2>
+<p class="font-body-lg text-body-lg text-secondary max-w-2xl">Detailed insights into the technical foundation and functional scope of the E-Commerce platform setup.</p>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-16">
+<!-- Left: Description Text -->
+<div>
+<h3 class="font-headline-md text-headline-md text-graphite-ink mb-6">System Overview</h3>
+<div class="space-y-6 font-body-md text-body-md text-secondary">
+<p>Our comprehensive e-commerce platform setup is designed to provide a robust, scalable foundation for your digital retail operations. We focus on creating a seamless integration between the front-end user experience and the back-end management tools, ensuring that your team can operate efficiently while your customers enjoy a frictionless purchasing journey.</p>
+<p>The architecture leverages modern headless commerce principles where applicable, allowing for greater flexibility in front-end design without compromising the security or stability of the core transactional engine. Every deployment is tailored to fit the specific operational workflows of your business, avoiding rigid 'one-size-fits-all' templates.</p>
+<p>Furthermore, we prioritize data visibility. The included dashboard configurations are built to surface actionable insights regarding inventory turnover, customer acquisition costs, and real-time revenue metrics, empowering your management team to make informed, data-driven decisions.</p>
+</div>
+</div>
+<!-- Right: Technical Characteristics List -->
+<div>
+<h3 class="font-headline-md text-headline-md text-graphite-ink mb-6">Technical Specifications</h3>
+<div class="flex flex-col gap-4">
+<!-- Spec Item -->
+<div class="bg-canvas-warm border border-thin-line rounded p-4 flex justify-between items-center group hover:border-outline-variant transition-colors">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-steel-gray group-hover:text-teal-accent transition-colors">api</span>
+<span class="font-body-md font-semibold text-graphite-ink">API Integrations</span>
+</div>
+<span class="font-body-md text-secondary text-right">REST / GraphQL</span>
+</div>
+<!-- Spec Item -->
+<div class="bg-canvas-warm border border-thin-line rounded p-4 flex justify-between items-center group hover:border-outline-variant transition-colors">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-steel-gray group-hover:text-teal-accent transition-colors">database</span>
+<span class="font-body-md font-semibold text-graphite-ink">Database Architecture</span>
+</div>
+<span class="font-body-md text-secondary text-right">PostgreSQL / Redis Cache</span>
+</div>
+<!-- Spec Item -->
+<div class="bg-canvas-warm border border-thin-line rounded p-4 flex justify-between items-center group hover:border-outline-variant transition-colors">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-steel-gray group-hover:text-teal-accent transition-colors">devices</span>
+<span class="font-body-md font-semibold text-graphite-ink">Front-End Framework</span>
+</div>
+<span class="font-body-md text-secondary text-right">React / Next.js</span>
+</div>
+<!-- Spec Item -->
+<div class="bg-canvas-warm border border-thin-line rounded p-4 flex justify-between items-center group hover:border-outline-variant transition-colors">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-steel-gray group-hover:text-teal-accent transition-colors">payments</span>
+<span class="font-body-md font-semibold text-graphite-ink">Payment Gateways</span>
+</div>
+<span class="font-body-md text-secondary text-right">Stripe, PayPal, Braintree</span>
+</div>
+<!-- Spec Item -->
+<div class="bg-canvas-warm border border-thin-line rounded p-4 flex justify-between items-center group hover:border-outline-variant transition-colors">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-steel-gray group-hover:text-teal-accent transition-colors">cloud_done</span>
+<span class="font-body-md font-semibold text-graphite-ink">Hosting Infrastructure</span>
+</div>
+<span class="font-body-md text-secondary text-right">AWS / Vercel Edge</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="bg-surface-container-low dark:bg-surface-container-highest border-t border-thin-line dark:border-outline-variant w-full mt-auto">
+<div class="flex flex-col md:flex-row justify-between items-center w-full px-gutter py-12 max-w-container-max mx-auto gap-8">
+<div class="font-headline-md text-graphite-ink dark:text-on-surface text-xl font-bold tracking-tight">
+                StudioPro
+            </div>
+<nav class="flex flex-wrap justify-center gap-6">
+<a class="font-body-md text-body-md text-steel-gray dark:text-outline hover:text-graphite-ink dark:hover:text-surface-bright transition-colors opacity-90 hover:opacity-100" href="#">Terms of Service</a>
+<a class="font-body-md text-body-md text-steel-gray dark:text-outline hover:text-graphite-ink dark:hover:text-surface-bright transition-colors opacity-90 hover:opacity-100" href="#">Privacy Policy</a>
+<a class="font-body-md text-body-md text-steel-gray dark:text-outline hover:text-graphite-ink dark:hover:text-surface-bright transition-colors opacity-90 hover:opacity-100" href="#">Contact Support</a>
+<a class="font-body-md text-body-md text-steel-gray dark:text-outline hover:text-graphite-ink dark:hover:text-surface-bright transition-colors opacity-90 hover:opacity-100" href="#">Expert Consult</a>
+</nav>
+<div class="font-body-md text-body-md text-steel-gray text-sm text-center md:text-right">
+                © 2024 StudioPro Digital. All rights reserved. Systemized quality for modern business.
+            </div>
+</div>
+</footer>
+</body></html>

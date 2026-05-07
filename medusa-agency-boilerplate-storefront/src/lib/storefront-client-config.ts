@@ -23,6 +23,7 @@ export type StorefrontTheme = {
     foreground: string
     muted: string
     accent: string
+    accentStrong?: string
     accentContrast: string
     accentSoft: string
   }
@@ -414,39 +415,40 @@ export const storefrontPresetCatalog = {
     },
     theme: {
       colors: {
-        canvas: "#f6f2ea",
-        surface: "#fffdf8",
-        surfaceMuted: "#efe6d6",
-        border: "#d8cfbe",
-        foreground: "#221f1a",
-        muted: "#6d6356",
-        accent: "#8b5e3c",
-        accentContrast: "#fffaf4",
-        accentSoft: "#ead4bf",
+        canvas: "#f7f4ee",
+        surface: "#ffffff",
+        surfaceMuted: "#f1f4f3",
+        border: "#e4ded4",
+        foreground: "#1e344f",
+        muted: "#4a607d",
+        accent: "#2f7d78",
+        accentStrong: "#07645f",
+        accentContrast: "#ffffff",
+        accentSoft: "#a5f0ea",
       },
       radius: {
-        shell: "30px",
-        card: "26px",
+        shell: "24px",
+        card: "12px",
         pill: "999px",
       },
       shadow: {
-        shell: "0 20px 50px rgba(34, 31, 26, 0.08)",
-        card: "0 18px 40px rgba(34, 31, 26, 0.06)",
+        shell: "0 24px 60px rgba(23, 26, 31, 0.08)",
+        card: "0 12px 32px rgba(23, 26, 31, 0.06)",
       },
       layout: {
-        contentMaxWidth: "1440px",
+        contentMaxWidth: "1280px",
       },
       hero: {
-        gradientFrom: "#f3e8d6",
-        gradientTo: "#d9c1aa",
+        gradientFrom: "#f7faf8",
+        gradientTo: "#d3e4ff",
       },
     },
     shell: {
       nav: {
-        variant: "floating",
+        variant: "bordered",
         tone: "surface",
         content: {
-          desktopContentItemsLimit: 3,
+          desktopContentItemsLimit: 5,
         },
       },
       sideMenu: {
@@ -471,110 +473,111 @@ export const storefrontPresetCatalog = {
         sections: [
           {
             type: "hero",
-            eyebrow: "Client Customization Layer",
-            title: "Один storefront core, который можно адаптировать под разные магазины",
+            eyebrow: "Профессиональный подход",
+            title: "Премиальные сайты для бизнеса. Без лишних переплат.",
             description:
-              "Фаза 6 добавляет управляемый слой кастомизации поверх каталога, корзины, checkout и личного кабинета без дублирования commerce-логики.",
+              "Мы объединили системный подход, ИИ-оптимизацию и экспертный контроль качества. Получите современный коммерческий актив быстрее и дешевле классической студийной разработки.",
             primaryAction: {
-              label: "Открыть каталог",
+              label: "Смотреть предложения",
               href: "/store",
             },
             secondaryAction: {
-              label: "Смотреть новости",
-              href: "/news",
+              label: "Бесплатная консультация",
+              href: "/contacts",
             },
             highlights: [
-              "Design tokens и shell variants живут в одном client config.",
-              "Homepage и marketing-entry surfaces собираются из section registry.",
-              "Checkout, account, order flow и integrations остаются общим core.",
+              "Экспертный контроль качества",
+              "Готовые архитектурные решения",
+              "Medusa commerce core без форка логики",
             ],
           },
           {
-            type: "trustGrid",
-            title: "Что именно настраивается без форка storefront",
+            type: "imageText",
+            eyebrow: "Технологическое превосходство",
+            title: "Создаем активы, а не просто сайты",
             description:
-              "Кастомизация идет по контролируемым поверхностям, а не через переписывание shared-компонентов.",
+              "Мы используем промышленный стек технологий, который обычно доступен только крупным энтерпрайз-проектам. Это гарантирует долговечность и масштабируемость вашего цифрового продукта.",
+            highlights: [
+              "Производительность: мгновенный отклик интерфейса и высокие Core Web Vitals.",
+              "Надежность: типизированный TypeScript-код снижает риск критических ошибок.",
+              "Адаптивность: корректная работа от смартфонов до широкоформатных мониторов.",
+              "Эволюция: модульная архитектура позволяет развивать продукт без переписывания core.",
+            ],
+            primaryAction: {
+              label: "В каталог",
+              href: "/store",
+            },
+            secondaryAction: {
+              label: "Получить консультацию",
+              href: "/contacts",
+            },
+          },
+          {
+            type: "trustGrid",
+            title: "Системный подход к разработке",
+            description:
+              "Как мы достигаем премиального качества без раздутых бюджетов классических студий.",
             items: [
               {
-                title: "Brand tokens",
+                title: "Надежный Backend",
                 description:
-                  "Цвета, радиусы, surface-тон и визуальный характер shell меняются через единый конфиг.",
+                  "Используем проверенные масштабируемые архитектурные решения. Ваш сайт готов к росту бизнеса с первого дня.",
               },
               {
-                title: "Shell variants",
+                title: "ИИ-Оптимизация",
                 description:
-                  "Навигация и footer получают управляемые варианты оформления без изменений data layer.",
+                  "Автоматизируем рутинные процессы кодинга и базового дизайна, направляя ресурсы на уникальную логику продукта.",
               },
               {
-                title: "Section registry",
+                title: "Человеческий контроль",
                 description:
-                  "Homepage и дальше landing surfaces можно собирать из типизированных секций.",
+                  "Каждый этап строго контролируется Senior-специалистами. Технологии работают под управлением опытных инженеров.",
               },
             ],
           },
           {
             type: "featuredCollections",
-            title: "Текущие подборки магазина",
+            title: "Популярные решения",
             description:
-              "Catalog-facing sections продолжают использовать существующий Medusa commerce layer и не требуют нового backend API.",
-            maxCollections: 3,
-            maxProductsPerCollection: 4,
+              "Готовые архитектурные базы, адаптируемые под ваш бренд.",
+            maxCollections: 2,
+            maxProductsPerCollection: 2,
           },
           {
-            type: "imageText",
-            eyebrow: "Override Surfaces",
-            title: "Клиентские вариации живут поверх core, а не внутри checkout-логики",
+            type: "cta",
+            eyebrow: "Launch-ready",
+            title: "Готовы запустить свой проект?",
             description:
-              "В первой поставке мы концентрируемся на home, shell и display-only product experience surfaces. Cart, checkout, account и order остаются общими для всех клиентских витрин.",
-            highlights: [
-              "Homepage sections можно менять порядком и наполнением через config.",
-              "Product page получает отдельные support/highlight cards без вмешательства в pricing или cart state.",
-              "Informational and collection surfaces закреплены как допустимые future override zones.",
-            ],
+              "Выберите проверенное архитектурное решение или свяжитесь с нами для разработки индивидуального плана внедрения вашего продукта.",
             primaryAction: {
-              label: "Открыть аккаунт",
-              href: "/account",
+              label: "В каталог",
+              href: "/store",
             },
             secondaryAction: {
-              label: "Перейти в каталог",
-              href: "/store",
+              label: "Получить консультацию",
+              href: "/contacts",
             },
           },
           {
             type: "faq",
-            title: "Как использовать этот слой дальше",
+            title: "Что сохраняется в рабочей витрине",
             items: [
               {
-                question: "Нужно ли делать новый storefront под каждого клиента?",
+                question: "Это статичный прототип из макета?",
                 answer:
-                  "Нет. Базовый путь Фазы 6 - переиспользовать один storefront core и менять только контролируемые client-specific surfaces.",
+                  "Нет. Визуальная система Stitch натянута поверх текущего Medusa storefront, поэтому каталог, корзина, checkout, регионы и account flow остаются рабочими.",
               },
               {
                 question: "Можно ли менять checkout под клиента?",
                 answer:
-                  "Checkout logic не считается частью customization layer v1. Менять можно presentation вокруг core, но не сам flow оплаты, заказа и аккаунта.",
+                  "Меняется presentation-слой вокруг checkout, но адреса, доставка, оплата, review и order flow остаются частью общего commerce core.",
               },
               {
-                question: "Payload заменяет этот слой?",
+                question: "Как развивать маркетинговые страницы?",
                 answer:
-                  "Нет. Payload отвечает за content layer, а client customization задает визуальные токены, shell variants и storefront section policy.",
+                  "Информационные страницы используют тот же набор surface-компонентов, токенов, карточек и CTA, не вмешиваясь в API и CMS-контракты.",
               },
             ],
-          },
-          {
-            type: "cta",
-            eyebrow: "Shared Core",
-            title: "Кастомизация готовит шаблон к разным клиентам, не разрушая commerce baseline",
-            description:
-              "Это переход от общего storefront core к управляемой клиентской адаптации. Следом уже можно будет строить template-init и release automation без скрытых фронтовых форков.",
-            primaryAction: {
-              label: "Перейти к товарам",
-              href: "/store",
-            },
-            secondaryAction: {
-              label: "Открыть новости",
-              href: "/news",
-            },
           },
         ],
       },
@@ -637,18 +640,18 @@ export const storefrontPresetCatalog = {
           {
             type: "header",
             variant: "editorial",
-            eyebrow: "Informational Surface",
+            eyebrow: "StudioPro Surface",
             labels: {
-              marketing: "Marketing page",
-              informational: "Informational page",
+              marketing: "Маркетинговая страница",
+              informational: "Информационная страница",
             },
           },
           {
             type: "infoGrid",
-            eyebrow: "Content Guardrails",
-            title: "Informational pages кастомизируются preset-driven layers, а не ad-hoc layout drift",
+            eyebrow: "Общий стиль",
+            title: "Контентные страницы получают ту же визуальную систему",
             description:
-              "Payload продолжает управлять контентом, а storefront preset определяет presentation shell вокруг него.",
+              "Payload продолжает управлять контентом, а storefront применяет Stitch-токены, карточки, CTA и мягкую композицию вокруг него.",
             items: [
               {
                 title: "Shared content contract",
@@ -805,15 +808,15 @@ export const storefrontPresetCatalog = {
         intro: {
           mode: "intro",
           variant: "editorial",
-          eyebrow: "Catalog Surface",
-          title: "All products",
+          eyebrow: "Категории:",
+          title: "Готовые решения для вашего бизнеса",
           description:
-            "Общий каталог остаётся частью shared commerce core, а framing страницы теперь управляется preset-driven catalog shell contract.",
+            "Профессиональные сайты, оптимизированные под конверсию. Выберите основу, и наша команда адаптирует ее под ваши уникальные процессы за считанные дни.",
           tone: "surface",
         },
         results: {
           mode: "frame",
-          variant: "panel",
+          variant: "plain",
           tone: "surface",
           spacing: "comfortable",
         },
@@ -866,6 +869,7 @@ export const storefrontPresetCatalog = {
         foreground: "#162235",
         muted: "#5e7088",
         accent: "#1f5fae",
+        accentStrong: "#17498c",
         accentContrast: "#f7fbff",
         accentSoft: "#d4e6fb",
       },
@@ -1327,6 +1331,7 @@ export const getStorefrontThemeStyle = (
     "--theme-foreground": theme.colors.foreground,
     "--theme-muted": theme.colors.muted,
     "--theme-accent": theme.colors.accent,
+    "--theme-accent-strong": theme.colors.accentStrong || theme.colors.accent,
     "--theme-accent-contrast": theme.colors.accentContrast,
     "--theme-accent-soft": theme.colors.accentSoft,
     "--theme-hero-start": theme.hero.gradientFrom,

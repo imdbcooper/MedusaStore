@@ -8,6 +8,7 @@ import {
 } from "@headlessui/react"
 import { storefrontConfig } from "@lib/storefront-config"
 import { convertToLocale } from "@lib/util/money"
+import { ShoppingCart } from "@medusajs/icons"
 import { HttpTypes } from "@medusajs/types"
 import { Button } from "@medusajs/ui"
 import DeleteButton from "@modules/common/components/delete-button"
@@ -20,8 +21,12 @@ import { Fragment, useEffect, useRef, useState } from "react"
 
 const CartDropdown = ({
   cart: cartState,
+  className,
+  variant = "text",
 }: {
   cart?: HttpTypes.StoreCart | null
+  className?: string
+  variant?: "text" | "icon"
 }) => {
   const [activeTimer, setActiveTimer] = useState<NodeJS.Timeout | undefined>(
     undefined
@@ -74,6 +79,34 @@ const CartDropdown = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totalItems, itemRef.current])
 
+  const cartTrigger =
+    variant === "icon" ? (
+      <LocalizedClientLink
+        className={
+          className ||
+          "relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#DED8CC] bg-white/45 text-[#1F2B35] transition hover:border-[#2F7D78]/45 hover:bg-white hover:text-[#2F7D78]"
+        }
+        href="/cart"
+        data-testid="nav-cart-link"
+        aria-label={`${navigationCopy.cart} (${totalItems})`}
+      >
+        <ShoppingCart className="h-[18px] w-[18px]" aria-hidden="true" />
+        <span className="sr-only">{`${navigationCopy.cart} (${totalItems})`}</span>
+        <span
+          className="absolute -right-[3px] -top-[3px] flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-[#2F7D78] px-[4px] text-[10px] font-semibold leading-none text-white shadow-[0_2px_6px_rgba(47,125,120,0.25)]"
+          data-testid="nav-cart-count"
+        >
+          {totalItems}
+        </span>
+      </LocalizedClientLink>
+    ) : (
+      <LocalizedClientLink
+        className={className || "hover:text-ui-fg-base"}
+        href="/cart"
+        data-testid="nav-cart-link"
+      >{`${navigationCopy.cart} (${totalItems})`}</LocalizedClientLink>
+    )
+
   return (
     <div
       className="h-full z-50"
@@ -81,13 +114,7 @@ const CartDropdown = ({
       onMouseLeave={close}
     >
       <Popover className="relative h-full">
-        <PopoverButton className="h-full">
-          <LocalizedClientLink
-            className="hover:text-ui-fg-base"
-            href="/cart"
-            data-testid="nav-cart-link"
-          >{`${navigationCopy.cart} (${totalItems})`}</LocalizedClientLink>
-        </PopoverButton>
+        <PopoverButton className="h-full">{cartTrigger}</PopoverButton>
         <Transition
           show={cartDropdownOpen}
           as={Fragment}

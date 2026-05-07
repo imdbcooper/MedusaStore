@@ -8,8 +8,8 @@ import Divider from "@modules/common/components/divider"
 
 const CheckoutSummary = async ({ cart }: { cart: any }) => {
   return (
-    <div className="sticky top-0 flex flex-col-reverse small:flex-col gap-y-8 py-8 small:py-0 ">
-      <div className="w-full bg-white flex flex-col">
+    <div className="sticky top-8 flex flex-col-reverse gap-y-8 small:flex-col">
+      <div className="flex w-full flex-col rounded-[var(--theme-radius-shell)] border border-[var(--theme-border)] bg-[var(--theme-surface)] p-6 shadow-[var(--theme-shadow-card)]">
         <Divider className="my-6 small:hidden" />
         <Heading
           level="h2"

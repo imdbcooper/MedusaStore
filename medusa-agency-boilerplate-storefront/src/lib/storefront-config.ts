@@ -6,27 +6,27 @@ export type StorefrontLink = {
 // Mandatory client-init branding and legal-contact replacements live here.
 // Keep preset-specific presentation authority in `src/lib/storefront-client-config.ts`.
 export const storefrontConfig = {
-  storeName: "CLIENT_STORE_NAME",
-  defaultTitle: "CLIENT_DEFAULT_TITLE",
+  storeName: "StudioPro",
+  defaultTitle: "StudioPro — премиальные сайты для бизнеса",
   defaultDescription:
-    "Replace this placeholder with the approved client-specific storefront description before review or release.",
-  tagline: "CLIENT_TAGLINE",
+    "StudioPro помогает запускать конверсионные сайты, интернет-магазины и корпоративные digital-решения на рабочей storefront-инфраструктуре.",
+  tagline: "Премиальные сайты для бизнеса. Без лишних переплат.",
   contact: {
-    email: "client@example.com",
-    phone: "CLIENT_CONTACT_PHONE",
+    email: "hello@studiopro.example",
+    phone: "+7 (999) 000-00-00",
   },
   socialLinks: [
     {
       label: "Telegram",
-      href: "https://t.me/CLIENT_TELEGRAM_HANDLE",
+      href: "https://t.me/studiopro",
     },
     {
       label: "VK",
-      href: "https://vk.com/CLIENT_VK_HANDLE",
+      href: "https://vk.com/studiopro",
     },
     {
       label: "WhatsApp",
-      href: "https://wa.me/CLIENT_WHATSAPP_NUMBER",
+      href: "https://wa.me/79990000000",
     },
   ] as StorefrontLink[],
   copy: {

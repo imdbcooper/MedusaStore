@@ -18,10 +18,10 @@ export default function StorefrontActionLinkButton({
   }
 
   const className = clx(
-    "inline-flex items-center justify-center px-5 py-3 text-sm font-medium transition",
+    "inline-flex items-center justify-center px-6 py-3 text-sm font-bold tracking-wide transition duration-200 hover:-translate-y-0.5",
     variant === "primary"
-      ? "rounded-[var(--theme-radius-pill)] bg-[var(--theme-accent)] text-[var(--theme-accent-contrast)] hover:opacity-90"
-      : "rounded-[var(--theme-radius-pill)] border border-[var(--theme-border)] bg-transparent text-[var(--theme-foreground)] hover:bg-[var(--theme-surface-muted)]"
+      ? "rounded-[var(--theme-radius-card)] bg-[var(--theme-accent)] text-[var(--theme-accent-contrast)] shadow-[0_12px_28px_rgba(47,125,120,0.18)] hover:bg-[var(--theme-accent-strong)]"
+      : "rounded-[var(--theme-radius-card)] border border-[var(--theme-border)] bg-[var(--theme-surface)] text-[var(--theme-foreground)] hover:border-[var(--theme-foreground)]"
   )
 
   if (isExternalHref(action.href)) {

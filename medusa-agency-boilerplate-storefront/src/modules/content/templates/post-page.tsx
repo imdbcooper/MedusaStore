@@ -10,7 +10,7 @@ export default function ContentPostTemplate({ post }: { post: ContentPost }) {
   const hasHero = post.layout?.[0]?.blockType === "heroBanner"
 
   return (
-    <main>
+    <main className="py-10 small:py-16">
       <PostPageSurface post={post} />
       {!hasHero && coverImageURL && (
         <section className="content-container pb-10">
@@ -20,7 +20,7 @@ export default function ContentPostTemplate({ post }: { post: ContentPost }) {
               alt={post.coverImage?.alt || post.title || ""}
               width={post.coverImage?.width || 1600}
               height={post.coverImage?.height || 900}
-              className="h-auto w-full rounded-[32px] object-cover"
+              className="h-auto w-full rounded-[var(--theme-radius-shell)] border border-[var(--theme-border)] object-cover shadow-[var(--theme-shadow-card)]"
               priority
             />
           </article>

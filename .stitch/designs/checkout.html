@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+
+<html lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Оформление заказа - StudioPro</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-background": "#181c1c",
+                        "tertiary": "#854930",
+                        "error": "#ba1a1a",
+                        "muted-sage": "#6F8F7A",
+                        "surface-tint": "#136965",
+                        "ink-blue": "#1E344F",
+                        "primary-fixed-dim": "#89d4ce",
+                        "tertiary-fixed-dim": "#ffb598",
+                        "primary-fixed": "#a5f0ea",
+                        "background": "#f7faf8",
+                        "primary": "#07645f",
+                        "on-tertiary-fixed": "#370e00",
+                        "secondary-fixed": "#d3e4ff",
+                        "surface-container-low": "#f1f4f3",
+                        "thin-line": "#E4DED4",
+                        "on-tertiary-container": "#fff6f3",
+                        "tertiary-container": "#a26146",
+                        "on-tertiary": "#ffffff",
+                        "inverse-primary": "#89d4ce",
+                        "error-container": "#ffdad6",
+                        "surface": "#f7faf8",
+                        "inverse-on-surface": "#eff1f0",
+                        "secondary": "#4a607d",
+                        "on-secondary": "#ffffff",
+                        "soft-shadow": "rgba(23, 26, 31, 0.08)",
+                        "surface-container-highest": "#e0e3e2",
+                        "graphite-ink": "#171A1F",
+                        "surface-container-lowest": "#ffffff",
+                        "steel-gray": "#737780",
+                        "primary-container": "#2f7d78",
+                        "on-secondary-container": "#4b607e",
+                        "teal-accent": "#2F7D78",
+                        "on-secondary-fixed": "#031c36",
+                        "canvas-warm": "#F7F4EE",
+                        "on-primary": "#ffffff",
+                        "secondary-container": "#c5dbfe",
+                        "surface-white": "#FFFFFF",
+                        "surface-container-high": "#e6e9e7",
+                        "surface-bright": "#f7faf8",
+                        "on-surface-variant": "#3f4947",
+                        "on-secondary-fixed-variant": "#334864",
+                        "secondary-fixed-dim": "#b2c8ea",
+                        "inverse-surface": "#2d3131",
+                        "outline": "#6f7978",
+                        "surface-container": "#eceeed",
+                        "on-error-container": "#93000a",
+                        "on-tertiary-fixed-variant": "#6f3820",
+                        "surface-dim": "#d8dbd9",
+                        "on-primary-fixed-variant": "#00504c",
+                        "on-primary-fixed": "#00201e",
+                        "on-surface": "#181c1c",
+                        "surface-variant": "#e0e3e2",
+                        "tertiary-fixed": "#ffdbce",
+                        "on-error": "#ffffff",
+                        "outline-variant": "#bec9c7",
+                        "on-primary-container": "#dafffb"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "section-gap": "120px",
+                        "element-gap": "16px",
+                        "gutter": "24px",
+                        "container-max": "1280px",
+                        "card-padding": "32px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["manrope"],
+                        "label-caps": ["inter"],
+                        "headline-md": ["manrope"],
+                        "body-lg": ["manrope"],
+                        "display-xl": ["manrope"],
+                        "headline-lg": ["manrope"],
+                        "price-mono": ["inter"]
+                    },
+                    "fontSize": {
+                        "body-md": ["16px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "label-caps": ["12px", { "lineHeight": "1.0", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-md": ["24px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "display-xl": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "price-mono": ["20px", { "lineHeight": "1.0", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-canvas-warm text-on-background font-body-md antialiased min-h-screen flex flex-col">
+<!-- TopNavBar Suppressed due to Transactional/Checkout Intent -->
+<main class="flex-grow flex items-center justify-center py-section-gap px-gutter">
+<div class="max-w-4xl w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+<!-- Left Column: Checkout Form -->
+<div class="lg:col-span-7">
+<div class="mb-8">
+<a class="inline-flex items-center text-teal-accent hover:text-primary transition-colors font-label-caps text-label-caps mb-6" href="#">
+<span class="material-symbols-outlined mr-2" style="font-size: 16px;">arrow_back</span>
+                        Back to Catalog
+                    </a>
+<h1 class="font-display-xl text-display-xl text-graphite-ink mb-2">Оформление заказа</h1>
+<p class="font-body-lg text-body-lg text-steel-gray">Заполните данные для начала сотрудничества.</p>
+</div>
+<div class="bg-surface-white rounded-xl border border-thin-line p-card-padding shadow-[0_4px_24px_rgba(23,26,31,0.04)]">
+<h2 class="font-headline-md text-headline-md text-graphite-ink mb-6 border-b border-thin-line pb-4">Ваши данные</h2>
+<form class="space-y-6">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div>
+<label class="block font-label-caps text-label-caps text-steel-gray mb-2 uppercase tracking-wider" for="firstName">Имя</label>
+<input class="w-full bg-surface-white border border-thin-line rounded-DEFAULT px-4 py-3 font-body-md text-on-background focus:outline-none focus:border-teal-accent focus:ring-1 focus:ring-teal-accent transition-colors" id="firstName" name="firstName" placeholder="Иван" type="text"/>
+</div>
+<div>
+<label class="block font-label-caps text-label-caps text-steel-gray mb-2 uppercase tracking-wider" for="lastName">Фамилия</label>
+<input class="w-full bg-surface-white border border-thin-line rounded-DEFAULT px-4 py-3 font-body-md text-on-background focus:outline-none focus:border-teal-accent focus:ring-1 focus:ring-teal-accent transition-colors" id="lastName" name="lastName" placeholder="Иванов" type="text"/>
+</div>
+</div>
+<div>
+<label class="block font-label-caps text-label-caps text-steel-gray mb-2 uppercase tracking-wider" for="company">Название компании</label>
+<input class="w-full bg-surface-white border border-thin-line rounded-DEFAULT px-4 py-3 font-body-md text-on-background focus:outline-none focus:border-teal-accent focus:ring-1 focus:ring-teal-accent transition-colors" id="company" name="company" placeholder="ООО 'Пример'" type="text"/>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div>
+<label class="block font-label-caps text-label-caps text-steel-gray mb-2 uppercase tracking-wider" for="email">Email</label>
+<input class="w-full bg-surface-white border border-thin-line rounded-DEFAULT px-4 py-3 font-body-md text-on-background focus:outline-none focus:border-teal-accent focus:ring-1 focus:ring-teal-accent transition-colors" id="email" name="email" placeholder="ivan@example.com" type="email"/>
+</div>
+<div>
+<label class="block font-label-caps text-label-caps text-steel-gray mb-2 uppercase tracking-wider" for="phone">Телефон</label>
+<input class="w-full bg-surface-white border border-thin-line rounded-DEFAULT px-4 py-3 font-body-md text-on-background focus:outline-none focus:border-teal-accent focus:ring-1 focus:ring-teal-accent transition-colors" id="phone" name="phone" placeholder="+7 (999) 000-00-00" type="tel"/>
+</div>
+</div>
+<div>
+<label class="block font-label-caps text-label-caps text-steel-gray mb-2 uppercase tracking-wider" for="comments">Комментарий к заказу (необязательно)</label>
+<textarea class="w-full bg-surface-white border border-thin-line rounded-DEFAULT px-4 py-3 font-body-md text-on-background focus:outline-none focus:border-teal-accent focus:ring-1 focus:ring-teal-accent transition-colors" id="comments" name="comments" placeholder="Укажите особые пожелания или детали проекта..." rows="3"></textarea>
+</div>
+</form>
+</div>
+</div>
+<!-- Right Column: Order Summary -->
+<div class="lg:col-span-5">
+<div class="bg-surface-white rounded-xl border border-thin-line p-card-padding shadow-[0_4px_24px_rgba(23,26,31,0.04)] sticky top-8">
+<h2 class="font-headline-md text-headline-md text-graphite-ink mb-6 border-b border-thin-line pb-4">Резюме заказа</h2>
+<div class="flex items-start gap-4 mb-8">
+<div class="w-20 h-20 rounded-lg overflow-hidden border border-thin-line shrink-0 bg-surface-container-low flex items-center justify-center">
+<span class="material-symbols-outlined text-steel-gray text-3xl">web</span>
+</div>
+<div>
+<span class="inline-block bg-surface-container-low text-steel-gray font-label-caps text-label-caps px-2 py-1 rounded mb-2 uppercase tracking-wider">B2B Платформа</span>
+<h3 class="font-headline-md text-[18px] leading-snug text-graphite-ink">Комплексная разработка портала</h3>
+</div>
+</div>
+<div class="space-y-4 border-b border-thin-line pb-6 mb-6">
+<div class="flex justify-between items-center font-body-md">
+<span class="text-steel-gray">Базовая стоимость</span>
+<span class="font-price-mono text-price-mono text-graphite-ink">₽ 450,000</span>
+</div>
+<div class="flex justify-between items-center font-body-md">
+<span class="text-steel-gray">Интеграция CRM</span>
+<span class="font-price-mono text-price-mono text-graphite-ink">₽ 85,000</span>
+</div>
+<div class="flex justify-between items-center font-body-md">
+<span class="text-steel-gray">Дизайн-система</span>
+<span class="font-price-mono text-price-mono text-graphite-ink">Включено</span>
+</div>
+</div>
+<div class="flex justify-between items-end mb-8">
+<span class="font-headline-md text-headline-md text-graphite-ink">Итого</span>
+<span class="font-price-mono text-[28px] font-semibold text-graphite-ink leading-none">₽ 535,000</span>
+</div>
+<button class="w-full bg-teal-accent text-on-primary font-body-lg text-body-lg py-4 px-6 rounded-DEFAULT hover:-translate-y-0.5 hover:bg-primary transition-all duration-200 shadow-[0_4px_12px_rgba(47,125,120,0.2)] flex justify-center items-center gap-2 mb-6">
+                        Подтвердить заказ
+                        <span class="material-symbols-outlined text-[20px]">arrow_forward</span>
+</button>
+<div class="bg-surface-container-low rounded-lg p-4 flex items-start gap-3 border border-thin-line/50">
+<span class="material-symbols-outlined text-muted-sage" style="font-variation-settings: 'FILL' 1;">verified_user</span>
+<p class="font-body-md text-body-md text-steel-gray text-sm leading-snug">
+                            После подтверждения с вами свяжется наш старший эксперт для финального согласования брифа и подписания договора. Оплата производится после утверждения ТЗ.
+                        </p>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="bg-surface-container-low dark:bg-surface-container-highest w-full border-t border-thin-line dark:border-outline-variant">
+<div class="flex flex-col md:flex-row justify-between items-center w-full px-gutter py-section-gap max-w-container-max mx-auto">
+<div class="font-headline-md text-graphite-ink dark:text-on-surface mb-6 md:mb-0 opacity-90 hover:opacity-100 transition-opacity">
+                StudioPro
+            </div>
+<nav class="flex flex-wrap justify-center gap-6 mb-6 md:mb-0">
+<a class="font-body-md text-body-md text-steel-gray dark:text-outline hover:text-graphite-ink dark:hover:text-surface-bright transition-colors opacity-90 hover:opacity-100" href="#">Terms of Service</a>
+<a class="font-body-md text-body-md text-steel-gray dark:text-outline hover:text-graphite-ink dark:hover:text-surface-bright transition-colors opacity-90 hover:opacity-100" href="#">Privacy Policy</a>
+<a class="font-body-md text-body-md text-steel-gray dark:text-outline hover:text-graphite-ink dark:hover:text-surface-bright transition-colors opacity-90 hover:opacity-100" href="#">Contact Support</a>
+<a class="font-body-md text-body-md text-steel-gray dark:text-outline hover:text-graphite-ink dark:hover:text-surface-bright transition-colors opacity-90 hover:opacity-100" href="#">Expert Consult</a>
+</nav>
+<div class="font-label-caps text-label-caps text-steel-gray dark:text-outline opacity-90">
+                © 2024 StudioPro Digital. All rights reserved. Systemized quality for modern business.
+            </div>
+</div>
+</footer>
+</body></html>

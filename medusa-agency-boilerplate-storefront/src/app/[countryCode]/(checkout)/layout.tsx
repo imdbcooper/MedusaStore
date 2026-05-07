@@ -11,8 +11,8 @@ export default function CheckoutLayout({
   const navigationCopy = storefrontConfig.copy.navigation
 
   return (
-    <div className="w-full bg-white relative small:min-h-screen">
-      <div className="h-16 bg-white border-b ">
+    <div className="w-full bg-[var(--theme-canvas)] relative small:min-h-screen">
+      <div className="h-20 bg-[var(--theme-surface)] border-b border-[var(--theme-border)]">
         <nav className="flex h-full items-center content-container justify-between">
           <LocalizedClientLink
             href="/cart"

@@ -5,6 +5,7 @@ import RefinementList from "@modules/store/components/refinement-list"
 import { SortOptions } from "@modules/store/components/refinement-list/sort-products"
 import {
   CatalogResultsShellSurface,
+  CatalogTrustSection,
   StoreCatalogIntroSurface,
 } from "@modules/storefront-customization/components/catalog-shell-surface"
 import {
@@ -24,19 +25,24 @@ const StoreTemplate = ({
   countryCode: string
 }) => {
   const pageNumber = page ? parseInt(page) : 1
-  const sort = sortBy || "created_at"
+  const sort = sortBy || "price_asc"
 
   const introSurface = resolveStoreCatalogIntroSurface()
   const resultsSurface = resolveStoreCatalogResultsSurface()
 
   return (
-    <div
-      className="flex flex-col small:flex-row small:items-start py-6 content-container"
-      data-testid="category-container"
-    >
-      <RefinementList sortBy={sort} />
+    <main className="content-container" data-testid="category-container">
       <CatalogResultsShellSurface surface={resultsSurface}>
-        <StoreCatalogIntroSurface surface={introSurface} />
+        <StoreCatalogIntroSurface
+          surface={introSurface}
+          sortControl={
+            <RefinementList
+              sortBy={sort}
+              variant="stitch-inline"
+              data-testid="sort-by-container"
+            />
+          }
+        />
         <Suspense fallback={<SkeletonProductGrid />}>
           <PaginatedProducts
             sortBy={sort}
@@ -44,8 +50,9 @@ const StoreTemplate = ({
             countryCode={countryCode}
           />
         </Suspense>
+        <CatalogTrustSection />
       </CatalogResultsShellSurface>
-    </div>
+    </main>
   )
 }
 

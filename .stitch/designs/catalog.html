@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+
+<html lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Каталог готовых решений | StudioPro</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&amp;family=Inter:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-background": "#181c1c",
+                      "tertiary": "#854930",
+                      "error": "#ba1a1a",
+                      "muted-sage": "#6F8F7A",
+                      "surface-tint": "#136965",
+                      "ink-blue": "#1E344F",
+                      "primary-fixed-dim": "#89d4ce",
+                      "tertiary-fixed-dim": "#ffb598",
+                      "primary-fixed": "#a5f0ea",
+                      "background": "#f7faf8",
+                      "primary": "#07645f",
+                      "on-tertiary-fixed": "#370e00",
+                      "secondary-fixed": "#d3e4ff",
+                      "surface-container-low": "#f1f4f3",
+                      "thin-line": "#E4DED4",
+                      "on-tertiary-container": "#fff6f3",
+                      "tertiary-container": "#a26146",
+                      "on-tertiary": "#ffffff",
+                      "inverse-primary": "#89d4ce",
+                      "error-container": "#ffdad6",
+                      "surface": "#f7faf8",
+                      "inverse-on-surface": "#eff1f0",
+                      "secondary": "#4a607d",
+                      "on-secondary": "#ffffff",
+                      "soft-shadow": "rgba(23, 26, 31, 0.08)",
+                      "surface-container-highest": "#e0e3e2",
+                      "graphite-ink": "#171A1F",
+                      "surface-container-lowest": "#ffffff",
+                      "steel-gray": "#737780",
+                      "primary-container": "#2f7d78",
+                      "on-secondary-container": "#4b607e",
+                      "teal-accent": "#2F7D78",
+                      "on-secondary-fixed": "#031c36",
+                      "canvas-warm": "#F7F4EE",
+                      "on-primary": "#ffffff",
+                      "secondary-container": "#c5dbfe",
+                      "surface-white": "#FFFFFF",
+                      "surface-container-high": "#e6e9e7",
+                      "surface-bright": "#f7faf8",
+                      "on-surface-variant": "#3f4947",
+                      "on-secondary-fixed-variant": "#334864",
+                      "secondary-fixed-dim": "#b2c8ea",
+                      "inverse-surface": "#2d3131",
+                      "outline": "#6f7978",
+                      "surface-container": "#eceeed",
+                      "on-error-container": "#93000a",
+                      "on-tertiary-fixed-variant": "#6f3820",
+                      "surface-dim": "#d8dbd9",
+                      "on-primary-fixed-variant": "#00504c",
+                      "on-primary-fixed": "#00201e",
+                      "on-surface": "#181c1c",
+                      "surface-variant": "#e0e3e2",
+                      "tertiary-fixed": "#ffdbce",
+                      "on-error": "#ffffff",
+                      "outline-variant": "#bec9c7",
+                      "on-primary-container": "#dafffb"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "section-gap": "120px",
+                      "element-gap": "16px",
+                      "gutter": "24px",
+                      "container-max": "1280px",
+                      "card-padding": "32px"
+              },
+              "fontFamily": {
+                      "body-md": ["manrope", "sans-serif"],
+                      "label-caps": ["inter", "sans-serif"],
+                      "headline-md": ["manrope", "sans-serif"],
+                      "body-lg": ["manrope", "sans-serif"],
+                      "display-xl": ["manrope", "sans-serif"],
+                      "headline-lg": ["manrope", "sans-serif"],
+                      "price-mono": ["inter", "sans-serif"]
+              },
+              "fontSize": {
+                      "body-md": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                      "label-caps": ["12px", {"lineHeight": "1.0", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                      "headline-md": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                      "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                      "display-xl": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "headline-lg": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "price-mono": ["20px", {"lineHeight": "1.0", "fontWeight": "500"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        body { background-color: #F7F4EE; } /* canvas-warm */
+    </style>
+</head>
+<body class="bg-canvas-warm text-on-surface antialiased font-body-md">
+<!-- TopNavBar Component -->
+<header class="bg-canvas-warm w-full z-50">
+<div class="flex justify-between items-center w-full px-gutter py-4 max-w-container-max mx-auto border-b border-thin-line">
+<!-- Brand -->
+<a class="text-headline-md font-headline-md font-bold text-graphite-ink tracking-tight" href="#">StudioPro</a>
+<!-- Navigation -->
+<nav class="hidden md:flex space-x-8">
+<a class="text-primary font-bold border-b-2 border-primary pb-1 transition-all" href="#">Catalog</a>
+<a class="text-secondary font-body-md hover:text-primary transition-colors duration-200" href="#">Solutions</a>
+<a class="text-secondary font-body-md hover:text-primary transition-colors duration-200" href="#">Process</a>
+<a class="text-secondary font-body-md hover:text-primary transition-colors duration-200" href="#">Pricing</a>
+<a class="text-secondary font-body-md hover:text-primary transition-colors duration-200" href="#">Portfolio</a>
+</nav>
+<!-- Actions -->
+<div class="hidden md:flex items-center space-x-4">
+<a class="text-secondary font-body-md hover:text-primary transition-colors duration-200" href="#">Login</a>
+<a class="bg-teal-accent text-on-primary px-6 py-2 rounded-lg font-body-md font-bold hover:bg-surface-tint transition-all scale-95 active:opacity-80" href="#">Launch Project</a>
+</div>
+<!-- Mobile Menu Toggle -->
+<button class="md:hidden text-graphite-ink">
+<span class="material-symbols-outlined" style='font-variation-settings: "FILL" 0;'>menu</span>
+</button>
+</div>
+</header>
+<main>
+<!-- Hero Section -->
+<section class="max-w-container-max mx-auto px-gutter py-section-gap">
+<div class="flex flex-col md:flex-row gap-12 items-start">
+<div class="w-full md:w-1/2">
+<h1 class="font-display-xl text-display-xl text-graphite-ink mb-6">Готовые решения для вашего бизнеса</h1>
+<p class="font-body-lg text-body-lg text-secondary mb-8 max-w-lg">Профессиональные сайты, оптимизированные под конверсию. Выберите основу, и наша команда адаптирует ее под ваши уникальные процессы за считанные дни.</p>
+</div>
+<div class="w-full md:w-1/2 flex flex-col gap-6">
+<div class="bg-surface-white border border-thin-line rounded-xl p-card-padding flex items-start gap-4">
+<div class="bg-surface-container-low p-3 rounded-lg text-teal-accent">
+<span class="material-symbols-outlined" style='font-variation-settings: "FILL" 1;'>speed</span>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-graphite-ink mb-2">Быстрый запуск</h3>
+<p class="font-body-md text-body-md text-secondary">Вам не нужно ждать месяцами. Системный подход позволяет запустить проект в 3 раза быстрее.</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Catalog Section -->
+<section class="max-w-container-max mx-auto px-gutter pb-section-gap">
+<!-- Filters -->
+<div class="flex flex-wrap items-center gap-4 mb-12 border-b border-thin-line pb-6">
+<span class="font-label-caps text-label-caps text-steel-gray uppercase tracking-wider mr-4">Категории:</span>
+<button class="bg-teal-accent text-on-primary px-4 py-2 rounded-full font-label-caps text-label-caps uppercase tracking-wider">Все решения</button>
+<button class="bg-surface-white text-secondary border border-thin-line px-4 py-2 rounded-full font-label-caps text-label-caps uppercase tracking-wider hover:border-graphite-ink transition-colors">Услуги</button>
+<button class="bg-surface-white text-secondary border border-thin-line px-4 py-2 rounded-full font-label-caps text-label-caps uppercase tracking-wider hover:border-graphite-ink transition-colors">E-commerce</button>
+<button class="bg-surface-white text-secondary border border-thin-line px-4 py-2 rounded-full font-label-caps text-label-caps uppercase tracking-wider hover:border-graphite-ink transition-colors">Корпоративные</button>
+<div class="flex items-center gap-2 ml-auto">
+<span class="font-label-caps text-label-caps text-steel-gray uppercase tracking-wider">Сортировать:</span>
+<div class="relative group">
+<button class="flex items-center gap-1 font-label-caps text-label-caps text-steel-gray uppercase tracking-wider hover:text-graphite-ink transition-colors">
+      По цене
+      <span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 0;">expand_more</span>
+</button>
+<div class="absolute right-0 top-full mt-2 w-40 bg-surface-white border border-thin-line rounded-lg shadow-soft-shadow opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+<div class="py-2">
+<button class="w-full text-left px-4 py-2 font-label-caps text-label-caps text-secondary hover:bg-surface-container-low transition-colors uppercase tracking-wider">По популярности</button>
+<button class="w-full text-left px-4 py-2 font-label-caps text-label-caps text-secondary hover:bg-surface-container-low transition-colors uppercase tracking-wider">По новизне</button>
+</div>
+</div>
+</div>
+</div></div>
+<!-- Bento Grid Catalog -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-element-gap">
+<!-- Card 1: Large -->
+<article class="col-span-1 md:col-span-8 bg-surface-white border border-thin-line rounded-xl overflow-hidden hover:-translate-y-1 transition-transform duration-300 shadow-[0_4px_12px_rgba(23,26,31,0.04)] hover:shadow-[0_8px_24px_rgba(23,26,31,0.08)] group flex flex-col md:flex-row">
+<div class="md:w-1/2 h-64 md:h-auto bg-surface-container-low relative overflow-hidden">
+<img alt="Dashboard Template preview" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="A clean, modern corporate dashboard template displayed on a sleek monitor. The UI is bright and professional, utilizing a warm canvas background with crisp white cards and precise teal data visualizations. The setting suggests a premium, organized studio environment with soft, diffused daylight. A minimalist approach emphasizes clarity and expert oversight." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBx7iaSKSXc5Mtjrz57jC5blY4gJdEAz_h0AitqRgfzut12PHYOQzyMcpAWdWBHqb_MswrwhU9G6PlBqep2--xQCYf1VqU0gn3Uw0RZ3UfCKiADxCJ0R4Lid6ofhKQSVZz6HxNUwps0o1J7pgITVL-wmXGuECDVmWUjOelPrkBBSX0pOTryAaNnbfcv4UOxunHdK0akvNwzVbPhYwIrEwq8sLHywhVP1Akw6fkk8nTjFYfchOnlcNeKNzqVp_Z-k2KxzKfu_-aCXVA"/>
+<div class="absolute top-4 left-4 bg-muted-sage text-on-surface px-3 py-1 rounded-full font-label-caps text-label-caps uppercase tracking-wider shadow-sm">Popular</div>
+</div>
+<div class="p-card-padding flex flex-col justify-between md:w-1/2">
+<div>
+<span class="font-label-caps text-label-caps text-steel-gray uppercase tracking-wider mb-2 block">Корпоративные / SaaS</span>
+<h3 class="font-headline-lg text-headline-lg text-graphite-ink mb-4">Enterprise Hub</h3>
+<p class="font-body-md text-body-md text-secondary mb-6 line-clamp-3">Масштабируемое решение для крупных компаний. Включает личные кабинеты, сложную фильтрацию и интеграции с внутренними системами.</p>
+</div>
+<div class="flex items-center justify-between mt-auto">
+<span class="font-price-mono text-price-mono text-graphite-ink">от 150 000 ₽</span>
+<button class="bg-teal-accent text-on-primary px-5 py-2.5 rounded-lg font-body-md font-bold hover:bg-surface-tint transition-colors">Смотреть детали</button>
+</div>
+</div>
+</article>
+<!-- Card 2: Small -->
+<article class="col-span-1 md:col-span-4 bg-surface-white border border-thin-line rounded-xl overflow-hidden hover:-translate-y-1 transition-transform duration-300 hover:shadow-[0_8px_24px_rgba(23,26,31,0.08)] group flex flex-col">
+<div class="h-48 bg-surface-container-low relative overflow-hidden">
+<img alt="E-commerce template" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="A sophisticated e-commerce fashion website interface shown on a tablet screen. The design is airy and minimalist, featuring large product imagery and subtle thin-line borders against a bright white background. The context implies a high-end retail experience, illuminated by clean studio lighting. The overall aesthetic is structural and premium." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJk0W_zUaHah8KQVIvOU7cEcBZaFgEJHIO_pvrajQ0STDXQiBosXGI-L3Dp6JYD8G2MtjVFnKyMpDB6Cw1caaEH_y4x75DtMI0KTmXJ5xN15ey7uZXEc7Jw21AGefu-wGOrpA9ueOW3-frvK056onnOUgS9YQFLUoIDFGzOG47FIAHdV0QHc12NnOMzw6QzfVGc9LX3nzxafrzG-G1_TcpRFs1BiCncJTOBUkyc28DbSgOS2dJXaawwOxMROXcLZ--sMEt29Q0U3E"/>
+<div class="absolute top-4 left-4 bg-surface-white text-graphite-ink px-3 py-1 rounded-full font-label-caps text-label-caps uppercase tracking-wider border border-thin-line">Для магазина</div>
+</div>
+<div class="p-6 flex flex-col flex-grow">
+<h3 class="font-headline-md text-headline-md text-graphite-ink mb-2">Retail Flow</h3>
+<p class="font-body-md text-body-md text-secondary mb-4 flex-grow line-clamp-2">Оптимизированный интернет-магазин с корзиной и чекаутом.</p>
+<div class="flex flex-col gap-3 mt-auto">
+<span class="font-price-mono text-price-mono text-graphite-ink">от 90 000 ₽</span>
+<button class="w-full border border-thin-line text-graphite-ink px-4 py-2 rounded-lg font-body-md hover:border-graphite-ink transition-colors">Подробнее</button>
+</div>
+</div>
+</article>
+</div><div class="grid grid-cols-1 md:grid-cols-12 gap-element-gap mt-element-gap">
+<!-- New Card 1: Large (UI Kit) -->
+<article class="col-span-1 md:col-span-8 bg-surface-white border border-thin-line rounded-xl overflow-hidden hover:-translate-y-1 transition-transform duration-300 shadow-[0_4px_12px_rgba(23,26,31,0.04)] hover:shadow-[0_8px_24px_rgba(23,26,31,0.08)] group flex flex-col md:flex-row">
+<div class="md:w-1/2 h-64 md:h-auto bg-surface-container-low relative overflow-hidden">
+<img alt="Design System preview" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJk0W_zUaHah8KQVIvOU7cEcBZaFgEJHIO_pvrajQ0STDXQiBosXGI-L3Dp6JYD8G2MtjVFnKyMpDB6Cw1caaEH_y4x75DtMI0KTmXJ5xN15ey7uZXEc7Jw21AGefu-wGOrpA9ueOW3-frvK056onnOUgS9YQFLUoIDFGzOG47FIAHdV0QHc12NnOMzw6QzfVGc9LX3nzxafrzG-G1_TcpRFs1BiCncJTOBUkyc28DbSgOS2dJXaawwOxMROXcLZ--sMEt29Q0U3E"/>
+<div class="absolute top-4 left-4 bg-primary text-on-primary px-3 py-1 rounded-full font-label-caps text-label-caps uppercase tracking-wider shadow-sm">New</div>
+</div>
+<div class="p-card-padding flex flex-col justify-between md:w-1/2">
+<div>
+<span class="font-label-caps text-label-caps text-steel-gray uppercase tracking-wider mb-2 block">UI Kit / Design System</span>
+<h3 class="font-headline-lg text-headline-lg text-graphite-ink mb-4">Design System Pro</h3>
+<p class="font-body-md text-body-md text-secondary mb-6 line-clamp-3">Полная библиотека компонентов для Figma и React. Ускорьте разработку ваших продуктов в 5 раз с помощью готовой дизайн-системы.</p>
+</div>
+<div class="flex items-center justify-between mt-auto">
+<span class="font-price-mono text-price-mono text-graphite-ink">от 45 000 ₽</span>
+<button class="bg-teal-accent text-on-primary px-5 py-2.5 rounded-lg font-body-md font-bold hover:bg-surface-tint transition-colors">Смотреть детали</button>
+</div>
+</div>
+</article>
+<!-- New Card 2: Small (Mobile) -->
+<article class="col-span-1 md:col-span-4 bg-surface-white border border-thin-line rounded-xl overflow-hidden hover:-translate-y-1 transition-transform duration-300 hover:shadow-[0_8px_24px_rgba(23,26,31,0.08)] group flex flex-col">
+<div class="h-48 bg-surface-container-low relative overflow-hidden">
+<img alt="Mobile app template" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBx7iaSKSXc5Mtjrz57jC5blY4gJdEAz_h0AitqRgfzut12PHYOQzyMcpAWdWBHqb_MswrwhU9G6PlBqep2--xQCYf1VqU0gn3Uw0RZ3UfCKiADxCJ0R4Lid6ofhKQSVZz6HxNUwps0o1J7pgITVL-wmXGuECDVmWUjOelPrkBBSX0pOTryAaNnbfcv4UOxunHdK0akvNwzVbPhYwIrEwq8sLHywhVP1Akw6fkk8nTjFYfchOnlcNeKNzqVp_Z-k2KxzKfu_-aCXVA"/>
+<div class="absolute top-4 left-4 bg-surface-white text-graphite-ink px-3 py-1 rounded-full font-label-caps text-label-caps uppercase tracking-wider border border-thin-line">Mobile</div>
+</div>
+<div class="p-6 flex flex-col flex-grow">
+<h3 class="font-headline-md text-headline-md text-graphite-ink mb-2">Swift App Core</h3>
+<p class="font-body-md text-body-md text-secondary mb-4 flex-grow line-clamp-2">Базовая архитектура для iOS приложений на SwiftUI с готовой авторизацией.</p>
+<div class="flex flex-col gap-3 mt-auto">
+<span class="font-price-mono text-price-mono text-graphite-ink">от 120 000 ₽</span>
+<button class="w-full border border-thin-line text-graphite-ink px-4 py-2 rounded-lg font-body-md hover:border-graphite-ink transition-colors">Подробнее</button>
+</div>
+</div>
+</article>
+</div>
+</section>
+<!-- Trust Section -->
+<section class="max-w-container-max mx-auto px-gutter pb-section-gap">
+<div class="bg-surface-white border border-thin-line rounded-xl p-card-padding flex flex-col md:flex-row items-center justify-between gap-8">
+<div class="md:w-2/3">
+<h2 class="font-headline-lg text-headline-lg text-graphite-ink mb-4">Профессиональный контроль качества</h2>
+<p class="font-body-lg text-body-lg text-secondary">Каждое решение проходит ручную модерацию экспертами. Мы не просто продаем шаблоны — мы обеспечиваем техническую надежность и соответствие современным стандартам UI/UX. Человеческая экспертиза поверх системной эффективности.</p>
+</div>
+<div class="md:w-1/3 flex justify-end">
+<div class="flex items-center gap-3 bg-muted-sage px-6 py-4 rounded-xl">
+<span class="material-symbols-outlined text-on-surface text-3xl" style='font-variation-settings: "FILL" 1;'>verified_user</span>
+<span class="font-headline-md text-headline-md text-on-surface">Expert Check</span>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer Component -->
+<footer class="bg-surface-container-low border-t border-thin-line w-full">
+<div class="flex flex-col md:flex-row justify-between items-center w-full px-gutter py-section-gap max-w-container-max mx-auto">
+<div class="mb-8 md:mb-0 text-center md:text-left">
+<span class="font-headline-md text-graphite-ink font-bold tracking-tight block mb-2">StudioPro</span>
+<p class="font-body-md text-body-md text-steel-gray">© 2024 StudioPro Digital. All rights reserved. Systemized quality for modern business.</p>
+</div>
+<nav class="flex flex-wrap justify-center gap-6">
+<a class="font-label-caps text-label-caps text-steel-gray uppercase tracking-wider hover:text-graphite-ink transition-colors opacity-90 hover:opacity-100" href="#">Terms of Service</a>
+<a class="font-label-caps text-label-caps text-steel-gray uppercase tracking-wider hover:text-graphite-ink transition-colors opacity-90 hover:opacity-100" href="#">Privacy Policy</a>
+<a class="font-label-caps text-label-caps text-steel-gray uppercase tracking-wider hover:text-graphite-ink transition-colors opacity-90 hover:opacity-100" href="#">Contact Support</a>
+<a class="font-label-caps text-label-caps text-steel-gray uppercase tracking-wider hover:text-graphite-ink transition-colors opacity-90 hover:opacity-100" href="#">Expert Consult</a>
+</nav>
+</div>
+</footer>
+</body></html>

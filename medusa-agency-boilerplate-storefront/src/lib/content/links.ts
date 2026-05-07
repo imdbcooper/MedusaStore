@@ -13,7 +13,7 @@ export const INFORMATIONAL_PAGE_LINKS: ContentLinkRow[] = [
     id: "fallback-about",
     link: {
       type: "page",
-      label: "О компании",
+      label: "О нас",
       pageSlug: "about",
     },
   },
@@ -39,14 +39,6 @@ export const INFORMATIONAL_PAGE_LINKS: ContentLinkRow[] = [
       type: "page",
       label: "Контакты",
       pageSlug: "contacts",
-    },
-  },
-  {
-    id: "fallback-loyalty",
-    link: {
-      type: "page",
-      label: "Лояльность",
-      pageSlug: "loyalty",
     },
   },
 ]

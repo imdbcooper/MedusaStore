@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+
+<html lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>StudioPro - Профессиональные сайты без переплаты</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;family=Inter:wght@400;500;600&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-background": "#181c1c",
+                        "tertiary": "#854930",
+                        "error": "#ba1a1a",
+                        "muted-sage": "#6F8F7A",
+                        "surface-tint": "#136965",
+                        "ink-blue": "#1E344F",
+                        "primary-fixed-dim": "#89d4ce",
+                        "tertiary-fixed-dim": "#ffb598",
+                        "primary-fixed": "#a5f0ea",
+                        "background": "#f7faf8",
+                        "primary": "#07645f",
+                        "on-tertiary-fixed": "#370e00",
+                        "secondary-fixed": "#d3e4ff",
+                        "surface-container-low": "#f1f4f3",
+                        "thin-line": "#E4DED4",
+                        "on-tertiary-container": "#fff6f3",
+                        "tertiary-container": "#a26146",
+                        "on-tertiary": "#ffffff",
+                        "inverse-primary": "#89d4ce",
+                        "error-container": "#ffdad6",
+                        "surface": "#f7faf8",
+                        "inverse-on-surface": "#eff1f0",
+                        "secondary": "#4a607d",
+                        "on-secondary": "#ffffff",
+                        "soft-shadow": "rgba(23, 26, 31, 0.08)",
+                        "surface-container-highest": "#e0e3e2",
+                        "graphite-ink": "#171A1F",
+                        "surface-container-lowest": "#ffffff",
+                        "steel-gray": "#737780",
+                        "primary-container": "#2f7d78",
+                        "on-secondary-container": "#4b607e",
+                        "teal-accent": "#2F7D78",
+                        "on-secondary-fixed": "#031c36",
+                        "canvas-warm": "#F7F4EE",
+                        "on-primary": "#ffffff",
+                        "secondary-container": "#c5dbfe",
+                        "surface-white": "#FFFFFF",
+                        "surface-container-high": "#e6e9e7",
+                        "surface-bright": "#f7faf8",
+                        "on-surface-variant": "#3f4947",
+                        "on-secondary-fixed-variant": "#334864",
+                        "secondary-fixed-dim": "#b2c8ea",
+                        "inverse-surface": "#2d3131",
+                        "outline": "#6f7978",
+                        "surface-container": "#eceeed",
+                        "on-error-container": "#93000a",
+                        "on-tertiary-fixed-variant": "#6f3820",
+                        "surface-dim": "#d8dbd9",
+                        "on-primary-fixed-variant": "#00504c",
+                        "on-primary-fixed": "#00201e",
+                        "on-surface": "#181c1c",
+                        "surface-variant": "#e0e3e2",
+                        "tertiary-fixed": "#ffdbce",
+                        "on-error": "#ffffff",
+                        "outline-variant": "#bec9c7",
+                        "on-primary-container": "#dafffb"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "section-gap": "120px",
+                        "element-gap": "16px",
+                        "gutter": "24px",
+                        "container-max": "1280px",
+                        "card-padding": "32px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["manrope"],
+                        "label-caps": ["inter"],
+                        "headline-md": ["manrope"],
+                        "body-lg": ["manrope"],
+                        "display-xl": ["manrope"],
+                        "headline-lg": ["manrope"],
+                        "price-mono": ["inter"]
+                    },
+                    "fontSize": {
+                        "body-md": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                        "label-caps": ["12px", {"lineHeight": "1.0", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "headline-md": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                        "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                        "display-xl": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "headline-lg": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "price-mono": ["20px", {"lineHeight": "1.0", "fontWeight": "500"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .icon-fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md antialiased">
+<!-- TopNavBar Shared Component -->
+<header class="bg-canvas-warm border-b border-thin-line docked full-width top-0 z-50">
+<div class="flex justify-between items-center w-full px-gutter py-4 max-w-container-max mx-auto">
+<div class="flex items-center gap-2">
+<span class="text-headline-md font-headline-md font-bold text-graphite-ink">StudioPro</span>
+</div>
+<nav class="hidden md:flex gap-8">
+<a class="text-primary font-bold border-b-2 border-primary pb-1 font-body-md scale-95 transition-all" href="#">Catalog</a>
+<a class="text-secondary font-body-md hover:text-primary transition-colors duration-200 scale-95 transition-all" href="#">Solutions</a>
+<a class="text-secondary font-body-md hover:text-primary transition-colors duration-200 scale-95 transition-all" href="#">Process</a>
+<a class="text-secondary font-body-md hover:text-primary transition-colors duration-200 scale-95 transition-all" href="#">Pricing</a>
+<a class="text-secondary font-body-md hover:text-primary transition-colors duration-200 scale-95 transition-all" href="#">Portfolio</a>
+</nav>
+<div class="flex items-center gap-4">
+<button class="hidden md:block text-secondary font-body-md hover:text-primary transition-colors duration-200 scale-95 transition-all">Login</button>
+<button class="bg-teal-accent text-on-primary font-label-caps text-label-caps px-6 py-3 rounded hover:bg-opacity-90 transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0">Launch Project</button>
+</div>
+</div>
+</header>
+<main>
+<!-- Hero Section -->
+<section class="w-full max-w-container-max mx-auto px-gutter py-section-gap flex flex-col lg:flex-row items-center gap-12 lg:gap-24">
+<div class="w-full lg:w-7/12 flex flex-col items-start gap-8">
+<span class="bg-muted-sage text-on-primary font-label-caps text-label-caps px-3 py-1 rounded-full">Профессиональный подход</span>
+<h1 class="font-display-xl text-display-xl text-ink-blue">
+                    Премиальные сайты для бизнеса.<br/>
+<span class="text-teal-accent">Без лишних переплат.</span>
+</h1>
+<p class="font-body-lg text-body-lg text-secondary max-w-2xl">
+                    Мы объединили системный подход, ИИ-оптимизацию и экспертный контроль качества. Получите современный коммерческий актив быстрее и дешевле классической студийной разработки.
+                </p>
+<div class="flex flex-col sm:flex-row gap-4 mt-4">
+<button class="bg-teal-accent text-on-primary font-label-caps text-label-caps px-8 py-4 rounded hover:bg-opacity-90 transition-all duration-200 transform hover:-translate-y-0.5 shadow-sm">
+                        Смотреть предложения
+                    </button>
+<button class="border border-thin-line text-ink-blue font-label-caps text-label-caps px-8 py-4 rounded hover:border-graphite-ink transition-all duration-200">
+                        Бесплатная консультация
+                    </button>
+</div>
+<div class="flex items-center gap-4 mt-4 text-secondary">
+<div class="flex -space-x-2">
+<img alt="Client" class="w-8 h-8 rounded-full border-2 border-surface-white" data-alt="A small circular profile portrait of a confident young professional woman with natural makeup and subtle lighting, shot against a bright, modern studio background. The image has a clean, high-end corporate feel." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBHBnTh8CZgLDyfO_LYah9lQdCHraTcoUWpoAjCxVU6PxikhPxRA7g261tA343ylAQ2LJvemayOdidyzNfN18-xAHlLNY91dACEytxht3VGSL-rDejpfOv8CXyw4NkZMfrzOmrDIx072ET9uBSvNCiEMybYYm_9Auvoo8zXgg85Vhaaf507j2D1W32Cj_zPaPXvEMeZDAzTwuT9od-YgEBP0ohI3qU4ZwmhI34r6OC0--vtRAHZrZYk-i6XsaiL5R4TPqK5MaPdvBg"/>
+<img alt="Client" class="w-8 h-8 rounded-full border-2 border-surface-white" data-alt="A small circular profile portrait of a focused professional man with a neat beard, shot in a bright, modern studio setting. The lighting is soft and natural, emphasizing a trustworthy business aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSKHE9j7n_lgHkB-c95mw7luEGbsDCHSpWih0rTSCliNUSh1CjOiEA0zDdnULRLW_4EmTeHeCL8JGwLmHOJF2TIy27ap_Ct8XybAcCOmDF1cFGGe0CkOEER6oHuVqBNO5V22GfTZ8bcjm01Z9te9JM5ysVycChjNMiFhk1M6xvZE_ZSg3KcS_cAZgIVB8YZDnzG-LjzDaoKmLD04VpQ4yDkB9SkXHEwkboRsY-V2pYVNZck25wsvxbKeb6egmsb1Jujb_lC8P-xMY"/>
+<img alt="Client" class="w-8 h-8 rounded-full border-2 border-surface-white" data-alt="A small circular profile portrait of a smiling female executive, shot against a clean white background. The bright, high-key lighting conveys approachability and modern professionalism." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBrZjyeToPXSmsw4xPxvXAVCfW2Ui1r9oXFB94MHgqiSuzNSp3lPONIyvygUjSnSXxrl64eqRdpf3vLG3DcReQ4_SiJM-bzWT3mj7Yq_d_5UndmpnKk2sU3xqmcuzeOL2auB5Xhh2hebWRiUFFmleBvzhgK6g0qPGykJRlEOC20BY_8XOkEvTSp9KDFUwdbMnb46wSNmfmwt590pzymjjV7YQnY_FZMqp36ON_ZgXFoKeKMw4XS5Hne6zOqKfWVaBInXLqpy2OWl1U"/>
+</div>
+<span class="font-label-caps text-label-caps">Доверяют 500+ компаний</span>
+</div>
+</div>
+<div class="w-full lg:w-5/12 relative">
+<div class="absolute inset-0 bg-gradient-to-tr from-surface-container-low to-secondary-container opacity-50 rounded-2xl transform rotate-3"></div>
+<img alt="Dashboard Mockup" class="relative z-10 rounded-2xl border border-thin-line shadow-lg" data-alt="A highly detailed, sleek mockup of a modern business dashboard displayed on a high-end monitor. The interface features clean data visualizations, crisp typography, and an organized layout. The setting is a bright, minimalist office space with warm natural light filtering through, highlighting the premium, professional aesthetic of the digital product." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDRaIPeKlppVXVO---yJC34MDYAHsUoKVgOkDNeaVCnc5peXTQ4Q0NeHZRuIqB8Hq1X27avajnA1MYDZdzJ_7-l9GU57tnjTv813d5LCPJy9ffX_JWRMmxjdv-zl69xv0GSDVr0WgXXph7RbPc3A7w-or0MtLYXCzL0GlZeBY2okXMq70ynXwpSD5gmLyMqI3AAUdgCwyr8g-6FgqLsAbaJKqoCdsEYW1q_GSfZeykWg6LBDEXoAwayMTwz6qN19C-oSJyD1ufd-v4"/>
+<!-- Floating Element -->
+<div class="absolute -left-12 bottom-12 bg-surface-white border border-thin-line rounded-lg p-4 shadow-sm z-20 flex items-center gap-4 hidden md:flex">
+<div class="w-10 h-10 rounded-full bg-surface-container-low flex items-center justify-center">
+<span class="material-symbols-outlined text-teal-accent icon-fill" data-icon="check_circle">check_circle</span>
+</div>
+<div>
+<p class="font-label-caps text-label-caps text-ink-blue">Экспертный контроль</p>
+<p class="font-body-md text-body-md text-secondary text-sm">Гарантия качества</p>
+</div>
+</div>
+</div>
+</section><section class="w-full py-section-gap border-b border-thin-line bg-surface-container-lowest overflow-hidden"><div class="max-w-container-max mx-auto px-gutter">
+<div class="flex flex-col gap-16 lg:gap-24 items-start lg:flex-row-reverse">
+<!-- Left Side: Value Proposition & Key Benefits -->
+<div class="w-full lg:w-3/5">
+<div class="mb-12">
+<span class="text-teal-accent font-label-caps text-label-caps tracking-widest mb-4 block uppercase">Технологическое превосходство</span>
+<h2 class="font-headline-lg text-display-xl text-ink-blue mb-6">Создаем активы, а не просто сайты</h2>
+<p class="font-body-lg text-body-lg text-secondary max-w-2xl">
+                    Мы используем промышленный стек технологий, который обычно доступен только крупным энтерпрайз-проектам. Это гарантирует долговечность и масштабируемость вашего цифрового продукта.
+                </p>
+</div>
+<!-- Benefits Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+<div class="flex flex-col gap-3 p-6 rounded-xl border border-thin-line bg-surface-container-low/30 hover:bg-surface-white transition-colors duration-300">
+<span class="material-symbols-outlined text-teal-accent text-3xl">bolt</span>
+<h3 class="font-headline-md text-lg text-ink-blue">Производительность</h3>
+<p class="font-body-md text-secondary text-sm">Мгновенный отклик интерфейса и высокие показатели Core Web Vitals для SEO-доминирования.</p>
+</div>
+<div class="flex flex-col gap-3 p-6 rounded-xl border border-thin-line bg-surface-container-low/30 hover:bg-surface-white transition-colors duration-300">
+<span class="material-symbols-outlined text-teal-accent text-3xl">verified</span>
+<h3 class="font-headline-md text-lg text-ink-blue">Надежность</h3>
+<p class="font-body-md text-secondary text-sm">Типизированный код на TypeScript исключает критические ошибки в логике бизнес-процессов.</p>
+</div>
+<div class="flex flex-col gap-3 p-6 rounded-xl border border-thin-line bg-surface-container-low/30 hover:bg-surface-white transition-colors duration-300">
+<span class="material-symbols-outlined text-teal-accent text-3xl">devices</span>
+<h3 class="font-headline-md text-lg text-ink-blue">Адаптивность</h3>
+<p class="font-body-md text-secondary text-sm">Бескомпромиссная работа на любых устройствах: от смартфонов до широкоформатных мониторов.</p>
+</div>
+<div class="flex flex-col gap-3 p-6 rounded-xl border border-thin-line bg-surface-container-low/30 hover:bg-surface-white transition-colors duration-300">
+<span class="material-symbols-outlined text-teal-accent text-3xl">trending_up</span>
+<h3 class="font-headline-md text-lg text-ink-blue">Эволюция</h3>
+<p class="font-body-md text-secondary text-sm">Модульная архитектура позволяет внедрять новые функции без переписывания всей системы.</p>
+</div>
+</div>
+</div>
+<!-- Right Side: System Architecture Overview -->
+<div class="w-full lg:w-2/5">
+<div class="bg-ink-blue rounded-2xl p-8 shadow-2xl relative overflow-hidden">
+<!-- Decorative accent -->
+<div class="absolute top-0 right-0 w-32 h-32 bg-teal-accent/20 blur-3xl"></div>
+<h3 class="font-label-caps text-label-caps text-on-primary/60 mb-8 tracking-widest uppercase">System Architecture</h3>
+<div class="space-y-4">
+<!-- Presentation -->
+<div class="bg-surface-white/10 border border-on-primary/10 rounded-lg p-5 backdrop-blur-sm">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-teal-accent">desktop_windows</span>
+<div>
+<p class="text-[10px] font-label-caps text-on-primary/40 leading-none mb-1">PRESENTATION LAYER</p>
+<p class="font-headline-md text-base text-on-primary">React &amp; Next.js Framework</p>
+</div>
+</div>
+</div>
+<!-- Logic -->
+<div class="bg-surface-white/10 border border-on-primary/10 rounded-lg p-5 backdrop-blur-sm">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-teal-accent">security</span>
+<div>
+<p class="text-[10px] font-label-caps text-on-primary/40 leading-none mb-1">LOGIC &amp; SECURITY</p>
+<p class="font-headline-md text-base text-on-primary">TypeScript Core</p>
+</div>
+</div>
+</div>
+<!-- Infrastructure -->
+<div class="bg-surface-white/10 border border-on-primary/10 rounded-lg p-5 backdrop-blur-sm">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-teal-accent">hub</span>
+<div>
+<p class="text-[10px] font-label-caps text-on-primary/40 leading-none mb-1 uppercase">INFRASTRUCTURE</p>
+<p class="font-headline-md text-base text-on-primary">Payload CMS &amp; API First</p>
+</div>
+</div>
+</div><div class="bg-surface-white/10 border border-on-primary/10 rounded-lg p-5 backdrop-blur-sm">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-teal-accent">shopping_cart</span>
+<div>
+<p class="text-[10px] font-label-caps text-on-primary/40 leading-none mb-1">E-COMMERCE ENGINE</p>
+<p class="font-headline-md text-base text-on-primary">Medusa</p>
+</div>
+</div>
+</div>
+<!-- Foundation -->
+<div class="bg-surface-white/10 border border-on-primary/10 rounded-lg p-5 backdrop-blur-sm">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-teal-accent">analytics</span>
+<div>
+<p class="text-[10px] font-label-caps text-on-primary/40 leading-none mb-1">FOUNDATION</p>
+<p class="font-headline-md text-base text-on-primary">Clean Code &amp; Analytics</p>
+</div>
+</div>
+</div>
+</div>
+<p class="mt-8 text-[11px] font-label-caps text-on-primary/40 text-center">
+                    Verified Stack • Industrial Standards • High Availability
+                </p>
+</div>
+</div>
+</div>
+</div></section>
+<!-- System Explanation Section -->
+<section class="w-full bg-canvas-warm py-section-gap">
+<div class="max-w-container-max mx-auto px-gutter">
+<div class="text-center max-w-3xl mx-auto mb-16">
+<h2 class="font-headline-lg text-headline-lg text-ink-blue mb-4">Системный подход к разработке</h2>
+<p class="font-body-lg text-body-lg text-secondary">Как мы достигаем премиального качества без раздутых бюджетов классических студий.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+<!-- Card 1 -->
+<div class="bg-surface-white border border-thin-line rounded-xl p-card-padding hover:-translate-y-1 transition-transform duration-300 shadow-sm">
+<div class="w-12 h-12 rounded bg-surface-container-low flex items-center justify-center mb-6">
+<span class="material-symbols-outlined text-teal-accent" data-icon="architecture">architecture</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-ink-blue mb-3">Надежный Backend</h3>
+<p class="font-body-md text-body-md text-secondary">
+                            Используем проверенные, масштабируемые архитектурные решения. Ваш сайт готов к росту бизнеса с первого дня.
+                        </p>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-white border border-thin-line rounded-xl p-card-padding hover:-translate-y-1 transition-transform duration-300 shadow-sm relative overflow-hidden">
+<div class="w-12 h-12 rounded bg-surface-container-low flex items-center justify-center mb-6">
+<span class="material-symbols-outlined text-teal-accent" data-icon="smart_toy">smart_toy</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-ink-blue mb-3">ИИ-Оптимизация</h3>
+<p class="font-body-md text-body-md text-secondary">
+                            Автоматизируем рутинные процессы кодинга и базового дизайна, направляя ресурсы на уникальную логику вашего продукта.
+                        </p>
+<div class="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-teal-accent/10 to-transparent rounded-bl-full"></div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-white border border-thin-line rounded-xl p-card-padding hover:-translate-y-1 transition-transform duration-300 shadow-sm">
+<div class="w-12 h-12 rounded bg-surface-container-low flex items-center justify-center mb-6">
+<span class="material-symbols-outlined text-teal-accent" data-icon="verified_user">verified_user</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-ink-blue mb-3">Человеческий контроль</h3>
+<p class="font-body-md text-body-md text-secondary">
+                            Каждый этап строго контролируется Senior-специалистами. Технологии работают под управлением опытных инженеров.
+                        </p>
+</div>
+</div>
+</div>
+</section>
+<!-- Solutions Catalog -->
+<section class="w-full max-w-container-max mx-auto px-gutter py-section-gap">
+<div class="flex flex-col md:flex-row justify-between items-end mb-12 gap-6">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-ink-blue mb-4">Популярные решения</h2>
+<p class="font-body-lg text-body-lg text-secondary max-w-2xl">Готовые архитектурные базы, адаптируемые под ваш бренд.</p>
+</div>
+<button class="text-teal-accent font-label-caps text-label-caps hover:text-ink-blue transition-colors duration-200 flex items-center gap-2">
+                    Весь каталог <span class="material-symbols-outlined text-sm" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+<!-- Solution Card 1 -->
+<div class="group bg-surface-white border border-thin-line rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
+<div class="h-64 overflow-hidden relative">
+<div class="absolute inset-0 bg-surface-container-highest animate-pulse opacity-20"></div> <!-- Shimmer effect -->
+<img alt="Corporate Website" class="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" data-alt="A clean, modern corporate website design displayed on a sleek laptop screen. The interface shows a structured layout with professional typography, subtle teal accents, and corporate imagery. The setting is a bright, minimalist workspace, conveying efficiency and high-end digital presence." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBVGQQON8sSA-VxUhzDtO5JKCm60y6lqoyCy_TLSuKSlRBXJKPHS9L77XFOfSTVrrBPyonUOZvZvhFDm4a4S2DmVMFl5crUfnypDOg0AL8wqFJ_x8DO3Zk4mAcKjyT8Zw20aCufBzhwa26RSeUTptUVzc_kGEKJiyx97U116VLFFUqm68PEnBMwr_NHj4RzPeC6g_X9YM837JbBBpUej70eCTm2mW90_P6a8PL7gux0mB1UzK7rJ-KevlDpzQHM7ExJypzTZVcWNr8"/>
+</div>
+<div class="p-card-padding">
+<span class="bg-surface-container-low text-ink-blue font-label-caps text-label-caps px-3 py-1 rounded-full mb-4 inline-block">Корпоративный сегмент</span>
+<h3 class="font-headline-md text-headline-md text-ink-blue mb-2">Бизнес-Портал Pro</h3>
+<p class="font-body-md text-body-md text-secondary mb-6 line-clamp-2">Комплексное решение для средних и крупных компаний. Интеграция с CRM, личные кабинеты, сложная структура услуг.</p>
+<div class="flex justify-between items-center border-t border-thin-line pt-6">
+<div>
+<p class="font-label-caps text-label-caps text-secondary mb-1">От</p>
+<p class="font-price-mono text-price-mono text-ink-blue">₽ 150,000</p>
+</div>
+<button class="bg-teal-accent text-on-primary font-label-caps text-label-caps px-6 py-2 rounded hover:bg-opacity-90 transition-all">Подробнее</button>
+</div>
+</div>
+</div>
+<!-- Solution Card 2 -->
+<div class="group bg-surface-white border border-thin-line rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
+<div class="h-64 overflow-hidden relative">
+<div class="absolute inset-0 bg-surface-container-highest animate-pulse opacity-20"></div>
+<img alt="E-commerce Platform" class="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" data-alt="A sophisticated e-commerce platform interface shown on a tablet screen. The design features a neat grid of products, a clear shopping cart icon, and a streamlined checkout process. The aesthetic is bright and clean, emphasizing high conversion rates and a premium shopping experience." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDjLOIVpCfFU60y-b7LEvMPiBsa_24LkQBnLiSLzYHcA5ry3Q9SiC0vdsu2qcCexIh6gCS_9siG2oJGy_w1A92ZcfMTro_vUrysJ_C4c0ag5qUKZAIGAv8fjYc02AxMtUXfvJEVye7CKT8aF1kc9MlZQQ8fAh6gLFN-E8D02_k4aWQoQYKoLb1oiM_KOa9A_nIibErXFhL6rA-MvNLZcfGrCLWqFLDCt_MZFuGsA_Sbano5U_l5udkLwLdDwx8PrsWEHPDWB8Beo-4"/>
+</div>
+<div class="p-card-padding">
+<span class="bg-muted-sage text-on-primary font-label-caps text-label-caps px-3 py-1 rounded-full mb-4 inline-block">E-commerce</span>
+<h3 class="font-headline-md text-headline-md text-ink-blue mb-2">Каталог &amp; Магазин</h3>
+<p class="font-body-md text-body-md text-secondary mb-6 line-clamp-2">Современный интернет-магазин с оптимизированной воронкой продаж, умным поиском и подключенной аналитикой.</p>
+<div class="flex justify-between items-center border-t border-thin-line pt-6">
+<div>
+<p class="font-label-caps text-label-caps text-secondary mb-1">От</p>
+<p class="font-price-mono text-price-mono text-ink-blue">₽ 200,000</p>
+</div>
+<button class="bg-teal-accent text-on-primary font-label-caps text-label-caps px-6 py-2 rounded hover:bg-opacity-90 transition-all">Подробнее</button>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Conversion CTA Section -->
+<section class="w-full bg-surface-container-low py-section-gap">
+<div class="max-w-container-max mx-auto px-gutter">
+<div class="bg-ink-blue rounded-3xl p-12 md:p-20 text-center relative overflow-hidden">
+<!-- Decorative background element -->
+<div class="absolute top-0 right-0 w-64 h-64 bg-teal-accent/10 blur-3xl -mr-32 -mt-32 rounded-full"></div>
+<div class="absolute bottom-0 left-0 w-64 h-64 bg-primary-container/10 blur-3xl -ml-32 -mb-32 rounded-full"></div>
+<div class="relative z-10 max-w-3xl mx-auto">
+<h2 class="font-display-xl text-display-xl text-on-primary mb-6">
+          Готовы запустить свой проект?
+        </h2>
+<p class="font-body-lg text-body-lg text-on-primary/80 mb-10">
+          Выберите проверенное архитектурное решение или свяжитесь с нами для разработки индивидуального плана внедрения вашего продукта.
+        </p>
+<div class="flex flex-col sm:flex-row justify-center gap-4">
+<button class="bg-teal-accent text-on-primary font-label-caps text-label-caps px-10 py-4 rounded hover:bg-opacity-90 transition-all duration-200 transform hover:-translate-y-0.5 shadow-lg">
+            В каталог
+          </button>
+<button class="border border-on-primary/20 text-on-primary font-label-caps text-label-caps px-10 py-4 rounded hover:bg-on-primary/10 transition-all duration-200">
+            Получить консультацию
+          </button>
+</div>
+</div>
+</div>
+</div>
+</section></main>
+<!-- Footer Shared Component -->
+<section class="w-full max-w-container-max mx-auto px-gutter py-section-gap">
+<div class="text-center max-w-3xl mx-auto mb-16">
+<h2 class="font-headline-lg text-headline-lg text-ink-blue mb-4">Процесс работы</h2>
+<p class="font-body-lg text-body-lg text-secondary">Системный путь от идеи до запуска мощного цифрового инструмента.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-8 relative">
+<!-- Step 1 -->
+<div class="flex flex-col items-center text-center">
+<div class="w-16 h-16 rounded-full bg-primary-container flex items-center justify-center mb-6 relative z-10">
+<span class="material-symbols-outlined text-on-primary-container text-2xl">ads_click</span>
+<div class="absolute -top-1 -right-1 w-6 h-6 bg-teal-accent text-on-primary rounded-full flex items-center justify-center text-[10px] font-bold">01</div>
+</div>
+<h4 class="font-headline-md text-headline-md text-ink-blue mb-2 text-lg">Выбор решения</h4>
+<p class="font-body-md text-body-md text-secondary text-sm">Консультация и подбор оптимальной базы</p>
+</div>
+<!-- Step 2 -->
+<div class="flex flex-col items-center text-center">
+<div class="w-16 h-16 rounded-full bg-primary-container flex items-center justify-center mb-6 relative z-10">
+<span class="material-symbols-outlined text-on-primary-container text-2xl">auto_fix_high</span>
+<div class="absolute -top-1 -right-1 w-6 h-6 bg-teal-accent text-on-primary rounded-full flex items-center justify-center text-[10px] font-bold">02</div>
+</div>
+<h4 class="font-headline-md text-headline-md text-ink-blue mb-2 text-lg">Адаптация</h4>
+<p class="font-body-md text-body-md text-secondary text-sm">ИИ-настройка под ваш бренд и задачи</p>
+</div>
+<!-- Step 3 -->
+<div class="flex flex-col items-center text-center">
+<div class="w-16 h-16 rounded-full bg-primary-container flex items-center justify-center mb-6 relative z-10">
+<span class="material-symbols-outlined text-on-primary-container text-2xl">fact_check</span>
+<div class="absolute -top-1 -right-1 w-6 h-6 bg-teal-accent text-on-primary rounded-full flex items-center justify-center text-[10px] font-bold">03</div>
+</div>
+<h4 class="font-headline-md text-headline-md text-ink-blue mb-2 text-lg">Контроль</h4>
+<p class="font-body-md text-body-md text-secondary text-sm">Проверка качества Senior-специалистами</p>
+</div>
+<!-- Step 4 -->
+<div class="flex flex-col items-center text-center">
+<div class="w-16 h-16 rounded-full bg-primary-container flex items-center justify-center mb-6 relative z-10">
+<span class="material-symbols-outlined text-on-primary-container text-2xl">settings_input_component</span>
+<div class="absolute -top-1 -right-1 w-6 h-6 bg-teal-accent text-on-primary rounded-full flex items-center justify-center text-[10px] font-bold">04</div>
+</div>
+<h4 class="font-headline-md text-headline-md text-ink-blue mb-2 text-lg">Интеграция</h4>
+<p class="font-body-md text-body-md text-secondary text-sm">Настройка Backend и систем связи</p>
+</div>
+<!-- Step 5 -->
+<div class="flex flex-col items-center text-center">
+<div class="w-16 h-16 rounded-full bg-primary-container flex items-center justify-center mb-6 relative z-10">
+<span class="material-symbols-outlined text-on-primary-container text-2xl">rocket_launch</span>
+<div class="absolute -top-1 -right-1 w-6 h-6 bg-teal-accent text-on-primary rounded-full flex items-center justify-center text-[10px] font-bold">05</div>
+</div>
+<h4 class="font-headline-md text-headline-md text-ink-blue mb-2 text-lg">Запуск</h4>
+<p class="font-body-md text-body-md text-secondary text-sm">Публикация проекта и тестирование</p>
+</div>
+<!-- Step 6 -->
+<div class="flex flex-col items-center text-center">
+<div class="w-16 h-16 rounded-full bg-primary-container flex items-center justify-center mb-6 relative z-10">
+<span class="material-symbols-outlined text-on-primary-container text-2xl">support_agent</span>
+<div class="absolute -top-1 -right-1 w-6 h-6 bg-teal-accent text-on-primary rounded-full flex items-center justify-center text-[10px] font-bold">06</div>
+</div>
+<h4 class="font-headline-md text-headline-md text-ink-blue mb-2 text-lg">Поддержка</h4>
+<p class="font-body-md text-body-md text-secondary text-sm">Постоянное развитие и сопровождение</p>
+</div>
+</div>
+</section><footer class="bg-surface-container-low full-width border-t border-thin-line mt-auto">
+<div class="flex flex-col md:flex-row justify-between items-center w-full px-gutter py-section-gap max-w-container-max mx-auto">
+<div class="flex flex-col items-center md:items-start mb-8 md:mb-0">
+<span class="font-headline-md text-graphite-ink mb-4 font-bold text-headline-md">StudioPro</span>
+<p class="font-body-md text-body-md text-steel-gray text-center md:text-left max-w-md">© 2024 StudioPro Digital. All rights reserved. Systemized quality for modern business.</p>
+</div>
+<nav class="flex flex-wrap justify-center gap-6">
+<a class="text-steel-gray font-body-md hover:text-graphite-ink transition-colors opacity-90 hover:opacity-100 font-label-caps text-label-caps" href="#">Terms of Service</a>
+<a class="text-steel-gray font-body-md hover:text-graphite-ink transition-colors opacity-90 hover:opacity-100 font-label-caps text-label-caps" href="#">Privacy Policy</a>
+<a class="text-steel-gray font-body-md hover:text-graphite-ink transition-colors opacity-90 hover:opacity-100 font-label-caps text-label-caps" href="#">Contact Support</a>
+<a class="text-steel-gray font-body-md hover:text-graphite-ink transition-colors opacity-90 hover:opacity-100 font-label-caps text-label-caps" href="#">Expert Consult</a>
+</nav>
+</div>
+</footer>
+</body></html>

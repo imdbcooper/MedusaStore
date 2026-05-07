@@ -40,7 +40,7 @@ const renderNode = (node: ContentRichTextNode, key: string): React.ReactNode => 
 
   if (node.type === 'paragraph') {
     return (
-      <p key={key} className="text-base leading-7 text-ui-fg-base">
+      <p key={key} className="text-base leading-7 text-[var(--theme-muted)]">
         {children}
       </p>
     )
@@ -50,23 +50,23 @@ const renderNode = (node: ContentRichTextNode, key: string): React.ReactNode => 
     const tag = node.tag || 'h2'
 
     if (tag === 'h1') {
-      return <h1 key={key} className="text-4xl font-semibold tracking-tight">{children}</h1>
+      return <h1 key={key} className="text-4xl font-bold tracking-[-0.035em] text-[var(--theme-foreground)]">{children}</h1>
     }
 
     if (tag === 'h3') {
-      return <h3 key={key} className="text-2xl font-semibold tracking-tight">{children}</h3>
+      return <h3 key={key} className="text-2xl font-bold tracking-[-0.02em] text-[var(--theme-foreground)]">{children}</h3>
     }
 
     if (tag === 'h4') {
-      return <h4 key={key} className="text-xl font-semibold tracking-tight">{children}</h4>
+      return <h4 key={key} className="text-xl font-bold tracking-[-0.015em] text-[var(--theme-foreground)]">{children}</h4>
     }
 
-    return <h2 key={key} className="text-3xl font-semibold tracking-tight">{children}</h2>
+    return <h2 key={key} className="text-3xl font-bold tracking-[-0.025em] text-[var(--theme-foreground)]">{children}</h2>
   }
 
   if (node.type === 'quote') {
     return (
-      <blockquote key={key} className="border-l-4 border-ui-border-base pl-4 italic text-ui-fg-subtle">
+      <blockquote key={key} className="border-l-4 border-[var(--theme-accent)] pl-4 italic text-[var(--theme-muted)]">
         {children}
       </blockquote>
     )
@@ -79,11 +79,11 @@ const renderNode = (node: ContentRichTextNode, key: string): React.ReactNode => 
         ? 'list-decimal pl-5 space-y-2'
         : 'list-disc pl-5 space-y-2'
 
-    return <Tag key={key} className={className}>{children}</Tag>
+    return <Tag key={key} className={`${className} text-[var(--theme-muted)]`}>{children}</Tag>
   }
 
   if (node.type === 'listitem') {
-    return <li key={key}>{children}</li>
+    return <li key={key} className="leading-7">{children}</li>
   }
 
   if (node.type === 'link') {
@@ -99,7 +99,7 @@ const renderNode = (node: ContentRichTextNode, key: string): React.ReactNode => 
         href={href}
         target={node.fields?.newTab ? '_blank' : undefined}
         rel={node.fields?.newTab ? 'noreferrer' : undefined}
-        className="text-ui-fg-interactive hover:underline"
+        className="font-bold text-[var(--theme-accent)] hover:underline"
       >
         {children}
       </a>

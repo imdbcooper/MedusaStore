@@ -37,7 +37,7 @@ const Thumbnail: React.FC<ThumbnailProps> = ({
       className={clx(
         "relative w-full overflow-hidden p-4",
         frameClassName ||
-          "bg-ui-bg-subtle shadow-elevation-card-rest rounded-large group-hover:shadow-elevation-card-hover transition-shadow ease-in-out duration-150",
+          "border border-[var(--theme-border)] bg-[var(--theme-surface-muted)] shadow-[var(--theme-shadow-card)] rounded-[var(--theme-radius-card)] transition duration-300 group-hover:-translate-y-1 group-hover:shadow-[var(--theme-shadow-shell)]",
         className,
         {
           "aspect-[11/14]": resolvedAspectRatio === "feature",
