@@ -150,11 +150,19 @@ cmd_up_backend() {
 }
 
 cmd_up_storefront() {
-  title "Запустить storefront (host node, не контейнер)"
+  title "Запустить storefront dev (host node, не контейнер)"
   warn "Storefront в этом репо НЕ контейнеризован (см. инструкцию scripts/MANAGE.md §2)."
   warn "Будет запущен 'npm run dev' в medusa-agency-boilerplate-storefront/ на хосте."
-  confirm "Запустить storefront в текущем терминале (foreground)?" || { log "Отменено."; return; }
+  confirm "Запустить storefront dev в текущем терминале (foreground)?" || { log "Отменено."; return; }
   ( cd "$ROOT_DIR" && run bash ./scripts/storefront-dev.sh )
+}
+
+cmd_start_storefront() {
+  title "Запустить storefront production preview (host node)"
+  warn "Требуется предварительная сборка: npm run storefront:build."
+  warn "Будет запущен 'next start' в medusa-agency-boilerplate-storefront/ на хосте."
+  confirm "Запустить storefront production preview в текущем терминале (foreground)?" || { log "Отменено."; return; }
+  ( cd "$ROOT_DIR" && run bash ./scripts/storefront-start.sh )
 }
 
 cmd_up_all() {
@@ -431,16 +439,23 @@ cmd_payload_seed() {
   ( cd "$ROOT_DIR" && run npm run payload:seed )
 }
 
+cmd_payload_stop() {
+  title "Payload CMS stop"
+  warn "Это остановит активные Payload/Next dev/start процессы без очистки payload-cms/.next."
+  confirm "Остановить Payload CMS?" || { log "Отменено."; return; }
+  ( cd "$ROOT_DIR" && run npm run payload:stop )
+}
+
 cmd_payload_clean() {
   title "Payload CMS clean (.next cache/build)"
-  warn "Это остановит активные Payload/Next dev-процессы и удалит payload-cms/.next."
+  warn "Это остановит активные Payload/Next dev/start процессы и удалит payload-cms/.next."
   confirm "Выполнить Payload CMS clean?" || { log "Отменено."; return; }
   ( cd "$ROOT_DIR" && run npm run payload:clean )
 }
 
 cmd_payload_restart() {
-  title "Payload CMS restart (stop dev + clean + dev)"
-  warn "Это остановит активный Payload/Next dev, удалит payload-cms/.next и запустит dev server в текущем терминале (foreground)."
+  title "Payload CMS restart (stop + clean + dev)"
+  warn "Это остановит активный Payload/Next dev/start, удалит payload-cms/.next и запустит dev server в текущем терминале (foreground)."
   confirm "Перезапустить Payload CMS dev?" || { log "Отменено."; return; }
   ( cd "$ROOT_DIR" && run npm run payload:restart )
 }
@@ -516,6 +531,12 @@ Storefront НЕ контейнеризован в docker-compose.yml — это 
   - Next.js dev/HMR удобнее запускать на хосте.
 Если очень нужно — добавьте свой compose-override storefront-сервиса локально,
 но это вне master-repo контракта.
+
+Payload CMS:
+  bash scripts/manage.sh payload:status   # статус процессов/порта/admin health
+  bash scripts/manage.sh payload:stop     # остановить dev/start без очистки payload-cms/.next
+  bash scripts/manage.sh payload:clean    # остановить dev/start и удалить payload-cms/.next
+  bash scripts/manage.sh payload:restart  # clean + dev foreground
 EOF
 }
 
@@ -536,33 +557,35 @@ print_menu() {
   echo "    5) up all       — полный запуск (npm run dev)"
   echo "    6) up infra     — только Postgres + Redis"
   echo "    7) up backend   — поднять backend контейнер"
-  echo "    8) up storefront— запустить storefront (host)"
+  echo "    8) up storefront dev — запустить storefront dev (host)"
+  echo "    9) start storefront — production preview после build (host)"
   echo
   echo -e "  ${C_BOLD}Управление${C_RESET}"
-  echo "    9) restart backend"
-  echo "   10) rebuild backend (install + build)"
-  echo "   11) rebuild storefront"
-  echo "   12) permissions:fix"
-  echo "   13) logs (выбор сервиса)"
-  echo "   14) shell в backend"
-  echo "   15) psql в medusa-db"
-  echo "   16) smoke-тесты"
+  echo "   10) restart backend"
+  echo "   11) rebuild backend (install + build)"
+  echo "   12) rebuild storefront"
+  echo "   13) permissions:fix"
+  echo "   14) logs (выбор сервиса)"
+  echo "   15) shell в backend"
+  echo "   16) psql в medusa-db"
+  echo "   17) smoke-тесты"
   echo
   echo -e "  ${C_BOLD}Остановка${C_RESET}"
-  echo "   17) stop         — docker compose stop + storefront (host)"
-  echo "   18) down         — удалить контейнеры (тома сохранены) + storefront"
-  echo "   19) nuke (down -v)— удалить контейнеры И БД (опасно) + storefront"
-  echo "   20) stop storefront — только host-процесс storefront"
+  echo "   18) stop         — docker compose stop + storefront (host)"
+  echo "   19) down         — удалить контейнеры (тома сохранены) + storefront"
+  echo "   20) nuke (down -v)— удалить контейнеры И БД (опасно) + storefront"
+  echo "   21) stop storefront — только host-процесс storefront"
   echo
   echo -e "  ${C_BOLD}Payload CMS${C_RESET}"
-  echo "   21) payload status/health"
-  echo "   22) payload dev          — Next/Payload dev server"
-  echo "   23) payload build        — production build"
-  echo "   24) payload start        — production start (после build)"
-  echo "   25) payload types        — generate types + importmap"
-  echo "   26) payload seed         — тестовые страницы + globals"
-  echo "   27) payload clean        — stop dev + очистить .next"
-  echo "   28) payload restart      — clean + dev foreground"
+  echo "   22) payload status/health"
+  echo "   23) payload dev          — Next/Payload dev server"
+  echo "   24) payload build        — production build"
+  echo "   25) payload start        — production start (после build)"
+  echo "   26) payload types        — generate types + importmap"
+  echo "   27) payload seed         — тестовые страницы + globals"
+  echo "   28) payload stop         — только остановить dev/start, без очистки .next"
+  echo "   29) payload clean        — stop + очистить .next"
+  echo "   30) payload restart      — clean + dev foreground"
   echo
   echo "    h) help          q) quit"
   echo
@@ -582,26 +605,28 @@ main_loop() {
       6)  cmd_up_infra            ; press_enter ;;
       7)  cmd_up_backend          ; press_enter ;;
       8)  cmd_up_storefront       ; press_enter ;;
-      9)  cmd_restart_backend     ; press_enter ;;
-      10) cmd_rebuild             ; press_enter ;;
-      11) cmd_rebuild_storefront  ; press_enter ;;
-      12) cmd_permissions         ; press_enter ;;
-      13) cmd_logs                ; press_enter ;;
-      14) cmd_shell_backend       ; press_enter ;;
-      15) cmd_db_psql             ; press_enter ;;
-      16) cmd_smoke               ; press_enter ;;
-      17) cmd_stop                ; press_enter ;;
-      18) cmd_down                ; press_enter ;;
-      19) cmd_nuke                ; press_enter ;;
-      20) cmd_stop_storefront     ; press_enter ;;
-      21) cmd_payload_status      ; press_enter ;;
-      22) cmd_payload_dev         ; press_enter ;;
-      23) cmd_payload_build       ; press_enter ;;
-      24) cmd_payload_start       ; press_enter ;;
-      25) cmd_payload_types       ; press_enter ;;
-      26) cmd_payload_seed        ; press_enter ;;
-      27) cmd_payload_clean       ; press_enter ;;
-      28) cmd_payload_restart     ; press_enter ;;
+      9)  cmd_start_storefront    ; press_enter ;;
+      10) cmd_restart_backend     ; press_enter ;;
+      11) cmd_rebuild             ; press_enter ;;
+      12) cmd_rebuild_storefront  ; press_enter ;;
+      13) cmd_permissions         ; press_enter ;;
+      14) cmd_logs                ; press_enter ;;
+      15) cmd_shell_backend       ; press_enter ;;
+      16) cmd_db_psql             ; press_enter ;;
+      17) cmd_smoke               ; press_enter ;;
+      18) cmd_stop                ; press_enter ;;
+      19) cmd_down                ; press_enter ;;
+      20) cmd_nuke                ; press_enter ;;
+      21) cmd_stop_storefront     ; press_enter ;;
+      22) cmd_payload_status      ; press_enter ;;
+      23) cmd_payload_dev         ; press_enter ;;
+      24) cmd_payload_build       ; press_enter ;;
+      25) cmd_payload_start       ; press_enter ;;
+      26) cmd_payload_types       ; press_enter ;;
+      27) cmd_payload_seed        ; press_enter ;;
+      28) cmd_payload_stop        ; press_enter ;;
+      29) cmd_payload_clean       ; press_enter ;;
+      30) cmd_payload_restart     ; press_enter ;;
       h|H) cmd_help               ; press_enter ;;
       q|Q|exit) log "Выход."; exit 0 ;;
       *) warn "Неизвестный выбор: $choice"; sleep 1 ;;
@@ -619,7 +644,8 @@ if [[ $# -gt 0 ]]; then
     up)                cmd_up_all ;;
     up:infra)          cmd_up_infra ;;
     up:backend)        cmd_up_backend ;;
-    up:storefront)     cmd_up_storefront ;;
+    up:storefront|up:storefront:dev) cmd_up_storefront ;;
+    start:storefront|storefront:start) cmd_start_storefront ;;
     stop)              cmd_stop ;;
     stop:storefront)   cmd_stop_storefront ;;
     down)              cmd_down ;;
@@ -639,6 +665,7 @@ if [[ $# -gt 0 ]]; then
     payload:start)     cmd_payload_start ;;
     payload:types)     cmd_payload_types ;;
     payload:seed)      cmd_payload_seed ;;
+    payload:stop)      cmd_payload_stop ;;
     payload:clean)     cmd_payload_clean ;;
     payload:restart)   cmd_payload_restart ;;
     help|-h|--help)    cmd_help ;;

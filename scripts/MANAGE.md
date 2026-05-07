@@ -28,9 +28,11 @@ bash scripts/manage.sh status
 bash scripts/manage.sh up           # = npm run dev
 bash scripts/manage.sh up:infra
 bash scripts/manage.sh up:backend
-bash scripts/manage.sh up:storefront
+bash scripts/manage.sh up:storefront        # dev/HMR foreground
+bash scripts/manage.sh start:storefront     # production preview after build
 bash scripts/manage.sh stop
 bash scripts/manage.sh stop:storefront   # только host-процесс storefront на :STOREFRONT_PORT
+bash scripts/manage.sh payload:stop      # только Payload/Next dev/start, без очистки payload-cms/.next
 bash scripts/manage.sh down
 bash scripts/manage.sh nuke         # ОПАСНО: down -v (удаляет БД)
 bash scripts/manage.sh restart:backend
@@ -140,7 +142,8 @@ services:
 | Запуск | `up all` | `npm run dev` — canonical полный запуск |
 | Запуск | `up infra` | только Postgres + Redis |
 | Запуск | `up backend` | поднять backend контейнер |
-| Запуск | `up storefront` | foreground `next dev` на хосте |
+| Запуск | `up storefront dev` | foreground `next dev` на хосте |
+| Запуск | `start storefront` | foreground `next start` на хосте после `npm run storefront:build`; удобно для production-preview smoke/browser-проверки |
 | Управление | `restart backend` | `docker compose restart medusa-backend` |
 | Управление | `rebuild backend` | stop → permissions:fix → install → build → up |
 | Управление | `rebuild storefront` | install + build на хосте |
@@ -153,6 +156,15 @@ services:
 | Остановка | `down` | `docker compose down` + остановка storefront (тома живы) |
 | Остановка | `nuke` | `docker compose down -v` + остановка storefront — **удаляет БД**, два подтверждения |
 | Остановка | `stop storefront` | только host-процесс storefront (без касания docker) |
+| Payload CMS | `payload status/health` | статус env/runtime, процессов, порта и admin healthcheck |
+| Payload CMS | `payload dev` | foreground Payload/Next dev server |
+| Payload CMS | `payload build` | production build с защитой от активного Payload/Next dev/start |
+| Payload CMS | `payload start` | foreground production start после build |
+| Payload CMS | `payload types` | generate types + importmap |
+| Payload CMS | `payload seed` | тестовые страницы + globals |
+| Payload CMS | `payload stop` | остановить активные Payload/Next dev/start процессы без удаления [`payload-cms/.next`](../payload-cms/.next) |
+| Payload CMS | `payload clean` | остановить Payload/Next dev/start и дополнительно удалить [`payload-cms/.next`](../payload-cms/.next) |
+| Payload CMS | `payload restart` | clean + запуск dev server в foreground |
 
 ### Как останавливается storefront
 
@@ -186,15 +198,66 @@ Storefront не входит в `docker-compose.yml` (см. §2), поэтому
    о них печатается `warn`.
 
 Если `STOREFRONT_PORT` свободен — пункт молча сообщает «уже остановлен»
-и завершается с `0`. Доступен и отдельным пунктом меню `20) stop storefront`
+и завершается с `0`. Доступен и отдельным пунктом меню `21) stop storefront`
 и CLI-командой `bash scripts/manage.sh stop:storefront` — удобно, когда
 backend оставляем работать, а перезапускаем только витрину.
+
+### Production-preview запуск storefront
+
+Для проверки после сборки доступен отдельный путь:
+
+```bash
+npm run storefront:build
+npm run storefront:start
+# или
+bash scripts/manage.sh start:storefront
+```
+
+[`scripts/storefront-start.sh`](./storefront-start.sh:1) загружает root `.env`,
+экспортирует те же backend/base URL переменные, что и dev-запуск, проверяет
+наличие [`medusa-agency-boilerplate-storefront/.next/BUILD_ID`](../medusa-agency-boilerplate-storefront/.next/BUILD_ID)
+и запускает `next start` на `STOREFRONT_PORT`. Это не заменяет canonical dev/HMR
+путь, а даёт стабильный production-preview smoke-контур для браузерной проверки
+после `next build`.
+
+Для StudioPro/Stitch frontend-аудита этот путь является предпочтительным
+runtime-контуром: сначала остановить старый host storefront через
+`bash scripts/manage.sh stop:storefront`, затем выполнить
+`npm run storefront:build && npm run storefront:start` и проверять ключевые
+routes (`/ru`, `/ru/store`, `/ru/products/<handle>`, `/ru/contacts`, `/ru/cart`).
+Текущий список code-vs-interface gaps и ожидаемых проверок ведётся в
+[`Docs/stitch_frontend_gap_log.md`](../Docs/stitch_frontend_gap_log.md).
+
+### Как останавливается Payload CMS
+
+Payload CMS запускается отдельным Next/Payload процессом из
+[`payload-cms/`](../payload-cms) и не является частью `docker compose stop`.
+Для безопасной остановки без очистки cache/build output используйте:
+
+```bash
+bash scripts/manage.sh payload:stop
+# или
+npm run payload:stop
+```
+
+В интерактивном меню это пункт `28) payload stop`. Он вызывает
+[`scripts/payload-run.sh`](./payload-run.sh:1) с командой `stop`, находит
+активные Payload/Next `dev`/`start` процессы в директории
+[`payload-cms/`](../payload-cms) и отправляет им `SIGTERM`, при необходимости
+после ожидания — `SIGKILL`. Команда **не удаляет**
+[`payload-cms/.next`](../payload-cms/.next).
+
+Если нужно именно сбросить повреждённый или устаревший Next output,
+используйте `payload clean`: `bash scripts/manage.sh payload:clean` или
+`npm run payload:clean`. В отличие от stop, clean сначала останавливает
+Payload/Next процессы, а затем дополнительно удаляет
+[`payload-cms/.next`](../payload-cms/.next).
 
 ## 4. Защиты
 
 - `nuke` требует **двух** подтверждений и явно предупреждает о
   потере данных.
-- `bootstrap`, `up storefront`, `rebuild backend` спрашивают
+- `bootstrap`, `up storefront`, `start storefront`, `rebuild backend` спрашивают
   подтверждение перед действием.
 - `set -uo pipefail` — без `-e`, чтобы меню не падало после ошибки
   одной команды; пользователь видит код возврата и возвращается в
