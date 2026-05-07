@@ -7,6 +7,10 @@
 restore.log
 medusa-dump.sql
 
+# Local agent/tool state
+.kilocode/
+.codex/
+
 # Local verification artifacts
 .phase2-*
 .playwright-mcp/
@@ -14,6 +18,12 @@ playwright-*.md
 playwright-*.txt
 .delivery-hub-cutover-evidence/
 medusa-agency-boilerplate-storefront/.middleware-check.log
+
+# Temporary browser/smoke screenshots
+/*.png
+
+# Generated image/API outputs
+generated-images/
 
 # Generated app/runtime artifacts
 payload-cms/.next/
