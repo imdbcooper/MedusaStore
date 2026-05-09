@@ -242,12 +242,10 @@ const Shipping: React.FC<ShippingProps> = ({
   const [shippingMethodId, setShippingMethodId] = useState<string | null>(
     preferredCartShippingMethodId
   )
-  const addressRequestKey = useMemo(() => getApishipCheckoutAddressRequestKey(cart), [
-    cart.shipping_address?.address_1,
-    cart.shipping_address?.city,
-    cart.shipping_address?.country_code,
-    cart.shipping_address?.postal_code,
-  ])
+  const addressRequestKey = useMemo(
+    () => getApishipCheckoutAddressRequestKey(cart),
+    [cart]
+  )
   const apishipContextKey = getApishipCheckoutContextKey(cart, apishipShippingOption?.id)
   const savedApishipData = getSavedApishipData(cart)
 
@@ -918,7 +916,7 @@ const Shipping: React.FC<ShippingProps> = ({
               <Text className="mb-1 text-ui-fg-base txt-medium-plus">
                 {checkoutCopy.method}
               </Text>
-                <ShippingSummary cart={cart} />
+              <ShippingSummary cart={cart} />
             </div>
           )}
         </div>
