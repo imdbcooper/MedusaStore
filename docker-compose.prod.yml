@@ -125,8 +125,8 @@ services:
     container_name: medusastore-nginx
     environment:
       DEPLOY_DOMAIN: ${DEPLOY_DOMAIN:-slavx.mooo.com}
-    ports:
-      - "${HTTP_PORT:-80}:80"
+    expose:
+      - "80"
     volumes:
       - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./docker/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
@@ -147,6 +147,32 @@ services:
     networks:
       - medusastore
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: medusastore-caddy
+    environment:
+      DEPLOY_DOMAIN: ${DEPLOY_DOMAIN:-slavx.mooo.com}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@slavx.mooo.com}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - medusastore-caddy-data:/data
+      - medusastore-caddy-config:/config
+    depends_on:
+      nginx:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-check-certificate -qO- http://127.0.0.1/healthz | grep -q ok"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - medusastore
+
 networks:
   medusastore:
     driver: bridge
@@ -154,3 +180,5 @@ networks:
 volumes:
   medusastore-db-data:
   medusastore-redis-data:
+  medusastore-caddy-data:
+  medusastore-caddy-config:
