@@ -1,6 +1,8 @@
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
 
+export const dynamic = "force-dynamic"
+
 import { listProducts } from "@lib/data/products"
 import { getRegion, listRegions } from "@lib/data/regions"
 import { getMetadataTitle } from "@lib/storefront-config"
@@ -122,11 +124,11 @@ export default async function ProductPage(props: Props) {
     queryParams: { handle: params.handle },
   }).then(({ response }) => response.products[0])
 
-  const images = getImagesForVariant(pricedProduct, selectedVariantId)
-
   if (!pricedProduct) {
     notFound()
   }
+
+  const images = getImagesForVariant(pricedProduct, selectedVariantId)
 
   return (
     <ProductTemplate
