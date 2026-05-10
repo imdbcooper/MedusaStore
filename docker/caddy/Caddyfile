@@ -12,5 +12,32 @@
         Referrer-Policy "strict-origin-when-cross-origin"
     }
 
-    reverse_proxy nginx:80
+    handle /healthz {
+        header Content-Type text/plain
+        respond "ok" 200
+    }
+
+    handle_path /payload/* {
+        reverse_proxy payload-cms:3100
+    }
+
+    handle /admin/* {
+        reverse_proxy medusa-backend:9000
+    }
+
+    handle /store/* {
+        reverse_proxy medusa-backend:9000
+    }
+
+    handle /auth/* {
+        reverse_proxy medusa-backend:9000
+    }
+
+    handle /api/content/* {
+        reverse_proxy storefront:8000
+    }
+
+    handle {
+        reverse_proxy storefront:8000
+    }
 }

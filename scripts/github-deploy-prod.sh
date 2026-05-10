@@ -43,7 +43,7 @@ if [[ "${RUN_PAYLOAD_SEED:-false}" == "true" ]]; then
 fi
 
 echo "Starting application containers..."
-docker compose -p "$project_name" -f "$compose_file" --env-file .env up -d --remove-orphans medusa-backend payload-cms storefront nginx caddy
+docker compose -p "$project_name" -f "$compose_file" --env-file .env up -d --remove-orphans medusa-backend payload-cms storefront caddy
 
 echo "Pruning dangling Docker images..."
 docker image prune -f >/dev/null || true
