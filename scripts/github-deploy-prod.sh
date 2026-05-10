@@ -57,9 +57,14 @@ echo "Pruning dangling Docker images..."
 docker image prune -f >/dev/null || true
 
 echo "Running production smoke checks..."
-SMOKE_BASE_URL="${SMOKE_BASE_URL:-http://127.0.0.1}" \
-SMOKE_BACKEND_URL="${SMOKE_BACKEND_URL:-http://127.0.0.1/admin/}" \
-SMOKE_PAYLOAD_URL="${SMOKE_PAYLOAD_URL:-http://127.0.0.1/payload/api/pages?limit=1}" \
+smoke_base_url="$(grep -E '^SMOKE_BASE_URL=' .env | tail -1 | cut -d= -f2- || true)"
+smoke_backend_url="$(grep -E '^SMOKE_BACKEND_URL=' .env | tail -1 | cut -d= -f2- || true)"
+smoke_payload_url="$(grep -E '^SMOKE_PAYLOAD_URL=' .env | tail -1 | cut -d= -f2- || true)"
+public_base_url="https://${DEPLOY_DOMAIN:-$(grep -E '^DEPLOY_DOMAIN=' .env | tail -1 | cut -d= -f2- || echo slavx.mooo.com)}"
+
+SMOKE_BASE_URL="${SMOKE_BASE_URL:-${smoke_base_url:-$public_base_url}}" \
+SMOKE_BACKEND_URL="${SMOKE_BACKEND_URL:-${smoke_backend_url:-$public_base_url/admin/}}" \
+SMOKE_PAYLOAD_URL="${SMOKE_PAYLOAD_URL:-${smoke_payload_url:-$public_base_url/payload/api/pages?limit=1}}" \
   bash ./scripts/prod-container-smoke.sh
 
 echo "Deployment complete."
