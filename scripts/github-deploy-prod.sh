@@ -24,7 +24,10 @@ docker compose -p "$project_name" -f "$compose_file" --env-file .env build
 echo "Starting database and redis..."
 docker compose -p "$project_name" -f "$compose_file" --env-file .env up -d medusa-db medusa-redis
 
-if [[ "${RUN_PAYLOAD_MIGRATIONS:-false}" == "true" ]]; then
+run_payload_migrations="$(grep -E '^RUN_PAYLOAD_MIGRATIONS=' .env | tail -1 | cut -d= -f2- || true)"
+run_payload_migrations="${RUN_PAYLOAD_MIGRATIONS:-${run_payload_migrations:-false}}"
+
+if [[ "$run_payload_migrations" == "true" ]]; then
   echo "Running Payload migrations as one-off job..."
   docker compose -p "$project_name" -f "$compose_file" --env-file .env run --rm \
     -e RUN_PAYLOAD_MIGRATIONS=true \
@@ -35,7 +38,10 @@ else
   echo "Skipping Payload migrations; set RUN_PAYLOAD_MIGRATIONS=true in remote .env to enable them."
 fi
 
-if [[ "${RUN_PAYLOAD_SEED:-false}" == "true" ]]; then
+run_payload_seed="$(grep -E '^RUN_PAYLOAD_SEED=' .env | tail -1 | cut -d= -f2- || true)"
+run_payload_seed="${RUN_PAYLOAD_SEED:-${run_payload_seed:-false}}"
+
+if [[ "$run_payload_seed" == "true" ]]; then
   echo "Running Payload seed as one-off job..."
   docker compose -p "$project_name" -f "$compose_file" --env-file .env run --rm \
     -e RUN_PAYLOAD_MIGRATIONS=false \
