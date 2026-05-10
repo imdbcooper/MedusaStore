@@ -60,11 +60,26 @@ echo "Running production smoke checks..."
 smoke_base_url="$(grep -E '^SMOKE_BASE_URL=' .env | tail -1 | cut -d= -f2- || true)"
 smoke_backend_url="$(grep -E '^SMOKE_BACKEND_URL=' .env | tail -1 | cut -d= -f2- || true)"
 smoke_payload_url="$(grep -E '^SMOKE_PAYLOAD_URL=' .env | tail -1 | cut -d= -f2- || true)"
-public_base_url="https://${DEPLOY_DOMAIN:-$(grep -E '^DEPLOY_DOMAIN=' .env | tail -1 | cut -d= -f2- || echo slavx.mooo.com)}"
 
-SMOKE_BASE_URL="${SMOKE_BASE_URL:-${smoke_base_url:-$public_base_url}}" \
-SMOKE_BACKEND_URL="${SMOKE_BACKEND_URL:-${smoke_backend_url:-$public_base_url/admin/}}" \
-SMOKE_PAYLOAD_URL="${SMOKE_PAYLOAD_URL:-${smoke_payload_url:-$public_base_url/payload/api/pages?limit=1}}" \
-  bash ./scripts/prod-container-smoke.sh
+deploy_domain="${DEPLOY_DOMAIN:-}"
+if [[ -z "$deploy_domain" ]]; then
+  deploy_domain="$(grep -E '^DEPLOY_DOMAIN=' .env | tail -1 | cut -d= -f2- || true)"
+fi
+if [[ -z "$deploy_domain" ]]; then
+  deploy_domain="slavx.mooo.com"
+fi
+public_base_url="https://${deploy_domain}"
+
+if [[ -z "${SMOKE_BASE_URL:-}" ]]; then
+  export SMOKE_BASE_URL="${smoke_base_url:-$public_base_url}"
+fi
+if [[ -z "${SMOKE_BACKEND_URL:-}" ]]; then
+  export SMOKE_BACKEND_URL="${smoke_backend_url:-$public_base_url/admin/}"
+fi
+if [[ -z "${SMOKE_PAYLOAD_URL:-}" ]]; then
+  export SMOKE_PAYLOAD_URL="${smoke_payload_url:-$public_base_url/payload/api/pages?limit=1}"
+fi
+
+bash ./scripts/prod-container-smoke.sh
 
 echo "Deployment complete."
