@@ -5,8 +5,8 @@ const DEFAULT_MEDUSA_BACKEND_PORT =
 const STOREFRONT_PRESET_CANDIDATES = ["atelier", "market"] as const
 
 export const MEDUSA_BACKEND_URL =
-  process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL ||
   process.env.MEDUSA_BACKEND_URL ||
+  process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL ||
   `http://localhost:${DEFAULT_MEDUSA_BACKEND_PORT}`
 
 export const STOREFRONT_BASE_URL =
