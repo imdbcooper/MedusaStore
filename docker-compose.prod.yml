@@ -42,7 +42,8 @@ services:
     image: medusastore-backend:prod
     container_name: medusastore-backend
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@medusa-db:5432/${POSTGRES_DB:-medusa}?sslmode=disable}
@@ -67,7 +68,8 @@ services:
     image: medusastore-payload:prod
     container_name: medusastore-payload
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       NODE_ENV: production
       PAYLOAD_PORT: ${PAYLOAD_PORT:-3100}
@@ -97,7 +99,8 @@ services:
     image: medusastore-storefront:prod
     container_name: medusastore-storefront
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       NODE_ENV: production
       STOREFRONT_PORT: ${STOREFRONT_PORT:-8000}
