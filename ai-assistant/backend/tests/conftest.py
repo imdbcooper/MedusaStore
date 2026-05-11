@@ -58,4 +58,5 @@ def client(app):
         fake_client = test_client.app.state.fake_medusa_product_client
         test_client.app.state.medusa_product_client = fake_client
         test_client.app.state.medusa_product_ingestion_service.product_client = fake_client
+        test_client.app.state.live_commerce_tools.product_client = fake_client
         yield test_client

@@ -16,9 +16,10 @@ class MedusaClientError(RuntimeError):
 class MedusaProductClient:
     """Small Store API client used only by the standalone assistant service.
 
-    The client reads products through Medusa Store API so the assistant can index
-    catalog text. Price and inventory values are treated as hints only; live
-    commerce facts still need dedicated tools in later phases.
+    The client reads products and carts through Medusa Store API so the assistant
+    can index catalog text and verify live commerce facts. Store API calls use
+    only publishable/public context; admin tokens are not sent to storefront
+    commerce endpoints.
     """
 
     def __init__(self, *, settings: Settings, http_client: httpx.AsyncClient | None = None) -> None:
@@ -98,6 +99,49 @@ class MedusaProductClient:
         if not isinstance(data, dict):
             raise MedusaClientError("Medusa product list response is not an object")
         return data
+
+    async def get_cart(self, *, cart_id: str) -> dict[str, Any]:
+        if not self.settings.medusa_backend_url:
+            raise MedusaClientError("MEDUSA_BACKEND_URL is not configured")
+        url = f"{self.settings.medusa_backend_url.rstrip('/')}/store/carts/{cart_id}"
+        try:
+            if self._client:
+                response = await self._client.get(url, headers=self._headers())
+            else:
+                async with httpx.AsyncClient(timeout=self.settings.medusa_request_timeout_seconds) as client:
+                    response = await client.get(url, headers=self._headers())
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise MedusaClientError(f"Could not fetch cart from Medusa: {exc}") from exc
+        data = response.json()
+        if not isinstance(data, dict):
+            raise MedusaClientError("Medusa cart response is not an object")
+        cart = data.get("cart", data)
+        if not isinstance(cart, dict):
+            raise MedusaClientError("Medusa cart payload is not an object")
+        return cart
+
+    async def add_to_cart(self, *, cart_id: str, variant_id: str, quantity: int) -> dict[str, Any]:
+        if not self.settings.medusa_backend_url:
+            raise MedusaClientError("MEDUSA_BACKEND_URL is not configured")
+        url = f"{self.settings.medusa_backend_url.rstrip('/')}/store/carts/{cart_id}/line-items"
+        payload = {"variant_id": variant_id, "quantity": quantity}
+        try:
+            if self._client:
+                response = await self._client.post(url, json=payload, headers=self._headers())
+            else:
+                async with httpx.AsyncClient(timeout=self.settings.medusa_request_timeout_seconds) as client:
+                    response = await client.post(url, json=payload, headers=self._headers())
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise MedusaClientError(f"Could not add item to Medusa cart: {exc}") from exc
+        data = response.json()
+        if not isinstance(data, dict):
+            raise MedusaClientError("Medusa add-to-cart response is not an object")
+        cart = data.get("cart", data)
+        if not isinstance(cart, dict):
+            raise MedusaClientError("Medusa add-to-cart payload is not an object")
+        return cart
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {"accept": "application/json"}

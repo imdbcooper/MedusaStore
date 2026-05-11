@@ -39,7 +39,14 @@ Phase 2 product ingestion is implemented inside this module without modifying th
 - ingestion jobs and source indexing status are stored through the existing repository abstraction;
 - chat responses can include structured product cards for product discovery/search questions.
 
-Ingestion sync endpoints are protected by `AI_ASSISTANT_API_TOKEN`; call them with `Authorization: Bearer <token>` or `X-API-Key`. Required Medusa configuration is env-driven in [`ENV.example`](./ENV.example). The Store API request uses `MEDUSA_BACKEND_URL` and, when required by the Medusa instance, `MEDUSA_STORE_PUBLISHABLE_KEY`; `MEDUSA_ADMIN_API_TOKEN` is not sent to `/store/products`. Price and availability fields indexed from product payloads are hints only, so product cards do not expose them as factual `price`/`availability` while `live_data_checked=false`; live values must be checked through Medusa in a later phase before being presented as authoritative commerce facts.
+Phase 3 live commerce tools are implemented inside the standalone assistant service:
+
+- product recommendation cards are enriched through a Medusa-backed live tool layer before showing price or availability;
+- structured responses include `tool_calls` for `medusa_get_product_live_data`, `medusa_get_price_and_variants`, `medusa_check_inventory`, and cart state checks when a `cart_id` is present;
+- if Medusa is unavailable, product suggestions can remain but `price=null`, `availability=unknown`, and `safety.live_data_checked=false` prevent hallucinated sellable facts;
+- add-to-cart from chat is only an `add_to_cart_proposal` action with `requires_confirmation=true`; the guarded `/api/v1/tools/cart/add-item` endpoint remains proposal-only and returns `unsupported_until_ownership_validation` for `confirmed=true` until trusted cart ownership/session validation exists.
+
+Ingestion and internal commerce tool endpoints are protected by `AI_ASSISTANT_API_TOKEN`; call them with `Authorization: Bearer <token>` or `X-API-Key`. Required Medusa configuration is env-driven in [`ENV.example`](./ENV.example). Store API requests use `MEDUSA_BACKEND_URL` and, when required by the Medusa instance, `MEDUSA_STORE_PUBLISHABLE_KEY`; `MEDUSA_ADMIN_API_TOKEN` is not sent to Store API product/cart endpoints. Price and availability fields indexed from product payloads remain hints only and are never used as factual response data unless live Medusa tools confirm them.
 
 ## Recommended implementation direction
 

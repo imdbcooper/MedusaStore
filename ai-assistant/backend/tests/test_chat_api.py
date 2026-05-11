@@ -56,9 +56,10 @@ def test_chat_returns_product_cards_for_catalog_question(client):
     assert data["products"]
     assert data["products"][0]["id"] == "prod_espresso"
     assert data["products"][0]["handle"] == "espresso-pro"
-    assert data["products"][0]["price"] is None
-    assert data["products"][0]["availability"] == "unknown"
+    assert data["products"][0]["price"] == "499 RUB"
+    assert data["products"][0]["availability"] == "in_stock"
     assert "49900" not in data["answer"]
+    assert "499 RUB" in data["answer"]
     assert data["tool_calls"][0]["name"] == "search_products"
     assert data["safety"]["grounded"] is True
-    assert data["safety"]["live_data_checked"] is False
+    assert data["safety"]["live_data_checked"] is True

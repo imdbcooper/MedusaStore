@@ -7,10 +7,20 @@ from typing import Any
 from uuid import UUID
 
 from app.core.config import Settings
-from app.schemas.chat import ChatRequest, ChatResponse, Safety
+from app.schemas.chat import ChatRequest, ChatResponse, Safety, ToolCall
+from app.tools.commerce import CommerceToolResult
 
 POLICY_WORDS = {"доставка", "оплата", "возврат", "гарантия", "delivery", "payment", "return", "warranty"}
 COMPARE_WORDS = {"сравни", "compare", "versus", "vs", "лучше"}
+ADD_TO_CART_WORDS = {
+    "корзину",
+    "корзина",
+    "добавь",
+    "закажи",
+    "cart",
+    "basket",
+    "add",
+}
 PRODUCT_WORDS = {
     "товар",
     "товары",
@@ -29,9 +39,10 @@ LIVE_DATA_NOTE = "Цена и наличие не проверялись live; �
 
 
 class ChatService:
-    def __init__(self, *, repository, retriever, settings: Settings):
+    def __init__(self, *, repository, retriever, commerce_tools, settings: Settings):
         self.repository = repository
         self.retriever = retriever
+        self.commerce_tools = commerce_tools
         self.settings = settings
 
     async def answer(self, request: ChatRequest) -> ChatResponse:
@@ -59,27 +70,46 @@ class ChatService:
             limit=5,
         )
         product_cards = []
-        tool_calls = []
+        actions = []
+        tool_calls: list[ToolCall] = []
+        commerce_result = CommerceToolResult()
         if intent in PRODUCT_INTENTS:
-            product_cards = await self.retriever.product_cards(
+            product_candidates = await self.retriever.product_cards(
                 store_id=request.store_id,
                 locale=request.locale,
                 chunks=chunks,
                 limit=3,
             )
-            if product_cards:
+            if product_candidates:
                 tool_calls.append(
-                    {
-                        "name": "search_products",
-                        "arguments": {"query": request.message, "limit": 3},
-                        "result": {
-                            "count": len(product_cards),
-                            "live_data_checked": False,
-                            "note": LIVE_DATA_NOTE,
-                        },
-                    }
+                    ToolCall(
+                        name="search_products",
+                        arguments={"query": request.message, "limit": 3},
+                        result={"count": len(product_candidates), "source": "assistant_index"},
+                    )
                 )
-        answer = build_grounded_answer(request.message, chunks, products=product_cards)
+                commerce_result = await self.commerce_tools.enrich_product_cards(
+                    candidates=product_candidates,
+                    region_id=request.region_id,
+                    currency_code=request.currency_code,
+                    cart_id=request.cart_id,
+                    propose_add_to_cart=should_propose_add_to_cart(request.message),
+                )
+                product_cards = commerce_result.products
+                actions = commerce_result.actions
+                tool_calls.extend(commerce_result.tool_calls)
+        answer = build_grounded_answer(
+            request.message,
+            chunks,
+            products=[item.model_dump() for item in product_cards],
+            commerce_result=commerce_result,
+        )
+        safety_notes = []
+        if commerce_result.status_note:
+            safety_notes.append(commerce_result.status_note)
+        safety_status = "ok"
+        if product_cards and not commerce_result.live_data_checked:
+            safety_status = "live_data_unavailable"
         latency_ms = int((time.perf_counter() - started) * 1000)
         assistant_message = await self.repository.add_message(
             session_id=session_id,
@@ -87,9 +117,9 @@ class ChatService:
             content=answer,
             intent=intent,
             citations=[citation.model_dump() for citation in citations],
-            products=product_cards,
-            actions=[],
-            tool_calls=tool_calls,
+            products=[item.model_dump() for item in product_cards],
+            actions=[item.model_dump() for item in actions],
+            tool_calls=[item.model_dump() for item in tool_calls],
             latency_ms=latency_ms,
         )
         return ChatResponse(
@@ -99,9 +129,16 @@ class ChatService:
             intent=intent,
             citations=citations,
             products=product_cards,
-            actions=[],
+            actions=actions,
             tool_calls=tool_calls,
-            safety=Safety(grounded=bool(citations or product_cards), live_data_checked=False, needs_human=False),
+            safety=Safety(
+                grounded=bool(citations or product_cards),
+                live_data_checked=commerce_result.live_data_checked,
+                needs_human=False,
+                medusa_available=commerce_result.medusa_available,
+                status=safety_status,
+                notes=safety_notes,
+            ),
         )
 
     async def stream_events(self, request: ChatRequest) -> AsyncGenerator[str, None]:
@@ -146,8 +183,10 @@ def build_grounded_answer(
     chunks: list[dict[str, Any]],
     *,
     products: list[dict[str, Any]] | None = None,
+    commerce_result: CommerceToolResult | None = None,
 ) -> str:
     products = products or []
+    commerce_result = commerce_result or CommerceToolResult()
     if not chunks and not products:
         return (
             "Пока в базе знаний нет подходящего фрагмента для ответа. "
@@ -164,21 +203,46 @@ def build_grounded_answer(
         snippets.append(f"Из «{title}»: {content}")
     product_text = ""
     if products:
-        product_lines = [f"- {item['title']}: {item.get('reason') or 'подходит по запросу'}" for item in products]
-        product_text = (
-            "\n\nПодходящие товары из индекса Medusa:\n"
-            + "\n".join(product_lines)
-            + f"\n\n{LIVE_DATA_NOTE}"
+        product_lines = []
+        for item in products:
+            facts = []
+            if commerce_result.live_data_checked and item.get("price"):
+                facts.append(f"цена {item['price']}")
+            if commerce_result.live_data_checked and item.get("availability") != "unknown":
+                facts.append(f"наличие: {item['availability']}")
+            fact_text = f" ({', '.join(facts)})" if facts else ""
+            product_lines.append(
+                f"- {item['title']}{fact_text}: {item.get('reason') or 'подходит по запросу'}"
+            )
+        data_note = (
+            "Цена и наличие проверены live через Medusa."
+            if commerce_result.live_data_checked
+            else "Medusa live-data недоступна; цена и наличие не показываются как подтверждённые факты."
         )
+        product_text = (
+            "\n\nПодходящие товары из каталога Medusa:\n"
+            + "\n".join(product_lines)
+            + f"\n\n{data_note}"
+        )
+        if commerce_result.actions:
+            product_text += "\n\nЯ могу предложить добавление товара в корзину, но выполню его только после явного подтверждения."
 
     prefix = "Нашёл релевантную информацию в базе знаний." if snippets else "Нашёл подходящие товары в индексе Medusa."
     body = "\n\n".join(snippets) if snippets else "Каталог уже проиндексирован, поэтому могу показать карточки товаров."
-    return (
-        f"{prefix}\n\n"
-        + body
-        + product_text
-        + "\n\nВажно: точные цены, наличие, сроки доставки и акции должны проверяться live через Medusa."
-    )
+    warning = ""
+    if products and not commerce_result.live_data_checked:
+        warning = "\n\nВажно: неподтверждённые цены и наличие скрыты до успешной live-проверки Medusa."
+    elif products:
+        warning = "\n\nВажно: сроки доставки и акции всё равно нужно проверять отдельными Medusa-инструментами."
+    else:
+        warning = "\n\nВажно: точные цены, наличие, сроки доставки и акции должны проверяться live через Medusa."
+    return f"{prefix}\n\n" + body + product_text + warning
+
+
+def should_propose_add_to_cart(message: str) -> bool:
+    normalized = message.lower()
+    words = set(re.findall(r"[\wа-яА-ЯёЁ-]+", normalized))
+    return bool(words & ADD_TO_CART_WORDS)
 
 
 def tokenize_for_stream(text: str, *, chunk_size: int = 80) -> list[str]:

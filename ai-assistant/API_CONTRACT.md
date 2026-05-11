@@ -47,10 +47,17 @@ Response:
   "safety": {
     "grounded": true,
     "live_data_checked": true,
-    "needs_human": false
+    "needs_human": false,
+    "medusa_available": true,
+    "status": "ok",
+    "notes": []
   }
 }
 ```
+
+Product cards may include `price` and concrete `availability` only after `tool_calls` contains successful live Medusa checks such as `medusa_get_product_live_data`, `medusa_get_price_and_variants`, and `medusa_check_inventory`. If Medusa is unavailable, product suggestions may remain, but `price` must be `null`, `availability` must be `unknown`, and `safety.live_data_checked` must be `false` with a status note.
+
+Add-to-cart chat actions are proposals only. A chat response may return `actions[].type = "add_to_cart_proposal"` with `payload.requires_confirmation = true`; the assistant must not mutate the cart from chat generation alone.
 
 ### `POST /api/v1/chat/stream`
 
@@ -165,11 +172,43 @@ Structured product search.
 
 ### `POST /api/v1/tools/product-live-data`
 
-Fetch live Medusa data.
+Fetch live Medusa data for the requested product ids. This is protected by `AI_ASSISTANT_API_TOKEN` and should be treated as internal/server-side.
+
+Request:
+
+```json
+{
+  "product_ids": ["prod_..."],
+  "region_id": "reg_...",
+  "currency_code": "rub"
+}
+```
+
+Response:
+
+```json
+{
+  "products": [],
+  "live_data_checked": true
+}
+```
 
 ### `POST /api/v1/tools/cart/add-item`
 
-Mutating endpoint. Must require explicit confirmation.
+Proposal-only add-to-cart endpoint for Phase 3. Direct cart mutation through the assistant API is blocked until trusted Medusa cart ownership/session validation is implemented.
+
+Request:
+
+```json
+{
+  "cart_id": "cart_...",
+  "variant_id": "variant_...",
+  "quantity": 1,
+  "confirmed": false
+}
+```
+
+When `confirmed` is `false`, the endpoint returns `confirmation_required` and `mutated=false`. When `confirmed` is `true`, Phase 3 still returns `unsupported_until_ownership_validation` and `mutated=false`; callers should treat chat `add_to_cart_proposal` actions as UI proposals only, not as permission to mutate arbitrary cart ids.
 
 ## 5. Health
 

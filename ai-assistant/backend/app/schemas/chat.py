@@ -53,6 +53,9 @@ class Safety(BaseModel):
     grounded: bool = True
     live_data_checked: bool = False
     needs_human: bool = False
+    medusa_available: bool = True
+    status: str = "ok"
+    notes: list[str] = Field(default_factory=list)
 
 
 class ToolCall(BaseModel):

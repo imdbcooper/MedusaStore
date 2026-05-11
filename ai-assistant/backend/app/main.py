@@ -12,6 +12,7 @@ from app.repositories.postgres import PostgresAssistantRepository
 from app.services.chat import ChatService
 from app.services.ingestion import MarkdownIngestionService, MedusaProductIngestionService
 from app.services.retrieval import SimpleMarkdownRetriever
+from app.tools.commerce import LiveCommerceTools
 
 
 def create_app(settings: Settings | None = None, *, repository=None) -> FastAPI:
@@ -28,10 +29,14 @@ def create_app(settings: Settings | None = None, *, repository=None) -> FastAPI:
             app.state.repository = repository or InMemoryAssistantRepository()
 
         app.state.medusa_product_client = MedusaProductClient(settings=settings)
+        app.state.live_commerce_tools = LiveCommerceTools(
+            product_client=app.state.medusa_product_client,
+        )
         app.state.retriever = SimpleMarkdownRetriever(repository=app.state.repository)
         app.state.chat_service = ChatService(
             repository=app.state.repository,
             retriever=app.state.retriever,
+            commerce_tools=app.state.live_commerce_tools,
             settings=settings,
         )
         app.state.ingestion_service = MarkdownIngestionService(
