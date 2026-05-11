@@ -1,5 +1,9 @@
 def test_chat_endpoint_persists_session_and_messages(client):
-    ingest = client.post("/api/v1/ingest/markdown/sync", json={"store_id": "default", "locale": "ru"})
+    ingest = client.post(
+        "/api/v1/ingest/markdown/sync",
+        json={"store_id": "default", "locale": "ru"},
+        headers={"Authorization": "Bearer test-token"},
+    )
     assert ingest.status_code == 200
 
     response = client.post(
@@ -31,3 +35,30 @@ def test_chat_without_knowledge_is_graceful(client):
     data = response.json()
     assert data["safety"]["grounded"] is False
     assert "нет подходящего фрагмента" in data["answer"]
+
+
+def test_chat_returns_product_cards_for_catalog_question(client):
+    ingest = client.post(
+        "/api/v1/ingest/medusa/products/sync",
+        json={"store_id": "default", "locale": "ru", "full": True},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert ingest.status_code == 200
+
+    response = client.post(
+        "/api/v1/chat",
+        json={"message": "Подбери кофемашину для эспрессо", "store_id": "default", "locale": "ru"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["intent"] == "product_discovery"
+    assert data["products"]
+    assert data["products"][0]["id"] == "prod_espresso"
+    assert data["products"][0]["handle"] == "espresso-pro"
+    assert data["products"][0]["price"] is None
+    assert data["products"][0]["availability"] == "unknown"
+    assert "49900" not in data["answer"]
+    assert data["tool_calls"][0]["name"] == "search_products"
+    assert data["safety"]["grounded"] is True
+    assert data["safety"]["live_data_checked"] is False

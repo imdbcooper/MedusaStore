@@ -11,16 +11,29 @@ class MarkdownSyncRequest(BaseModel):
     path: str | None = None
 
 
+class MedusaProductsSyncRequest(BaseModel):
+    store_id: str = "default"
+    locale: str = "ru"
+    full: bool = False
+    product_ids: list[str] = Field(default_factory=list)
+    region_id: str | None = None
+    currency_code: str | None = None
+
+
 class MarkdownChunk(BaseModel):
     id: UUID
     source_id: str
     source_type: str = "markdown"
     title: str
-    path: str
+    path: str | None = None
     content: str
     content_hash: str
     chunk_index: int
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProductChunk(MarkdownChunk):
+    source_type: str = "medusa_product"
 
 
 class IngestionJobResponse(BaseModel):
@@ -36,3 +49,9 @@ class IngestionJobResponse(BaseModel):
 class MarkdownSyncResponse(BaseModel):
     job: IngestionJobResponse
     chunks: list[MarkdownChunk]
+
+
+class MedusaProductsSyncResponse(BaseModel):
+    job: IngestionJobResponse
+    products_indexed: int
+    chunks: list[ProductChunk]

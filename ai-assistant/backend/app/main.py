@@ -6,10 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import Settings, get_settings
 from app.database.postgres import PostgresDatabase
+from app.medusa import MedusaProductClient
 from app.repositories.memory import InMemoryAssistantRepository
 from app.repositories.postgres import PostgresAssistantRepository
 from app.services.chat import ChatService
-from app.services.ingestion import MarkdownIngestionService
+from app.services.ingestion import MarkdownIngestionService, MedusaProductIngestionService
 from app.services.retrieval import SimpleMarkdownRetriever
 
 
@@ -26,6 +27,7 @@ def create_app(settings: Settings | None = None, *, repository=None) -> FastAPI:
         else:
             app.state.repository = repository or InMemoryAssistantRepository()
 
+        app.state.medusa_product_client = MedusaProductClient(settings=settings)
         app.state.retriever = SimpleMarkdownRetriever(repository=app.state.repository)
         app.state.chat_service = ChatService(
             repository=app.state.repository,
@@ -36,6 +38,11 @@ def create_app(settings: Settings | None = None, *, repository=None) -> FastAPI:
             repository=app.state.repository,
             settings=settings,
         )
+        app.state.medusa_product_ingestion_service = MedusaProductIngestionService(
+            repository=app.state.repository,
+            product_client=app.state.medusa_product_client,
+            settings=settings,
+        )
         yield
         await database.close()
 
@@ -44,6 +51,7 @@ def create_app(settings: Settings | None = None, *, repository=None) -> FastAPI:
         openapi_url=f"{settings.api_v1_prefix}/openapi.json",
         lifespan=lifespan,
     )
+    app.state.settings = settings
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app.core.config import Settings
 from app.main import create_app
 from app.repositories.memory import InMemoryAssistantRepository
+from tests.fakes import ESPRESSO_MACHINE_PRODUCT, FakeMedusaProductClient
 
 
 @pytest.fixture
@@ -44,11 +45,17 @@ def app(repository, knowledge_dir):
         KNOWLEDGE_DIR=knowledge_dir,
         ASSISTANT_POSTGRES_URI=None,
         AI_ASSISTANT_CORS_ORIGINS=["http://testserver"],
+        AI_ASSISTANT_API_TOKEN="test-token",
     )
-    return create_app(settings=settings, repository=repository)
+    app = create_app(settings=settings, repository=repository)
+    app.state.fake_medusa_product_client = FakeMedusaProductClient([ESPRESSO_MACHINE_PRODUCT])
+    return app
 
 
 @pytest.fixture
 def client(app):
     with TestClient(app) as test_client:
+        fake_client = test_client.app.state.fake_medusa_product_client
+        test_client.app.state.medusa_product_client = fake_client
+        test_client.app.state.medusa_product_ingestion_service.product_client = fake_client
         yield test_client

@@ -32,6 +32,30 @@ class Settings(BaseSettings):
     chunk_target_chars: int = Field(default=1200, alias="MARKDOWN_CHUNK_TARGET_CHARS")
     chunk_overlap_chars: int = Field(default=150, alias="MARKDOWN_CHUNK_OVERLAP_CHARS")
 
+    medusa_backend_url: str | None = Field(default=None, alias="MEDUSA_BACKEND_URL")
+    medusa_admin_api_token: str | None = Field(default=None, alias="MEDUSA_ADMIN_API_TOKEN")
+    medusa_store_publishable_key: str | None = Field(
+        default=None,
+        alias="MEDUSA_STORE_PUBLISHABLE_KEY",
+    )
+    medusa_default_region_id: str | None = Field(default=None, alias="MEDUSA_DEFAULT_REGION_ID")
+    medusa_default_sales_channel_id: str | None = Field(
+        default=None,
+        alias="MEDUSA_DEFAULT_SALES_CHANNEL_ID",
+    )
+    medusa_products_page_limit: int = Field(default=100, alias="MEDUSA_PRODUCTS_PAGE_LIMIT")
+    medusa_request_timeout_seconds: float = Field(default=15.0, alias="MEDUSA_REQUEST_TIMEOUT_SECONDS")
+    medusa_products_fields: str = Field(
+        default=(
+            "id,handle,title,subtitle,description,thumbnail,+metadata,+tags,"
+            "collection.id,collection.title,categories.id,categories.name,categories.handle,"
+            "options.id,options.title,options.values.value,variants.id,variants.title,variants.sku,"
+            "variants.options.value,*variants.calculated_price,+variants.inventory_quantity,"
+            "images.url,updated_at"
+        ),
+        alias="MEDUSA_PRODUCTS_FIELDS",
+    )
+
     model_config = SettingsConfigDict(
         env_file=(".env", "ENV.example"),
         env_file_encoding="utf-8",

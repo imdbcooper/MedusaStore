@@ -11,7 +11,11 @@ def test_tokenize_for_stream_splits_text():
 
 
 def test_chat_stream_endpoint(client):
-    ingest = client.post("/api/v1/ingest/markdown/sync", json={"store_id": "default", "locale": "ru"})
+    ingest = client.post(
+        "/api/v1/ingest/markdown/sync",
+        json={"store_id": "default", "locale": "ru"},
+        headers={"Authorization": "Bearer test-token"},
+    )
     assert ingest.status_code == 200
 
     with client.stream(

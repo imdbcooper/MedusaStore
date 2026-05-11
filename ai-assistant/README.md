@@ -28,6 +28,19 @@ This directory currently contains the development specification and implementati
 - [GITHUB_RESEARCH.md](./GITHUB_RESEARCH.md) — GitHub references and extracted best practices.
 - [ENV.example](./ENV.example) — planned environment variables.
 
+## Current implementation status
+
+Phase 1 backend skeleton is implemented in [`backend/`](./backend/) with FastAPI health, chat, streaming chat, Markdown ingestion, in-memory test storage and optional PostgreSQL storage.
+
+Phase 2 product ingestion is implemented inside this module without modifying the Medusa backend/storefront:
+
+- [`POST /api/v1/ingest/medusa/products/sync`](./API_CONTRACT.md) reads products from Medusa Store API;
+- products are normalized into `medusa_product` documents/chunks with product metadata payloads matching [`DATA_MODEL.md`](./DATA_MODEL.md);
+- ingestion jobs and source indexing status are stored through the existing repository abstraction;
+- chat responses can include structured product cards for product discovery/search questions.
+
+Ingestion sync endpoints are protected by `AI_ASSISTANT_API_TOKEN`; call them with `Authorization: Bearer <token>` or `X-API-Key`. Required Medusa configuration is env-driven in [`ENV.example`](./ENV.example). The Store API request uses `MEDUSA_BACKEND_URL` and, when required by the Medusa instance, `MEDUSA_STORE_PUBLISHABLE_KEY`; `MEDUSA_ADMIN_API_TOKEN` is not sent to `/store/products`. Price and availability fields indexed from product payloads are hints only, so product cards do not expose them as factual `price`/`availability` while `live_data_checked=false`; live values must be checked through Medusa in a later phase before being presented as authoritative commerce facts.
+
 ## Recommended implementation direction
 
 Build this as an independent assistant service plus adapters:

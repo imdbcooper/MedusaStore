@@ -11,7 +11,21 @@ from app.schemas.chat import ChatRequest, ChatResponse, Safety
 
 POLICY_WORDS = {"доставка", "оплата", "возврат", "гарантия", "delivery", "payment", "return", "warranty"}
 COMPARE_WORDS = {"сравни", "compare", "versus", "vs", "лучше"}
-PRODUCT_WORDS = {"товар", "купить", "подбери", "recommend", "product", "choose", "выбрать"}
+PRODUCT_WORDS = {
+    "товар",
+    "товары",
+    "купить",
+    "подбери",
+    "подобрать",
+    "посоветуй",
+    "рекомендация",
+    "recommend",
+    "product",
+    "choose",
+    "выбрать",
+}
+PRODUCT_INTENTS = {"product_discovery", "product_search", "product_compare", "product_detail"}
+LIVE_DATA_NOTE = "Цена и наличие не проверялись live; карточки содержат только индексированные кандидаты."
 
 
 class ChatService:
@@ -44,7 +58,28 @@ class ChatService:
             locale=request.locale,
             limit=5,
         )
-        answer = build_grounded_answer(request.message, chunks)
+        product_cards = []
+        tool_calls = []
+        if intent in PRODUCT_INTENTS:
+            product_cards = await self.retriever.product_cards(
+                store_id=request.store_id,
+                locale=request.locale,
+                chunks=chunks,
+                limit=3,
+            )
+            if product_cards:
+                tool_calls.append(
+                    {
+                        "name": "search_products",
+                        "arguments": {"query": request.message, "limit": 3},
+                        "result": {
+                            "count": len(product_cards),
+                            "live_data_checked": False,
+                            "note": LIVE_DATA_NOTE,
+                        },
+                    }
+                )
+        answer = build_grounded_answer(request.message, chunks, products=product_cards)
         latency_ms = int((time.perf_counter() - started) * 1000)
         assistant_message = await self.repository.add_message(
             session_id=session_id,
@@ -52,9 +87,9 @@ class ChatService:
             content=answer,
             intent=intent,
             citations=[citation.model_dump() for citation in citations],
-            products=[],
+            products=product_cards,
             actions=[],
-            tool_calls=[],
+            tool_calls=tool_calls,
             latency_ms=latency_ms,
         )
         return ChatResponse(
@@ -63,10 +98,10 @@ class ChatService:
             answer=answer,
             intent=intent,
             citations=citations,
-            products=[],
+            products=product_cards,
             actions=[],
-            tool_calls=[],
-            safety=Safety(grounded=bool(citations), live_data_checked=False, needs_human=False),
+            tool_calls=tool_calls,
+            safety=Safety(grounded=bool(citations or product_cards), live_data_checked=False, needs_human=False),
         )
 
     async def stream_events(self, request: ChatRequest) -> AsyncGenerator[str, None]:
@@ -97,6 +132,8 @@ def classify_intent(message: str) -> str:
         return "policy"
     if words & COMPARE_WORDS:
         return "product_compare"
+    if "найди" in words or "поиск" in words or "search" in words:
+        return "product_search"
     if words & PRODUCT_WORDS:
         return "product_discovery"
     if len(normalized.strip()) < 20 and any(greeting in normalized for greeting in ("привет", "hello", "hi")):
@@ -104,10 +141,16 @@ def classify_intent(message: str) -> str:
     return "product_discovery"
 
 
-def build_grounded_answer(message: str, chunks: list[dict[str, Any]]) -> str:
-    if not chunks:
+def build_grounded_answer(
+    message: str,
+    chunks: list[dict[str, Any]],
+    *,
+    products: list[dict[str, Any]] | None = None,
+) -> str:
+    products = products or []
+    if not chunks and not products:
         return (
-            "Пока в Markdown-базе знаний нет подходящего фрагмента для ответа. "
+            "Пока в базе знаний нет подходящего фрагмента для ответа. "
             "Я могу подсказать общие критерии выбора, но цены, наличие и условия нужно проверять "
             "через Medusa перед показом покупателю."
         )
@@ -119,9 +162,21 @@ def build_grounded_answer(message: str, chunks: list[dict[str, Any]]) -> str:
             content = content[:497].rstrip() + "..."
         title = chunk.get("source", {}).get("title") or chunk.get("title") or "Источник"
         snippets.append(f"Из «{title}»: {content}")
+    product_text = ""
+    if products:
+        product_lines = [f"- {item['title']}: {item.get('reason') or 'подходит по запросу'}" for item in products]
+        product_text = (
+            "\n\nПодходящие товары из индекса Medusa:\n"
+            + "\n".join(product_lines)
+            + f"\n\n{LIVE_DATA_NOTE}"
+        )
+
+    prefix = "Нашёл релевантную информацию в базе знаний." if snippets else "Нашёл подходящие товары в индексе Medusa."
+    body = "\n\n".join(snippets) if snippets else "Каталог уже проиндексирован, поэтому могу показать карточки товаров."
     return (
-        "Нашёл релевантную информацию в базе знаний.\n\n"
-        + "\n\n".join(snippets)
+        f"{prefix}\n\n"
+        + body
+        + product_text
         + "\n\nВажно: точные цены, наличие, сроки доставки и акции должны проверяться live через Medusa."
     )
 

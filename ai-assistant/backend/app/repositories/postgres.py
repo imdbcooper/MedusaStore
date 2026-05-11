@@ -256,11 +256,35 @@ class PostgresAssistantRepository:
             )
         return [dict(row) for row in rows]
 
+    async def list_sources(
+        self,
+        *,
+        store_id: str,
+        locale: str,
+        source_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        source_filter = "AND source_type = $3" if source_type else ""
+        args: tuple[Any, ...] = (store_id, locale, source_type) if source_type else (store_id, locale)
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT * FROM assistant_sources
+                WHERE store_id = $1 AND locale = $2
+                {source_filter}
+                ORDER BY indexed_at DESC NULLS LAST, created_at DESC
+                """,
+                *args,
+            )
+        return [dict(row) for row in rows]
+
     async def stats(self) -> dict[str, int]:
         async with self.pool.acquire() as conn:
             return {
                 "document_count": await conn.fetchval("SELECT COUNT(*) FROM assistant_sources"),
                 "chunk_count": await conn.fetchval("SELECT COUNT(*) FROM assistant_source_chunks"),
+                "indexed_product_count": await conn.fetchval(
+                    "SELECT COUNT(*) FROM assistant_sources WHERE source_type = 'medusa_product'"
+                ),
                 "session_count": await conn.fetchval("SELECT COUNT(*) FROM assistant_sessions"),
                 "message_count": await conn.fetchval("SELECT COUNT(*) FROM assistant_messages"),
                 "failed_jobs": await conn.fetchval(

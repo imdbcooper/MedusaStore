@@ -1,7 +1,7 @@
 from fastapi import Request
 
 from app.services.chat import ChatService
-from app.services.ingestion import MarkdownIngestionService
+from app.services.ingestion import MarkdownIngestionService, MedusaProductIngestionService
 
 
 def get_repository(request: Request):
@@ -14,3 +14,9 @@ def get_chat_service(request: Request) -> ChatService:
 
 def get_ingestion_service(request: Request) -> MarkdownIngestionService:
     return request.app.state.ingestion_service
+
+
+def get_medusa_product_ingestion_service(request: Request) -> MedusaProductIngestionService:
+    return request.app.state.medusa_product_ingestion_service
+
+

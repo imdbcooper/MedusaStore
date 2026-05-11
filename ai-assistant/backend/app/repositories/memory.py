@@ -178,10 +178,30 @@ class InMemoryAssistantRepository:
         matches.sort(key=lambda item: item[0], reverse=True)
         return [match for _, match in matches[:limit]]
 
+    async def list_sources(
+        self,
+        *,
+        store_id: str,
+        locale: str,
+        source_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        sources = []
+        for source in self.sources.values():
+            if source["store_id"] != store_id or source["locale"] != locale:
+                continue
+            if source_type and source["source_type"] != source_type:
+                continue
+            sources.append(deepcopy(source))
+        sources.sort(key=lambda item: item.get("indexed_at") or item.get("created_at"), reverse=True)
+        return sources
+
     async def stats(self) -> dict[str, int]:
         return {
             "document_count": len(self.sources),
             "chunk_count": sum(len(chunks) for chunks in self.source_chunks.values()),
+            "indexed_product_count": sum(
+                1 for source in self.sources.values() if source["source_type"] == "medusa_product"
+            ),
             "session_count": len(self.sessions),
             "message_count": len(self.messages),
             "failed_jobs": sum(1 for job in self.jobs.values() if job["status"] == "error"),
