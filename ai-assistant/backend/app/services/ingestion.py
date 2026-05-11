@@ -26,6 +26,7 @@ class MarkdownIngestionService:
         store_id: str,
         locale: str,
         path: str | None = None,
+        tenant_id: str | None = None,
     ) -> MarkdownSyncResponse:
         root = Path(path) if path else self.settings.knowledge_dir
         if not root.is_absolute():
@@ -66,7 +67,7 @@ class MarkdownIngestionService:
                     title=first.title,
                     uri=first.path,
                     content_hash=source_hash,
-                    metadata=first.metadata,
+                    metadata={**first.metadata, "tenant_id": tenant_id or first.metadata.get("tenant_id")},
                     chunks=chunk_payloads,
                 )
                 vector_indexed_count += await self._index_vector_chunks(chunks=chunk_payloads, source=source)
@@ -138,6 +139,7 @@ class MedusaProductIngestionService:
         product_ids: list[str] | None = None,
         region_id: str | None = None,
         currency_code: str | None = None,
+        tenant_id: str | None = None,
     ) -> MedusaProductsSyncResponse:
         requested_product_ids = product_ids or []
         job = await self.repository.create_ingestion_job(
@@ -152,6 +154,7 @@ class MedusaProductIngestionService:
                 "product_ids": requested_product_ids,
                 "region_id": region_id,
                 "currency_code": currency_code,
+                "tenant_id": tenant_id,
             },
         )
 
@@ -169,6 +172,7 @@ class MedusaProductIngestionService:
                     product,
                     store_id=store_id,
                     locale=locale,
+                    tenant_id=tenant_id,
                     chunk_target_chars=self.settings.chunk_target_chars,
                     chunk_overlap_chars=self.settings.chunk_overlap_chars,
                 )
@@ -185,7 +189,7 @@ class MedusaProductIngestionService:
                     title=first.title,
                     uri=first.path,
                     content_hash=source_hash,
-                    metadata=first.metadata,
+                    metadata={**first.metadata, "tenant_id": tenant_id or first.metadata.get("tenant_id")},
                     chunks=chunk_payloads,
                 )
                 vector_indexed_count += await self._index_vector_chunks(chunks=chunk_payloads, source=source)
@@ -253,6 +257,7 @@ class VectorIndexingService:
         store_id: str,
         locale: str,
         source_type: str | None = None,
+        tenant_id: str | None = None,
     ) -> IngestionJobResponse:
         if not vector_components_present(self.qdrant_adapter, self.embedding_provider):
             raise VectorBackendUnavailable("Vector backend is not configured")
@@ -265,7 +270,7 @@ class VectorIndexingService:
             job_type="vector_index",
             source_type=source_type,
             source_id="*",
-            input_payload={"store_id": store_id, "locale": locale, "source_type": source_type},
+            input_payload={"store_id": store_id, "tenant_id": tenant_id, "locale": locale, "source_type": source_type},
         )
         source_count = 0
         chunk_count = 0
@@ -281,6 +286,7 @@ class VectorIndexingService:
                 store_id=store_id,
                 locale=locale,
                 source_type=source_type,
+                tenant_id=tenant_id,
             )
             batch_size = max(1, self.settings.qdrant_upsert_batch_size)
             for source in sources:
@@ -338,6 +344,7 @@ class VectorIndexingService:
         locale: str,
         source_type: str,
         source_id: str,
+        tenant_id: str | None = None,
     ) -> dict[str, bool]:
         deleted_repository = False
         if hasattr(self.repository, "delete_source"):
@@ -354,6 +361,7 @@ class VectorIndexingService:
                 locale=locale,
                 source_type=source_type,
                 source_id=source_id,
+                tenant_id=tenant_id,
             )
             deleted_vector = True
         return {"repository": deleted_repository, "vector": deleted_vector}

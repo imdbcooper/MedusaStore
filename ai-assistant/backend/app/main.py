@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import Settings, get_settings
+from app.core.security import InMemoryRateLimiter, ObservabilityMiddleware
 from app.database.postgres import PostgresDatabase
 from app.medusa import MedusaProductClient
 from app.repositories.memory import InMemoryAssistantRepository
@@ -90,12 +91,15 @@ def create_app(settings: Settings | None = None, *, repository=None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+    app.state.rate_limiter = InMemoryRateLimiter()
+    app.add_middleware(ObservabilityMiddleware)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=settings.effective_cors_origins,
+        allow_credentials=settings.cors_allow_credentials,
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Request-ID"],
+        expose_headers=["X-Request-ID", "X-Assistant-Latency-Ms"],
     )
     app.include_router(api_router, prefix=settings.api_v1_prefix)
 

@@ -1,0 +1,62 @@
+services:
+  ai-assistant:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: medusa-ai-assistant:local
+    profiles: ["ai-assistant"]
+    env_file:
+      - ENV.example
+    environment:
+      AI_ASSISTANT_ENV: ${AI_ASSISTANT_ENV:-development}
+      ASSISTANT_POSTGRES_URI: ${ASSISTANT_POSTGRES_URI:-postgresql://assistant:assistant@assistant-postgres:5432/assistant}
+      QDRANT_URL: ${QDRANT_URL:-http://assistant-qdrant:6333}
+      AI_ASSISTANT_CORS_ORIGINS: ${AI_ASSISTANT_CORS_ORIGINS:-http://localhost:3000,http://localhost:8000}
+      AI_ASSISTANT_API_TOKEN: ${AI_ASSISTANT_API_TOKEN:-change-me-dev-only}
+      MEDUSA_BACKEND_URL: ${MEDUSA_BACKEND_URL:-http://host.docker.internal:9000}
+    ports:
+      - "8000:8000"
+    depends_on:
+      assistant-postgres:
+        condition: service_healthy
+      assistant-qdrant:
+        condition: service_started
+
+  assistant-postgres:
+    image: postgres:16-alpine
+    profiles: ["ai-assistant"]
+    environment:
+      POSTGRES_DB: assistant
+      POSTGRES_USER: assistant
+      POSTGRES_PASSWORD: assistant
+    volumes:
+      - assistant-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U assistant -d assistant"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  assistant-qdrant:
+    image: qdrant/qdrant:v1.12.5
+    profiles: ["ai-assistant"]
+    volumes:
+      - assistant-qdrant-data:/qdrant/storage
+    ports:
+      - "6333:6333"
+
+  assistant-neo4j:
+    image: neo4j:5-community
+    profiles: ["ai-assistant-lightrag"]
+    environment:
+      NEO4J_AUTH: neo4j/change-me-dev-only
+    volumes:
+      - assistant-neo4j-data:/data
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+
+volumes:
+  assistant-postgres-data:
+  assistant-qdrant-data:
+  assistant-neo4j-data:

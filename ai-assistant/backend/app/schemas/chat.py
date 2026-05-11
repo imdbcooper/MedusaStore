@@ -17,10 +17,11 @@ class ChatRequest(BaseModel):
     session_id: UUID | None = None
     customer_id: str | None = None
     cart_id: str | None = None
-    store_id: str = "default"
+    store_id: str = Field(default="default", min_length=1, max_length=128)
+    tenant_id: str | None = Field(default=None, min_length=1, max_length=128)
     region_id: str | None = None
     currency_code: str = "rub"
-    locale: str = "ru"
+    locale: str = Field(default="ru", min_length=2, max_length=16)
     mode: str = "auto"
     page_context: PageContext | None = None
 
@@ -74,6 +75,7 @@ class ChatResponse(BaseModel):
     actions: list[Action] = Field(default_factory=list)
     tool_calls: list[ToolCall] = Field(default_factory=list)
     safety: Safety = Field(default_factory=Safety)
+    observability: dict[str, Any] = Field(default_factory=dict)
 
 
 class ChatHistoryMessage(BaseModel):

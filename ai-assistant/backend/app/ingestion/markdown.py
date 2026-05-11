@@ -104,6 +104,7 @@ def parse_markdown_file(
     base_metadata = {
         **metadata,
         "store_id": metadata.get("store_id", store_id),
+        "tenant_id": metadata.get("tenant_id"),
         "locale": metadata.get("locale", locale),
         "path": relative_path,
     }

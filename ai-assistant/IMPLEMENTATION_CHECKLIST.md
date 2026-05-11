@@ -51,10 +51,13 @@
 
 ## Production
 
-- [ ] Add Dockerfile.
-- [ ] Add docker compose AI profile.
-- [ ] Add rate limiting.
-- [ ] Restrict CORS.
-- [ ] Add tracing/metrics.
-- [ ] Add evaluation test set.
-- [ ] Add deployment documentation.
+- [x] Add Dockerfile.
+- [x] Add docker compose AI profile.
+- [x] Add rate limiting.
+- [x] Restrict CORS.
+- [x] Add tracing/metrics.
+- [x] Add evaluation test set.
+- [x] Add deployment documentation.
+- [x] Add operational runbooks.
+- [x] Add real monorepo integration readiness plan.
+- [x] Add safe smoke script examples.

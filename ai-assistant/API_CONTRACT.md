@@ -19,6 +19,7 @@ Request:
   "customer_id": "optional-medusa-customer-id",
   "cart_id": "optional-medusa-cart-id",
   "store_id": "default",
+  "tenant_id": "optional-tenant",
   "region_id": "reg_...",
   "currency_code": "rub",
   "locale": "ru",
@@ -59,6 +60,8 @@ Product cards may include `price` and concrete `availability` only after `tool_c
 
 Add-to-cart chat actions are proposals only. A chat response may return `actions[].type = "add_to_cart_proposal"` with `payload.requires_confirmation = true`; the assistant must not mutate the cart from chat generation alone.
 
+Public storefront chat does not require `AI_ASSISTANT_API_TOKEN`. Apply per-IP/session/store rate limiting and use the storefront/Medusa proxy when possible.
+
 ### `POST /api/v1/chat/stream`
 
 SSE streaming response.
@@ -89,7 +92,7 @@ data: {"done":true}
 
 ### `GET /api/v1/chat/history?session_id=...`
 
-Returns session messages.
+Privileged/server-side endpoint until signed storefront session binding is implemented. Requires `AI_ASSISTANT_API_TOKEN`, rejects direct browser-origin calls, and returns session messages only to trusted backend callers.
 
 ## 2. Ingestion
 
@@ -106,6 +109,7 @@ Request:
 ```json
 {
   "store_id": "default",
+  "tenant_id": "optional-tenant",
   "locale": "ru",
   "path": "knowledge/"
 }
@@ -120,6 +124,7 @@ Request:
 ```json
 {
   "store_id": "default",
+  "tenant_id": "optional-tenant",
   "locale": "ru",
   "full": false,
   "product_ids": ["prod_..."]
@@ -133,6 +138,8 @@ Pull CMS pages/posts/FAQ from Payload.
 ### `GET /api/v1/ingest/jobs/{job_id}`
 
 Returns job status.
+
+Privileged ingestion endpoints require `AI_ASSISTANT_API_TOKEN` and reject direct browser-origin calls even if a token is supplied. Rate limits are configured separately from public chat.
 
 ## 3. Admin
 
@@ -149,20 +156,45 @@ Returns assistant stats:
 
 ### `POST /api/v1/admin/reindex`
 
-Triggers reindex.
+Triggers prepared backend reindex for `products`, `markdown`, `vector`, or `all`; `payload`/generic `documents` return an explicit unsupported status until those ingestion services are implemented. Requires `AI_ASSISTANT_API_TOKEN`, rejects browser-origin calls, and is admin-rate-limited.
 
 Request:
 
 ```json
 {
-  "scope": "all|products|markdown|payload|documents",
+  "scope": "all|products|markdown|payload|documents|vector",
   "store_id": "default",
+  "tenant_id": "optional-tenant",
   "locale": "ru",
-  "force": false
+  "force": false,
+  "product_ids": ["prod_..."],
+  "region_id": "reg_...",
+  "currency_code": "rub"
 }
 ```
 
-## 4. Commerce tool endpoints
+## 4. Feedback
+
+### `POST /api/v1/feedback`
+
+Stores user feedback for evaluation and incident follow-up. Public endpoint with feedback-specific rate limiting and PII redaction.
+
+Request:
+
+```json
+{
+  "session_id": "uuid",
+  "message_id": "optional-uuid",
+  "store_id": "default",
+  "tenant_id": "optional-tenant",
+  "locale": "ru",
+  "rating": 5,
+  "label": "helpful|bad_recommendation|ungrounded_fact",
+  "comment": "optional free text"
+}
+```
+
+## 5. Commerce tool endpoints
 
 These may be internal-only.
 
@@ -172,7 +204,7 @@ Structured product search.
 
 ### `POST /api/v1/tools/product-live-data`
 
-Fetch live Medusa data for the requested product ids. This is protected by `AI_ASSISTANT_API_TOKEN` and should be treated as internal/server-side.
+Fetch live Medusa data for the requested product ids. This is protected by `AI_ASSISTANT_API_TOKEN`, rejects direct browser-origin calls, and should be treated as internal/server-side.
 
 Request:
 
@@ -210,7 +242,7 @@ Request:
 
 When `confirmed` is `false`, the endpoint returns `confirmation_required` and `mutated=false`. When `confirmed` is `true`, Phase 3 still returns `unsupported_until_ownership_validation` and `mutated=false`; callers should treat chat `add_to_cart_proposal` actions as UI proposals only, not as permission to mutate arbitrary cart ids.
 
-## 5. Health
+## 6. Health
 
 ### `GET /api/v1/health`
 
@@ -220,7 +252,7 @@ Basic health.
 
 Checks PostgreSQL, Qdrant, Neo4j when enabled, LLM provider, and Medusa connectivity.
 
-## 6. Errors
+## 7. Errors
 
 Standard shape:
 

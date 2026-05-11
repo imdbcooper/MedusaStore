@@ -19,6 +19,7 @@ class SimpleMarkdownRetriever:
         store_id: str,
         locale: str,
         limit: int = 5,
+        tenant_id: str | None = None,
         filters: dict[str, Any] | None = None,
     ) -> tuple[list[dict], list[Citation]]:
         chunks = await self.repository.search_chunks(
@@ -27,7 +28,8 @@ class SimpleMarkdownRetriever:
             query=query,
             limit=limit,
         )
-        chunks = apply_payload_filters(chunks, filters or {})
+        filters = {**(filters or {}), "tenant_id": tenant_id}
+        chunks = apply_payload_filters(chunks, filters)
         return chunks, citations_from_chunks(chunks)
 
     async def product_cards(
@@ -37,6 +39,7 @@ class SimpleMarkdownRetriever:
         locale: str,
         chunks: list[dict],
         limit: int = 3,
+        tenant_id: str | None = None,
     ) -> list[dict]:
         seen: set[str] = set()
         cards: list[dict] = []
@@ -45,6 +48,8 @@ class SimpleMarkdownRetriever:
             if source.get("source_type") != "medusa_product":
                 continue
             metadata = source.get("metadata") or chunk.get("metadata") or {}
+            if tenant_id and metadata.get("tenant_id") != tenant_id and source.get("tenant_id") != tenant_id:
+                continue
             product_id = source.get("source_id") or metadata.get("product_id")
             if not product_id or product_id in seen:
                 continue
@@ -58,9 +63,12 @@ class SimpleMarkdownRetriever:
                 store_id=store_id,
                 locale=locale,
                 source_type="medusa_product",
+                tenant_id=tenant_id,
             )
             for source in sources:
                 metadata = source.get("metadata") or {}
+                if tenant_id and metadata.get("tenant_id") != tenant_id and source.get("tenant_id") != tenant_id:
+                    continue
                 product_id = source.get("source_id") or metadata.get("product_id")
                 if not product_id or product_id in seen:
                     continue
@@ -83,6 +91,7 @@ class QdrantVectorRetriever:
         store_id: str,
         locale: str,
         limit: int = 5,
+        tenant_id: str | None = None,
         filters: dict[str, Any] | None = None,
     ) -> tuple[list[dict], list[Citation]]:
         if not self.qdrant_adapter or not self.embedding_provider:
@@ -94,6 +103,7 @@ class QdrantVectorRetriever:
             store_id=store_id,
             locale=locale,
             limit=limit,
+            tenant_id=tenant_id,
             source_type=filters.get("source_type"),
             product_id=filters.get("product_id"),
             category=filters.get("category"),
@@ -108,6 +118,7 @@ class QdrantVectorRetriever:
         locale: str,
         chunks: list[dict],
         limit: int = 3,
+        tenant_id: str | None = None,
     ) -> list[dict]:
         cards: list[dict] = []
         seen: set[str] = set()
@@ -115,6 +126,8 @@ class QdrantVectorRetriever:
             source = chunk.get("source", {})
             metadata = source.get("metadata") or chunk.get("metadata") or {}
             if (source.get("source_type") or metadata.get("source_type")) != "medusa_product":
+                continue
+            if tenant_id and metadata.get("tenant_id") != tenant_id and source.get("tenant_id") != tenant_id:
                 continue
             product_id = metadata.get("product_id") or source.get("source_id")
             if not product_id or product_id in seen:
@@ -144,6 +157,7 @@ class ModeAwareRetriever:
         locale: str,
         limit: int = 5,
         mode: str | None = None,
+        tenant_id: str | None = None,
         filters: dict[str, Any] | None = None,
     ) -> tuple[list[dict], list[Citation]]:
         requested = normalize_retrieval_mode(mode or getattr(self.settings, "retrieval_mode", "markdown"))
@@ -152,7 +166,7 @@ class ModeAwareRetriever:
             self.last_mode = "markdown"
             self.last_fallback_reason = "LightRAG mode is disabled/not configured; using markdown retrieval."
             return await self.markdown_retriever.search(
-                query=query, store_id=store_id, locale=locale, limit=limit, filters=filters
+                query=query, store_id=store_id, locale=locale, limit=limit, tenant_id=tenant_id, filters=filters
             )
         if requested in {"vector", "auto"}:
             try:
@@ -163,6 +177,7 @@ class ModeAwareRetriever:
                     store_id=store_id,
                     locale=locale,
                     limit=limit,
+                    tenant_id=tenant_id,
                     filters=filters,
                 )
                 self.last_mode = "vector"
@@ -175,11 +190,11 @@ class ModeAwareRetriever:
                 self.last_mode = "markdown"
                 self.last_fallback_reason = f"Vector retrieval unavailable; fallback to markdown: {exc}"
                 return await self.markdown_retriever.search(
-                    query=query, store_id=store_id, locale=locale, limit=limit, filters=filters
+                    query=query, store_id=store_id, locale=locale, limit=limit, tenant_id=tenant_id, filters=filters
                 )
         self.last_mode = "markdown"
         return await self.markdown_retriever.search(
-            query=query, store_id=store_id, locale=locale, limit=limit, filters=filters
+            query=query, store_id=store_id, locale=locale, limit=limit, tenant_id=tenant_id, filters=filters
         )
 
     async def product_cards(
@@ -189,6 +204,7 @@ class ModeAwareRetriever:
         locale: str,
         chunks: list[dict],
         limit: int = 3,
+        tenant_id: str | None = None,
     ) -> list[dict]:
         if self.last_mode == "vector" and self.vector_retriever:
             cards = await self.vector_retriever.product_cards(
@@ -196,6 +212,7 @@ class ModeAwareRetriever:
                 locale=locale,
                 chunks=chunks,
                 limit=limit,
+                tenant_id=tenant_id,
             )
             if cards:
                 return cards
@@ -204,6 +221,7 @@ class ModeAwareRetriever:
             locale=locale,
             chunks=chunks,
             limit=limit,
+            tenant_id=tenant_id,
         )
 
 
@@ -243,6 +261,8 @@ def chunk_matches_filters(chunk: dict[str, Any], filters: dict[str, Any]) -> boo
     for key in ("source_type", "product_id", "brand"):
         if filters.get(key) and merged.get(key) != filters[key]:
             return False
+    if filters.get("tenant_id") and merged.get("tenant_id") != filters["tenant_id"]:
+        return False
     category = filters.get("category")
     if category:
         categories = set(ensure_list(merged.get("category_handles"))) | set(ensure_list(merged.get("category_ids")))

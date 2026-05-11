@@ -75,16 +75,20 @@ def build_qdrant_filter(
     *,
     store_id: str | None = None,
     locale: str | None = None,
+    tenant_id: str | None = None,
     source_type: str | None = None,
     source_id: str | None = None,
     product_id: str | None = None,
     category: str | None = None,
     brand: str | None = None,
 ) -> Any | None:
+    if not store_id or not locale:
+        raise ValueError("Refusing to build Qdrant filter without mandatory store_id and locale")
     must: list[Any] = []
     for key, value in (
         ("store_id", store_id),
         ("locale", locale),
+        ("tenant_id", tenant_id),
         ("source_type", source_type),
         ("source_id", source_id),
         ("product_id", product_id),
@@ -159,6 +163,7 @@ def normalize_vector_payload(chunk: dict[str, Any], source: dict[str, Any]) -> d
     payload = {
         **metadata,
         "store_id": source.get("store_id") or metadata.get("store_id"),
+        "tenant_id": source.get("tenant_id") or metadata.get("tenant_id"),
         "locale": source.get("locale") or metadata.get("locale"),
         "source_type": source.get("source_type") or chunk.get("source_type"),
         "source_id": source.get("source_id") or chunk.get("source_id"),
@@ -254,6 +259,7 @@ class QdrantAdapter:
         locale: str,
         source_type: str,
         source_id: str,
+        tenant_id: str | None = None,
     ) -> None:
         await self.connect()
         if not self.client:
@@ -262,6 +268,7 @@ class QdrantAdapter:
         selector_filter = build_qdrant_filter(
             store_id=store_id,
             locale=locale,
+            tenant_id=tenant_id,
             source_type=source_type,
             source_id=source_id,
             product_id=source_id if source_type == "medusa_product" else None,
@@ -278,6 +285,7 @@ class QdrantAdapter:
         store_id: str,
         locale: str,
         limit: int,
+        tenant_id: str | None = None,
         source_type: str | None = None,
         product_id: str | None = None,
         category: str | None = None,
@@ -290,6 +298,7 @@ class QdrantAdapter:
         qdrant_filter = build_qdrant_filter(
             store_id=store_id,
             locale=locale,
+            tenant_id=tenant_id,
             source_type=source_type,
             product_id=product_id,
             category=category,

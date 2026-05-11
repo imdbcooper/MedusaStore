@@ -14,12 +14,13 @@ def normalize_medusa_product(
     *,
     store_id: str,
     locale: str,
+    tenant_id: str | None = None,
     chunk_target_chars: int = 1200,
     chunk_overlap_chars: int = 150,
 ) -> list[ProductChunk]:
     """Convert one Medusa product payload into stable indexable chunks."""
     text = build_product_document(product)
-    metadata = build_product_metadata(product, store_id=store_id, locale=locale)
+    metadata = build_product_metadata(product, store_id=store_id, locale=locale, tenant_id=tenant_id)
     product_id = str(product.get("id") or "unknown")
     title = str(product.get("title") or product_id)
     handle = product.get("handle")
@@ -91,7 +92,13 @@ def build_product_document(product: dict[str, Any]) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
-def build_product_metadata(product: dict[str, Any], *, store_id: str, locale: str) -> dict[str, Any]:
+def build_product_metadata(
+    product: dict[str, Any],
+    *,
+    store_id: str,
+    locale: str,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
     variants = ensure_list(product.get("variants"))
     categories = ensure_list(product.get("categories"))
     collection = product.get("collection") if isinstance(product.get("collection"), dict) else {}
@@ -106,6 +113,7 @@ def build_product_metadata(product: dict[str, Any], *, store_id: str, locale: st
 
     return {
         "store_id": store_id,
+        "tenant_id": tenant_id,
         "locale": locale,
         "source_type": "medusa_product",
         "source_id": product.get("id"),

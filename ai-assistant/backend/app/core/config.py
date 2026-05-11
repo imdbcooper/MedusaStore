@@ -18,10 +18,25 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", alias="AI_ASSISTANT_HOST")
     port: int = Field(default=8000, alias="AI_ASSISTANT_PORT")
     api_token: str | None = Field(default=None, alias="AI_ASSISTANT_API_TOKEN")
+    public_chat_enabled: bool = Field(default=True, alias="AI_ASSISTANT_PUBLIC_CHAT_ENABLED")
+    default_store_id: str = Field(default="default", alias="AI_ASSISTANT_DEFAULT_STORE_ID")
+    default_tenant_id: str | None = Field(default=None, alias="AI_ASSISTANT_DEFAULT_TENANT_ID")
+    default_locale: str = Field(default="ru", alias="AI_ASSISTANT_DEFAULT_LOCALE")
     cors_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:8000", "http://localhost:3000"],
         alias="AI_ASSISTANT_CORS_ORIGINS",
     )
+    cors_allow_credentials: bool = Field(default=True, alias="AI_ASSISTANT_CORS_ALLOW_CREDENTIALS")
+    chat_rate_limit: str = Field(default="60/minute", alias="CHAT_RATE_LIMIT")
+    admin_rate_limit: str = Field(default="30/minute", alias="ADMIN_RATE_LIMIT")
+    ingestion_rate_limit: str = Field(default="10/minute", alias="INGESTION_RATE_LIMIT")
+    tools_rate_limit: str = Field(default="30/minute", alias="TOOLS_RATE_LIMIT")
+    feedback_rate_limit: str = Field(default="30/minute", alias="FEEDBACK_RATE_LIMIT")
+    enable_feedback: bool = Field(default=True, alias="ENABLE_FEEDBACK")
+    enable_tool_audit: bool = Field(default=True, alias="ENABLE_TOOL_AUDIT")
+    enable_tracing: bool = Field(default=False, alias="ENABLE_TRACING")
+    langsmith_api_key: str | None = Field(default=None, alias="LANGSMITH_API_KEY")
+    langsmith_project: str | None = Field(default=None, alias="LANGSMITH_PROJECT")
 
     retrieval_mode: str = Field(default="markdown", alias="AI_ASSISTANT_RETRIEVAL_MODE")
     postgres_uri: str | None = Field(default=None, alias="ASSISTANT_POSTGRES_URI")
@@ -83,6 +98,16 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @property
+    def is_production_like(self) -> bool:
+        return self.environment.lower() in {"production", "prod", "staging"}
+
+    @property
+    def effective_cors_origins(self) -> list[str]:
+        if self.is_production_like:
+            return [origin for origin in self.cors_origins if origin != "*"]
+        return self.cors_origins
 
 
 @lru_cache

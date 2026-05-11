@@ -1,8 +1,9 @@
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request as FastAPIRequest
 
 from app.api.dependencies import get_medusa_product_client
 from app.core.auth import require_api_token
+from app.core.security import enforce_rate_limit, rate_limit_identity
 from app.medusa import MedusaClientError, MedusaProductClient
 from app.tools.commerce import propose_add_to_cart_mutation
 
@@ -26,9 +27,11 @@ class ProductLiveDataRequest(BaseModel):
 @router.post("/cart/add-item")
 async def add_cart_item(
     payload: AddCartItemRequest,
+    http_request: FastAPIRequest,
     product_client: MedusaProductClient = Depends(get_medusa_product_client),
     _: None = Depends(require_api_token),
 ):
+    enforce_rate_limit(http_request, scope="tools", identity=rate_limit_identity(http_request, scope="tools"))
     try:
         result, tool_call = await propose_add_to_cart_mutation(
             product_client=product_client,
@@ -48,9 +51,11 @@ async def add_cart_item(
 @router.post("/product-live-data")
 async def product_live_data(
     payload: ProductLiveDataRequest,
+    http_request: FastAPIRequest,
     product_client: MedusaProductClient = Depends(get_medusa_product_client),
     _: None = Depends(require_api_token),
 ):
+    enforce_rate_limit(http_request, scope="tools", identity=rate_limit_identity(http_request, scope="tools"))
     try:
         products = await product_client.list_products(
             product_ids=payload.product_ids,

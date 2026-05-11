@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS assistant_sessions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE assistant_sessions ADD COLUMN IF NOT EXISTS tenant_id TEXT NULL;
+
 CREATE TABLE IF NOT EXISTS assistant_messages (
   id UUID PRIMARY KEY,
   session_id UUID NOT NULL REFERENCES assistant_sessions(id),
@@ -116,10 +118,26 @@ CREATE TABLE IF NOT EXISTS assistant_ingestion_jobs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS assistant_feedback (
+  id UUID PRIMARY KEY,
+  session_id UUID NOT NULL REFERENCES assistant_sessions(id),
+  message_id UUID NULL REFERENCES assistant_messages(id),
+  store_id TEXT NOT NULL DEFAULT 'default',
+  tenant_id TEXT NULL,
+  locale TEXT NOT NULL DEFAULT 'ru',
+  rating INTEGER NULL CHECK (rating BETWEEN 1 AND 5),
+  label TEXT NULL,
+  comment TEXT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_assistant_messages_session_created
   ON assistant_messages(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_assistant_sources_store_locale
   ON assistant_sources(store_id, locale, source_type);
+CREATE INDEX IF NOT EXISTS idx_assistant_feedback_session_created
+  ON assistant_feedback(session_id, created_at);
 """
 
 

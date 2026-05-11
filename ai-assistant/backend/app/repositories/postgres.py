@@ -33,8 +33,8 @@ class PostgresAssistantRepository:
             row = await conn.fetchrow(
                 """
                 INSERT INTO assistant_sessions
-                  (id, store_id, customer_id, cart_id, locale, region_id, metadata)
-                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+                  (id, store_id, customer_id, cart_id, locale, region_id, metadata, tenant_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
                 ON CONFLICT (id) DO UPDATE SET
                   updated_at = now(),
                   customer_id = COALESCE(assistant_sessions.customer_id, EXCLUDED.customer_id),
@@ -49,6 +49,7 @@ class PostgresAssistantRepository:
                 locale,
                 region_id,
                 json.dumps(metadata or {}),
+                (metadata or {}).get("tenant_id"),
             )
         return dict(row)
 
@@ -108,6 +109,26 @@ class PostgresAssistantRepository:
                 *args,
             )
         return [dict(row) for row in rows]
+
+    async def get_session(self, session_id: UUID) -> dict[str, Any] | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM assistant_sessions WHERE id = $1", session_id)
+        return dict(row) if row else None
+
+    async def get_message(self, message_id: UUID) -> dict[str, Any] | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM assistant_messages WHERE id = $1", message_id)
+        return dict(row) if row else None
+
+    async def message_belongs_to_session(self, *, message_id: UUID, session_id: UUID) -> bool:
+        async with self.pool.acquire() as conn:
+            return bool(
+                await conn.fetchval(
+                    "SELECT EXISTS(SELECT 1 FROM assistant_messages WHERE id = $1 AND session_id = $2)",
+                    message_id,
+                    session_id,
+                )
+            )
 
     async def create_ingestion_job(
         self,
@@ -291,15 +312,21 @@ class PostgresAssistantRepository:
         store_id: str,
         locale: str,
         source_type: str | None = None,
+        tenant_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        source_filter = "AND source_type = $3" if source_type else ""
-        args: tuple[Any, ...] = (store_id, locale, source_type) if source_type else (store_id, locale)
+        filters = ["store_id = $1", "locale = $2"]
+        args: list[Any] = [store_id, locale]
+        if source_type:
+            args.append(source_type)
+            filters.append(f"source_type = ${len(args)}")
+        if tenant_id:
+            args.append(tenant_id)
+            filters.append(f"metadata->>'tenant_id' = ${len(args)}")
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 f"""
                 SELECT * FROM assistant_sources
-                WHERE store_id = $1 AND locale = $2
-                {source_filter}
+                WHERE {' AND '.join(filters)}
                 ORDER BY indexed_at DESC NULLS LAST, created_at DESC
                 """,
                 *args,
@@ -340,6 +367,41 @@ class PostgresAssistantRepository:
             )
         return [dict(row) for row in rows]
 
+    async def create_feedback(
+        self,
+        *,
+        session_id: UUID,
+        message_id: UUID | None = None,
+        store_id: str = "default",
+        tenant_id: str | None = None,
+        locale: str = "ru",
+        rating: int | None = None,
+        label: str | None = None,
+        comment: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        feedback_id = uuid4()
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO assistant_feedback
+                  (id, session_id, message_id, store_id, tenant_id, locale, rating, label, comment, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+                RETURNING *
+                """,
+                feedback_id,
+                session_id,
+                message_id,
+                store_id,
+                tenant_id,
+                locale,
+                rating,
+                label,
+                comment,
+                json.dumps(metadata or {}),
+            )
+        return dict(row)
+
     async def stats(self) -> dict[str, int]:
         async with self.pool.acquire() as conn:
             return {
@@ -350,6 +412,7 @@ class PostgresAssistantRepository:
                 ),
                 "session_count": await conn.fetchval("SELECT COUNT(*) FROM assistant_sessions"),
                 "message_count": await conn.fetchval("SELECT COUNT(*) FROM assistant_messages"),
+                "feedback_count": await conn.fetchval("SELECT COUNT(*) FROM assistant_feedback"),
                 "failed_jobs": await conn.fetchval(
                     "SELECT COUNT(*) FROM assistant_ingestion_jobs WHERE status = 'error'"
                 ),

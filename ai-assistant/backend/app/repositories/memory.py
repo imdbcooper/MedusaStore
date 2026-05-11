@@ -15,6 +15,7 @@ class InMemoryAssistantRepository:
         self.sources: dict[tuple[str, str, str, str], dict[str, Any]] = {}
         self.source_chunks: dict[UUID, list[dict[str, Any]]] = defaultdict(list)
         self.jobs: dict[UUID, dict[str, Any]] = {}
+        self.feedback: dict[UUID, dict[str, Any]] = {}
 
     async def ensure_session(
         self,
@@ -37,6 +38,7 @@ class InMemoryAssistantRepository:
                 "cart_id": cart_id,
                 "locale": locale,
                 "region_id": region_id,
+                "tenant_id": (metadata or {}).get("tenant_id"),
                 "channel": "storefront",
                 "status": "active",
                 "metadata": metadata or {},
@@ -85,6 +87,18 @@ class InMemoryAssistantRepository:
         if limit is not None:
             ids = ids[-limit:]
         return [deepcopy(self.messages[message_id]) for message_id in ids]
+
+    async def get_session(self, session_id: UUID) -> dict[str, Any] | None:
+        session = self.sessions.get(session_id)
+        return deepcopy(session) if session else None
+
+    async def get_message(self, message_id: UUID) -> dict[str, Any] | None:
+        message = self.messages.get(message_id)
+        return deepcopy(message) if message else None
+
+    async def message_belongs_to_session(self, *, message_id: UUID, session_id: UUID) -> bool:
+        message = self.messages.get(message_id)
+        return bool(message and message.get("session_id") == session_id)
 
     async def create_ingestion_job(
         self,
@@ -206,12 +220,16 @@ class InMemoryAssistantRepository:
         store_id: str,
         locale: str,
         source_type: str | None = None,
+        tenant_id: str | None = None,
     ) -> list[dict[str, Any]]:
         sources = []
         for source in self.sources.values():
             if source["store_id"] != store_id or source["locale"] != locale:
                 continue
             if source_type and source["source_type"] != source_type:
+                continue
+            metadata = source.get("metadata") or {}
+            if tenant_id and metadata.get("tenant_id") != tenant_id and source.get("tenant_id") != tenant_id:
                 continue
             sources.append(deepcopy(source))
         sources.sort(key=lambda item: item.get("indexed_at") or item.get("created_at"), reverse=True)
@@ -239,6 +257,36 @@ class InMemoryAssistantRepository:
             enriched.append(item)
         return enriched
 
+    async def create_feedback(
+        self,
+        *,
+        session_id: UUID,
+        message_id: UUID | None = None,
+        store_id: str = "default",
+        tenant_id: str | None = None,
+        locale: str = "ru",
+        rating: int | None = None,
+        label: str | None = None,
+        comment: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        feedback_id = uuid4()
+        record = {
+            "id": feedback_id,
+            "session_id": session_id,
+            "message_id": message_id,
+            "store_id": store_id,
+            "tenant_id": tenant_id,
+            "locale": locale,
+            "rating": rating,
+            "label": label,
+            "comment": comment,
+            "metadata": metadata or {},
+            "created_at": datetime.now(timezone.utc),
+        }
+        self.feedback[feedback_id] = record
+        return deepcopy(record)
+
     async def stats(self) -> dict[str, int]:
         return {
             "document_count": len(self.sources),
@@ -248,5 +296,6 @@ class InMemoryAssistantRepository:
             ),
             "session_count": len(self.sessions),
             "message_count": len(self.messages),
+            "feedback_count": len(self.feedback),
             "failed_jobs": sum(1 for job in self.jobs.values() if job["status"] == "error"),
         }

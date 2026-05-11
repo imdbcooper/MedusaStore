@@ -2,7 +2,7 @@
 
 ## Phase 0 — Specification checkpoint
 
-Status: current directory.
+Status: implemented.
 
 Deliverables:
 
@@ -19,6 +19,8 @@ Acceptance:
 - developer can start implementation without rethinking the whole architecture.
 
 ## Phase 1 — MVP chat over Markdown knowledge
+
+Status: implemented.
 
 Goal: prove assistant UX in storefront.
 
@@ -41,6 +43,8 @@ Acceptance:
 
 ## Phase 2 — Medusa product ingestion
 
+Status: implemented.
+
 Goal: assistant understands catalog.
 
 Tasks:
@@ -58,6 +62,8 @@ Acceptance:
 - assistant recommends indexed Medusa products with cards.
 
 ## Phase 3 — Live commerce tools
+
+Status: implemented.
 
 Goal: stop hallucinating price/stock.
 
@@ -133,23 +139,46 @@ Implementation notes:
 
 ## Phase 6 — Production hardening
 
+Status: implemented/prepared inside standalone `ai-assistant/` module.
+
 Goal: agency-ready reusable module.
 
-Tasks:
+Implemented:
 
-1. Rate limiting.
-2. Auth/token strategy.
-3. Multi-tenant filters.
-4. Observability/tracing.
-5. Feedback collection.
-6. Evaluation dataset.
-7. Docker compose profile.
-8. Deployment docs.
+1. In-memory rate limiting for chat, tools, ingestion/admin, and feedback endpoints with env-driven limits.
+2. Token strategy: public storefront chat remains tokenless; privileged ingestion/tool/admin/history endpoints require server token and reject browser-origin access.
+3. Multi-tenant isolation: `tenant_id` request/payload support, mandatory `store_id` + `locale` Qdrant filters, and tenant filtering for product fallback recommendations.
+4. Security hardening: env-driven CORS, deterministic prompt-injection guardrail, PII/log redaction, safe add-to-cart proposal-only tooling, and no-hallucination enforcement for price/stock when live Medusa grounding is unavailable.
+5. Observability: structured request/chat logs, request ids, latency headers/payload, tool-call counts, retrieval stats, and optional tracing/LangSmith env hooks.
+6. Feedback endpoint/model and PostgreSQL/in-memory repository support.
+7. Evaluation dataset for product recommendation, policy answer, price/stock grounding, and tenant isolation.
+8. Dockerfile, compose profile/example, deployment docs, backup/restore notes, and operational runbooks.
 
 Acceptance:
 
 - module can be reused across projects with config only.
 
+## Phase 7 — Real monorepo integration readiness
+
+Status: prepared inside `ai-assistant/`; real Medusa backend/storefront were not modified.
+
+Prepared:
+
+1. `integration-plan/README.md` with step-by-step copy plan for Medusa adapter templates.
+2. Storefront widget connection plan and safe browser/server token boundary.
+3. `e2e-checklist.md` covering chat, Markdown answer, recommendation, live price/stock, safe add-to-cart proposal, admin reindex, product update reindex intent, vector fallback, and security checks.
+4. Safe smoke script example in `scripts/smoke_assistant.py`.
+5. Production deployment artifacts remain scoped to `ai-assistant/`.
+
+## Remaining gaps before real production launch
+
+- Install/copy adapter templates into the real Medusa backend only after review and explicit approval.
+- Implement the real storefront widget/module or copy an approved widget implementation into the Next.js storefront.
+- Replace in-memory rate limiting with Redis or gateway-level distributed limits for multi-replica production.
+- Add managed migrations instead of relying only on startup schema initialization.
+- Configure a production embedding/LLM provider if deterministic local responses are insufficient.
+- Run full E2E against a real Medusa catalog, storefront, PostgreSQL, Qdrant, and optional Neo4j stack.
+
 ## Recommended immediate next task
 
-Proceed to review/fixes for Phase 5 Medusa adapter templates, then commit in a separate subtask. Do not install the adapter into the real Medusa backend until the copy-ready template is reviewed and explicitly approved.
+Proceed to review/fixes for Phase 6/7 changes, then commit in a separate subtask. Do not install the adapter into the real Medusa backend until the copy-ready template and integration plan are reviewed and explicitly approved.

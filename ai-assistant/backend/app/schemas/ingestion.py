@@ -7,12 +7,14 @@ from pydantic import BaseModel, Field
 
 class MarkdownSyncRequest(BaseModel):
     store_id: str = "default"
+    tenant_id: str | None = None
     locale: str = "ru"
     path: str | None = None
 
 
 class MedusaProductsSyncRequest(BaseModel):
     store_id: str = "default"
+    tenant_id: str | None = None
     locale: str = "ru"
     full: bool = False
     product_ids: list[str] = Field(default_factory=list)
@@ -22,12 +24,14 @@ class MedusaProductsSyncRequest(BaseModel):
 
 class VectorIndexRequest(BaseModel):
     store_id: str = "default"
+    tenant_id: str | None = None
     locale: str = "ru"
     source_type: str | None = None
 
 
 class VectorDeleteRequest(BaseModel):
     store_id: str = "default"
+    tenant_id: str | None = None
     locale: str = "ru"
     source_type: str
     source_id: str

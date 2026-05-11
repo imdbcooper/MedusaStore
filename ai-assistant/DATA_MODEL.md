@@ -15,6 +15,7 @@ CREATE TABLE assistant_sessions (
   locale TEXT NOT NULL DEFAULT 'ru',
   region_id TEXT NULL,
   channel TEXT NOT NULL DEFAULT 'storefront',
+  tenant_id TEXT NULL,
   status TEXT NOT NULL DEFAULT 'active',
   metadata JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -98,9 +99,13 @@ CREATE TABLE assistant_feedback (
   id UUID PRIMARY KEY,
   session_id UUID NOT NULL REFERENCES assistant_sessions(id),
   message_id UUID NULL REFERENCES assistant_messages(id),
+  store_id TEXT NOT NULL DEFAULT 'default',
+  tenant_id TEXT NULL,
+  locale TEXT NOT NULL DEFAULT 'ru',
   rating INTEGER NULL CHECK (rating BETWEEN 1 AND 5),
   label TEXT NULL,
   comment TEXT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
@@ -164,7 +169,7 @@ Alternatively use one collection `assistant_knowledge` with `source_type` payloa
 }
 ```
 
-Important: price and availability payloads are only hints. Live values must be checked via Medusa.
+Important: price and availability payloads are only hints. Live values must be checked via Medusa. Retrieval/vector queries must always filter by `store_id` and `locale`; `tenant_id` must also be present when the deployment is multi-tenant.
 
 ## 3. Neo4j / LightRAG graph
 

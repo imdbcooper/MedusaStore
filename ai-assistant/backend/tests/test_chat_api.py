@@ -19,7 +19,13 @@ def test_chat_endpoint_persists_session_and_messages(client):
     assert data["citations"]
     assert "Medusa" in data["answer"]
 
-    history = client.get(f"/api/v1/chat/history?session_id={data['session_id']}")
+    public_history = client.get(f"/api/v1/chat/history?session_id={data['session_id']}")
+    assert public_history.status_code == 401
+
+    history = client.get(
+        f"/api/v1/chat/history?session_id={data['session_id']}",
+        headers={"Authorization": "Bearer test-token"},
+    )
     assert history.status_code == 200
     messages = history.json()
     assert [message["role"] for message in messages] == ["user", "assistant"]
