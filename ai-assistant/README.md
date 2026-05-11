@@ -132,6 +132,8 @@ Required production configuration includes:
 - `MEDUSA_BACKEND_URL`;
 - `QDRANT_URL` for vector mode.
 
+Optional LLM configuration uses `LLM_PROVIDER`, provider API key variables such as `OPENAI_API_KEY`, and provider model variables such as `OPENAI_MODEL`. Set `OPENAI_BASE_URL` only when using an OpenAI-compatible `/v1` endpoint instead of the default OpenAI API host.
+
 ## Medusa integration
 
 Do not install templates into the real backend without review/approval. When approved, copy [medusa-adapter/src/](./medusa-adapter/src/) files according to [integration-plan/README.md](./integration-plan/README.md), merge middleware carefully, and configure:

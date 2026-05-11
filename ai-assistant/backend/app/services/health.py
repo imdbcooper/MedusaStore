@@ -85,12 +85,14 @@ class DeepHealthService:
             return {"status": "error", "error": str(exc)}
 
     async def _check_llm(self) -> dict[str, Any]:
+        provider_config = self.settings.llm_provider_config
         if self.embedding_provider and hasattr(self.embedding_provider, "health"):
             try:
-                return await self.embedding_provider.health()
+                status = await self.embedding_provider.health()
             except Exception as exc:
-                return {"status": "error", "error": str(exc)}
-        return {"status": "disabled", "provider": self.settings.llm_provider}
+                return {"status": "error", "error": str(exc), **provider_config}
+            return {**status, **provider_config}
+        return {"status": "disabled", **provider_config}
 
     async def _check_lightrag(self) -> dict[str, Any]:
         if not self.settings.lightrag_enabled:

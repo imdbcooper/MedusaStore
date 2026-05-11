@@ -123,6 +123,7 @@ root-level скрипты используют этот файл как исто
 - `YOOKASSA_STOREFRONT_RETURN_ORIGINS` задает comma-separated allowlist storefront origin-ов для return redirect; канонический root path `cp .env.example .env` → `npm run bootstrap` должен протаскивать этот ключ в backend env через [scripts/env-sync.sh](../scripts/env-sync.sh), а при отсутствии root-переменной sync пишет детерминированный local default `http://localhost:8000`;
 - `YOOKASSA_WEBHOOK_SECRET` больше не означает permissive webhook baseline при пустом значении: unsigned webhook по умолчанию должен отклоняться, а controlled local/dev override допускается только через явный `YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS=true`;
 - `YOOKASSA_WEBHOOK_URL` — optional operator-facing URL для настройки уведомлений в YooKassa; root orchestration синхронизирует его в backend env, но startup и baseline onboarding не должны требовать непустого значения;
+- AI Assistant LLM runtime is optional and controlled by `LLM_PROVIDER`; for OpenAI-compatible providers the assistant reads `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, and `OPENAI_MODEL`; `OPENAI_BASE_URL` must point to a provider-compatible `/v1` endpoint when set, while API keys remain secrets and must not be committed;
 - в документации и шаблонах допустимо фиксировать только сами имена переменных и их роль, но нельзя записывать реальный пользовательский токен, API key или другой секрет.
 
 ---

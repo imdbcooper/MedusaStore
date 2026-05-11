@@ -1,3 +1,4 @@
+from app.core.config import Settings
 from app.repositories.memory import InMemoryAssistantRepository
 from app.services.vector import build_qdrant_filter
 
@@ -81,3 +82,22 @@ def test_qdrant_category_filter_shape_keeps_category_as_nested_condition():
         "category_handles",
         "category_ids",
     ]
+
+
+def test_openai_compatible_provider_config_reads_base_url_without_network_calls():
+    settings = Settings(
+        LLM_PROVIDER="openai",
+        OPENAI_API_KEY="test-key",
+        OPENAI_BASE_URL="https://llm.example.com/v1",
+        OPENAI_MODEL="gpt-compatible-mini",
+    )
+
+    assert settings.openai_base_url == "https://llm.example.com/v1"
+    assert settings.openai_model == "gpt-compatible-mini"
+    assert settings.llm_provider_config == {
+        "provider": "openai",
+        "api_key_configured": True,
+        "base_url": "https://llm.example.com/v1",
+        "model": "gpt-compatible-mini",
+        "openai_compatible": True,
+    }

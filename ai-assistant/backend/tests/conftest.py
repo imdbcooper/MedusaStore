@@ -51,6 +51,9 @@ def app(repository, knowledge_dir):
         QDRANT_URL="http://qdrant.test:6333",
         QDRANT_COLLECTION_PREFIX="assistant_test",
         EMBEDDING_DIMENSION=8,
+        LLM_PROVIDER="none",
+        OPENAI_API_KEY=None,
+        OPENAI_BASE_URL=None,
         AI_ASSISTANT_CORS_ORIGINS=["http://testserver"],
         AI_ASSISTANT_API_TOKEN="test-token",
     )

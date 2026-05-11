@@ -61,7 +61,16 @@ QDRANT_URL=http://qdrant:6333
 QDRANT_API_KEY=<qdrant-api-key-if-enabled>
 ```
 
-Never expose `AI_ASSISTANT_API_TOKEN` to the browser. Storefront chat should call a same-origin route or Medusa store proxy.
+Optional OpenAI-compatible LLM variables:
+
+```env
+LLM_PROVIDER=openai
+OPENAI_API_KEY=<provider-api-key>
+OPENAI_BASE_URL=https://llm.example.com/v1
+OPENAI_MODEL=gpt-compatible-mini
+```
+
+Leave `OPENAI_BASE_URL` empty for the default OpenAI host. Never expose `AI_ASSISTANT_API_TOKEN` or provider API keys to the browser. Storefront chat should call a same-origin route or Medusa store proxy.
 
 ## Root production integration notes
 

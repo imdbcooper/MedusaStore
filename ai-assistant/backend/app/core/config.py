@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     neo4j_password: str | None = Field(default=None, alias="NEO4J_PASSWORD")
     neo4j_database: str = Field(default="neo4j", alias="NEO4J_DATABASE")
     llm_provider: str = Field(default="none", alias="LLM_PROVIDER")
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    openai_base_url: str | None = Field(default=None, alias="OPENAI_BASE_URL")
+    openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
     knowledge_dir: Path = Field(default=Path("knowledge"), alias="KNOWLEDGE_DIR")
     markdown_frontmatter_required: bool = Field(default=False, alias="MARKDOWN_FRONTMATTER_REQUIRED")
     chat_history_limit: int = Field(default=10, alias="CHAT_HISTORY_LIMIT")
@@ -119,6 +122,21 @@ class Settings(BaseSettings):
         if self.is_production_like:
             return [origin for origin in self.cors_origins if origin != "*"]
         return self.cors_origins
+
+    @property
+    def llm_provider_config(self) -> dict[str, str | bool | None]:
+        provider = self.llm_provider.strip().lower()
+        config: dict[str, str | bool | None] = {"provider": provider}
+        if provider == "openai":
+            config.update(
+                {
+                    "api_key_configured": bool(self.openai_api_key),
+                    "base_url": self.openai_base_url,
+                    "model": self.openai_model,
+                    "openai_compatible": bool(self.openai_base_url),
+                }
+            )
+        return config
 
 
 @lru_cache

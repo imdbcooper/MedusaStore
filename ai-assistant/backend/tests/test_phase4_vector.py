@@ -256,6 +256,8 @@ def test_deep_health_checks_optional_backends(client):
     assert data["qdrant"]["status"] == "ok"
     assert data["medusa"]["status"] == "ok"
     assert data["llm_provider"]["status"] == "ok"
+    assert data["llm_provider"]["provider"] == "none"
+    assert "api_key_configured" not in data["llm_provider"]
     assert data["lightrag"]["status"] == "disabled"
 
 
