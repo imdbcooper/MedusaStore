@@ -1,5 +1,8 @@
 # MedusaJS 2.0: Технический план запуска и интеграции
 
+> **Historical/deprecated snapshot (2026-05-11):** this document is a historical planning snapshot and must not be used as the current operational source of truth. Use [`README.md`](../README.md), [`Docs/architecture.md`](./architecture.md), [`Docs/production_runbook.md`](./production_runbook.md), [`Docs/local_development.md`](./local_development.md), [`Docs/staging_runbook.md`](./staging_runbook.md), and [`Docs/troubleshooting.md`](./troubleshooting.md) for current operations.
+
+
 > [!summary] Суть документа
 > Краткий технический план по запуску проекта на **MedusaJS 2.0**: стек, архитектура процессов, этапы разработки, деплой и роль AI в ускорении реализации.
 
@@ -106,9 +109,9 @@ Medusa 2.0 поддерживает несколько режимов выпол
 
 | Подсистема | Задачи | Критерий готовности |
 | --- | --- | --- |
-| `VK OAuth` | Зарегистрировать приложение в `VK Console`, подключить `passport-vkontakte`, настроить callback | Пользователь может войти через VK |
+| `VK OAuth` | Зарегистрировать приложение в `VK Console`, подключить `historical auth-library example: passport-vkontakte`, настроить callback | Пользователь может войти через VK |
 | Customer mapping | Если `VK ID` не найден, создать `Customer`; если найден, выдать `JWT` | Нет дублей пользователей |
-| Email provider | Подключить `SendGrid`, `Resend` или `SMTP` | Письма отправляются из dev/stage среды |
+| Email provider | Подключить `historical email-provider example: SendGrid`, `Resend` или `SMTP` | Письма отправляются из dev/stage среды |
 | Email templates | Подготовить `Welcome email` и `Order confirmation` | Базовые транзакционные письма готовы |
 
 **Ключевые сценарии**
@@ -127,7 +130,7 @@ Medusa 2.0 поддерживает несколько режимов выпол
 | Зона | Что реализовать | Результат |
 | --- | --- | --- |
 | Основа витрины | Взять официальный **Next.js Starter** и подключить SDK | Рабочая витрина поверх Medusa |
-| Data layer | Интегрировать `TanStack Query` для кеширования и повторных запросов | Быстрый и предсказуемый клиентский слой |
+| Data layer | Интегрировать `historical frontend-cache example: TanStack Query` для кеширования и повторных запросов | Быстрый и предсказуемый клиентский слой |
 | SEO | Настроить `Metadata`, `OpenGraph`, `Sitemap` | Корректная индексация и красивый шаринг |
 | Покупательский путь | Каталог, карточка товара, корзина, checkout | Полноценный путь до оформления заказа |
 | Customer area | Личный кабинет и история заказов | Повторные пользователи видят свой контур |
@@ -205,7 +208,7 @@ Medusa 2.0 поддерживает несколько режимов выпол
 
 1. Поднять новую версию сервиса на соседнем порту, например `9001`.
 2. Проверить работоспособность новой версии.
-3. Переключить трафик в `Nginx` через `reload`.
+3. Переключить трафик в `historical reverse-proxy example: historical reverse-proxy example: Nginx` через `reload`.
 4. Остановить и удалить старый контейнер.
 
 > [!warning] Критичный момент
@@ -236,7 +239,7 @@ Medusa 2.0 поддерживает несколько режимов выпол
 | Компонент | Задача |
 | --- | --- |
 | **VK Console** | Регистрация приложения, получение `App ID` и `Service Key`. |
-| **Auth Provider** | Использование библиотеки `passport-vkontakte` внутри модуля Medusa. |
+| **Auth Provider** | Использование библиотеки `historical auth-library example: passport-vkontakte` внутри модуля Medusa. |
 | **User Mapping** | Автоматическое создание профиля `Customer` при первом входе. |
 | **JWT** | Выдача стандартного токена Medusa для доступа к корзине и заказам. |
 
@@ -249,7 +252,7 @@ Medusa 2.0 поддерживает несколько режимов выпол
 *   **Резервный канал:** Даже при входе через VK, почта необходима для отправки официальных чеков и восстановления доступа.
 *   **Провайдеры:**
     *   **Для РФ:** Прямое подключение через `SMTP` или сервисы типа `UniSender` / `Mailganer`.
-    *   **Глобальные:** `SendGrid`, `Resend` (лучший выбор для современных шаблонов).
+    *   **Глобальные:** `historical email-provider example: SendGrid`, `Resend` (лучший выбор для современных шаблонов).
 *   **Событийная модель:** Вы подписываетесь на события (`order.placed`, `password.reset`) и вызываете провайдер для отправки.
 
 ---
@@ -260,7 +263,7 @@ Medusa 2.0 поддерживает несколько режимов выпол
 
 | Сервис | Особенности | Плагин |
 | --- | --- | --- |
-| **ЮKassa** | Самый популярный в РФ, поддержка всех методов (карты, СБП). | `medusa-payment-yookassa` |
+| **ЮKassa** | Самый популярный в РФ, поддержка всех методов (карты, СБП). | `historical package example: medusa-payment-yookassa` |
 | **Robokassa** | Удобен для малого бизнеса, встроенное решение по чекам. | `@gorgo/medusa-payment-robokassa` |
 | **Т-Банк (Tinkoff)** | Высокая скорость выплат, отличный API. | Кастомный модуль / плагины сообщества |
 

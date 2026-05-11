@@ -97,15 +97,12 @@ def build_qdrant_filter(
         if value:
             must.append(_qdrant_field_condition(key, value))
     if category:
-        must.append(
-            _qdrant_filter(
-                should=[
-                    _qdrant_field_condition("category", category),
-                    _qdrant_field_condition("category_handles", category),
-                    _qdrant_field_condition("category_ids", category),
-                ]
-            )
-        )
+        category_conditions = [
+            _qdrant_field_condition("category", category),
+            _qdrant_field_condition("category_handles", category),
+            _qdrant_field_condition("category_ids", category),
+        ]
+        must.append(_qdrant_nested_should(category_conditions))
     return _qdrant_filter(must=must) if must else None
 
 
@@ -130,6 +127,10 @@ def _qdrant_filter(*, must: list[Any] | None = None, should: list[Any] | None = 
         if should:
             payload["should"] = should
         return payload
+
+
+def _qdrant_nested_should(should: list[Any]) -> Any:
+    return {"should": should}
 
 
 def _dict_to_qdrant_condition(condition: dict[str, Any]) -> Any:

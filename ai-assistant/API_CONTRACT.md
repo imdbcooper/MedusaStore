@@ -16,7 +16,6 @@ Request:
 {
   "message": "Help me choose a coffee machine under 50000 RUB",
   "session_id": "optional-uuid",
-  "customer_id": "optional-medusa-customer-id",
   "cart_id": "optional-medusa-cart-id",
   "store_id": "default",
   "tenant_id": "optional-tenant",
@@ -60,7 +59,7 @@ Product cards may include `price` and concrete `availability` only after `tool_c
 
 Add-to-cart chat actions are proposals only. A chat response may return `actions[].type = "add_to_cart_proposal"` with `payload.requires_confirmation = true`; the assistant must not mutate the cart from chat generation alone.
 
-Public storefront chat does not require `AI_ASSISTANT_API_TOKEN`. Apply per-IP/session/store rate limiting and use the storefront/Medusa proxy when possible.
+Public storefront chat does not require `AI_ASSISTANT_API_TOKEN`. Browser callers must not send trusted identity fields such as `customer_id`; authenticated customer ownership is attached only by the server-to-server session bind flow below. Apply per-IP/session/store rate limiting and use the storefront/Medusa proxy when possible.
 
 ### `POST /api/v1/chat/stream`
 
@@ -93,6 +92,33 @@ data: {"done":true}
 ### `GET /api/v1/chat/history?session_id=...`
 
 Privileged/server-side endpoint until signed storefront session binding is implemented. Requires `AI_ASSISTANT_API_TOKEN`, rejects direct browser-origin calls, and returns session messages only to trusted backend callers.
+
+### `POST /api/v1/admin/sessions/bind`
+
+Server-to-server trusted anonymous-to-authenticated session binding endpoint. Requires `AI_ASSISTANT_API_TOKEN`, rejects direct browser-origin calls, and is intended for the Medusa Store API proxy after it derives the authenticated customer from Medusa auth/session context.
+
+Request:
+
+```json
+{
+  "session_id": "uuid-created-while-anonymous",
+  "customer_id": "cus_...",
+  "store_id": "default",
+  "tenant_id": "optional-tenant",
+  "locale": "ru",
+  "customer_context": {
+    "source": "medusa_store_auth_context"
+  }
+}
+```
+
+Behavior:
+
+- validates that the session exists;
+- validates `store_id`, `tenant_id`, and `locale` match the original session scope;
+- attaches `customer_id` and `customer_context` to the existing session;
+- is idempotent for the same `session_id` + `customer_id`;
+- rejects binding an already-bound session to a different customer unless a future explicit admin override endpoint is added.
 
 ## 2. Ingestion
 
@@ -172,6 +198,58 @@ Request:
   "currency_code": "rub"
 }
 ```
+
+### `POST /api/v1/admin/reindex/intents`
+
+Enqueues a durable product freshness intent. Used by the Medusa adapter subscriber path and admin queue path. Requires `AI_ASSISTANT_API_TOKEN` and rejects browser-origin calls.
+
+Request:
+
+```json
+{
+  "store_id": "default",
+  "tenant_id": "optional-tenant",
+  "locale": "ru",
+  "event_name": "product.updated",
+  "event_id": "optional-event-id",
+  "action": "reindex|delete",
+  "scope": "products|all_products",
+  "product_ids": ["prod_..."],
+  "reason": "product.updated",
+  "coalescing_key": "assistant:product:prod_...",
+  "max_attempts": 3,
+  "metadata": {
+    "region_id": "reg_...",
+    "currency_code": "rub"
+  }
+}
+```
+
+Pending intents are coalesced by `coalescing_key`. Product/category/collection broad events use stable catalog keys so repeated broad changes collapse into one pending `all_products` intent.
+
+### `GET /api/v1/admin/reindex/intents`
+
+Returns pending/completed/error queue entries and queue stats. Requires `AI_ASSISTANT_API_TOKEN`, rejects browser-origin calls.
+
+### `POST /api/v1/admin/reindex/process`
+
+Processes pending reindex intents with bounded attempts/backoff. Requires `AI_ASSISTANT_API_TOKEN`, rejects browser-origin calls, and can be called by a worker, cron, or admin smoke route.
+
+Request:
+
+```json
+{
+  "limit": 10,
+  "retry_backoff_seconds": 60
+}
+```
+
+Processor behavior:
+
+- selected product `reindex` calls Medusa product sync with `product_ids`;
+- `all_products` calls full Medusa product sync;
+- `delete` removes the Medusa product source from repository/vector indexes;
+- retryable failures are re-queued until `max_attempts`, then marked `error`.
 
 ## 4. Feedback
 

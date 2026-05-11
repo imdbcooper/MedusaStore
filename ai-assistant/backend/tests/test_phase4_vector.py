@@ -1,6 +1,7 @@
 import pytest
 
 from app.services.vector import QdrantAdapter, build_qdrant_filter
+from tests.conftest import portal_call
 from tests.fakes import FakeQdrantClient
 
 
@@ -24,9 +25,10 @@ def test_payload_filter_construction_includes_phase4_fields():
         brand="Acme",
     )
 
-    assert _filter_keys(qdrant_filter) == ["store_id", "locale", "source_type", "product_id", "brand"]
-    assert _filter_values(qdrant_filter) == ["default", "ru", "medusa_product", "prod_espresso", "Acme"]
-    category_filter = _filter_must(qdrant_filter)[-1]
+    must_conditions = _filter_must(qdrant_filter)
+    assert _filter_keys(qdrant_filter) == ["store_id", "locale", "source_type", "product_id", "brand", None]
+    assert _filter_values({"must": must_conditions[:-1]}) == ["default", "ru", "medusa_product", "prod_espresso", "Acme"]
+    category_filter = must_conditions[-1]
     assert _filter_keys(category_filter, clause="should") == ["category", "category_handles", "category_ids"]
     assert _filter_values(category_filter, clause="should") == [
         "coffee-machines",
@@ -151,7 +153,8 @@ def test_source_scoped_chunk_listing_and_vector_reindex_without_truncation(clien
             }
             for chunk_index in range(chunks_per_source)
         ]
-        client.portal.call(
+        portal_call(
+            client,
             repository.upsert_source_with_chunks,
             store_id="default",
             locale="ru",
@@ -164,7 +167,8 @@ def test_source_scoped_chunk_listing_and_vector_reindex_without_truncation(clien
             chunks=chunks,
         )
 
-    listed = client.portal.call(
+    listed = portal_call(
+        client,
         repository.list_chunks_for_source,
         store_id="default",
         locale="ru",
@@ -277,7 +281,7 @@ def test_auto_mode_falls_back_to_markdown_when_vector_backend_unavailable(client
     assert response.status_code == 200
     data = response.json()
     assert data["citations"]
-    assert any("fallback to markdown" in note for note in data["safety"]["notes"])
+    assert data["observability"]["retriever_mode"] == "markdown"
 
 
 def test_vector_mode_returns_safe_error_when_backend_unavailable(client):

@@ -1,8 +1,11 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
+
+import json
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -22,7 +25,7 @@ class Settings(BaseSettings):
     default_store_id: str = Field(default="default", alias="AI_ASSISTANT_DEFAULT_STORE_ID")
     default_tenant_id: str | None = Field(default=None, alias="AI_ASSISTANT_DEFAULT_TENANT_ID")
     default_locale: str = Field(default="ru", alias="AI_ASSISTANT_DEFAULT_LOCALE")
-    cors_origins: list[str] = Field(
+    cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost:8000", "http://localhost:3000"],
         alias="AI_ASSISTANT_CORS_ORIGINS",
     )
@@ -96,7 +99,15 @@ class Settings(BaseSettings):
     @classmethod
     def parse_cors_origins(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
+            normalized = value.strip()
+            if normalized.startswith("["):
+                try:
+                    parsed = json.loads(normalized)
+                except json.JSONDecodeError:
+                    parsed = None
+                if isinstance(parsed, list):
+                    return [str(origin).strip() for origin in parsed if str(origin).strip()]
+            return [origin.strip() for origin in normalized.split(",") if origin.strip()]
         return value
 
     @property

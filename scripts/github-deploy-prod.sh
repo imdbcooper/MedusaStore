@@ -50,8 +50,20 @@ if [[ "$run_payload_seed" == "true" ]]; then
     payload-cms true
 fi
 
+compose_profiles=()
+if grep -Eq '^AI_ASSISTANT_ENABLED=true$' .env; then
+  echo "AI Assistant enabled; including ai-assistant production profile."
+  compose_profiles+=(--profile ai-assistant)
+else
+  echo "AI Assistant disabled; skipping ai-assistant profile."
+fi
+
 echo "Starting application containers..."
-docker compose -p "$project_name" -f "$compose_file" --env-file .env up -d --remove-orphans medusa-backend payload-cms storefront caddy
+app_services=(medusa-backend payload-cms storefront caddy)
+if [[ ${#compose_profiles[@]} -gt 0 ]]; then
+  app_services=(ai-assistant "${app_services[@]}")
+fi
+docker compose -p "$project_name" -f "$compose_file" --env-file .env "${compose_profiles[@]}" up -d --remove-orphans "${app_services[@]}"
 
 echo "Pruning dangling Docker images..."
 docker image prune -f >/dev/null || true

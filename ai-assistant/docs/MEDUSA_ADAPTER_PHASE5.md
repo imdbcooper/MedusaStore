@@ -8,7 +8,9 @@ Phase 5 adds a copy-ready Medusa backend adapter under `ai-assistant/medusa-adap
   - `POST /store/assistant/chat` -> `POST /api/v1/chat`;
   - `Accept: text/event-stream` -> SSE passthrough to `POST /api/v1/chat/stream`.
 - Admin routes:
-  - `POST /admin/assistant/reindex`;
+  - `POST /admin/assistant/reindex` queues durable intents;
+  - `POST /admin/assistant/reindex/process` drains/processes queued intents;
+  - `GET /admin/assistant/reindex/intents` returns queue status/stats;
   - `GET /admin/assistant/stats`;
   - `GET /admin/assistant/jobs/:id`.
 - Product freshness subscribers:
@@ -18,11 +20,12 @@ Phase 5 adds a copy-ready Medusa backend adapter under `ai-assistant/medusa-adap
   - variant updated;
   - product category updated;
   - product collection updated.
-- Durable worker/job workflow templates:
+- Durable assistant-side reindex intent queue plus callable processor:
   - reindex selected products;
   - reindex all products;
   - delete product source from vector index;
   - bounded retry on retryable assistant backend failures.
+- Trusted anonymous-to-authenticated session bind through `POST /api/v1/admin/sessions/bind` when Medusa derives an authenticated customer.
 - Typed server-side assistant client with timeout/error handling.
 
 ## Environment variables in Medusa
@@ -45,18 +48,20 @@ Copy files from `ai-assistant/medusa-adapter/src/` into the target Medusa backen
 If the target backend already has `src/api/middlewares.ts`, merge the assistant middleware entries instead of overwriting the existing file:
 
 - import `AdminAssistantReindexSchema` from `./admin/assistant/reindex/route`;
-- add admin auth for `/admin/assistant/reindex`, `/admin/assistant/stats`, and `/admin/assistant/jobs/:id`;
-- add `validateAndTransformBody(AdminAssistantReindexSchema)` for `POST /admin/assistant/reindex`.
+- import `AdminAssistantReindexProcessSchema` from `./admin/assistant/reindex/process/route`;
+- add admin auth for `/admin/assistant/reindex`, `/admin/assistant/reindex/process`, `/admin/assistant/reindex/intents`, `/admin/assistant/stats`, and `/admin/assistant/jobs/:id`;
+- add `validateAndTransformBody(AdminAssistantReindexSchema)` for `POST /admin/assistant/reindex`;
+- add `validateAndTransformBody(AdminAssistantReindexProcessSchema)` for `POST /admin/assistant/reindex/process`.
 
-## Store cart context safety
+## Store identity and cart context safety
 
-The Store chat template treats browser-provided `cart_id` as untrusted. It removes request body `cart_id` and sends `cart_id: null` by default.
+The Store chat template treats browser-provided `cart_id` and `customer_id` as untrusted. It removes request body `cart_id`, does not forward browser `customer_id`, and calls `bindSession()` only when Medusa authenticated context yields a trusted customer id and the browser supplies an existing anonymous assistant `session_id`.
 
 If a real integration needs cart-aware answers, add a trusted resolver in the Medusa backend or trusted storefront server boundary before forwarding cart context. That resolver must validate ownership against Medusa/session state, for example authenticated customer ownership, a signed storefront cart cookie, or another server-trusted Medusa context. Do not forward raw browser request body `cart_id`.
 
 ## Subscriber and workflow safety model
 
-Subscriber templates are enqueue-intent only. They must return quickly from the Medusa event hot path and must not perform network calls to the assistant backend or run indexing workflows directly.
+Subscriber templates are enqueue-intent only. They return quickly from the Medusa event hot path and must not run indexing workflows directly.
 
 Current template behavior:
 
@@ -64,13 +69,7 @@ Current template behavior:
 - category/collection subscribers create broad catalog stale-marker/full-reindex intents with reason/event id and a stable `assistant:catalog:all-products` coalescing key;
 - broad intents are intentionally separated from execution because a category/collection update can affect many products.
 
-When copying into a production backend, replace the log-only intent stub with one of these durable patterns:
-
-1. insert an assistant reindex intent row into a job/stale-marker table;
-2. publish a lightweight event to a queue/topic consumed by a worker;
-3. enqueue a Medusa job that later runs the workflow outside the subscriber.
-
-The worker/job step should debounce/coalesce repeated broad catalog events before running `assistant-reindex-all-products-workflow`, then call the assistant backend product sync endpoint from the workflow. This keeps full catalog sync out of category/collection subscriber execution.
+The current implementation calls the assistant durable intent endpoint in a fire-and-forget enqueue helper and stores pending work in `assistant_reindex_intents`. Repeated pending broad catalog events are coalesced by `assistant:catalog:all-products` before `POST /admin/assistant/reindex/process` or a dedicated worker drains the queue. This keeps full catalog sync out of category/collection subscriber execution.
 
 ## Admin reindex validation
 
@@ -103,14 +102,30 @@ curl -X POST http://localhost:9000/admin/assistant/reindex \
   -d '{"scope":"products","product_ids":["prod_..."],"store_id":"default","locale":"ru"}'
 ```
 
-5. Check job status:
+5. Drain/process queued work for smoke:
+
+```bash
+curl -X POST http://localhost:9000/admin/assistant/reindex/process \
+  -H 'Authorization: Bearer <admin-or-api-key>' \
+  -H 'Content-Type: application/json' \
+  -d '{"limit":10,"retry_backoff_seconds":60}'
+```
+
+6. Check queue status:
+
+```bash
+curl http://localhost:9000/admin/assistant/reindex/intents \
+  -H 'Authorization: Bearer <admin-or-api-key>'
+```
+
+7. Check job status:
 
 ```bash
 curl http://localhost:9000/admin/assistant/jobs/<assistant_job_id> \
   -H 'Authorization: Bearer <admin-or-api-key>'
 ```
 
-6. Test JSON chat proxy:
+8. Test JSON chat proxy:
 
 ```bash
 curl -X POST http://localhost:9000/store/assistant/chat \
@@ -118,7 +133,7 @@ curl -X POST http://localhost:9000/store/assistant/chat \
   -d '{"message":"Помоги выбрать товар","store_id":"default","locale":"ru","mode":"auto"}'
 ```
 
-7. Test SSE passthrough:
+9. Test SSE passthrough:
 
 ```bash
 curl -N -X POST http://localhost:9000/store/assistant/chat \
@@ -130,9 +145,9 @@ curl -N -X POST http://localhost:9000/store/assistant/chat \
 ## Safety notes
 
 - Store route does not expose `AI_ASSISTANT_SERVER_TOKEN` to the browser.
-- Store route does not forward untrusted browser-supplied `cart_id`.
+- Store route does not forward untrusted browser-supplied `cart_id` or `customer_id`.
 - Admin routes should live behind the Medusa admin auth middleware.
-- Subscribers only enqueue lightweight intents and do not run workflows or assistant network calls from the event hot path.
+- Subscribers only enqueue lightweight intents and do not run workflows from the event hot path.
 - Product deletion maps to a selected product source deletion intent; selected/all reindex network execution belongs to the worker/job workflow step.
 - Category/collection updates should be coalesced/debounced as broad catalog stale-marker intents before full reindex execution.
 - Live price/stock remains a Phase 3 assistant/Medusa tool concern; indexed product payload values remain hints only.

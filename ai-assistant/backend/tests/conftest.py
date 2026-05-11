@@ -1,3 +1,4 @@
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -46,6 +47,7 @@ def app(repository, knowledge_dir):
     settings = Settings(
         KNOWLEDGE_DIR=knowledge_dir,
         ASSISTANT_POSTGRES_URI=None,
+        MEDUSA_BACKEND_URL="http://medusa.test",
         QDRANT_URL="http://qdrant.test:6333",
         QDRANT_COLLECTION_PREFIX="assistant_test",
         EMBEDDING_DIMENSION=8,
@@ -64,6 +66,7 @@ def client(app):
         test_client.app.state.medusa_product_client = fake_client
         test_client.app.state.medusa_product_ingestion_service.product_client = fake_client
         test_client.app.state.live_commerce_tools.product_client = fake_client
+        test_client.app.state.health_service.medusa_client = fake_client
         fake_qdrant = FakeQdrantClient()
         fake_embedding = FakeEmbeddingProvider(dimension=8)
         qdrant_adapter = QdrantAdapter(
@@ -90,3 +93,7 @@ def client(app):
         test_client.app.state.health_service.embedding_provider = fake_embedding
         test_client.app.state.health_service.medusa_client = fake_client
         yield test_client
+
+
+def portal_call(client: TestClient, func, /, **kwargs):
+    return client.portal.call(partial(func, **kwargs))

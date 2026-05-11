@@ -18,10 +18,14 @@ CREATE TABLE assistant_sessions (
   tenant_id TEXT NULL,
   status TEXT NOT NULL DEFAULT 'active',
   metadata JSONB NOT NULL DEFAULT '{}',
+  customer_context JSONB NOT NULL DEFAULT '{}',
+  bound_at TIMESTAMPTZ NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
+
+`customer_id` is trusted only after `POST /api/v1/admin/sessions/bind` succeeds. Public chat requests can carry an anonymous `session_id`, but browser-supplied `customer_id` is ignored by the backend; Medusa must derive the authenticated customer server-side and call the bind endpoint with `AI_ASSISTANT_API_TOKEN`.
 
 ### `assistant_messages`
 
@@ -91,6 +95,42 @@ CREATE TABLE assistant_ingestion_jobs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
+
+### `assistant_reindex_intents`
+
+Durable queue for product freshness events emitted by the Medusa adapter. Subscribers enqueue/coalesce intents; a worker/admin drain calls `POST /api/v1/admin/reindex/process` to do real ingestion/delete work outside event hot paths.
+
+```sql
+CREATE TABLE assistant_reindex_intents (
+  id UUID PRIMARY KEY,
+  store_id TEXT NOT NULL DEFAULT 'default',
+  tenant_id TEXT NULL,
+  locale TEXT NOT NULL DEFAULT 'ru',
+  event_name TEXT NOT NULL,
+  event_id TEXT NULL,
+  action TEXT NOT NULL DEFAULT 'reindex' CHECK (action IN ('reindex', 'delete')),
+  scope TEXT NOT NULL DEFAULT 'products' CHECK (scope IN ('products', 'all_products')),
+  product_ids JSONB NOT NULL DEFAULT '[]',
+  reason TEXT NULL,
+  coalescing_key TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'error')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 3,
+  next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_error TEXT NULL,
+  assistant_job_id UUID NULL,
+  metadata JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  started_at TIMESTAMPTZ NULL,
+  finished_at TIMESTAMPTZ NULL
+);
+```
+
+Indexes:
+
+- unique pending `coalescing_key` for broad event collapse;
+- `(status, next_attempt_at)` for worker claiming.
 
 ### `assistant_feedback`
 

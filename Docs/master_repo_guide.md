@@ -1,5 +1,8 @@
 # 🛠 Дневник разработки: Мастер-репозиторий MedusaJS 2.0 (Конвейер магазинов)
 
+> **Historical/deprecated snapshot (2026-05-11):** this document is a historical planning snapshot and must not be used as the current operational source of truth. Use [`README.md`](../README.md), [`Docs/architecture.md`](./architecture.md), [`Docs/production_runbook.md`](./production_runbook.md), [`Docs/local_development.md`](./local_development.md), [`Docs/staging_runbook.md`](./staging_runbook.md), and [`Docs/troubleshooting.md`](./troubleshooting.md) for current operations.
+
+
 > [!summary] Что это за документ
 > Практическая карта проекта по созданию «Мастер-репозитория» на MedusaJS 2.0: бизнес-цели, статус этапов, разбор ключевых компонентов и план работ на текущий день.
 
@@ -116,7 +119,7 @@ Medusa не отправляет письма напрямую «в интерн
 Платежный шлюз для официального приема онлайн-оплат (карты, СБП, кошельки).
 
 **Зачем это нужно**  
-Без платежного модуля нельзя принимать онлайн-оплату официально. Плагин `medusa-payment-yookassa` связывает корзину Medusa с банком и подтверждает факт оплаты.
+Без платежного модуля нельзя принимать онлайн-оплату официально. Плагин `historical package example: medusa-payment-yookassa` связывает корзину Medusa с банком и подтверждает факт оплаты.
 
 **Как это устроено (на пальцах)**  
 Терминал на кассе: клиент прикладывает карту, банк проверяет платеж, магазин получает подтверждение «Оплачено».

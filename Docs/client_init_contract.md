@@ -78,7 +78,7 @@ Guardrails:
 | Input | Class | Rule |
 | --- | --- | --- |
 | `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` | Bootstrap-generated | Должен оставаться `REPLACE_WITH_ROOT_BOOTSTRAP` в template baseline и записываться только успешным root bootstrap. |
-| `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_DEFAULT_REGION` | Optional | Truthful storefront runtime inputs: [`env.ts`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:4) даёт fallback'и `http://localhost:${MEDUSA_BACKEND_PORT \|\| 9000}`, `http://localhost:8000` и `ru`, поэтому canonical baseline остаётся placeholder-safe и не требует client-specific replacement. |
+| `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_DEFAULT_REGION` | Optional | Truthful storefront runtime inputs: [`env.ts`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:7) читает `MEDUSA_BACKEND_URL` первым, затем `NEXT_PUBLIC_MEDUSA_BACKEND_URL`, затем fallback `http://localhost:${MEDUSA_BACKEND_PORT \|\| 9000}`; base URL и region fallback'ятся к `http://localhost:8000` и `ru`, поэтому canonical baseline остаётся placeholder-safe и не требует client-specific replacement. |
 | `NEXT_PUBLIC_STOREFRONT_PRESET` | Optional | Единственный sanctioned preset switch. Допустимые значения: `atelier` или `market`. При отсутствии storefront fallback'ится к `atelier`. |
 | `NEXT_PUBLIC_YOOKASSA_ENABLED`, `NEXT_PUBLIC_VK_ID_ENABLED`, `NEXT_PUBLIC_STRIPE_KEY`, `NEXT_PUBLIC_MEDUSA_PAYMENTS_*` | Optional | Public feature flags / provider toggles остаются opt-in. |
 | `PAYLOAD_*`, `REVALIDATE_SECRET`, `MEDUSA_CLOUD_S3_*` | Optional | По умолчанию пустые template-safe placeholders без локальных/demo secrets. |
@@ -145,8 +145,8 @@ Template baseline теперь должен соблюдать такие пра
 
 - канонический `client-init` contract materialized и остаётся source of truth в [`Docs/client_init_contract.md`](./client_init_contract.md);
 - root/backend/storefront init-facing surfaces перечислены без overclaim и без reopening `Фазы 6`;
-- `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_BASE_URL` и `NEXT_PUBLIC_DEFAULT_REGION` truthfully зафиксированы как optional storefront runtime inputs с safe fallback semantics;
-- canonical preset authority остаётся в [`storefront-client-config.ts`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts), а sanctioned selector остаётся [`NEXT_PUBLIC_STOREFRONT_PRESET`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:14);
+- `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_BASE_URL` и `NEXT_PUBLIC_DEFAULT_REGION` truthfully зафиксированы как optional storefront runtime inputs с safe fallback semantics; для backend URL server-side precedence = `MEDUSA_BACKEND_URL` before `NEXT_PUBLIC_MEDUSA_BACKEND_URL`;
+- canonical preset authority остаётся в [`storefront-client-config.ts`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts), а sanctioned selector остаётся [`NEXT_PUBLIC_STOREFRONT_PRESET`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:18);
 - remediation по blocking inconsistency завершена, повторный review дал **APPROVE**.
 
 Следующий logical slice внутри `Фазы 7` лежит уже после этого baseline: template release checklist, onboarding doc и cleaned template release/package path.

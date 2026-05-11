@@ -18,6 +18,8 @@ Storefront browser
 
 Public browser traffic should use storefront/Medusa proxy routes for chat. Privileged endpoints require `AI_ASSISTANT_API_TOKEN` and reject browser-origin requests.
 
+For this repository's first production step, keep one assistant replica and expose it only to the Docker network. The in-memory limiter is process-local and acceptable for one replica. Multi-replica production must add Redis-backed distributed rate limiting or gateway/load-balancer limits, otherwise each replica enforces its own counter and the effective limit grows with replica count.
+
 ## Build
 
 ```bash
@@ -61,11 +63,23 @@ QDRANT_API_KEY=<qdrant-api-key-if-enabled>
 
 Never expose `AI_ASSISTANT_API_TOKEN` to the browser. Storefront chat should call a same-origin route or Medusa store proxy.
 
+## Root production integration notes
+
+The root production Compose can enable the assistant with profile `ai-assistant` and `AI_ASSISTANT_ENABLED=true`. Browser traffic should still go through `/store/assistant/chat` on the Medusa backend adapter; do not publish the assistant container directly through Caddy unless a separate auth/rate-limit review is completed.
+
+Recommended first launch:
+
+1. One assistant container.
+2. `AI_ASSISTANT_RETRIEVAL_MODE=markdown` until Qdrant/provider credentials are deliberately configured.
+3. Strong `AI_ASSISTANT_API_TOKEN` and `AI_ASSISTANT_SERVER_TOKEN` in ignored env/GitHub secrets only.
+4. Caddy/API-gateway coarse limits plus assistant in-memory limits.
+5. Redis/gateway distributed limiter before horizontal scaling.
+
 ## Migration instructions
 
 The service currently initializes PostgreSQL tables on startup from the schema in `backend/app/database/postgres.py`. For stricter production change control:
 
-1. Extract `SCHEMA_SQL` into a managed migration before first production launch.
+1. Review/apply `migrations/001_initial_schema.sql`, extracted from `SCHEMA_SQL`, before first production launch if managed migrations are required.
 2. Apply migrations before starting the application container.
 3. Keep additive changes backward compatible.
 4. Back up the database before schema changes.

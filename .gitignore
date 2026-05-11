@@ -8,8 +8,7 @@ restore.log
 medusa-dump.sql
 
 # Local agent/tool state
-.kilocode/
-.codex/
+.kilocode/mcp.json
 
 # Local verification artifacts
 .phase2-*

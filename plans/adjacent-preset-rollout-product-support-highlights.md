@@ -10,7 +10,7 @@ This design follows the sequencing already recorded in:
 - [`Docs/master_repo_plan_v2.md`](Docs/master_repo_plan_v2.md)
 - [`Docs/plan_analysis.md`](Docs/plan_analysis.md)
 - [`Docs/env_contract.md`](Docs/env_contract.md)
-- [`.codex/skills/medusa-master-repo/SKILL.md`](.codex/skills/medusa-master-repo/SKILL.md)
+- [`.kilocode/skills/medusa-master-repo/SKILL.md`](.kilocode/skills/medusa-master-repo/SKILL.md)
 - [`plans/preset-driven-landing-surface-contract-v1.md`](plans/preset-driven-landing-surface-contract-v1.md)
 
 Current repository reality relevant to this slice:

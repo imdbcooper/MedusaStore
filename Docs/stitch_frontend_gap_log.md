@@ -1,7 +1,7 @@
 # Stitch → Frontend: gap-log
 
-**Обновлено:** 2026-05-08
-**Статус:** актуальный итог после интеграции Stitch-макетов в storefront.
+**Обновлено:** 2026-05-11
+**Статус:** актуальный итог после интеграции Stitch-макетов в storefront и production/docs sync.
 
 Этот документ коротко фиксирует:
 
@@ -76,7 +76,7 @@
 | Promo / discounts | Discount logic есть, но страница `Акции` не связана с реальными promotions | Связать CMS/content и Medusa promotions |
 | Empty / error / loading states | Базовые states есть, но визуально неоднородны | Сделать единые StudioPro state-компоненты |
 | Category / collection / search logic | Category pills в каталоге пока больше визуальные | Привязать pills к реальным categories/collections или заменить на labels |
-| CMS pages / news | Стили есть, но нужны обязательные content pages | Засидить `about`, `promotions`, `delivery-and-payment` |
+| CMS pages / news | Payload integration и seed pages материализованы; `about`, `promotions`, `delivery-and-payment`, `loyalty` являются Payload-контентом при `PAYLOAD_ENABLED=true` | Проверять тексты, SEO metadata, publish-state и fallback при выключенном/пустом Payload |
 | Delivery/payment provider UI | Backend/checkout paths есть, но не всё раскрыто визуально | Сделать отдельный UX-pass по доставке и оплате |
 
 ---
@@ -86,7 +86,7 @@
 | UI-элемент | Сейчас | Что нужно для production |
 | --- | --- | --- |
 | Contact form / consultation CTA | Визуальная форма есть, но отправка заявки пока не подключена | Нужен backend/CRM: куда отправлять заявку, как валидировать форму, что показывать после успеха или ошибки |
-| `О нас`, `Акции`, `Доставка и оплата` | Ссылки вынесены в меню, страницы есть и грузятся через Payload | Считать этот пункт закрытым по маршрутам; позже стоит только проверить тексты, SEO metadata и fallback на случай пустого Payload |
+| `О нас`, `Акции`, `Доставка и оплата`, `Лояльность` | Ссылки/маршруты есть, страницы грузятся через Payload при включенном content layer | Считать пункт закрытым по маршрутам; позже стоит проверить production copy, SEO metadata, publish-state и fallback на случай пустого Payload |
 | Category pills | В каталоге это пока визуальные кнопки-категории | Нужно решить: они должны реально фильтровать товары, вести на категории/коллекции или остаться просто подсказками |
 | Trust claims / badges | Плашки доверия и маркетинговые цифры выглядят готовыми | Нужно подтвердить, что обещания и цифры можно использовать публично, и определить, кто их редактирует |
 | Niche selector / value props | Блоки пользы и выбора ниши частично собираются из данных товара, частично из fallback-текста | Нужно завести понятные поля/таксономию для офферов, чтобы эти блоки не были случайным текстом |
@@ -127,7 +127,7 @@
 1. Привести account pages к StudioPro-стилю.
 2. Доработать checkout inner states: delivery/payment/loading/error/return.
 3. Решить, чем должны быть category pills: фильтры, ссылки или labels.
-4. Добавить реальные CMS pages для `О нас`, `Акции`, `Доставка и оплата`.
+4. Проверить production copy, SEO metadata и publish-state для Payload pages (`about`, `promotions`, `delivery-and-payment`, `loyalty`).
 5. Подключить backend/CRM для contact form или заменить форму на простой CTA.
 6. Добавить desktop region/currency selector.
 7. Унифицировать все empty/error/loading states.
@@ -141,9 +141,10 @@
 
 | Проверка | Статус |
 | --- | --- |
-| `npm --prefix ./medusa-agency-boilerplate-storefront run lint` | Успешно. Остался известный warning в [`shipping/index.tsx`](medusa-agency-boilerplate-storefront/src/modules/checkout/components/shipping/index.tsx). |
-| `npm run storefront:build` | Успешно. Production build storefront завершён. |
-| `npm --prefix ./medusa-agency-boilerplate-storefront run typecheck` | Не проходит из-за известной unrelated ошибки [`delivery-hub.spec.ts`](medusa-agency-boilerplate-storefront/src/lib/util/delivery-hub.spec.ts). |
+| `npm --prefix ./medusa-agency-boilerplate-storefront run lint` | Последний зафиксированный pass был успешным; при изменениях frontend запускать заново. |
+| `npm run storefront:build` | Production build должен допускать Store API warnings во время static params collection, но dynamic product route требует runtime smoke. |
+| `npm --prefix ./medusa-agency-boilerplate-storefront run typecheck` | Старую ссылку на `deliveryhub legacy spec` считать stale: актуальный файл для checkout utility tests — [`delivery-checkout.spec.ts`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-checkout.spec.ts). |
+| Product runtime smoke | Для существующего товара `/ru/products/<handle>` должен отвечать `200`; dynamic rendering не подтверждается одним build/static params pass. |
 
 ---
 
@@ -168,4 +169,4 @@
 - checkout shell;
 - home/editorial surfaces.
 
-Главные оставшиеся зоны — account, глубокие checkout states, CMS pages, contact form backend, region/currency UX и production-ready content/media governance.
+Главные оставшиеся зоны — account, глубокие checkout states, contact form backend, region/currency UX и production-ready content/media governance. CMS route availability больше не считается открытым blocker: Payload production container, Caddy `/payload/*`, seeded content pages и storefront content rendering materialized; оставшийся риск — качество/актуальность production content и publish/DB state.

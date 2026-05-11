@@ -1315,8 +1315,8 @@ Truthfully closed after valid reopen and remediation: all sanctioned base slices
    - что реально подтверждено;
    - что завышено в старых документах;
    - какие блокеры и разрывы есть на текущий момент.
-4. `.codex/skills/medusa-master-repo/SKILL.md`
-   Быстрый ориентир для Codex. Здесь хранится:
+4. `.kilocode/skills/medusa-master-repo/SKILL.md`
+   Быстрый ориентир для Kilo Code. Здесь хранится:
    - куда смотреть в первую очередь;
    - какие документы считать основными;
    - какие факты уже известны;
@@ -1353,12 +1353,12 @@ Truthfully closed after valid reopen and remediation: all sanctioned base slices
 - нужно переоценить, что реально сделано, а что нет;
 - фактическое состояние проекта заметно изменилось.
 
-Обновление `.codex/skills/medusa-master-repo/SKILL.md` обязательно, если:
+Обновление `.kilocode/skills/medusa-master-repo/SKILL.md` обязательно, если:
 - изменился набор основных документов;
 - изменились роли документов;
 - изменилась структура репозитория и агенту теперь нужно смотреть в другие места;
 - изменился список уже подтвержденных фактов;
-- добавились новые обязательные правила работы Codex в проекте.
+- добавились новые обязательные правила работы Kilo Code в проекте.
 
 Обновление `Docs/master_repo_guide.md` обязательно только если:
 - мы сознательно хотим держать бизнесовый и презентационный документ в актуальном состоянии относительно основного плана.
@@ -1378,7 +1378,7 @@ Truthfully closed after valid reopen and remediation: all sanctioned base slices
    - новые решения;
    - Definition of Done, если она изменилась.
 3. Проверить, не устарел ли `Docs/plan_analysis.md`.
-4. Проверить, не устарел ли `.codex/skills/medusa-master-repo/SKILL.md`.
+4. Проверить, не устарел ли `.kilocode/skills/medusa-master-repo/SKILL.md`.
 5. Если изменилось внешнее позиционирование проекта, обновить `Docs/master_repo_guide.md`.
 
 ### 14.4. Обязательное правило завершения задачи
@@ -1395,7 +1395,7 @@ Truthfully closed after valid reopen and remediation: all sanctioned base slices
 - текущий операционный статус;
 - основной план;
 - при необходимости аудит;
-- при необходимости мастер-скилл Codex.
+- при необходимости мастер-скилл Kilo Code.
 
 ### 14.5. Практическое правило для агента
 
@@ -1415,7 +1415,7 @@ Truthfully closed after valid reopen and remediation: all sanctioned base slices
 - `Docs/plan_analysis.md`
 - `Docs/master_repo_guide.md`
 - `Docs/master_repo_plan_v2.md`
-- `.codex/skills/medusa-master-repo/SKILL.md`
+- `.kilocode/skills/medusa-master-repo/SKILL.md`
 - `package.json`
 - `scripts/`
 - `docker-compose.yml:1-77`

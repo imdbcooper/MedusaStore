@@ -13,6 +13,7 @@ from app.repositories.postgres import PostgresAssistantRepository
 from app.services.chat import ChatService
 from app.services.health import DeepHealthService
 from app.services.ingestion import MarkdownIngestionService, MedusaProductIngestionService, VectorIndexingService
+from app.services.reindex_queue import ReindexQueueProcessor
 from app.services.retrieval import ModeAwareRetriever, QdrantVectorRetriever, SimpleMarkdownRetriever
 from app.services.vector import HashingEmbeddingProvider, QdrantAdapter
 from app.tools.commerce import LiveCommerceTools
@@ -72,13 +73,18 @@ def create_app(settings: Settings | None = None, *, repository=None) -> FastAPI:
             embedding_provider=app.state.embedding_provider,
             settings=settings,
         )
+        app.state.reindex_queue_processor = ReindexQueueProcessor(
+            repository=app.state.repository,
+            product_service=app.state.medusa_product_ingestion_service,
+            vector_service=app.state.vector_indexing_service,
+        )
         app.state.health_service = DeepHealthService(
             settings=settings,
             repository=app.state.repository,
             database=database,
             qdrant_adapter=app.state.qdrant_adapter,
             embedding_provider=app.state.embedding_provider,
-            medusa_client=app.state.medusa_product_client,
+            medusa_client=getattr(app.state, "fake_medusa_product_client", app.state.medusa_product_client),
             lightrag_adapter=None,
         )
         yield

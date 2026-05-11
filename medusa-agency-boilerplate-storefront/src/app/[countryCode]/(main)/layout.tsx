@@ -7,13 +7,16 @@ import { StoreCartShippingOption } from "@medusajs/types"
 import CartMismatchBanner from "@modules/layout/components/cart-mismatch-banner"
 import Footer from "@modules/layout/templates/footer"
 import Nav from "@modules/layout/templates/nav"
+import AssistantWidget from "@modules/assistant/components/assistant-widget"
+import { isAssistantWidgetEnabled } from "@modules/assistant/lib/client"
 import FreeShippingPriceNudge from "@modules/shipping/components/free-shipping-price-nudge"
 
 export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),
 }
 
-export default async function PageLayout(props: { children: React.ReactNode }) {
+export default async function PageLayout(props: { children: React.ReactNode; params: Promise<{ countryCode: string }> }) {
+  const { countryCode } = await props.params
   const customer = await retrieveCustomer()
   const cart = await retrieveCart()
   let shippingOptions: StoreCartShippingOption[] = []
@@ -39,6 +42,9 @@ export default async function PageLayout(props: { children: React.ReactNode }) {
         />
       )}
       {props.children}
+      {isAssistantWidgetEnabled() && (
+        <AssistantWidget countryCode={countryCode} locale={countryCode} storeId="default" currencyCode="rub" />
+      )}
       <Footer />
     </>
   )

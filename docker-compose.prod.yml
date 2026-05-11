@@ -35,6 +35,44 @@ services:
     networks:
       - medusastore
 
+  ai-assistant:
+    build:
+      context: ai-assistant
+      dockerfile: Dockerfile
+    image: medusastore-ai-assistant:prod
+    container_name: medusastore-ai-assistant
+    profiles: ["ai-assistant"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      AI_ASSISTANT_ENV: production
+      AI_ASSISTANT_API_TOKEN: ${AI_ASSISTANT_API_TOKEN}
+      AI_ASSISTANT_CORS_ORIGINS: ${AI_ASSISTANT_CORS_ORIGINS:-https://${DEPLOY_DOMAIN:-slavx.mooo.com}}
+      AI_ASSISTANT_RETRIEVAL_MODE: ${AI_ASSISTANT_RETRIEVAL_MODE:-markdown}
+      ASSISTANT_POSTGRES_URI: ${ASSISTANT_POSTGRES_URI}
+      MEDUSA_BACKEND_URL: ${DOCKER_MEDUSA_BACKEND_URL:-http://medusa-backend:9000}
+      MEDUSA_STORE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY:-}
+      QDRANT_URL: ${QDRANT_URL:-}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-none}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      POLZA_API_KEY: ${POLZA_API_KEY:-}
+    depends_on:
+      medusa-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python - <<'PY'\nimport urllib.request\nurllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=5).read()\nPY"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - medusastore
+
   medusa-backend:
     build:
       context: .
@@ -52,6 +90,10 @@ services:
       MEDUSA_DATABASE_DRIVER_OPTIONS: '{"connection":{"ssl":false}}'
       MEDUSA_BACKEND_URL: ${MEDUSA_BACKEND_URL:-http://medusa-backend:9000}
       RUN_MEDUSA_MIGRATIONS: ${RUN_MEDUSA_MIGRATIONS:-true}
+      AI_ASSISTANT_ENABLED: ${AI_ASSISTANT_ENABLED:-false}
+      AI_ASSISTANT_BASE_URL: ${AI_ASSISTANT_BASE_URL:-http://ai-assistant:8000/api/v1}
+      AI_ASSISTANT_SERVER_TOKEN: ${AI_ASSISTANT_SERVER_TOKEN:-}
+      AI_ASSISTANT_TIMEOUT_MS: ${AI_ASSISTANT_TIMEOUT_MS:-60000}
     depends_on:
       medusa-db:
         condition: service_healthy
@@ -96,6 +138,8 @@ services:
         NEXT_PUBLIC_DEFAULT_REGION: ${NEXT_PUBLIC_DEFAULT_REGION:-ru}
         PAYLOAD_ENABLED: ${PAYLOAD_ENABLED:-false}
         PAYLOAD_CMS_URL: ${DOCKER_PAYLOAD_CMS_URL:-http://payload-cms:3100}
+        NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED: ${NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED:-false}
+        NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT: ${NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT:-/store/assistant/chat}
     image: medusastore-storefront:prod
     container_name: medusastore-storefront
     env_file:
@@ -108,6 +152,8 @@ services:
       NEXT_PUBLIC_MEDUSA_BACKEND_URL: ${DOCKER_NEXT_PUBLIC_MEDUSA_BACKEND_URL:-http://${DEPLOY_DOMAIN:-slavx.mooo.com}}
       NEXT_PUBLIC_BASE_URL: ${DOCKER_NEXT_PUBLIC_BASE_URL:-http://${DEPLOY_DOMAIN:-slavx.mooo.com}}
       PAYLOAD_CMS_URL: ${DOCKER_PAYLOAD_CMS_URL:-http://payload-cms:3100}
+      NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED: ${NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED:-false}
+      NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT: ${NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT:-/store/assistant/chat}
     depends_on:
       medusa-backend:
         condition: service_healthy

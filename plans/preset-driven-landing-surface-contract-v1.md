@@ -4,7 +4,7 @@ Status: proposed design/spec for the next Phase 6 slice.
 
 ## Context and baseline
 
-This design builds on the already materialized Phase 6 foundation documented in [`Docs/current_work.md`](Docs/current_work.md), [`Docs/master_repo_plan_v2.md`](Docs/master_repo_plan_v2.md), [`Docs/plan_analysis.md`](Docs/plan_analysis.md), [`Docs/env_contract.md`](Docs/env_contract.md), and [`.codex/skills/medusa-master-repo/SKILL.md`](.codex/skills/medusa-master-repo/SKILL.md).
+This design builds on the already materialized Phase 6 foundation documented in [`Docs/current_work.md`](Docs/current_work.md), [`Docs/master_repo_plan_v2.md`](Docs/master_repo_plan_v2.md), [`Docs/plan_analysis.md`](Docs/plan_analysis.md), [`Docs/env_contract.md`](Docs/env_contract.md), and [`.kilocode/skills/medusa-master-repo/SKILL.md`](.kilocode/skills/medusa-master-repo/SKILL.md).
 
 The current storefront baseline is already established in:
 

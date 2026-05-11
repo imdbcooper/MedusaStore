@@ -25,8 +25,11 @@ test("adapter exposes the expected copy-ready file structure", () => {
     "src/api/admin/assistant/reindex/route.ts",
     "src/api/admin/assistant/stats/route.ts",
     "src/api/admin/assistant/jobs/[id]/route.ts",
+    "src/api/admin/assistant/reindex/process/route.ts",
+    "src/api/admin/assistant/reindex/intents/route.ts",
     "src/api/middlewares.ts",
     "src/lib/assistant-client.ts",
+    "src/lib/assistant-reindex-queue.ts",
     "src/lib/config.ts",
     "src/modules/assistant-runtime.ts",
     "src/workflows/assistant-reindex-product.ts",
@@ -63,14 +66,19 @@ test("routes point to assistant backend contract paths", () => {
   assert.match(client, /"\/chat\/stream"/)
   assert.match(client, /"\/ingest\/medusa\/products\/sync"/)
   assert.match(client, /"\/admin\/stats"/)
+  assert.match(client, /"\/admin\/sessions\/bind"/)
+  assert.match(client, /"\/admin\/reindex\/intents"/)
+  assert.match(client, /"\/admin\/reindex\/process"/)
   assert.match(client, /`\/ingest\/jobs\/\$\{encodeURIComponent\(jobId\)\}`/)
 })
 
-test("subscriber helper is enqueue-intent only and does not run network workflows", () => {
+test("subscriber helper is enqueue-intent only and does not run reindex workflows", () => {
   const source = read("src/subscribers/_assistant-product-event.ts")
   assert.match(source, /assistant\.product_reindex\.intent/)
+  assert.match(source, /enqueueAssistantReindexIntent/)
   assert.match(source, /coalescing_key/)
   assert.match(source, /broad_catalog_event/)
+  assert.match(source, /void enqueueAssistantReindexIntent/)
   assert.doesNotMatch(source, /fetch\(/)
   assert.doesNotMatch(source, /client\.reindex/)
   assert.doesNotMatch(source, /requireAssistantBackendClient/)
@@ -95,12 +103,17 @@ test("subscriber files enqueue intents instead of doing heavy indexing inline", 
   }
 })
 
-test("store chat route does not forward browser-supplied cart_id", () => {
+test("store chat route does not forward browser-supplied cart_id or customer_id", () => {
   const storeRoute = read("src/api/store/assistant/chat/route.ts")
   assert.match(storeRoute, /cart_id: _untrustedCartId/)
-  assert.match(storeRoute, /cart_id: null/)
+  assert.match(storeRoute, /extractAuthenticatedCustomerId/)
+  assert.match(storeRoute, /client\.bindSession/)
+  assert.match(storeRoute, /source: "medusa_store_auth_context"/)
   assert.doesNotMatch(storeRoute, /cart_id: body\.cart_id/)
   assert.doesNotMatch(storeRoute, /cart_id: safeBody\.cart_id/)
+  const payloadBlock = storeRoute.slice(storeRoute.indexOf("const payload ="), storeRoute.indexOf("try {"))
+  assert.doesNotMatch(payloadBlock, /customer_id:/)
+  assert.doesNotMatch(storeRoute, /customer_id: safeBody\.customer_id/)
 })
 
 test("admin selected-product reindex rejects empty product list", () => {
@@ -109,4 +122,23 @@ test("admin selected-product reindex rejects empty product list", () => {
   assert.match(adminRoute, /AI_ASSISTANT_PRODUCT_IDS_REQUIRED/)
   assert.match(adminRoute, /product_ids must contain at least one product id/)
   assert.match(adminRoute, /res\.status\(400\)/)
+})
+
+test("admin reindex route queues durable intent instead of running workflows inline", () => {
+  const adminRoute = read("src/api/admin/assistant/reindex/route.ts")
+  assert.match(adminRoute, /enqueueReindexIntent/)
+  assert.match(adminRoute, /queued: true/)
+  assert.match(adminRoute, /coalescing_key/)
+  assert.doesNotMatch(adminRoute, /\.run\(/)
+  assert.doesNotMatch(adminRoute, /assistantReindex(AllProducts|Product)Workflow/)
+})
+
+test("queue processor/status routes are exposed", () => {
+  const processRoute = read("src/api/admin/assistant/reindex/process/route.ts")
+  const intentsRoute = read("src/api/admin/assistant/reindex/intents/route.ts")
+  const middlewares = read("src/api/middlewares.ts")
+  assert.match(processRoute, /processReindexQueue/)
+  assert.match(intentsRoute, /listReindexIntents/)
+  assert.match(middlewares, /\/admin\/assistant\/reindex\/process/)
+  assert.match(middlewares, /\/admin\/assistant\/reindex\/intents/)
 })

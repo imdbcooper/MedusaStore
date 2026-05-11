@@ -115,6 +115,50 @@ class PostgresAssistantRepository:
             row = await conn.fetchrow("SELECT * FROM assistant_sessions WHERE id = $1", session_id)
         return dict(row) if row else None
 
+    async def bind_session_customer(
+        self,
+        *,
+        session_id: UUID,
+        store_id: str,
+        locale: str,
+        customer_id: str,
+        tenant_id: str | None = None,
+        customer_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    """
+                    SELECT * FROM assistant_sessions
+                    WHERE id = $1
+                    FOR UPDATE
+                    """,
+                    session_id,
+                )
+                if not row:
+                    raise ValueError("SESSION_NOT_FOUND")
+                session = dict(row)
+                if session.get("store_id") != store_id or session.get("locale") != locale or session.get("tenant_id") != tenant_id:
+                    raise ValueError("SESSION_SCOPE_MISMATCH")
+                existing_customer_id = session.get("customer_id")
+                if existing_customer_id and existing_customer_id != customer_id:
+                    raise ValueError("SESSION_ALREADY_BOUND_TO_DIFFERENT_CUSTOMER")
+                updated = await conn.fetchrow(
+                    """
+                    UPDATE assistant_sessions
+                    SET customer_id = $2,
+                        customer_context = $3::jsonb,
+                        bound_at = COALESCE(bound_at, now()),
+                        updated_at = now()
+                    WHERE id = $1
+                    RETURNING *
+                    """,
+                    session_id,
+                    customer_id,
+                    json.dumps(customer_context or {}),
+                )
+        return dict(updated)
+
     async def get_message(self, message_id: UUID) -> dict[str, Any] | None:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM assistant_messages WHERE id = $1", message_id)
@@ -402,7 +446,160 @@ class PostgresAssistantRepository:
             )
         return dict(row)
 
+    async def enqueue_reindex_intent(
+        self,
+        *,
+        store_id: str,
+        locale: str,
+        event_name: str,
+        action: str = "reindex",
+        scope: str = "products",
+        product_ids: list[str] | None = None,
+        reason: str | None = None,
+        coalescing_key: str | None = None,
+        tenant_id: str | None = None,
+        event_id: str | None = None,
+        max_attempts: int = 3,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        intent_id = uuid4()
+        product_ids = list(dict.fromkeys([item for item in (product_ids or []) if item]))
+        key = coalescing_key or ("assistant:catalog:all-products" if scope == "all_products" else f"assistant:product:{','.join(product_ids)}")
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO assistant_reindex_intents
+                  (id, store_id, tenant_id, locale, event_name, event_id, action, scope,
+                   product_ids, reason, coalescing_key, max_attempts, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13::jsonb)
+                ON CONFLICT (coalescing_key) WHERE status = 'pending' DO UPDATE SET
+                  event_name = EXCLUDED.event_name,
+                  event_id = COALESCE(EXCLUDED.event_id, assistant_reindex_intents.event_id),
+                  action = EXCLUDED.action,
+                  scope = EXCLUDED.scope,
+                  product_ids = (
+                    SELECT jsonb_agg(DISTINCT value)
+                    FROM jsonb_array_elements_text(assistant_reindex_intents.product_ids || EXCLUDED.product_ids) AS value
+                  ),
+                  reason = COALESCE(EXCLUDED.reason, assistant_reindex_intents.reason),
+                  metadata = assistant_reindex_intents.metadata || EXCLUDED.metadata,
+                  updated_at = now()
+                RETURNING *
+                """,
+                intent_id,
+                store_id,
+                tenant_id,
+                locale,
+                event_name,
+                event_id,
+                action,
+                scope,
+                json.dumps(product_ids),
+                reason,
+                key,
+                max_attempts,
+                json.dumps(metadata or {}),
+            )
+        return dict(row)
+
+    async def list_reindex_intents(self, *, status: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        filters = []
+        args: list[Any] = []
+        if status:
+            args.append(status)
+            filters.append(f"status = ${len(args)}")
+        args.append(limit)
+        where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT * FROM assistant_reindex_intents
+                {where}
+                ORDER BY created_at DESC
+                LIMIT ${len(args)}
+                """,
+                *args,
+            )
+        return [dict(row) for row in rows]
+
+    async def claim_reindex_intents(self, *, limit: int = 10) -> list[dict[str, Any]]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                UPDATE assistant_reindex_intents
+                SET status = 'processing',
+                    attempts = attempts + 1,
+                    started_at = now(),
+                    updated_at = now()
+                WHERE id IN (
+                  SELECT id FROM assistant_reindex_intents
+                  WHERE status = 'pending' AND next_attempt_at <= now()
+                  ORDER BY created_at ASC
+                  LIMIT $1
+                  FOR UPDATE SKIP LOCKED
+                )
+                RETURNING *
+                """,
+                limit,
+            )
+        return [dict(row) for row in rows]
+
+    async def complete_reindex_intent(
+        self,
+        *,
+        intent_id: UUID,
+        status: str,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+        assistant_job_id: UUID | None = None,
+        retry_backoff_seconds: int = 60,
+    ) -> dict[str, Any]:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE assistant_reindex_intents
+                SET status = CASE
+                      WHEN $2 = 'error' AND attempts < max_attempts THEN 'pending'
+                      ELSE $2
+                    END,
+                    next_attempt_at = CASE
+                      WHEN $2 = 'error' AND attempts < max_attempts THEN now() + ($6::text || ' seconds')::interval
+                      ELSE next_attempt_at
+                    END,
+                    finished_at = CASE
+                      WHEN $2 = 'error' AND attempts < max_attempts THEN NULL
+                      ELSE now()
+                    END,
+                    last_error = $4,
+                    assistant_job_id = COALESCE($5, assistant_job_id),
+                    metadata = metadata || $3::jsonb,
+                    updated_at = now()
+                WHERE id = $1
+                RETURNING *
+                """,
+                intent_id,
+                status,
+                json.dumps({"result": result} if result is not None else {}),
+                error,
+                assistant_job_id,
+                retry_backoff_seconds,
+            )
+        return dict(row)
+
+    async def reindex_intent_stats(self) -> dict[str, int]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT status, COUNT(*) AS count FROM assistant_reindex_intents GROUP BY status")
+        counts = {row["status"]: int(row["count"]) for row in rows}
+        return {
+            "pending": counts.get("pending", 0),
+            "processing": counts.get("processing", 0),
+            "completed": counts.get("completed", 0),
+            "error": counts.get("error", 0),
+            "total": sum(counts.values()),
+        }
+
     async def stats(self) -> dict[str, int]:
+        reindex_stats = await self.reindex_intent_stats()
         async with self.pool.acquire() as conn:
             return {
                 "document_count": await conn.fetchval("SELECT COUNT(*) FROM assistant_sources"),
@@ -416,4 +613,6 @@ class PostgresAssistantRepository:
                 "failed_jobs": await conn.fetchval(
                     "SELECT COUNT(*) FROM assistant_ingestion_jobs WHERE status = 'error'"
                 ),
+                "reindex_intents_pending": reindex_stats["pending"],
+                "reindex_intents_error": reindex_stats["error"],
             }

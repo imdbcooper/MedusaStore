@@ -16,6 +16,8 @@ import {
 } from "../modules/apiship-shipment-execution-guard"
 import { enforceDeliveryHubRuntimeQuarantine } from "../modules/delivery-hub-runtime-quarantine"
 
+import { AdminAssistantReindexSchema } from "./admin/assistant/reindex/route"
+import { AdminAssistantReindexProcessSchema } from "./admin/assistant/reindex/process/route"
 import {
   AdminCreateMarketingCampaignSchema,
   AdminUpdateCustomerMarketingPreferencesSchema,
@@ -82,6 +84,31 @@ export default defineMiddlewares({
       matcher: "/admin/orders/:id/delivery-hub/shipments/:shipment_id/retry",
       methods: ["POST"],
       middlewares: [adminAuth, enforceDeliveryHubRuntimeQuarantine],
+    },
+    {
+      matcher: "/admin/assistant/reindex",
+      methods: ["POST"],
+      middlewares: [adminAuth, validateAndTransformBody(AdminAssistantReindexSchema)],
+    },
+    {
+      matcher: "/admin/assistant/reindex/process",
+      methods: ["POST"],
+      middlewares: [adminAuth, validateAndTransformBody(AdminAssistantReindexProcessSchema)],
+    },
+    {
+      matcher: "/admin/assistant/reindex/intents",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/assistant/stats",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/assistant/jobs/:id",
+      methods: ["GET"],
+      middlewares: [adminAuth],
     },
     {
       matcher: "/admin/marketing/campaigns",

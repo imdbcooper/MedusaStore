@@ -3,7 +3,9 @@
 > Delivery baseline status: this is an audit/history document. Current fresh-template delivery baseline is ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship`; direct `/store/apiship/*` is canonical. Delivery Hub/direct Yandex references below are historical unless explicitly marked current by newer source-of-truth docs.
 
 > Где смотреть текущий операционный статус:
-> [current_work.md](./current_work.md)
+> [current_work.md](./current_work.md), [architecture.md](./architecture.md), [production_runbook.md](./production_runbook.md)
+>
+> Production sync `2026-05-11`: older statements below about missing production packaging/proxy/deploy automation are historical. Current implementation has [`docker-compose.prod.yml`](../docker-compose.prod.yml), Caddy-only reverse proxy, Payload production container, manual GitHub Actions production deploy, and dynamic product runtime smoke requirements.
 >
 > Назначение этого файла:
 > это аудит и разбор реального состояния проекта, а не ежедневный журнал `что делаем прямо сейчас`.
@@ -112,7 +114,7 @@ Historical audit update `2026-04-21`:
 
 ### Этап 1: Инфраструктура в Docker
 
-**Вердикт:** для локального цикла подтвержден, как production-ready контур еще не завершен.
+**Вердикт:** для локального цикла подтвержден; production-ready Docker/Caddy/deploy контур теперь materialized отдельно от старого локального вывода.
 
 Что есть:
 - есть [docker-compose.yml](../docker-compose.yml);
@@ -120,12 +122,13 @@ Historical audit update `2026-04-21`:
 - root orchestration, preflight и clean onboarding подтверждены;
 - локальный короткий путь старта воспроизводим.
 
-Что еще ограничивает этап:
-- storefront по-прежнему не является частью docker compose-контура;
-- staging and prod-ready упаковки нет.
+Что еще важно различать:
+- локальный [`docker-compose.yml`](../docker-compose.yml) по-прежнему не включает storefront/Payload/Caddy и остается dev-контуром;
+- production упаковка существует в [`docker-compose.prod.yml`](../docker-compose.prod.yml), где storefront, Payload и Caddy включены;
+- concrete separate staging host пока не materialized, см. [`staging_runbook.md`](./staging_runbook.md).
 
 Простыми словами:
-локальная инженерная сборка уже работает предсказуемо, включая повторный bootstrap на заполненной БД, но это еще не полный операционный контур для релизной эксплуатации.
+локальная инженерная сборка работает предсказуемо, а production packaging/deploy больше не является отсутствующим blocker. Оставшийся infrastructure gap относится к отдельному staging/prod-hardening contour, monitoring/rollback drills и operator-specific provisioning, а не к факту наличия production Docker runtime.
 
 ---
 
@@ -439,7 +442,7 @@ baseline integrity contour уже materialized: root aggregate gates, browser sm
 
 ### Что видно сейчас
 
-В проекте уже есть локальный skill: [.codex/skills/medusa-master-repo/SKILL.md](../.codex/skills/medusa-master-repo/SKILL.md).
+В проекте уже есть локальный Kilo Code project-level skill: [.kilocode/skills/medusa-master-repo/SKILL.md](../.kilocode/skills/medusa-master-repo/SKILL.md).
 
 Его роль:
 - быстро вести агента к [current_work.md](./current_work.md), [master_repo_plan_v2.md](./master_repo_plan_v2.md) и [plan_analysis.md](./plan_analysis.md);

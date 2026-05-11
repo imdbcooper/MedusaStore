@@ -24,10 +24,13 @@ Copy the adapter files into the real Medusa backend with the same relative paths
 ```text
 src/api/store/assistant/chat/route.ts
 src/api/admin/assistant/reindex/route.ts
+src/api/admin/assistant/reindex/process/route.ts
+src/api/admin/assistant/reindex/intents/route.ts
 src/api/admin/assistant/stats/route.ts
 src/api/admin/assistant/jobs/[id]/route.ts
 src/api/middlewares.ts                  # merge with an existing file instead of overwriting
 src/lib/assistant-client.ts
+src/lib/assistant-reindex-queue.ts
 src/lib/config.ts
 src/lib/route-utils.ts
 src/modules/assistant-runtime.ts
@@ -46,21 +49,23 @@ If the target backend already has `src/api/middlewares.ts`, merge only the assis
 
 ## Routes
 
-- `POST /store/assistant/chat` proxies storefront chat to `POST /api/v1/chat`.
+- `POST /store/assistant/chat` binds an existing anonymous assistant session to the trusted Medusa customer when authenticated, then proxies storefront chat to `POST /api/v1/chat`.
 - If the request `Accept` header contains `text/event-stream`, the Store route proxies `POST /api/v1/chat/stream` as SSE passthrough.
-- `POST /admin/assistant/reindex` queues selected-product or full-product reindex workflows.
+- `POST /admin/assistant/reindex` queues selected-product or full-product durable assistant intents.
+- `POST /admin/assistant/reindex/process` drains/processes queued assistant intents for smoke, cron, or worker use.
+- `GET /admin/assistant/reindex/intents` proxies queue status/stats.
 - `GET /admin/assistant/stats` proxies assistant backend stats.
 - `GET /admin/assistant/jobs/:id` proxies ingestion job status.
 
-## Store cart context safety
+## Store identity and cart context safety
 
-The store chat route intentionally does not forward browser-supplied `cart_id`. The template destructures request `cart_id` as untrusted input and sends `cart_id: null` to the assistant backend.
+The store chat route intentionally does not forward browser-supplied `cart_id` or `customer_id`. The template destructures request `cart_id` as untrusted input, omits customer identity from chat payload, and uses `bindSession()` only with a customer id derived from Medusa authenticated context.
 
 When copying into a real storefront/Medusa integration, add a trusted cart resolver before forwarding cart context. The resolver must derive or validate cart ownership from server-side Medusa/storefront context, such as an authenticated customer session, signed cart cookie, or Medusa-managed request context. Until that resolver exists, omit cart context or keep it `null`; do not trust a raw chat request body value.
 
 ## Subscribers and worker/job execution
 
-Subscribers never do heavy indexing inline and never call the assistant backend network client from the event hot path. They create/log lightweight enqueue intents only:
+Subscribers never do heavy indexing inline and never run workflows from the event hot path. They create lightweight enqueue intents only:
 
 - `product.created` -> selected product reindex intent;
 - `product.updated` -> selected product reindex intent;
@@ -69,9 +74,9 @@ Subscribers never do heavy indexing inline and never call the assistant backend 
 - `product-category.updated` -> broad all-products stale-marker/reindex intent;
 - `product-collection.updated` -> broad all-products stale-marker/reindex intent.
 
-Broad catalog events can affect many products, so category/collection subscribers use a stable coalescing key (`assistant:catalog:all-products`) and include reason/event id metadata. In a production copy, persist these intents to a durable queue, job table, event bus topic, or stale-marker table and debounce/coalesce repeated broad events before running full catalog sync.
+Broad catalog events can affect many products, so category/collection subscribers use a stable coalescing key (`assistant:catalog:all-products`) and include reason/event id metadata. The assistant backend persists these intents in `assistant_reindex_intents`, coalesces repeated pending events, and processes them through `POST /api/v1/admin/reindex/process`.
 
-Workflow templates call the assistant backend with bounded retry for retryable network/server errors. Run those workflows from a separate worker/job processor that consumes the intent queue, not directly from the subscriber event hot path. They do not call Medusa backend directories directly and do not create an infinite event loop.
+Workflow templates remain available as optional Medusa-native examples, but the default adapter route queues assistant intents and the processor handles selected/all/delete actions with bounded attempts/backoff.
 
 ## Admin reindex validation
 
@@ -99,14 +104,30 @@ curl -X POST http://localhost:9000/admin/assistant/reindex \
   -d '{"scope":"products","product_ids":["prod_..."],"store_id":"default","locale":"ru"}'
 ```
 
-5. Check job status with the returned `assistant_job_id`:
+5. Drain queued work:
+
+```bash
+curl -X POST http://localhost:9000/admin/assistant/reindex/process \
+  -H 'Authorization: Bearer <admin-or-api-key>' \
+  -H 'Content-Type: application/json' \
+  -d '{"limit":10,"retry_backoff_seconds":60}'
+```
+
+6. Check queue status:
+
+```bash
+curl http://localhost:9000/admin/assistant/reindex/intents \
+  -H 'Authorization: Bearer <admin-or-api-key>'
+```
+
+7. Check job status with the returned `assistant_job_id`:
 
 ```bash
 curl http://localhost:9000/admin/assistant/jobs/<assistant_job_id> \
   -H 'Authorization: Bearer <admin-or-api-key>'
 ```
 
-6. Test chat proxy from server-side/storefront code:
+8. Test chat proxy from server-side/storefront code:
 
 ```bash
 curl -X POST http://localhost:9000/store/assistant/chat \
@@ -114,7 +135,7 @@ curl -X POST http://localhost:9000/store/assistant/chat \
   -d '{"message":"Помоги выбрать товар","store_id":"default","locale":"ru","mode":"auto"}'
 ```
 
-7. Test SSE passthrough:
+9. Test SSE passthrough:
 
 ```bash
 curl -N -X POST http://localhost:9000/store/assistant/chat \
@@ -126,6 +147,6 @@ curl -N -X POST http://localhost:9000/store/assistant/chat \
 ## Template limitations
 
 - Event names match common Medusa v2 product events but should be verified against the exact Medusa version and custom modules in the target backend.
-- Subscriber templates only log enqueue intents. A real copy should replace the log-only stub with a durable queue/job/stale-marker write and keep network reindex execution in a worker.
+- Subscriber templates enqueue durable assistant intents but production still needs an operator-approved scheduler/worker/cron if automatic draining is required.
 - The Store chat route trusts only server-derived customer context when present; cart ownership validation should remain in Medusa/storefront flows before any cart context forwarding or mutating cart action.
 - Admin auth is represented through the middleware template and must be merged into the target backend middleware file.

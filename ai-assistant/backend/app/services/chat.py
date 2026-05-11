@@ -66,7 +66,7 @@ class ChatService:
             session_id=request.session_id,
             store_id=request.store_id,
             locale=request.locale,
-            customer_id=request.customer_id,
+            customer_id=None,
             cart_id=request.cart_id,
             region_id=request.region_id,
             metadata={
@@ -88,7 +88,7 @@ class ChatService:
                 store_id=request.store_id,
                 locale=request.locale,
                 limit=5,
-                mode=request.mode,
+                mode=request.mode if request.mode != "auto" else None,
                 tenant_id=request.tenant_id,
                 filters=retrieval_filters,
             )
@@ -301,7 +301,8 @@ class ChatService:
 
 def classify_intent(message: str) -> str:
     normalized = message.lower()
-    words = set(re.findall(r"[\wа-яА-ЯёЁ-]+", normalized))
+    stemmed_normalized = normalized.replace("доставку", "доставка")
+    words = set(re.findall(r"[\wа-яА-ЯёЁ-]+", stemmed_normalized))
     if words & POLICY_WORDS:
         return "policy"
     if words & COMPARE_WORDS:

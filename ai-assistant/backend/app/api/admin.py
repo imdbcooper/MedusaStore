@@ -1,3 +1,6 @@
+from typing import Any
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Request as FastAPIRequest, status
 
@@ -5,6 +8,8 @@ from app.api.dependencies import (
     get_health_service,
     get_ingestion_service,
     get_medusa_product_ingestion_service,
+    get_reindex_queue_processor,
+    get_repository,
     get_vector_indexing_service,
 )
 from app.core.auth import require_api_token
@@ -12,6 +17,7 @@ from app.core.security import enforce_rate_limit, rate_limit_identity
 from app.schemas.ingestion import IngestionJobResponse
 from app.services.health import DeepHealthService
 from app.services.ingestion import MarkdownIngestionService, MedusaProductIngestionService, VectorIndexingService
+from app.services.reindex_queue import ReindexQueueProcessor
 from app.services.vector import VectorBackendUnavailable
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -26,6 +32,111 @@ class AdminReindexRequest(BaseModel):
     product_ids: list[str] = Field(default_factory=list)
     region_id: str | None = None
     currency_code: str | None = None
+
+
+class SessionBindRequest(BaseModel):
+    session_id: UUID
+    customer_id: str = Field(min_length=1, max_length=256)
+    store_id: str = Field(default="default", min_length=1, max_length=128)
+    tenant_id: str | None = Field(default=None, min_length=1, max_length=128)
+    locale: str = Field(default="ru", min_length=2, max_length=16)
+    customer_context: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReindexIntentRequest(BaseModel):
+    store_id: str = Field(default="default", min_length=1, max_length=128)
+    tenant_id: str | None = Field(default=None, min_length=1, max_length=128)
+    locale: str = Field(default="ru", min_length=2, max_length=16)
+    event_name: str = Field(min_length=1, max_length=256)
+    event_id: str | None = Field(default=None, max_length=256)
+    action: str = Field(default="reindex", pattern="^(reindex|delete)$")
+    scope: str = Field(default="products", pattern="^(products|all_products)$")
+    product_ids: list[str] = Field(default_factory=list)
+    reason: str | None = Field(default=None, max_length=512)
+    coalescing_key: str | None = Field(default=None, max_length=512)
+    max_attempts: int = Field(default=3, ge=1, le=10)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReindexProcessRequest(BaseModel):
+    limit: int = Field(default=10, ge=1, le=100)
+    retry_backoff_seconds: int = Field(default=60, ge=1, le=3600)
+
+
+@router.post("/sessions/bind")
+async def bind_session(
+    request: SessionBindRequest,
+    http_request: FastAPIRequest,
+    repository=Depends(get_repository),
+    _: None = Depends(require_api_token),
+) -> dict:
+    enforce_rate_limit(
+        http_request,
+        scope="admin",
+        identity=rate_limit_identity(http_request, scope="admin", store_id=request.store_id),
+    )
+    try:
+        session = await repository.bind_session_customer(
+            session_id=request.session_id,
+            store_id=request.store_id,
+            locale=request.locale,
+            tenant_id=request.tenant_id,
+            customer_id=request.customer_id,
+            customer_context=request.customer_context,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        status_code = status.HTTP_404_NOT_FOUND if code == "SESSION_NOT_FOUND" else status.HTTP_409_CONFLICT
+        raise HTTPException(
+            status_code=status_code,
+            detail={"error": {"code": code, "message": session_bind_error_message(code), "retryable": False}},
+        ) from exc
+    return {
+        "status": "bound",
+        "session_id": session["id"],
+        "customer_id": session.get("customer_id"),
+        "store_id": session.get("store_id"),
+        "tenant_id": session.get("tenant_id"),
+        "locale": session.get("locale"),
+        "bound_at": session.get("bound_at"),
+    }
+
+
+@router.post("/reindex/intents")
+async def enqueue_reindex_intent(
+    request: ReindexIntentRequest,
+    http_request: FastAPIRequest,
+    repository=Depends(get_repository),
+    _: None = Depends(require_api_token),
+) -> dict:
+    enforce_rate_limit(http_request, scope="admin", identity=rate_limit_identity(http_request, scope="admin", store_id=request.store_id))
+    intent = await repository.enqueue_reindex_intent(**request.model_dump())
+    return {"status": "queued", "intent": serialize_record(intent)}
+
+
+@router.get("/reindex/intents")
+async def list_reindex_intents(
+    http_request: FastAPIRequest,
+    status_filter: str | None = None,
+    limit: int = 50,
+    repository=Depends(get_repository),
+    _: None = Depends(require_api_token),
+) -> dict:
+    enforce_rate_limit(http_request, scope="admin", identity=rate_limit_identity(http_request, scope="admin"))
+    intents = await repository.list_reindex_intents(status=status_filter, limit=min(max(limit, 1), 100))
+    stats = await repository.reindex_intent_stats()
+    return {"intents": [serialize_record(intent) for intent in intents], "stats": stats}
+
+
+@router.post("/reindex/process")
+async def process_reindex_queue(
+    request: ReindexProcessRequest,
+    http_request: FastAPIRequest,
+    processor: ReindexQueueProcessor = Depends(get_reindex_queue_processor),
+    _: None = Depends(require_api_token),
+) -> dict:
+    enforce_rate_limit(http_request, scope="admin", identity=rate_limit_identity(http_request, scope="admin"))
+    return await processor.process_pending(limit=request.limit, retry_backoff_seconds=request.retry_backoff_seconds)
 
 
 @router.get("/stats")
@@ -103,3 +214,15 @@ async def admin_reindex(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"error": {"code": "VECTOR_UNAVAILABLE", "message": str(exc), "retryable": True}},
         ) from exc
+
+
+def serialize_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {key: str(value) if isinstance(value, UUID) else value for key, value in record.items()}
+
+
+def session_bind_error_message(code: str) -> str:
+    return {
+        "SESSION_NOT_FOUND": "Assistant session was not found.",
+        "SESSION_SCOPE_MISMATCH": "Assistant session store, tenant, or locale does not match the trusted bind request.",
+        "SESSION_ALREADY_BOUND_TO_DIFFERENT_CUSTOMER": "Assistant session is already bound to a different customer.",
+    }.get(code, "Assistant session bind failed.")

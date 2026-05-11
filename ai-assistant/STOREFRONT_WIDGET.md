@@ -95,14 +95,17 @@ Store anonymous assistant session id in localStorage or cookie:
 assistant_session_id=uuid
 ```
 
-Attach current context when available:
+Attach browser-safe current context when available:
 
+- anonymous assistant `session_id`;
 - countryCode;
 - locale;
-- cart id;
+- store/tenant id;
 - product id;
 - category handle;
 - current URL.
+
+The widget must not send `customer_id` or server tokens. When the customer logs in, the existing anonymous `session_id` remains in localStorage and Medusa derives the authenticated customer server-side in `/store/assistant/chat`, then calls the assistant `POST /api/v1/admin/sessions/bind` endpoint. This keeps anonymous-to-authenticated history binding trusted while preserving the browser-only session handoff.
 
 ## 7. Product card schema
 

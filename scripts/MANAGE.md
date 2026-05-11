@@ -49,13 +49,15 @@ bash scripts/manage.sh bootstrap
 bash scripts/manage.sh help
 ```
 
-## 2. Почему storefront НЕ контейнеризован — это не баг
+## 2. Почему storefront НЕ контейнеризован в локальном dev-compose — это не баг
 
-В [`docker-compose.yml`](../docker-compose.yml:1) подняты только
+Этот раздел относится к локальному/dev контуру [`docker-compose.yml`](../docker-compose.yml:1). Production устроен иначе: [`docker-compose.prod.yml`](../docker-compose.prod.yml:1) включает `storefront`, `payload-cms` и `caddy`, а текущая production topology описана в [`Docs/architecture.md`](../Docs/architecture.md).
+
+В локальном [`docker-compose.yml`](../docker-compose.yml:1) подняты только
 `medusa-db`, `medusa-redis`, `medusa-backend`. Storefront
 (`medusa-agency-boilerplate-storefront`) запускается на хосте через
 [`scripts/storefront-dev.sh`](./storefront-dev.sh:1) и далее
-`next dev`. Это **сознательное архитектурное решение**, оно явно
+`next dev`. Это **сознательное локальное архитектурное решение**, оно явно
 зафиксировано в документации репозитория:
 
 - [`Docs/master_repo_plan_v2.md`](../Docs/master_repo_plan_v2.md:84)
@@ -82,9 +84,9 @@ bash scripts/manage.sh help
    [`scripts/preflight.sh`](./preflight.sh:75) явно ловит как ошибку.
 2. **Next.js dev/HMR.** На хосте удобнее: быстрее цикл, нет проблем
    с file-watch внутри bind-mount на разных ОС.
-3. **Контракт деплоя.** Backend и storefront деплоятся как
-   независимые runtime surface. Включение storefront в общий
-   compose дезориентировало бы staging/prod пайплайн.
+3. **Контракт локального dev.** Backend и storefront в локальном контуре
+   запускаются как независимые runtime surface. Это не отменяет production
+   compose, где storefront уже контейнеризован в [`docker-compose.prod.yml`](../docker-compose.prod.yml:87).
 4. **Не реальный «фронт» Medusa.** В компоуз входит **Medusa Admin**
    (HMR порт `5173`) — он часть backend-приложения. Storefront —
    это отдельный Next.js проект витрины.

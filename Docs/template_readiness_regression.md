@@ -22,7 +22,7 @@
    - existing build + HTTP smoke path;
    - minimal browser smoke для storefront runtime.
 
-Отдельно как baseline hardening expectation удерживается и storefront build path: `npm --prefix medusa-agency-boilerplate-storefront run build` не должен падать только потому, что во время SSG static params collection недоступен live Store API. На closure checkpoint `2026-04-19` этот baseline был дополнительно подтверждён финальным cross-preset regression pass verdict **PASS** для `NEXT_PUBLIC_STOREFRONT_PRESET=atelier` и `NEXT_PUBLIC_STOREFRONT_PRESET=market` на browse surface matrix `landing + product support highlights + listing/product cards + global shell + catalog shell`.
+Отдельно как baseline hardening expectation удерживается и storefront build path: `npm --prefix medusa-agency-boilerplate-storefront run build` не должен падать только потому, что во время SSG static params collection недоступен live Store API. Это build/static-params expectation, а не доказательство runtime-доступности product detail pages. Текущий product route [`page.tsx`](../medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/products/[handle]/page.tsx) помечен как dynamic runtime route, поэтому для release/production smoke нужен отдельный HTTP check `/ru/products/<known-product-handle>` с ожидаемым `200` для существующего товара и отсутствием `500`. На closure checkpoint `2026-04-19` этот baseline был дополнительно подтверждён финальным cross-preset regression pass verdict **PASS** для `NEXT_PUBLIC_STOREFRONT_PRESET=atelier` и `NEXT_PUBLIC_STOREFRONT_PRESET=market` на browse surface matrix `landing + product support highlights + listing/product cards + global shell + catalog shell`.
 
 Этот документ не расширяет scope до полноценного test framework, e2e harness или CI redesign.
 
@@ -63,6 +63,7 @@ npm run dev
 - `npm run preflight` завершается не `0` после успешного bootstrap;
 - storefront `.env.local` сохраняет placeholder `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=REPLACE_WITH_ROOT_BOOTSTRAP` после успешного bootstrap;
 - storefront `next build` hard-fail'ится только из-за недоступного backend во время SSG static params collection;
+- runtime product smoke `/ru/products/<known-product-handle>` для существующего товара возвращает `500` или падает из-за неверного backend URL/publishable key/region data;
 - cross-preset build verification для `atelier` и `market` перестаёт проходить на уже закрытом preset-driven stack browse surfaces.
 - backend health-check не отвечает на `/health` после ожидаемого старта;
 - opt-in integration path начинает требовать секреты для baseline startup.
@@ -398,7 +399,7 @@ Truthful assumptions этого CI slice:
 - `Docs/current_work.md` — operational sequencing;
 - `Docs/plan_analysis.md` — честный аудит текущего статуса;
 - `Docs/env_contract.md` — env and command contract;
-- `.codex/skills/medusa-master-repo/SKILL.md` — быстрый вход агента в текущую verified reality.
+- `.kilocode/skills/medusa-master-repo/SKILL.md` — быстрый вход агента в текущую verified reality.
 
 Этот regression-pack должен обновляться только когда меняется хотя бы одно из следующих:
 

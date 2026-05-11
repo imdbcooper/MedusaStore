@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS assistant_sessions (
 );
 
 ALTER TABLE assistant_sessions ADD COLUMN IF NOT EXISTS tenant_id TEXT NULL;
+ALTER TABLE assistant_sessions ADD COLUMN IF NOT EXISTS customer_context JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE assistant_sessions ADD COLUMN IF NOT EXISTS bound_at TIMESTAMPTZ NULL;
 
 CREATE TABLE IF NOT EXISTS assistant_messages (
   id UUID PRIMARY KEY,
@@ -131,6 +133,38 @@ CREATE TABLE IF NOT EXISTS assistant_feedback (
   metadata JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS assistant_reindex_intents (
+  id UUID PRIMARY KEY,
+  store_id TEXT NOT NULL DEFAULT 'default',
+  tenant_id TEXT NULL,
+  locale TEXT NOT NULL DEFAULT 'ru',
+  event_name TEXT NOT NULL,
+  event_id TEXT NULL,
+  action TEXT NOT NULL DEFAULT 'reindex' CHECK (action IN ('reindex', 'delete')),
+  scope TEXT NOT NULL DEFAULT 'products' CHECK (scope IN ('products', 'all_products')),
+  product_ids JSONB NOT NULL DEFAULT '[]',
+  reason TEXT NULL,
+  coalescing_key TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'error')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 3,
+  next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_error TEXT NULL,
+  assistant_job_id UUID NULL,
+  metadata JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  started_at TIMESTAMPTZ NULL,
+  finished_at TIMESTAMPTZ NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_assistant_reindex_intents_pending_coalescing
+  ON assistant_reindex_intents (coalescing_key)
+  WHERE status = 'pending';
+
+CREATE INDEX IF NOT EXISTS idx_assistant_reindex_intents_status
+  ON assistant_reindex_intents (status, next_attempt_at);
 
 CREATE INDEX IF NOT EXISTS idx_assistant_messages_session_created
   ON assistant_messages(session_id, created_at);

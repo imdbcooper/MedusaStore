@@ -4,6 +4,7 @@ from app.medusa import MedusaProductClient
 from app.services.chat import ChatService
 from app.services.health import DeepHealthService
 from app.services.ingestion import MarkdownIngestionService, MedusaProductIngestionService, VectorIndexingService
+from app.services.reindex_queue import ReindexQueueProcessor
 
 
 def get_repository(request: Request):
@@ -28,6 +29,10 @@ def get_vector_indexing_service(request: Request) -> VectorIndexingService:
 
 def get_health_service(request: Request) -> DeepHealthService:
     return request.app.state.health_service
+
+
+def get_reindex_queue_processor(request: Request) -> ReindexQueueProcessor:
+    return request.app.state.reindex_queue_processor
 
 
 def get_medusa_product_client(request: Request) -> MedusaProductClient:

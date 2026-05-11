@@ -1,60 +1,104 @@
 # MedusaStore
 
-Готовый шаблон для e-commerce проектов с backend, storefront, CMS-контентом, checkout, доставкой, платежами, уведомлениями, Docker-окружением и документацией для запуска. Подходит как стартовая база для интернет-магазинов и клиентских коммерческих проектов.
+Operational entrypoint for the MedusaStore production/runtime repository. This file is the first place to check before using older phase documents in [`Docs/`](Docs).
 
-## Что внутри
+> Current source of truth: production is containerized with [`docker-compose.prod.yml`](docker-compose.prod.yml), Caddy is the only public reverse proxy, deployment is a manual GitHub Actions workflow, Payload CMS runs as its own production container, product detail pages render dynamically at runtime, and server-side storefront calls prefer `MEDUSA_BACKEND_URL` over public browser URLs.
 
-- Medusa backend в `medusa-agency-boilerplate/`
-- Next.js storefront в `medusa-agency-boilerplate-storefront/`
-- Payload CMS в `payload-cms/`
-- Docker Compose для локальной инфраструктуры
-- Документация и runbooks в `Docs/`
-- Root scripts для preflight, build, typecheck, smoke и staging verification
+## Architecture map
 
-## Быстрый старт
+| Layer | Current implementation | Source of truth |
+| --- | --- | --- |
+| Reverse proxy | Caddy container `medusastore-caddy`; terminates HTTPS for `slavx.mooo.com`; routes `/admin/*`, `/store/*`, `/auth/*`, `/payload/*`, `/api/content/*`, and storefront fallback. | [`docker/caddy/Caddyfile`](docker/caddy/Caddyfile) |
+| Storefront | Next.js container `medusastore-storefront` in production; host process in local dev; dynamic product route under `/{countryCode}/products/{handle}`. | [`docker-compose.prod.yml`](docker-compose.prod.yml), [`page.tsx`](medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/products/[handle]/page.tsx) |
+| Medusa backend | Container `medusastore-backend`; source of truth for catalog, cart, checkout, payments, orders, fulfillment, notifications. | [`medusa-config.ts`](medusa-agency-boilerplate/medusa-config.ts) |
+| Payload CMS | Container `medusastore-payload`; headless content service for marketing pages, globals, preview/revalidate hooks. | [`payload.config.ts`](payload-cms/src/payload.config.ts), [`Docs/payload_cms_runbook.md`](Docs/payload_cms_runbook.md) |
+| Data | PostgreSQL container `medusastore-db`; Redis container `medusastore-redis`; production Payload uses dedicated `payload_cms` DB in the same PostgreSQL server. | [`docker-compose.prod.yml`](docker-compose.prod.yml) |
+| AI Assistant | Optional FastAPI container `medusastore-ai-assistant` behind the Medusa `/store/assistant/chat` adapter; disabled until `AI_ASSISTANT_ENABLED=true`. | [`ai-assistant/README.md`](ai-assistant/README.md), [`docker-compose.prod.yml`](docker-compose.prod.yml) |
+| Deployment | Manual GitHub Actions workflow over SSH, branch input defaults to `main`, remote script rebuilds/starts compose and runs smoke checks. | [`.github/workflows/deploy-production.yml`](.github/workflows/deploy-production.yml), [`scripts/github-deploy-prod.sh`](scripts/github-deploy-prod.sh) |
 
-1. Скопируйте env-шаблоны и заполните локальные значения.
-2. Установите зависимости в backend, storefront и Payload.
-3. Поднимите PostgreSQL/Redis через Docker Compose.
-4. Запустите preflight и нужные приложения.
+Full topology and responsibility split are documented in [`Docs/architecture.md`](Docs/architecture.md).
 
-Основные root-команды:
+## Environment separation
 
-```bash
-npm run preflight
-npm run backend:build
-npm run storefront:build
-npm run payload:build
-```
+| Environment | How it runs | Important notes | Runbook |
+| --- | --- | --- | --- |
+| Local development | [`docker-compose.yml`](docker-compose.yml) runs PostgreSQL, Redis, and Medusa backend; storefront and Payload are usually host processes for dev/HMR. | Local compose is not production topology. It intentionally omits Caddy and production storefront/Payload containers. | [`Docs/local_development.md`](Docs/local_development.md), [`scripts/MANAGE.md`](scripts/MANAGE.md) |
+| Staging | No concrete separate remote staging server is currently provisioned in this repository. Existing staging docs describe a generic/planning contour unless a separate stage host is created. | Do not treat production `slavx.mooo.com` as staging. | [`Docs/staging_runbook.md`](Docs/staging_runbook.md) |
+| Production | Remote server `som@slavx.mooo.com`, repo path `/home/som/MedusaStore`, repo `imdbcooper/MedusaStore`, branch `main`, compose file [`docker-compose.prod.yml`](docker-compose.prod.yml). | Caddy-only public ingress; no deployment needed for docs/env-example-only changes. | [`Docs/production_runbook.md`](Docs/production_runbook.md) |
 
-## Проверки перед релизом
+## Production deploy summary
 
-Безопасный локальный pre-repo контур включает:
+Production deploy is manual:
 
-```bash
-npm run backend:typecheck
-npm run storefront:lint
-npm run storefront:typecheck
-npm run backend:build
-npm run storefront:build
-npm run payload:types
-npm run payload:importmap
-npm run payload:build
-```
+1. Push changes to `main` in `imdbcooper/MedusaStore`.
+2. Open GitHub Actions workflow `Deploy Production`.
+3. Run `workflow_dispatch`, usually with branch `main`.
+4. Workflow validates production compose syntax, SSHes to the server, and runs [`scripts/github-deploy-prod.sh`](scripts/github-deploy-prod.sh).
+5. Remote script fetches/reset branch, builds images, starts DB/Redis, optionally runs Payload migration/seed one-off jobs, starts app containers, prunes dangling images, and runs [`scripts/prod-container-smoke.sh`](scripts/prod-container-smoke.sh).
 
-Runtime/staging smoke-команды требуют подготовленного окружения и валидных secrets.
+Required GitHub Secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`, `DEPLOY_SSH_PRIVATE_KEY`. Expected values for the concrete production host are documented in [`Docs/production_runbook.md`](Docs/production_runbook.md); do not commit secret values.
 
-## Секреты
+## Service table
 
-Не коммитьте локальные `.env` файлы. Используйте только шаблоны:
+| Service | Container | Port/scope | Production role |
+| --- | --- | --- | --- |
+| `medusa-db` | `medusastore-db` | internal `5432` | PostgreSQL for Medusa and Payload databases. |
+| `medusa-redis` | `medusastore-redis` | internal `6379` | Redis for Medusa runtime/cache/event needs. |
+| `medusa-backend` | `medusastore-backend` | internal `9000` | Medusa Admin/API runtime. |
+| `payload-cms` | `medusastore-payload` | internal `3100` | Payload CMS admin/API/runtime. |
+| `storefront` | `medusastore-storefront` | internal `8000` | Next.js shopper storefront and content API endpoints. |
+| `caddy` | `medusastore-caddy` | public `80/443` | HTTPS reverse proxy and ACME certificates. |
+| `ai-assistant` | `medusastore-ai-assistant` | internal `8000`, profile `ai-assistant` | Optional FastAPI shopping assistant. First production step is one assistant replica plus Caddy/API-gateway limits; multi-replica requires Redis or gateway-level distributed rate limiting. |
 
-- `.env.example`
-- `medusa-agency-boilerplate/.env.template`
-- `medusa-agency-boilerplate-storefront/.env.local.example`
-- `payload-cms/.env.example`
+## Public route table
 
-Production/staging значения храните в GitHub Secrets или во внешнем secret store.
+| Public path | Upstream | Notes |
+| --- | --- | --- |
+| `/healthz` | Caddy response | Public proxy health endpoint returns `ok`. |
+| `/payload/*` | `payload-cms:3100` | Payload admin/API behind Caddy path stripping via `handle_path`. |
+| `/admin/*` | `medusa-backend:9000` | Medusa Admin/API surface. |
+| `/store/*` | `medusa-backend:9000` | Medusa Store API surface, including optional `/store/assistant/chat` proxy when the AI Assistant adapter is enabled. |
+| `/auth/*` | `medusa-backend:9000` | Medusa auth routes. |
+| `/api/content/*` | `storefront:8000` | Storefront content preview/revalidate endpoints. |
+| `/{countryCode}/products/{handle}` | `storefront:8000` | Dynamic runtime product page; validate with at least one real handle. |
+| `/ru/about`, `/ru/promotions`, `/ru/delivery-and-payment`, `/ru/loyalty` | `storefront:8000` + Payload when enabled | Payload-rendered content pages when `PAYLOAD_ENABLED=true`; fallback/not-found semantics apply when disabled or missing. |
+| `/ru/contacts` | `storefront:8000` static route | Current contact page is a static storefront route, not Payload-rendered. |
 
-## Лицензия
+## Runtime URL precedence
 
-MIT. Отдельные upstream-компоненты и шаблоны сохраняют свои copyright notices и лицензии.
+Server-side storefront runtime uses [`MEDUSA_BACKEND_URL`](medusa-agency-boilerplate-storefront/src/lib/env.ts) first, then `NEXT_PUBLIC_MEDUSA_BACKEND_URL`, then local port fallback. In production containers this means server-side calls should use the Docker-network URL `http://medusa-backend:9000`, while browser-facing/proxy URLs may stay public through Caddy. Keep this distinction when editing env examples, docs, or deploy scripts.
+
+## Runbooks and reference docs
+
+Start with these current docs:
+
+1. [`Docs/architecture.md`](Docs/architecture.md) — topology, service/container names, routes, internal URLs.
+2. [`Docs/production_runbook.md`](Docs/production_runbook.md) — production deploy/ops on `slavx.mooo.com`.
+3. [`Docs/local_development.md`](Docs/local_development.md) — local compose and host app runtimes.
+4. [`Docs/staging_runbook.md`](Docs/staging_runbook.md) — current staging reality and how to add a real stage host.
+5. [`Docs/troubleshooting.md`](Docs/troubleshooting.md) — known failure modes and commands.
+6. [`Docs/payload_cms_runbook.md`](Docs/payload_cms_runbook.md) — Payload CMS operations.
+7. [`Docs/env_contract.md`](Docs/env_contract.md) and [`Docs/client_init_contract.md`](Docs/client_init_contract.md) — env/init contracts.
+
+## Docs governance rule
+
+When code/infrastructure and older docs conflict, trust implementation first, then current operational docs (`README.md`, [`Docs/architecture.md`](Docs/architecture.md), [`Docs/production_runbook.md`](Docs/production_runbook.md), [`Docs/local_development.md`](Docs/local_development.md), [`Docs/staging_runbook.md`](Docs/staging_runbook.md), [`Docs/troubleshooting.md`](Docs/troubleshooting.md)). Historical planning snapshots must carry a banner and must not be used as operational source of truth.
+
+Use relative links in repository docs. Do not add real secrets, production tokens, private keys, raw provider credentials, or database passwords to committed files.
+
+## Secret templates
+
+Committed env files are contracts/placeholders only:
+
+- [`.env.example`](.env.example) — local/root baseline.
+- [`.env.prod.example`](.env.prod.example) — production contract placeholders and operator notes.
+- [`medusa-agency-boilerplate/.env.template`](medusa-agency-boilerplate/.env.template) — backend mirror template.
+- [`medusa-agency-boilerplate-storefront/.env.local.example`](medusa-agency-boilerplate-storefront/.env.local.example) — storefront local template.
+- [`payload-cms/.env.example`](payload-cms/.env.example) — Payload local template.
+- [`ai-assistant/ENV.example`](ai-assistant/ENV.example) — standalone assistant template; real local secrets belong in ignored `ai-assistant/.env.local`.
+
+Never commit real `.env` files or production secret values.
+
+## License
+
+MIT. Upstream components and templates keep their own copyright notices and licenses.

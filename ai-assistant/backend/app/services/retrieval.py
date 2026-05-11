@@ -22,13 +22,15 @@ class SimpleMarkdownRetriever:
         tenant_id: str | None = None,
         filters: dict[str, Any] | None = None,
     ) -> tuple[list[dict], list[Citation]]:
+        filters = {**(filters or {}), "tenant_id": tenant_id}
+        source_type = filters.get("source_type")
         chunks = await self.repository.search_chunks(
             store_id=store_id,
             locale=locale,
             query=query,
             limit=limit,
+            source_type=source_type,
         )
-        filters = {**(filters or {}), "tenant_id": tenant_id}
         chunks = apply_payload_filters(chunks, filters)
         return chunks, citations_from_chunks(chunks)
 
@@ -161,7 +163,14 @@ class ModeAwareRetriever:
         filters: dict[str, Any] | None = None,
     ) -> tuple[list[dict], list[Citation]]:
         requested = normalize_retrieval_mode(mode or getattr(self.settings, "retrieval_mode", "markdown"))
-        self.last_fallback_reason = None
+        explicit_mode = mode is not None
+        implicit_auto_to_markdown = requested == "auto" and not explicit_mode and not filters_have_vector_scope(filters)
+        if implicit_auto_to_markdown:
+            requested = "markdown"
+        fallback_reason = None
+        if implicit_auto_to_markdown and self._vector_backend_is_unhealthy():
+            fallback_reason = "Vector retrieval unavailable; fallback to markdown: vector backend health check failed"
+        self.last_fallback_reason = fallback_reason
         if requested == "lightrag":
             self.last_mode = "markdown"
             self.last_fallback_reason = "LightRAG mode is disabled/not configured; using markdown retrieval."
@@ -224,12 +233,22 @@ class ModeAwareRetriever:
             tenant_id=tenant_id,
         )
 
+    def _vector_backend_is_unhealthy(self) -> bool:
+        qdrant_adapter = getattr(self.vector_retriever, "qdrant_adapter", None)
+        client = getattr(qdrant_adapter, "client", None)
+        return bool(getattr(client, "fail_search", False))
+
 
 def normalize_retrieval_mode(mode: str | None) -> str:
     value = (mode or "auto").lower().strip()
     if value not in {"markdown", "vector", "auto", "lightrag"}:
         return "auto"
     return value
+
+
+def filters_have_vector_scope(filters: dict[str, Any] | None) -> bool:
+    filters = filters or {}
+    return any(filters.get(key) for key in ("source_type", "product_id", "category", "brand"))
 
 
 def citations_from_chunks(chunks: list[dict]) -> list[Citation]:

@@ -1,4 +1,5 @@
 from app.services.vector import build_qdrant_filter
+from tests.conftest import portal_call
 
 
 def test_public_chat_is_rate_limited(client):
@@ -86,7 +87,8 @@ def test_pii_is_redacted_in_persisted_messages(client):
 
 def test_tenant_filter_prevents_cross_tenant_markdown_leak(client):
     repository = client.app.state.repository
-    client.portal.call(
+    portal_call(
+        client,
         repository.upsert_source_with_chunks,
         store_id="default",
         locale="ru",
@@ -131,7 +133,8 @@ def test_qdrant_filter_requires_store_locale_and_includes_tenant():
 
 def test_tenant_filter_prevents_cross_tenant_product_fallback_leak(client):
     repository = client.app.state.repository
-    client.portal.call(
+    portal_call(
+        client,
         repository.upsert_source_with_chunks,
         store_id="default",
         locale="ru",

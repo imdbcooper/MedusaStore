@@ -32,3 +32,11 @@ check_url promotions "${base_url}/ru/promotions" '^200$'
 check_url delivery "${base_url}/ru/delivery-and-payment" '^200$'
 check_url backend_admin "$backend_url" '^(200|301|302|401)$'
 check_url payload_pages "$payload_url" '^200$'
+
+if [[ "${AI_ASSISTANT_ENABLED:-false}" == "true" ]]; then
+  docker exec medusastore-ai-assistant python - <<'PY'
+import urllib.request
+urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=10).read()
+print('ai_assistant_container: ok')
+PY
+fi
