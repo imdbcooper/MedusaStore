@@ -320,13 +320,20 @@ class PostgresAssistantRepository:
         locale: str,
         query: str,
         limit: int = 5,
+        source_type: str | None = None,
     ) -> list[dict[str, Any]]:
         terms = [term for term in query.split() if len(term) > 2]
         if not terms:
             terms = [query]
+        filters = ["s.store_id = $1", "s.locale = $2"]
+        args: list[Any] = [store_id, locale, 0, terms]
+        if source_type:
+            args.append(source_type)
+            filters.append(f"s.source_type = ${len(args)}")
+        args.append(limit)
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                """
+                f"""
                 SELECT c.*, row_to_json(s.*) AS source,
                        GREATEST(
                          $3::int,
@@ -334,19 +341,14 @@ class PostgresAssistantRepository:
                        ) AS score
                 FROM assistant_source_chunks c
                 JOIN assistant_sources s ON s.id = c.source_id
-                WHERE s.store_id = $1
-                  AND s.locale = $2
+                WHERE {' AND '.join(filters)}
                   AND EXISTS (
                     SELECT 1 FROM unnest($4::text[]) term WHERE c.content ILIKE '%' || term || '%'
                   )
                 ORDER BY score DESC, c.created_at DESC
-                LIMIT $5
+                LIMIT ${len(args)}
                 """,
-                store_id,
-                locale,
-                0,
-                terms,
-                limit,
+                *args,
             )
         return [dict(row) for row in rows]
 

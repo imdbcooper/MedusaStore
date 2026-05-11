@@ -1,6 +1,14 @@
+import asyncio
+from uuid import uuid4
+
 from app.core.config import Settings
 from app.repositories.memory import InMemoryAssistantRepository
+from app.repositories.postgres import PostgresAssistantRepository
+from app.schemas.chat import ChatRequest
+from app.services.chat import ChatService
+from app.services.retrieval import ModeAwareRetriever, SimpleMarkdownRetriever
 from app.services.vector import build_qdrant_filter
+from app.tools.commerce import LiveCommerceTools
 
 
 def _filter_must(qdrant_filter, *, clause="must"):
@@ -51,11 +59,108 @@ def test_memory_repository_matches_russian_delivery_inflection():
             query="Расскажи про доставку",
         )
 
-    import asyncio
-
     chunks = asyncio.run(run())
     assert chunks
     assert chunks[0]["source"]["source_id"] == "delivery"
+
+
+class FakePostgresPool:
+    def __init__(self):
+        self.fetches = []
+
+    def acquire(self):
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    async def fetch(self, query, *args):
+        self.fetches.append({"query": query, "args": args})
+        return []
+
+    async def fetchrow(self, query, *args):
+        if "INSERT INTO assistant_sessions" in query:
+            return {
+                "id": args[0],
+                "store_id": args[1],
+                "customer_id": args[2],
+                "cart_id": args[3],
+                "locale": args[4],
+                "region_id": args[5],
+                "tenant_id": args[7],
+            }
+        if "INSERT INTO assistant_messages" in query:
+            return {"id": args[0], "session_id": args[1], "role": args[2], "content": args[3]}
+        raise AssertionError(f"Unexpected fetchrow query: {query}")
+
+
+class FakePostgresDatabase:
+    def __init__(self):
+        self.pool = FakePostgresPool()
+
+
+class FakeCommerceProductClient:
+    async def list_products(self, **kwargs):
+        return []
+
+    async def get_cart(self, **kwargs):
+        return {"id": kwargs.get("cart_id"), "items": [], "currency_code": "rub"}
+
+    async def add_to_cart(self, **kwargs):
+        return {"id": kwargs.get("cart_id"), "items": [], "currency_code": "rub"}
+
+
+async def _run_postgres_chat_smoke(repository):
+    settings = Settings(ASSISTANT_POSTGRES_URI=None, MEDUSA_BACKEND_URL="http://medusa.test")
+    markdown_retriever = SimpleMarkdownRetriever(repository=repository)
+    retriever = ModeAwareRetriever(markdown_retriever=markdown_retriever, vector_retriever=None, settings=settings)
+    service = ChatService(
+        repository=repository,
+        retriever=retriever,
+        commerce_tools=LiveCommerceTools(product_client=FakeCommerceProductClient()),
+        settings=settings,
+    )
+    return await service.answer(
+        ChatRequest(
+            message="Найди товар",
+            store_id="default",
+            locale="ru",
+        )
+    )
+
+
+def test_postgres_repository_accepts_source_type_filter_without_inlining_sql():
+    repository = PostgresAssistantRepository(FakePostgresDatabase())
+
+    chunks = asyncio.run(
+        repository.search_chunks(
+            store_id="default",
+            locale="ru",
+            query="доставка markdown",
+            limit=3,
+            source_type="markdown",
+        )
+    )
+
+    assert chunks == []
+    fetch = repository.database.pool.fetches[-1]
+    assert "s.source_type = $5" in fetch["query"]
+    assert "LIMIT $6" in fetch["query"]
+    assert fetch["args"] == ("default", "ru", 0, ["доставка", "markdown"], "markdown", 3)
+
+
+def test_postgres_chat_retrieval_path_accepts_source_type_filtered_requests():
+    repository = PostgresAssistantRepository(FakePostgresDatabase())
+
+    response = asyncio.run(_run_postgres_chat_smoke(repository))
+
+    assert response.safety.status == "ok"
+    search_fetch = next(fetch for fetch in repository.database.pool.fetches if "assistant_source_chunks" in fetch["query"])
+    assert "s.source_type" not in search_fetch["query"]
+    assert search_fetch["args"] == ("default", "ru", 0, ["Найди", "товар"], 5)
 
 
 def test_qdrant_category_filter_shape_keeps_category_as_nested_condition():
