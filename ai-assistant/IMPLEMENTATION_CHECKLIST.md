@@ -19,12 +19,16 @@
 
 ## Medusa adapter
 
-- [ ] Add store assistant proxy route.
-- [ ] Add admin reindex route.
-- [ ] Add admin stats route.
-- [ ] Add product subscribers.
-- [ ] Add reindex workflows.
-- [ ] Add unit/integration tests.
+- [x] Add store assistant proxy route.
+- [x] Keep store proxy from forwarding untrusted browser-provided `cart_id` until a trusted resolver is added.
+- [x] Add admin reindex route.
+- [x] Reject selected-product reindex requests with empty `product_ids`.
+- [x] Add admin stats route.
+- [x] Add product subscribers as enqueue-only intent templates.
+- [x] Add broad category/collection stale-marker guidance with debounce/coalescing requirements.
+- [x] Add reindex workflows for admin/worker execution outside subscriber hot paths.
+- [x] Make `AI_ASSISTANT_ENABLED` an exact `true` opt-in.
+- [x] Add unit/integration tests/examples for adapter templates.
 
 ## Storefront
 

@@ -103,6 +103,8 @@ Implementation notes:
 
 ## Phase 5 — Medusa adapter automation
 
+Status: implemented as copy-ready adapter templates in `ai-assistant/medusa-adapter/`; not installed into the real Medusa backend in this phase.
+
 Goal: automatic freshness.
 
 Tasks:
@@ -117,6 +119,17 @@ Acceptance:
 
 - product update can trigger reindex;
 - admin can reindex from Medusa.
+
+Implementation notes:
+
+- Store chat proxy template keeps `AI_ASSISTANT_SERVER_TOKEN` server-side and supports JSON/SSE passthrough.
+- Admin templates cover reindex, stats, and job status routes behind Medusa admin auth middleware.
+- Product subscribers enqueue lightweight intents for product create/update/delete and variant update instead of doing heavy indexing inline or running assistant network workflows from the event hot path.
+- Category/collection subscribers enqueue broad catalog stale-marker/reindex intents with reason/event id and a stable coalescing key; a separate worker/job should debounce/coalesce these before full reindex execution.
+- Reindex workflows support selected products, all products, vector source deletion for deleted products, and bounded retry on retryable assistant backend failures when run from admin routes or worker/job processors.
+- Store proxy omits untrusted browser-supplied `cart_id` until a trusted Medusa/storefront cart ownership resolver is added.
+- Admin selected-product reindex rejects empty `product_ids`, and `AI_ASSISTANT_ENABLED` is an exact `true` opt-in.
+- Adapter docs/tests live under `medusa-adapter/` and `docs/MEDUSA_ADAPTER_PHASE5.md`.
 
 ## Phase 6 — Production hardening
 
@@ -139,4 +152,4 @@ Acceptance:
 
 ## Recommended immediate next task
 
-Proceed to review/fixes for Phase 4, then commit in a separate subtask. Phase 5 should add Medusa adapter automation/subscribers only after Phase 4 review passes.
+Proceed to review/fixes for Phase 5 Medusa adapter templates, then commit in a separate subtask. Do not install the adapter into the real Medusa backend until the copy-ready template is reviewed and explicitly approved.

@@ -58,6 +58,18 @@ Phase 4 Qdrant advanced retrieval is implemented as optional/guarded functionali
 - ingestion jobs now expose vector indexing lifecycle data (`indexing`, `completed`, `error`) with `source_count`, `chunk_count`, and error details; `/api/v1/ingest/jobs/{job_id}` returns job status.
 - `/api/v1/health/deep` reports PostgreSQL, Qdrant, Medusa, embedding/LLM provider, and LightRAG/Neo4j status without requiring real services in tests.
 
+
+
+Phase 5 Medusa adapter automation is implemented as copy-ready templates under [`medusa-adapter/`](./medusa-adapter/) without modifying the real Medusa backend:
+
+- Store proxy route template for `POST /store/assistant/chat`, including SSE passthrough to `/api/v1/chat/stream`, with untrusted browser-provided `cart_id` omitted until a trusted cart resolver is added.
+- Admin route templates for reindex, stats, and ingestion job status; selected-product reindex rejects empty `product_ids`.
+- Product freshness subscriber templates for product create/update/delete, variant update, and category/collection update events; subscribers are enqueue-intent only and do not run assistant network workflows from the event hot path.
+- Broad category/collection events use stale-marker/full-reindex intent guidance with coalescing/debounce requirements for a separate worker/job step.
+- Reindex workflow templates for selected-product and all-product sync with bounded retry behavior when executed from admin routes or workers.
+- A typed server-side AI Assistant backend client with timeout/error handling and an explicit Medusa env contract: `AI_ASSISTANT_BASE_URL`, `AI_ASSISTANT_SERVER_TOKEN`, `AI_ASSISTANT_TIMEOUT_MS`, and exact opt-in `AI_ASSISTANT_ENABLED=true`.
+- Copy/install and smoke-test docs are in [`docs/MEDUSA_ADAPTER_PHASE5.md`](./docs/MEDUSA_ADAPTER_PHASE5.md) and [`medusa-adapter/README.md`](./medusa-adapter/README.md).
+
 ## Recommended implementation direction
 
 Build this as an independent assistant service plus adapters:
