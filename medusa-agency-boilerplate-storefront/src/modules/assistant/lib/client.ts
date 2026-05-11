@@ -10,13 +10,25 @@ export function getAssistantChatEndpoint() {
   return process.env.NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT || DEFAULT_CHAT_ENDPOINT
 }
 
+function buildAssistantRequestHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    "content-type": "application/json",
+  }
+
+  const publishableKey = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
+
+  if (publishableKey) {
+    headers["x-publishable-api-key"] = publishableKey
+  }
+
+  return headers
+}
+
 export async function sendAssistantMessage(input: AssistantChatRequest): Promise<AssistantChatResponse> {
   const response = await fetch(getAssistantChatEndpoint(), {
     method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-    },
+    headers: buildAssistantRequestHeaders(),
     body: JSON.stringify(input),
   })
 
