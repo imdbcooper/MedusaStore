@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from app.medusa import MedusaClientError
 
 
@@ -33,6 +35,9 @@ class FakeMedusaProductClient:
             raise MedusaClientError("Medusa cart unavailable in fake client")
         return {**self.cart, "id": cart_id}
 
+    async def health(self):
+        return {"status": "ok" if self.available else "error", "fake": True}
+
     async def add_to_cart(self, *, cart_id, variant_id, quantity):
         self.add_to_cart_calls.append(
             {"cart_id": cart_id, "variant_id": variant_id, "quantity": quantity}
@@ -40,6 +45,113 @@ class FakeMedusaProductClient:
         if not self.available:
             raise MedusaClientError("Medusa unavailable in fake client")
         return {**self.cart, "id": cart_id, "items": [{"variant_id": variant_id, "quantity": quantity}]}
+
+
+class FakeQdrantClient:
+    def __init__(self, *, fail_search=False):
+        self.fail_search = fail_search
+        self.collections = set()
+        self.points = []
+        self.upserts = []
+        self.searches = []
+        self.deletes = []
+
+    async def get_collections(self):
+        return SimpleNamespace(collections=[SimpleNamespace(name=name) for name in sorted(self.collections)])
+
+    async def create_collection(self, *, collection_name, vectors_config):
+        self.collections.add(collection_name)
+
+    async def upsert(self, *, collection_name, points):
+        self.collections.add(collection_name)
+        normalized = []
+        for point in points:
+            if isinstance(point, dict):
+                normalized.append(point)
+            else:
+                normalized.append(
+                    {"id": point.id, "vector": point.vector, "payload": point.payload}
+                )
+        self.points.extend({"collection_name": collection_name, **point} for point in normalized)
+        self.upserts.append({"collection_name": collection_name, "points": normalized})
+
+    async def search(self, *, collection_name, query_vector, query_filter, limit, with_payload):
+        if self.fail_search:
+            raise RuntimeError("qdrant unavailable")
+        self.searches.append(
+            {
+                "collection_name": collection_name,
+                "query_vector": query_vector,
+                "query_filter": query_filter,
+                "limit": limit,
+                "with_payload": with_payload,
+            }
+        )
+        matches = [point for point in self.points if point["collection_name"] == collection_name]
+        matches = [point for point in matches if _payload_matches_filter(point["payload"], query_filter)]
+        return [
+            {"id": point["id"], "payload": point["payload"], "score": 0.9}
+            for point in matches[:limit]
+        ]
+
+    async def delete(self, *, collection_name, points_selector):
+        self.deletes.append({"collection_name": collection_name, "points_selector": points_selector})
+
+    async def close(self):
+        return None
+
+
+class FakeEmbeddingProvider:
+    def __init__(self, *, available=True, dimension=8):
+        self.available = available
+        self.dimension = dimension
+        self.calls = []
+
+    async def embed_texts(self, texts):
+        self.calls.append(list(texts))
+        if not self.available:
+            raise RuntimeError("embedding unavailable")
+        return [[1.0] + [0.0] * (self.dimension - 1) for _ in texts]
+
+    async def health(self):
+        return {"status": "ok" if self.available else "error", "provider": "fake"}
+
+
+def _payload_matches_filter(payload, query_filter):
+    if not query_filter:
+        return True
+    must = _filter_conditions(query_filter, "must")
+    should = _filter_conditions(query_filter, "should")
+    for condition in must:
+        if not _payload_matches_condition(payload, condition):
+            return False
+    if should and not any(_payload_matches_condition(payload, condition) for condition in should):
+        return False
+    return True
+
+
+def _payload_matches_condition(payload, condition):
+    nested_should = _filter_conditions(condition, "should")
+    if nested_should:
+        return any(_payload_matches_condition(payload, item) for item in nested_should)
+    key = _condition_value(condition, "key")
+    match = _condition_value(condition, "match") or {}
+    expected = _condition_value(match, "value")
+    value = payload.get(key)
+    if isinstance(value, list):
+        return expected in value
+    return value == expected
+
+
+def _filter_conditions(item, field):
+    value = _condition_value(item, field)
+    return list(value or [])
+
+
+def _condition_value(item, field):
+    if isinstance(item, dict):
+        return item.get(field)
+    return getattr(item, field, None)
 
 
 ESPRESSO_MACHINE_PRODUCT = {

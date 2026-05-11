@@ -100,12 +100,14 @@ class InMemoryAssistantRepository:
             "id": job_id,
             "store_id": store_id,
             "job_type": job_type,
-            "status": "pending",
+            "status": "indexing",
             "source_type": source_type,
             "source_id": source_id,
             "input": input_payload,
             "result": {},
             "error": None,
+            "started_at": datetime.now(timezone.utc),
+            "finished_at": None,
             "created_at": datetime.now(timezone.utc),
         }
         self.jobs[job_id] = record
@@ -122,7 +124,27 @@ class InMemoryAssistantRepository:
         record["status"] = "error" if error else "completed"
         record["result"] = result
         record["error"] = error
+        record["finished_at"] = datetime.now(timezone.utc)
         return deepcopy(record)
+
+    async def get_ingestion_job(self, job_id: UUID) -> dict[str, Any] | None:
+        record = self.jobs.get(job_id)
+        return deepcopy(record) if record else None
+
+    async def delete_source(
+        self,
+        *,
+        store_id: str,
+        locale: str,
+        source_type: str,
+        source_id: str,
+    ) -> bool:
+        key = (store_id, source_type, source_id, locale)
+        source = self.sources.pop(key, None)
+        if not source:
+            return False
+        self.source_chunks.pop(source["id"], None)
+        return True
 
     async def upsert_source_with_chunks(
         self,
@@ -194,6 +216,28 @@ class InMemoryAssistantRepository:
             sources.append(deepcopy(source))
         sources.sort(key=lambda item: item.get("indexed_at") or item.get("created_at"), reverse=True)
         return sources
+
+    async def list_chunks_for_source(
+        self,
+        *,
+        store_id: str,
+        locale: str,
+        source_type: str,
+        source_id: str,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        source = self.sources.get((store_id, source_type, source_id, locale))
+        if not source:
+            return []
+        chunks = self.source_chunks.get(source["id"], [])
+        selected = chunks[offset:] if limit is None else chunks[offset : offset + limit]
+        enriched = []
+        for chunk in selected:
+            item = deepcopy(chunk)
+            item["source"] = deepcopy(source)
+            enriched.append(item)
+        return enriched
 
     async def stats(self) -> dict[str, int]:
         return {

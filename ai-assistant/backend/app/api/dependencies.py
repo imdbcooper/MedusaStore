@@ -2,7 +2,8 @@ from fastapi import Request
 
 from app.medusa import MedusaProductClient
 from app.services.chat import ChatService
-from app.services.ingestion import MarkdownIngestionService, MedusaProductIngestionService
+from app.services.health import DeepHealthService
+from app.services.ingestion import MarkdownIngestionService, MedusaProductIngestionService, VectorIndexingService
 
 
 def get_repository(request: Request):
@@ -19,6 +20,14 @@ def get_ingestion_service(request: Request) -> MarkdownIngestionService:
 
 def get_medusa_product_ingestion_service(request: Request) -> MedusaProductIngestionService:
     return request.app.state.medusa_product_ingestion_service
+
+
+def get_vector_indexing_service(request: Request) -> VectorIndexingService:
+    return request.app.state.vector_indexing_service
+
+
+def get_health_service(request: Request) -> DeepHealthService:
+    return request.app.state.health_service
 
 
 def get_medusa_product_client(request: Request) -> MedusaProductClient:

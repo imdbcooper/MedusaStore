@@ -76,6 +76,8 @@ Acceptance:
 
 ## Phase 4 — Qdrant/LightRAG advanced mode
 
+Status: implemented in standalone assistant backend; LightRAG remains disabled/not configured by default.
+
 Goal: large catalog and hybrid retrieval.
 
 Tasks:
@@ -90,6 +92,14 @@ Acceptance:
 
 - large indexed catalog retrieval works with filters;
 - LightRAG mode is optional and documented.
+
+Implementation notes:
+
+- Qdrant adapter is optional and guarded; Markdown mode can start without Qdrant.
+- Vector indexing writes/deletes Qdrant points with payload filters for `store_id`, `locale`, `source_type`, `product_id`, `category`, and `brand`.
+- Chat supports `markdown`, `vector`, `auto`, and disabled/documented `lightrag`; `auto` falls back to Markdown when vector backend/embeddings are unavailable.
+- Live price/availability still come only from Phase 3 Medusa tools, never from vector payload hints.
+- Deep health checks cover PostgreSQL, Qdrant, Medusa, embedding/LLM provider, and LightRAG/Neo4j disabled status.
 
 ## Phase 5 — Medusa adapter automation
 
@@ -129,4 +139,4 @@ Acceptance:
 
 ## Recommended immediate next task
 
-Start Phase 1 by creating `ai-assistant/backend` and copying/adapting the existing RAG backend structure, but simplify it to Markdown + chat + Postgres first.
+Proceed to review/fixes for Phase 4, then commit in a separate subtask. Phase 5 should add Medusa adapter automation/subscribers only after Phase 4 review passes.

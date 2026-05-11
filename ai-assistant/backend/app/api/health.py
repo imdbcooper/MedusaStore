@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies import get_repository
+from app.api.dependencies import get_health_service
+from app.services.health import DeepHealthService
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -11,11 +12,5 @@ async def health():
 
 
 @router.get("/deep")
-async def deep_health(repository=Depends(get_repository)):
-    stats = await repository.stats()
-    return {
-        "status": "ok",
-        "postgres": "configured" if repository.__class__.__name__.startswith("Postgres") else "memory",
-        "retrieval_mode": "markdown",
-        "stats": stats,
-    }
+async def deep_health(service: DeepHealthService = Depends(get_health_service)):
+    return await service.check()

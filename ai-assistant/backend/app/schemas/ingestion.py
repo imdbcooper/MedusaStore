@@ -20,6 +20,19 @@ class MedusaProductsSyncRequest(BaseModel):
     currency_code: str | None = None
 
 
+class VectorIndexRequest(BaseModel):
+    store_id: str = "default"
+    locale: str = "ru"
+    source_type: str | None = None
+
+
+class VectorDeleteRequest(BaseModel):
+    store_id: str = "default"
+    locale: str = "ru"
+    source_type: str
+    source_id: str
+
+
 class MarkdownChunk(BaseModel):
     id: UUID
     source_id: str

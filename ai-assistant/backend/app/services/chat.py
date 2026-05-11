@@ -8,6 +8,7 @@ from uuid import UUID
 
 from app.core.config import Settings
 from app.schemas.chat import ChatRequest, ChatResponse, Safety, ToolCall
+from app.services.vector import VectorBackendUnavailable
 from app.tools.commerce import CommerceToolResult
 
 POLICY_WORDS = {"доставка", "оплата", "возврат", "гарантия", "delivery", "payment", "return", "warranty"}
@@ -63,12 +64,24 @@ class ChatService:
             content=request.message,
         )
         intent = classify_intent(request.message)
-        chunks, citations = await self.retriever.search(
-            query=request.message,
-            store_id=request.store_id,
-            locale=request.locale,
-            limit=5,
-        )
+        retrieval_filters = filters_from_request(request)
+        try:
+            chunks, citations = await self.retriever.search(
+                query=request.message,
+                store_id=request.store_id,
+                locale=request.locale,
+                limit=5,
+                mode=request.mode,
+                filters=retrieval_filters,
+            )
+        except VectorBackendUnavailable as exc:
+            if (request.mode or "auto").lower() == "vector":
+                chunks, citations = [], []
+                retrieval_error = str(exc)
+            else:
+                raise
+        else:
+            retrieval_error = None
         product_cards = []
         actions = []
         tool_calls: list[ToolCall] = []
@@ -105,9 +118,16 @@ class ChatService:
             commerce_result=commerce_result,
         )
         safety_notes = []
+        fallback_reason = getattr(self.retriever, "last_fallback_reason", None)
+        if fallback_reason:
+            safety_notes.append(fallback_reason)
+        if retrieval_error:
+            safety_notes.append(f"Vector retrieval unavailable: {retrieval_error}")
         if commerce_result.status_note:
             safety_notes.append(commerce_result.status_note)
         safety_status = "ok"
+        if retrieval_error:
+            safety_status = "retrieval_unavailable"
         if product_cards and not commerce_result.live_data_checked:
             safety_status = "live_data_unavailable"
         latency_ms = int((time.perf_counter() - started) * 1000)
@@ -237,6 +257,16 @@ def build_grounded_answer(
     else:
         warning = "\n\nВажно: точные цены, наличие, сроки доставки и акции должны проверяться live через Medusa."
     return f"{prefix}\n\n" + body + product_text + warning
+
+
+def filters_from_request(request: ChatRequest) -> dict[str, Any]:
+    page_context = request.page_context
+    filters: dict[str, Any] = {}
+    if page_context and page_context.product_id:
+        filters["product_id"] = page_context.product_id
+    if page_context and page_context.category_handle:
+        filters["category"] = page_context.category_handle
+    return filters
 
 
 def should_propose_add_to_cart(message: str) -> bool:

@@ -6,7 +6,9 @@ from fastapi.testclient import TestClient
 from app.core.config import Settings
 from app.main import create_app
 from app.repositories.memory import InMemoryAssistantRepository
-from tests.fakes import ESPRESSO_MACHINE_PRODUCT, FakeMedusaProductClient
+from app.services.retrieval import QdrantVectorRetriever
+from app.services.vector import QdrantAdapter
+from tests.fakes import ESPRESSO_MACHINE_PRODUCT, FakeEmbeddingProvider, FakeMedusaProductClient, FakeQdrantClient
 
 
 @pytest.fixture
@@ -44,6 +46,9 @@ def app(repository, knowledge_dir):
     settings = Settings(
         KNOWLEDGE_DIR=knowledge_dir,
         ASSISTANT_POSTGRES_URI=None,
+        QDRANT_URL="http://qdrant.test:6333",
+        QDRANT_COLLECTION_PREFIX="assistant_test",
+        EMBEDDING_DIMENSION=8,
         AI_ASSISTANT_CORS_ORIGINS=["http://testserver"],
         AI_ASSISTANT_API_TOKEN="test-token",
     )
@@ -59,4 +64,29 @@ def client(app):
         test_client.app.state.medusa_product_client = fake_client
         test_client.app.state.medusa_product_ingestion_service.product_client = fake_client
         test_client.app.state.live_commerce_tools.product_client = fake_client
+        fake_qdrant = FakeQdrantClient()
+        fake_embedding = FakeEmbeddingProvider(dimension=8)
+        qdrant_adapter = QdrantAdapter(
+            settings=test_client.app.state.settings,
+            client=fake_qdrant,
+        )
+        vector_retriever = QdrantVectorRetriever(
+            qdrant_adapter=qdrant_adapter,
+            embedding_provider=fake_embedding,
+        )
+        test_client.app.state.fake_qdrant_client = fake_qdrant
+        test_client.app.state.fake_embedding_provider = fake_embedding
+        test_client.app.state.qdrant_adapter = qdrant_adapter
+        test_client.app.state.embedding_provider = fake_embedding
+        test_client.app.state.vector_retriever = vector_retriever
+        test_client.app.state.retriever.vector_retriever = vector_retriever
+        test_client.app.state.ingestion_service.qdrant_adapter = qdrant_adapter
+        test_client.app.state.ingestion_service.embedding_provider = fake_embedding
+        test_client.app.state.medusa_product_ingestion_service.qdrant_adapter = qdrant_adapter
+        test_client.app.state.medusa_product_ingestion_service.embedding_provider = fake_embedding
+        test_client.app.state.vector_indexing_service.qdrant_adapter = qdrant_adapter
+        test_client.app.state.vector_indexing_service.embedding_provider = fake_embedding
+        test_client.app.state.health_service.qdrant_adapter = qdrant_adapter
+        test_client.app.state.health_service.embedding_provider = fake_embedding
+        test_client.app.state.health_service.medusa_client = fake_client
         yield test_client

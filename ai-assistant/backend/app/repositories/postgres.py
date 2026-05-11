@@ -124,7 +124,7 @@ class PostgresAssistantRepository:
                 """
                 INSERT INTO assistant_ingestion_jobs
                   (id, store_id, job_type, status, source_type, source_id, input)
-                VALUES ($1, $2, $3, 'pending', $4, $5, $6::jsonb)
+                VALUES ($1, $2, $3, 'indexing', $4, $5, $6::jsonb)
                 RETURNING *
                 """,
                 job_id,
@@ -160,6 +160,35 @@ class PostgresAssistantRepository:
                 error,
             )
         return dict(row)
+
+    async def get_ingestion_job(self, job_id: UUID) -> dict[str, Any] | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM assistant_ingestion_jobs WHERE id = $1",
+                job_id,
+            )
+        return dict(row) if row else None
+
+    async def delete_source(
+        self,
+        *,
+        store_id: str,
+        locale: str,
+        source_type: str,
+        source_id: str,
+    ) -> bool:
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                DELETE FROM assistant_sources
+                WHERE store_id = $1 AND locale = $2 AND source_type = $3 AND source_id = $4
+                """,
+                store_id,
+                locale,
+                source_type,
+                source_id,
+            )
+        return not result.endswith(" 0")
 
     async def upsert_source_with_chunks(
         self,
@@ -272,6 +301,40 @@ class PostgresAssistantRepository:
                 WHERE store_id = $1 AND locale = $2
                 {source_filter}
                 ORDER BY indexed_at DESC NULLS LAST, created_at DESC
+                """,
+                *args,
+            )
+        return [dict(row) for row in rows]
+
+    async def list_chunks_for_source(
+        self,
+        *,
+        store_id: str,
+        locale: str,
+        source_type: str,
+        source_id: str,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        limit_clause = "LIMIT $6" if limit is not None else ""
+        args: tuple[Any, ...]
+        if limit is not None:
+            args = (store_id, locale, source_type, source_id, offset, limit)
+        else:
+            args = (store_id, locale, source_type, source_id, offset)
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT c.*, row_to_json(s.*) AS source
+                FROM assistant_source_chunks c
+                JOIN assistant_sources s ON s.id = c.source_id
+                WHERE s.store_id = $1
+                  AND s.locale = $2
+                  AND s.source_type = $3
+                  AND s.source_id = $4
+                ORDER BY c.chunk_index ASC, c.created_at ASC
+                OFFSET $5
+                {limit_clause}
                 """,
                 *args,
             )

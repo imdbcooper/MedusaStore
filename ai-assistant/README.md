@@ -48,6 +48,16 @@ Phase 3 live commerce tools are implemented inside the standalone assistant serv
 
 Ingestion and internal commerce tool endpoints are protected by `AI_ASSISTANT_API_TOKEN`; call them with `Authorization: Bearer <token>` or `X-API-Key`. Required Medusa configuration is env-driven in [`ENV.example`](./ENV.example). Store API requests use `MEDUSA_BACKEND_URL` and, when required by the Medusa instance, `MEDUSA_STORE_PUBLISHABLE_KEY`; `MEDUSA_ADMIN_API_TOKEN` is not sent to Store API product/cart endpoints. Price and availability fields indexed from product payloads remain hints only and are never used as factual response data unless live Medusa tools confirm them.
 
+Phase 4 Qdrant advanced retrieval is implemented as optional/guarded functionality inside this module:
+
+- `AI_ASSISTANT_RETRIEVAL_MODE` supports `markdown`, `vector`, `auto`, and `lightrag`.
+- `vector` mode uses Qdrant semantic retrieval with payload filters for `store_id`, `locale`, `source_type`, `product_id`, `category`, and `brand`, then still calls Phase 3 live commerce tools before exposing price/availability.
+- `auto` mode attempts vector retrieval first and safely falls back to Markdown/simple retrieval when Qdrant or embeddings are unavailable.
+- `markdown` mode starts without Qdrant because `QDRANT_URL` can be empty.
+- `lightrag` remains disabled/not configured by default (`LIGHTRAG_ENABLED=false`); Neo4j/LightRAG health is reported as disabled unless explicitly enabled in a future hardening pass.
+- ingestion jobs now expose vector indexing lifecycle data (`indexing`, `completed`, `error`) with `source_count`, `chunk_count`, and error details; `/api/v1/ingest/jobs/{job_id}` returns job status.
+- `/api/v1/health/deep` reports PostgreSQL, Qdrant, Medusa, embedding/LLM provider, and LightRAG/Neo4j status without requiring real services in tests.
+
 ## Recommended implementation direction
 
 Build this as an independent assistant service plus adapters:
