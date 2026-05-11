@@ -58,6 +58,30 @@ export type AssistantChatResponse = {
   }
 }
 
+export type AssistantHistoryRequest = {
+  session_id: string
+  store_id?: string
+  locale?: string
+  limit?: number
+}
+
+export type AssistantHistoryResponse = {
+  session_id: string
+  messages: AssistantHistoryMessage[]
+}
+
+export type AssistantHistoryMessage = {
+  id: string
+  session_id?: string
+  role: "user" | "assistant" | "tool" | "system"
+  content: string
+  intent?: string | null
+  products?: AssistantProduct[]
+  actions?: AssistantAction[]
+  safety?: AssistantChatResponse["safety"]
+  created_at?: string
+}
+
 export type AssistantMessage = {
   id: string
   role: "user" | "assistant" | "system"

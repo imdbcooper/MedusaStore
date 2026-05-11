@@ -1,7 +1,10 @@
 const ASSISTANT_SESSION_STORAGE_KEY = "medusastore:assistant_session_id"
 
 function createFallbackSessionId() {
-  return `assistant_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+  const randomPart = Math.random().toString(16).slice(2).padEnd(12, "0")
+  const timePart = Date.now().toString(16).padStart(12, "0")
+
+  return `00000000-0000-4000-8000-${randomPart.slice(0, 8)}${timePart.slice(-4)}`
 }
 
 export function createAssistantSessionId() {
@@ -17,14 +20,18 @@ export function getAssistantSessionId() {
     return createAssistantSessionId()
   }
 
-  const existing = window.localStorage.getItem(ASSISTANT_SESSION_STORAGE_KEY)
-  if (existing) {
-    return existing
-  }
+  try {
+    const existing = window.localStorage.getItem(ASSISTANT_SESSION_STORAGE_KEY)
+    if (existing) {
+      return existing
+    }
 
-  const next = createAssistantSessionId()
-  window.localStorage.setItem(ASSISTANT_SESSION_STORAGE_KEY, next)
-  return next
+    const next = createAssistantSessionId()
+    window.localStorage.setItem(ASSISTANT_SESSION_STORAGE_KEY, next)
+    return next
+  } catch {
+    return createAssistantSessionId()
+  }
 }
 
 export function resetAssistantSessionId() {
@@ -32,5 +39,9 @@ export function resetAssistantSessionId() {
     return
   }
 
-  window.localStorage.removeItem(ASSISTANT_SESSION_STORAGE_KEY)
+  try {
+    window.localStorage.removeItem(ASSISTANT_SESSION_STORAGE_KEY)
+  } catch {
+    // Ignore storage errors in private/incognito contexts.
+  }
 }

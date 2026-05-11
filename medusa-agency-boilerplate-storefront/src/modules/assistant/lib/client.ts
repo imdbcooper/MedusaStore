@@ -1,6 +1,12 @@
-import type { AssistantChatRequest, AssistantChatResponse } from "../types"
+import type {
+  AssistantChatRequest,
+  AssistantChatResponse,
+  AssistantHistoryRequest,
+  AssistantHistoryResponse,
+} from "../types"
 
 const DEFAULT_CHAT_ENDPOINT = "/store/assistant/chat"
+const DEFAULT_HISTORY_ENDPOINT = "/store/assistant/history"
 
 export function isAssistantWidgetEnabled() {
   return process.env.NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED === "true"
@@ -8,6 +14,15 @@ export function isAssistantWidgetEnabled() {
 
 export function getAssistantChatEndpoint() {
   return process.env.NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT || DEFAULT_CHAT_ENDPOINT
+}
+
+export function getAssistantHistoryEndpoint() {
+  const chatEndpoint = getAssistantChatEndpoint()
+  if (chatEndpoint.endsWith("/chat")) {
+    return `${chatEndpoint.slice(0, -"/chat".length)}/history`
+  }
+
+  return DEFAULT_HISTORY_ENDPOINT
 }
 
 function buildAssistantRequestHeaders(): Record<string, string> {
@@ -35,12 +50,30 @@ export async function sendAssistantMessage(input: AssistantChatRequest): Promise
   const payload = await response.json().catch(() => null)
 
   if (!response.ok) {
-    const message =
-      payload && typeof payload === "object" && "error" in payload
-        ? String((payload as { error?: { message?: unknown } }).error?.message || "Assistant request failed")
-        : "Assistant request failed"
-    throw new Error(message)
+    throw new Error(extractAssistantErrorMessage(payload, "Assistant request failed"))
   }
 
   return payload as AssistantChatResponse
+}
+
+export async function fetchAssistantHistory(input: AssistantHistoryRequest): Promise<AssistantHistoryResponse> {
+  const response = await fetch(getAssistantHistoryEndpoint(), {
+    method: "POST",
+    headers: buildAssistantRequestHeaders(),
+    body: JSON.stringify(input),
+  })
+
+  const payload = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    throw new Error(extractAssistantErrorMessage(payload, "Assistant history request failed"))
+  }
+
+  return payload as AssistantHistoryResponse
+}
+
+function extractAssistantErrorMessage(payload: unknown, fallback: string) {
+  return payload && typeof payload === "object" && "error" in payload
+    ? String((payload as { error?: { message?: unknown } }).error?.message || fallback)
+    : fallback
 }

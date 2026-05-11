@@ -298,6 +298,34 @@ class ChatService:
     async def history(self, session_id: UUID) -> list[dict[str, Any]]:
         return await self.repository.list_messages(session_id)
 
+    async def scoped_history(
+        self,
+        session_id: UUID,
+        *,
+        store_id: str,
+        locale: str,
+        customer_id: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any] | None:
+        session = await self.repository.get_session(session_id)
+        if not session:
+            return None
+        if session.get("store_id") != store_id or session.get("locale") != locale:
+            return None
+
+        bound_customer_id = session.get("customer_id")
+        if bound_customer_id and bound_customer_id != customer_id:
+            return None
+
+        messages = await self.repository.list_messages(session_id, limit=min(max(limit, 1), 50))
+        return {
+            "session_id": session_id,
+            "messages": messages,
+            "store_id": session.get("store_id") or store_id,
+            "locale": session.get("locale") or locale,
+            "customer_bound": bool(bound_customer_id),
+        }
+
 
 def classify_intent(message: str) -> str:
     normalized = message.lower()

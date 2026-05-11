@@ -25,6 +25,7 @@ import {
 import { AdminNotificationSmokeSchema } from "./admin/notifications/smoke/route"
 import { AdminSmsNotificationSmokeSchema } from "./admin/notifications/smoke/sms/route"
 import { AdminVkNotificationSmokeSchema } from "./admin/notifications/smoke/vk/route"
+import { StoreAssistantHistorySchema } from "./store/assistant/history/route"
 import { StoreCustomerMarketingPreferencesSchema } from "./store/customers/me/marketing-preferences/route"
 import { StoreVkIdStartLinkSchema } from "./store/customers/me/vk-id/start/route"
 import { StoreYooKassaPaymentStatusSchema } from "./store/payment/yookassa/route"
@@ -109,6 +110,11 @@ export default defineMiddlewares({
       matcher: "/admin/assistant/jobs/:id",
       methods: ["GET"],
       middlewares: [adminAuth],
+    },
+    {
+      matcher: "/store/assistant/history",
+      methods: ["POST"],
+      middlewares: [validateAndTransformBody(StoreAssistantHistorySchema)],
     },
     {
       matcher: "/admin/marketing/campaigns",

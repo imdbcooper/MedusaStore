@@ -89,6 +89,36 @@ def test_session_bind_rejects_different_customer(client):
     assert conflict.json()["detail"]["error"]["code"] == "SESSION_ALREADY_BOUND_TO_DIFFERENT_CUSTOMER"
 
 
+def test_scoped_history_rejects_different_customer_for_bound_session(client):
+    chat = client.post(
+        "/api/v1/chat",
+        json={"message": "Привет", "store_id": "default", "locale": "ru"},
+    )
+    assert chat.status_code == 200
+    session_id = chat.json()["session_id"]
+    bound = client.post(
+        "/api/v1/admin/sessions/bind",
+        json={"session_id": session_id, "store_id": "default", "locale": "ru", "customer_id": "cus_123"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert bound.status_code == 200
+
+    own = client.get(
+        "/api/v1/chat/history/scoped",
+        params={"session_id": session_id, "store_id": "default", "locale": "ru", "customer_id": "cus_123"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    other = client.get(
+        "/api/v1/chat/history/scoped",
+        params={"session_id": session_id, "store_id": "default", "locale": "ru", "customer_id": "cus_456"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert own.status_code == 200
+    assert other.status_code == 404
+    assert other.json()["detail"]["error"]["code"] == "SESSION_HISTORY_NOT_FOUND"
+
+
 def test_bind_missing_session_returns_not_found(client):
     response = client.post(
         "/api/v1/admin/sessions/bind",

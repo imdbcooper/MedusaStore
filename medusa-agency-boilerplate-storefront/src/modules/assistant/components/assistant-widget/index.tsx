@@ -1,10 +1,11 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 
-import { sendAssistantMessage } from "../../lib/client"
+import { fetchAssistantHistory, sendAssistantMessage } from "../../lib/client"
+import { loadAssistantHistory, mergeAssistantMessages, saveAssistantHistory } from "../../lib/history"
 import { getAssistantSessionId } from "../../lib/session"
-import type { AssistantChatResponse, AssistantMessage } from "../../types"
+import type { AssistantChatResponse, AssistantHistoryMessage, AssistantMessage } from "../../types"
 import AssistantMarkdown from "../assistant-markdown"
 import AssistantProductCard from "../assistant-product-card"
 
@@ -36,6 +37,21 @@ function toAssistantMessage(response: AssistantChatResponse): AssistantMessage {
   }
 }
 
+function toVisibleMessage(message: AssistantHistoryMessage): AssistantMessage | null {
+  if (message.role === "tool") {
+    return null
+  }
+
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    products: message.products,
+    actions: message.actions,
+    safety: message.safety,
+  }
+}
+
 export default function AssistantWidget({
   countryCode,
   locale = "ru",
@@ -47,6 +63,55 @@ export default function AssistantWidget({
   const [messages, setMessages] = useState<AssistantMessage[]>([INITIAL_MESSAGE])
   const [isPending, startTransition] = useTransition()
   const sessionId = useMemo(() => getAssistantSessionId(), [])
+  const historyScope = useMemo(() => ({ storeId, locale, countryCode }), [countryCode, locale, storeId])
+
+  useEffect(() => {
+    const snapshot = loadAssistantHistory(historyScope, sessionId)
+    if (snapshot?.messages.length) {
+      setMessages(snapshot.messages)
+    }
+  }, [historyScope, sessionId])
+
+  useEffect(() => {
+    saveAssistantHistory(historyScope, sessionId, messages)
+  }, [historyScope, messages, sessionId])
+
+  useEffect(() => {
+    if (!sessionId) {
+      return
+    }
+
+    let cancelled = false
+
+    fetchAssistantHistory({
+      session_id: sessionId,
+      store_id: storeId,
+      locale,
+      limit: 50,
+    })
+      .then((history) => {
+        if (cancelled || history.session_id !== sessionId) {
+          return
+        }
+
+        const remoteMessages = history.messages
+          .map(toVisibleMessage)
+          .filter((message): message is AssistantMessage => Boolean(message))
+
+        if (!remoteMessages.length) {
+          return
+        }
+
+        setMessages((current) => mergeAssistantMessages(current, remoteMessages))
+      })
+      .catch(() => {
+        // Background sync failures should not interrupt the restored local chat UI.
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [historyScope, locale, sessionId, storeId])
 
   const canSend = input.trim().length > 0 && !isPending
 

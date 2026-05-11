@@ -89,3 +89,11 @@ class ChatHistoryMessage(BaseModel):
     actions: list[dict[str, Any]] = Field(default_factory=list)
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
+
+
+class ChatHistoryResponse(BaseModel):
+    session_id: UUID
+    messages: list[ChatHistoryMessage] = Field(default_factory=list)
+    store_id: str
+    locale: str
+    customer_bound: bool = False

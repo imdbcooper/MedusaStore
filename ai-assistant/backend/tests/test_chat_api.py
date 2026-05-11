@@ -30,6 +30,17 @@ def test_chat_endpoint_persists_session_and_messages(client):
     messages = history.json()
     assert [message["role"] for message in messages] == ["user", "assistant"]
 
+    scoped_history = client.get(
+        "/api/v1/chat/history/scoped",
+        params={"session_id": data["session_id"], "store_id": "default", "locale": "ru", "limit": 50},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert scoped_history.status_code == 200
+    scoped_payload = scoped_history.json()
+    assert scoped_payload["session_id"] == data["session_id"]
+    assert [message["role"] for message in scoped_payload["messages"]] == ["user", "assistant"]
+    assert "observability" not in scoped_payload["messages"][1]
+
 
 def test_chat_without_knowledge_is_graceful(client):
     response = client.post(

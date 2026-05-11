@@ -45,6 +45,31 @@ export type AssistantChatResponse = {
   safety?: Record<string, unknown>
 }
 
+export type AssistantHistoryRequest = {
+  session_id: string
+  store_id: string
+  locale: string
+  customer_id?: string
+  limit?: number
+}
+
+export type AssistantHistoryResponse = {
+  session_id: string
+  store_id: string
+  locale: string
+  customer_bound?: boolean
+  messages: Array<{
+    id: string
+    session_id: string
+    role: "user" | "assistant" | "tool" | "system"
+    content: string
+    intent?: string | null
+    products?: unknown[]
+    actions?: unknown[]
+    created_at?: string
+  }>
+}
+
 export type AssistantReindexRequest = {
   store_id?: string
   locale?: string
@@ -140,6 +165,24 @@ export class AssistantBackendClient {
     }
 
     return response
+  }
+
+  async scopedHistory(payload: AssistantHistoryRequest) {
+    const query = new URLSearchParams({
+      session_id: payload.session_id,
+      store_id: payload.store_id,
+      locale: payload.locale,
+      limit: String(payload.limit ?? 50),
+    })
+
+    if (payload.customer_id) {
+      query.set("customer_id", payload.customer_id)
+    }
+
+    return this.requestJson<AssistantHistoryResponse>(`/chat/history/scoped?${query.toString()}`, {
+      method: "GET",
+      headers: this.authHeaders(),
+    })
   }
 
   async reindex(payload: AssistantReindexRequest) {

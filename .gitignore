@@ -16,6 +16,7 @@ medusa-dump.sql
 playwright-*.md
 playwright-*.txt
 .delivery-hub-cutover-evidence/
+.tmp/
 medusa-agency-boilerplate-storefront/.middleware-check.log
 
 # Temporary browser/smoke screenshots

@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from app.api.dependencies import get_chat_service
 from app.core.auth import require_api_token
 from app.core.security import enforce_rate_limit, rate_limit_identity
-from app.schemas.chat import ChatHistoryMessage, ChatRequest, ChatResponse
+from app.schemas.chat import ChatHistoryMessage, ChatHistoryResponse, ChatRequest, ChatResponse
 from app.services.chat import ChatService
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -73,6 +73,40 @@ async def chat_history(
     identity = rate_limit_identity(http_request, scope="admin", session_id=str(session_id))
     enforce_rate_limit(http_request, scope="admin", identity=identity)
     return await service.history(session_id)
+
+
+@router.get("/history/scoped", response_model=ChatHistoryResponse)
+async def scoped_chat_history(
+    http_request: FastAPIRequest,
+    session_id: UUID,
+    store_id: str,
+    locale: str = "ru",
+    customer_id: str | None = None,
+    limit: int = 50,
+    service: ChatService = Depends(get_chat_service),
+    _: None = Depends(require_api_token),
+) -> dict:
+    identity = rate_limit_identity(http_request, scope="admin", session_id=str(session_id), store_id=store_id)
+    enforce_rate_limit(http_request, scope="admin", identity=identity)
+    history = await service.scoped_history(
+        session_id,
+        store_id=store_id,
+        locale=locale,
+        customer_id=customer_id,
+        limit=limit,
+    )
+    if history is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "SESSION_HISTORY_NOT_FOUND",
+                    "message": "Assistant session history is not available for this scope.",
+                    "retryable": False,
+                }
+            },
+        )
+    return history
 
 
 def validate_input_length(http_request: FastAPIRequest, message: str) -> None:
