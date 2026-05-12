@@ -263,6 +263,41 @@ Certificate handling direction:
 - do not copy the private key through the main staging/production server;
 - mount/connect the issued cert paths into `/opt/mailserver/config/ssl` and docker-mailserver SSL config, then reload/recreate the mailserver container.
 
+## 7a. Transactional email link opens "Страница не найдена" on storefront
+
+Symptoms:
+
+- email verification or password reset email arrives, but clicking the link shows Next.js 404 page;
+- notification row on backend DB contains link like `https://host/account/verify-email?token=...` without a country segment between host and path;
+- storefront route `[countryCode]/(main)/account/verify-email` exists and returns `200` for URLs that include `/ru/`.
+
+Checks:
+
+```bash
+ssh <staging-or-prod-host> \
+  "docker exec medusastore-db psql -U <dbuser> -d medusa -t -A -F '|' \
+   -c \"select to_char(created_at,'YYYY-MM-DD HH24:MI:SS'), template, \\\"to\\\", \
+       left(coalesce(data->>'link', data->'data'->>'link', ''), 200) \
+       from notification where created_at > now() - interval '2 hours' \
+       order by created_at desc limit 5;\""
+```
+
+```bash
+curl -sI "https://<host>/ru/account/verify-email?token=test"
+curl -sI "https://<host>/account/verify-email?token=test"
+```
+
+Expected after fix:
+
+- DB link column contains `https://host/ru/account/verify-email?token=...` with country segment;
+- curl against the `/ru/...` path returns `200`, curl against the `/...` path (without country) returns `404` which is correct Next.js behavior.
+
+Common cause:
+
+- Legacy regression: `resolveCountryCode()` in [`sendEmailVerificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-email-verification.ts:1), [`sendPasswordResetWorkflow`](../medusa-agency-boilerplate/src/workflows/send-password-reset.ts:1), or [`sendMarketingConfirmationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-marketing-confirmation.ts:1) returned `null` when the caller did not pass `countryCode`. [`customerCreatedEmailVerificationHandler`](../medusa-agency-boilerplate/src/subscribers/customer-created-email-verification.ts:1) does not pass `countryCode`, so links were built without the country segment.
+- Fix: the workflows now apply a three-tier precedence — explicit `input.countryCode` → env `NOTIFICATION_DEFAULT_COUNTRY_CODE` → hardcoded `"ru"`.
+- If a deployment still produces country-less links after the fix, verify the backend container restarted after deploy so that the updated compiled code is live, and confirm `STOREFRONT_URL` points to the correct public host.
+
 ## 8. GitHub deploy hangs or fails
 
 Symptoms:

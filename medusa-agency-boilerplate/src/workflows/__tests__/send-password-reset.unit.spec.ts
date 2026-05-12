@@ -305,4 +305,66 @@ describe("sendPasswordResetWorkflow", () => {
     expect(outcome.status).toBe("skipped")
     expect(outcome.reason).toBe("missing_customer_email")
   })
+
+  it("defaults countryCode to 'ru' when input omits it (regression: storefront 404)", async () => {
+    const harness = buildHarness({
+      customersByEmail: {
+        "default@example.com": {
+          id: "cus_default",
+          email: "default@example.com",
+          first_name: null,
+          metadata: {},
+        },
+      },
+    })
+
+    const response = await sendPasswordResetWorkflow(harness.container).run({
+      input: { email: "default@example.com" },
+    })
+
+    const outcome = response.result.result as {
+      status: string
+      country_code: string | null
+    }
+    expect(outcome.status).toBe("sent")
+    expect(outcome.country_code).toBe("ru")
+
+    const notificationPayload = harness.notificationModuleService
+      .createNotifications.mock.calls[0][0] as {
+      data: { link: string }
+    }
+    expect(notificationPayload.data.link).toContain(
+      "https://shop.example.com/ru/account/reset-password?token="
+    )
+  })
+
+  it("honors NOTIFICATION_DEFAULT_COUNTRY_CODE env override when input omits countryCode", async () => {
+    process.env.NOTIFICATION_DEFAULT_COUNTRY_CODE = "kz"
+
+    const harness = buildHarness({
+      customersByEmail: {
+        "env@example.com": {
+          id: "cus_env",
+          email: "env@example.com",
+          first_name: null,
+          metadata: {},
+        },
+      },
+    })
+
+    const response = await sendPasswordResetWorkflow(harness.container).run({
+      input: { email: "env@example.com" },
+    })
+
+    const outcome = response.result.result as { country_code: string | null }
+    expect(outcome.country_code).toBe("kz")
+
+    const notificationPayload = harness.notificationModuleService
+      .createNotifications.mock.calls[0][0] as {
+      data: { link: string }
+    }
+    expect(notificationPayload.data.link).toContain(
+      "https://shop.example.com/kz/account/reset-password?token="
+    )
+  })
 })

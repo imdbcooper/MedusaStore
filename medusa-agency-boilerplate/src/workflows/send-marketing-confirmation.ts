@@ -85,10 +85,20 @@ function resolveStorefrontUrl(explicit?: string | null): string | null {
   return candidate || null
 }
 
-function resolveCountryCode(value?: string | null): string | null {
-  const normalized = value?.trim().toLowerCase()
+const DEFAULT_NOTIFICATION_COUNTRY_CODE = "ru"
 
-  return normalized || null
+function resolveCountryCode(value?: string | null): string {
+  const normalized = value?.trim().toLowerCase()
+  if (normalized) {
+    return normalized
+  }
+
+  const fromEnv = process.env.NOTIFICATION_DEFAULT_COUNTRY_CODE?.trim().toLowerCase()
+  if (fromEnv) {
+    return fromEnv
+  }
+
+  return DEFAULT_NOTIFICATION_COUNTRY_CODE
 }
 
 function resolveRedirectPath(value?: string | null): string {

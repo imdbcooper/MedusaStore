@@ -294,4 +294,66 @@ describe("sendEmailVerificationWorkflow", () => {
       harness.notificationModuleService.createNotifications
     ).not.toHaveBeenCalled()
   })
+
+  it("defaults countryCode to 'ru' when input omits it (regression: storefront 404)", async () => {
+    const harness = buildHarness({
+      customersById: {
+        cus_default: {
+          id: "cus_default",
+          email: "default@example.com",
+          first_name: null,
+          metadata: {},
+        },
+      },
+    })
+
+    const response = await sendEmailVerificationWorkflow(harness.container).run({
+      input: { customerId: "cus_default" },
+    })
+
+    const outcome = response.result.result as {
+      status: string
+      country_code: string | null
+    }
+    expect(outcome.status).toBe("sent")
+    expect(outcome.country_code).toBe("ru")
+
+    const notificationPayload = harness.notificationModuleService
+      .createNotifications.mock.calls[0][0] as {
+      data: { link: string }
+    }
+    expect(notificationPayload.data.link).toContain(
+      "https://shop.example.com/ru/account/verify-email?token="
+    )
+  })
+
+  it("honors NOTIFICATION_DEFAULT_COUNTRY_CODE env override when input omits countryCode", async () => {
+    process.env.NOTIFICATION_DEFAULT_COUNTRY_CODE = "kz"
+
+    const harness = buildHarness({
+      customersById: {
+        cus_env: {
+          id: "cus_env",
+          email: "env@example.com",
+          first_name: null,
+          metadata: {},
+        },
+      },
+    })
+
+    const response = await sendEmailVerificationWorkflow(harness.container).run({
+      input: { customerId: "cus_env" },
+    })
+
+    const outcome = response.result.result as { country_code: string | null }
+    expect(outcome.country_code).toBe("kz")
+
+    const notificationPayload = harness.notificationModuleService
+      .createNotifications.mock.calls[0][0] as {
+      data: { link: string }
+    }
+    expect(notificationPayload.data.link).toContain(
+      "https://shop.example.com/kz/account/verify-email?token="
+    )
+  })
 })
