@@ -398,6 +398,23 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - Старые Delivery Hub provider ids/rows can exist only in previously used local/staging DBs and require separate operator-approved cleanup; destructive DB migration in this package is absent.
 - Ни один markdown-документ этого репозитория не должен содержать фактическое значение ApiShip credentials, Delivery Hub credentials, provider tokens, ciphertext, or raw provider payloads.
 
+#### Email verification for customer signup
+
+Подтвержденный contract для email verification flow:
+- trigger = subscriber [`customerCreatedEmailVerificationHandler()`](../medusa-agency-boilerplate/src/subscribers/customer-created-email-verification.ts:6) на event `customer.created`;
+- workflow [`sendEmailVerificationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-email-verification.ts:1) генерирует 32-байтный random url-safe token, хранит sha256 hash и TTL metadata в `customer.metadata.email_verification`, рендерит text+HTML и отправляет через Notification Module; при `NOTIFICATION_EMAIL_PROVIDER=smtp` envelope sender = `SMTP_FROM`;
+- token shape = `${customer_id}.${raw_token}`; source of truth для valid/consumed state — `customer.metadata.email_verification` + флаги `customer.metadata.email_verified`, `customer.metadata.email_verified_for`, `customer.metadata.email_verified_at`;
+- issue step overwrites previous verification state для того же customer: каждый resend генерит новый hash и invalidates предыдущий raw token;
+- consume step одноразовый: при успешном verify токен помечается `consumed_at` и флаг `email_verified=true` с `email_verified_for=<нормализованный email>`;
+- при смене `customer.email` предыдущее подтверждение больше не считается валидным, потому что `email_verified_for` перестаёт совпадать с текущим email;
+- TTL контролируется через `EMAIL_VERIFICATION_TOKEN_TTL_MINUTES`, default = `1440` минут (24ч); редирект внутри письма контролируется через optional `EMAIL_VERIFICATION_REDIRECT_PATH`, default = `/account/verify-email`;
+- storefront base URL для ссылки резолвится из `STOREFRONT_URL`, затем `STOREFRONT_BASE_URL`, затем `NEXT_PUBLIC_STOREFRONT_URL`; при отсутствии всех трёх workflow делает controlled skip с reason `missing_storefront_url`;
+- route `POST /store/customers/me/request-email-verification` требует authenticated customer и просит workflow переотправить email;
+- route `POST /store/customers/verify-email` публичный (без customer auth), чтобы email-link работал до login, но privilege scoping через token possession и O(1) lookup по `customer_id`-префиксу;
+- route `POST /admin/customers/:id/resend-email-verification` защищён admin auth и используется операторами для ручного resend;
+- subscriber никогда не блокирует регистрацию: при failure пишет sanitized error log без секретов и не throw-ит наружу;
+- все новые ключи добавлены в [`.env.example`](../.env.example) и [`.env.prod.example`](../.env.prod.example); ни один markdown этого репозитория не должен содержать реальные token values, storefront URLs с токеном в query или raw user emails.
+
 #### AI Assistant optional/default-off env contract
 
 - Backend adapter variables are backend-only: `AI_ASSISTANT_ENABLED`, `AI_ASSISTANT_BASE_URL`, `AI_ASSISTANT_SERVER_TOKEN`, and `AI_ASSISTANT_TIMEOUT_MS` belong to Medusa backend runtime and must not be exposed to the browser.
@@ -582,6 +599,18 @@ Guardrails этого пути:
 - reopened gaps зафиксированы явно и уже закрыты remediation-коммитами: category browse contour через `adb8df25ed64d9540e36588ee91dc5ff24951009`, related products rail через `275dc4d823b8203bd1d49364ba4d02211bf42799`, loading/skeleton sync через `97a4837c483b054d25511f216ee487bf150306b4`.
 - финальный post-remediation cross-preset regression/readiness pass по preset matrix `atelier|market` зафиксирован как **PASS**: category browse routed через sanctioned `catalogShell`, related products rail routed через sanctioned listing surface contract, loading/skeleton state синхронизирован с sanctioned card/listing contract; accepted non-blocking baseline observations теперь ограничены controlled Store API warnings during static params generation, соответствующими baseline в [`template_readiness_regression.md`](./template_readiness_regression.md), а storefront [`npm run lint`](../medusa-agency-boilerplate-storefront/package.json:14) после remediation lint stack и hook-dependency cleanup проходит clean.
 - следующий рекомендуемый workstream после этого docs sync уже лежит вне `Фазы 6`: readiness verdict = готово к следующему roadmap stage, то есть к **Фазе 7** template/client packaging; Phase 6 preset-driven stack не переоткрывать без нового evidence о regression.
+
+---
+
+## 5.X. Email verification MVP caveats
+
+Phase 1 email verification flow (subscriber-driven issue on `customer.created`, storefront resend banner, `/account/verify-email` consumer) — MVP scope. Следующие свойства приняты осознанно и зафиксированы как acceptable до Phase 2 hardening:
+
+- **Concurrent resend/verify race**: если два параллельных resend-запроса для одного customer приходят одновременно, метаданные могут пересчитаться в узкое окно между чтением и записью; второй токен перезаписывает первый, но оба письма могут уйти. MVP acceptable, не блокер. Phase 2 — атомарный compensate на уровне workflow.
+- **STOREFRONT_URL precedence (server-side vs browser)**: backend email verification workflow строит ссылку из server-side `STOREFRONT_URL` (или эквивалентного server env). `NEXT_PUBLIC_STOREFRONT_URL` — browser-only surface и не заменяет серверный источник. Если `STOREFRONT_URL` пуст на backend runtime, workflow помечает отправку `skipped` с `missing_storefront_url` и письма не будут уходить даже при валидном `NEXT_PUBLIC_STOREFRONT_URL`.
+- **Notification failure invalidates token**: если notification provider упал после того, как токен уже сохранен в `customer.metadata.email_verification`, токен считается issued и может протухнуть раньше, чем пользователь получит письмо. MVP acceptable: следующий resend перезапишет токен и отправит новое письмо. Phase 2 — явный rollback metadata на failure path.
+- **Generic verify error code**: `POST /store/customers/verify-email` отдаёт один общий код `invalid_or_expired_token` для всех token-related failure (missing/expired/mismatch/consumed/unknown customer). Конкретная причина пишется только в backend logs. Это осознанно снижает enumeration surface для атакующего.
+- **Rate limiting не реализован в Phase 1**: user-side spam кнопки `Отправить повторно` ограничивается только cooldown (`30 секунд` в UI). Серверный rate limit — Phase 2 scope.
 
 ---
 

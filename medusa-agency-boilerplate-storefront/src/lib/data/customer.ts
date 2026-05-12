@@ -352,3 +352,146 @@ export async function unlinkVkId(countryCode: string) {
 
   redirect(buildVkIdProfileUrl(countryCode, "unlinked"))
 }
+
+function buildStorePublishableHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  }
+
+  const publishableKey = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
+
+  if (publishableKey) {
+    headers["x-publishable-api-key"] = publishableKey
+  }
+
+  return headers
+}
+
+export type RequestEmailVerificationResult = {
+  ok: boolean
+  code?: string
+  expires_at?: string | null
+  token_ttl_minutes?: number
+}
+
+export async function requestEmailVerification(options?: {
+  countryCode?: string | null
+  reason?: string | null
+}): Promise<RequestEmailVerificationResult> {
+  const authHeaders = await getAuthHeaders()
+
+  if (!hasAuthorizationHeader(authHeaders)) {
+    return { ok: false, code: "customer_auth_required" }
+  }
+
+  const response = await fetch(
+    `${MEDUSA_BACKEND_URL}/store/customers/me/request-email-verification`,
+    {
+      method: "POST",
+      headers: {
+        ...buildStorePublishableHeaders(),
+        authorization: authHeaders.authorization,
+      },
+      body: JSON.stringify({
+        country_code: options?.countryCode || null,
+        reason: options?.reason || "resend",
+      }),
+      cache: "no-store",
+    }
+  )
+
+  let payload: Record<string, unknown> = {}
+
+  try {
+    const text = await response.text()
+
+    if (text) {
+      payload = JSON.parse(text) as Record<string, unknown>
+    }
+  } catch {
+    payload = {}
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      code:
+        (typeof payload.code === "string" && payload.code) ||
+        "email_verification_request_failed",
+    }
+  }
+
+  return {
+    ok: true,
+    expires_at:
+      typeof payload.expires_at === "string" ? payload.expires_at : null,
+    token_ttl_minutes:
+      typeof payload.token_ttl_minutes === "number"
+        ? payload.token_ttl_minutes
+        : undefined,
+  }
+}
+
+export type VerifyEmailResult = {
+  ok: boolean
+  code?: string
+  status?: "verified" | "already_verified"
+  customer_id?: string
+  email?: string
+}
+
+export async function verifyEmail(token: string): Promise<VerifyEmailResult> {
+  if (!token?.trim()) {
+    return { ok: false, code: "invalid_token_format" }
+  }
+
+  const response = await fetch(
+    `${MEDUSA_BACKEND_URL}/store/customers/verify-email`,
+    {
+      method: "POST",
+      headers: buildStorePublishableHeaders(),
+      body: JSON.stringify({ token: token.trim() }),
+      cache: "no-store",
+    }
+  )
+
+  let payload: Record<string, unknown> = {}
+
+  try {
+    const text = await response.text()
+
+    if (text) {
+      payload = JSON.parse(text) as Record<string, unknown>
+    }
+  } catch {
+    payload = {}
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      code:
+        (typeof payload.code === "string" && payload.code) ||
+        "email_verification_failed",
+    }
+  }
+
+  try {
+    const customerCacheTag = await getCacheTag("customers")
+    revalidateTag(customerCacheTag)
+  } catch {
+    // best-effort cache invalidation after verification
+  }
+
+  return {
+    ok: true,
+    status:
+      typeof payload.status === "string" &&
+      (payload.status === "verified" || payload.status === "already_verified")
+        ? (payload.status as "verified" | "already_verified")
+        : "verified",
+    customer_id:
+      typeof payload.customer_id === "string" ? payload.customer_id : undefined,
+    email: typeof payload.email === "string" ? payload.email : undefined,
+  }
+}

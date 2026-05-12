@@ -27,7 +27,9 @@ import { AdminSmsNotificationSmokeSchema } from "./admin/notifications/smoke/sms
 import { AdminVkNotificationSmokeSchema } from "./admin/notifications/smoke/vk/route"
 import { StoreAssistantHistorySchema } from "./store/assistant/history/route"
 import { StoreCustomerMarketingPreferencesSchema } from "./store/customers/me/marketing-preferences/route"
+import { StoreRequestEmailVerificationSchema } from "./store/customers/me/request-email-verification/route"
 import { StoreVkIdStartLinkSchema } from "./store/customers/me/vk-id/start/route"
+import { StoreVerifyEmailSchema } from "./store/customers/verify-email/route"
 import { StoreYooKassaPaymentStatusSchema } from "./store/payment/yookassa/route"
 import { StoreYooKassaReturnSchema } from "./store/payment/yookassa/return/route"
 import { StoreVkIdCallbackSchema } from "./store/vk-id/callback/route"
@@ -186,6 +188,24 @@ export default defineMiddlewares({
       matcher: "/store/customers/me/vk-id/unlink",
       methods: ["POST"],
       middlewares: [authenticate("customer", ["session", "bearer"])],
+    },
+    {
+      matcher: "/store/customers/me/request-email-verification",
+      methods: ["POST"],
+      middlewares: [
+        authenticate("customer", ["session", "bearer"]),
+        validateAndTransformBody(StoreRequestEmailVerificationSchema),
+      ],
+    },
+    {
+      matcher: "/store/customers/verify-email",
+      methods: ["POST"],
+      middlewares: [validateAndTransformBody(StoreVerifyEmailSchema)],
+    },
+    {
+      matcher: "/admin/customers/:id/resend-email-verification",
+      methods: ["POST"],
+      middlewares: [adminAuth],
     },
     {
       matcher: "/store/delivery/catalog",
