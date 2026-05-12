@@ -58,7 +58,26 @@ type SmtpAttachment = {
   contentType?: string
 }
 
+type SmtpCustomHeaders = Record<string, string>
+
 const DEFAULT_SMTP_SUBJECT = "Notification"
+
+/**
+ * Allow list for custom headers that notification data may request the
+ * SMTP provider to set on the outgoing message. Names are canonicalized
+ * to lowercase before comparison. Values are sanitized (trimmed, control
+ * characters stripped) and truncated to avoid header smuggling.
+ */
+const SMTP_ALLOWED_CUSTOM_HEADERS: ReadonlySet<string> = new Set([
+  "list-unsubscribe",
+  "list-unsubscribe-post",
+  "list-id",
+  "list-help",
+  "x-campaign-id",
+  "precedence",
+])
+
+const SMTP_HEADER_VALUE_MAX_LENGTH = 1024
 
 export class SmtpNotificationService extends AbstractNotificationProviderService {
   static identifier = "notification-smtp"
@@ -174,6 +193,7 @@ export class SmtpNotificationService extends AbstractNotificationProviderService
       this.config_.fromName
     )
     const attachments = buildSmtpAttachments(notification.attachments)
+    const customHeaders = extractSmtpCustomHeaders(notification)
 
     const info = await this.transporter_.sendMail({
       from,
@@ -183,6 +203,9 @@ export class SmtpNotificationService extends AbstractNotificationProviderService
       text: content.text,
       html: content.html,
       ...(attachments.length ? { attachments } : {}),
+      ...(Object.keys(customHeaders).length
+        ? { headers: customHeaders }
+        : {}),
     })
 
     const messageId = typeof info?.messageId === "string" ? info.messageId : ""
@@ -285,6 +308,82 @@ function buildSmtpAttachments(
     content: attachment.content,
     contentType: attachment.content_type || undefined,
   }))
+}
+
+/**
+ * Collect custom headers from the notification payload.
+ *
+ * Two sources are accepted:
+ * - `notification.data.headers` (preferred; workflows set this);
+ * - `notification.data._smtp_headers` (alternate key for clarity).
+ *
+ * Only a small allow-list of header names is honoured; all values are
+ * sanitized and truncated.
+ */
+export function extractSmtpCustomHeaders(
+  notification: NotificationTypes.ProviderSendNotificationDTO
+): SmtpCustomHeaders {
+  const result: SmtpCustomHeaders = {}
+  const dataRecord =
+    notification.data && typeof notification.data === "object"
+      ? (notification.data as Record<string, unknown>)
+      : {}
+
+  const headerBag =
+    (dataRecord["headers"] && typeof dataRecord["headers"] === "object"
+      ? dataRecord["headers"]
+      : null) ||
+    (dataRecord["_smtp_headers"] &&
+    typeof dataRecord["_smtp_headers"] === "object"
+      ? dataRecord["_smtp_headers"]
+      : null)
+
+  if (!headerBag || typeof headerBag !== "object") {
+    return result
+  }
+
+  for (const [rawKey, rawValue] of Object.entries(
+    headerBag as Record<string, unknown>
+  )) {
+    if (typeof rawKey !== "string" || typeof rawValue !== "string") {
+      continue
+    }
+
+    const normalizedKey = rawKey.trim().toLowerCase()
+
+    if (!SMTP_ALLOWED_CUSTOM_HEADERS.has(normalizedKey)) {
+      continue
+    }
+
+    const sanitizedValue = rawValue
+      .replace(/[\r\n]+/g, " ")
+      .trim()
+      .slice(0, SMTP_HEADER_VALUE_MAX_LENGTH)
+
+    if (!sanitizedValue) {
+      continue
+    }
+
+    // Preserve canonical header casing for common names.
+    const canonicalKey = canonicalizeSmtpHeaderName(normalizedKey)
+
+    result[canonicalKey] = sanitizedValue
+  }
+
+  return result
+}
+
+function canonicalizeSmtpHeaderName(lowerName: string): string {
+  const overrides: Record<string, string> = {
+    "list-unsubscribe": "List-Unsubscribe",
+    "list-unsubscribe-post": "List-Unsubscribe-Post",
+    "list-id": "List-Id",
+    "list-help": "List-Help",
+    "x-campaign-id": "X-Campaign-Id",
+    precedence: "Precedence",
+  }
+
+  return overrides[lowerName] || lowerName
 }
 
 function htmlToPlainText(value: string) {

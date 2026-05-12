@@ -149,14 +149,57 @@ export default function ProfileMarketingPreferences({
         })
 
         setState(response.marketing)
-        setMessage(
-          nextStatus === "subscribed"
-            ? `Канал ${channel} включён для marketing кампаний.`
-            : `Канал ${channel} отключён для marketing кампаний.`
-        )
+
+        const confirmationTarget = channel === "email" && nextStatus === "subscribed"
+
+        if (confirmationTarget) {
+          setMessage(
+            "Мы отправили письмо для подтверждения подписки. Перейдите по ссылке из письма, чтобы активировать рассылку."
+          )
+        } else {
+          setMessage(
+            nextStatus === "subscribed"
+              ? `Канал ${channel} включён для marketing кампаний.`
+              : `Канал ${channel} отключён для marketing кампаний.`
+          )
+        }
+
         setError(null)
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Не удалось обновить настройки")
+      }
+    })
+  }
+
+  const handleResendConfirmation = (channel: MarketingChannel) => {
+    if (!state) {
+      return
+    }
+
+    startTransition(async () => {
+      try {
+        // Retriggering by toggling "subscribed" re-issues a pending state +
+        // confirmation email via the storefront API (route handles the
+        // double-opt-in branch). Safe to call while already pending.
+        const response = await updateMarketingPreferences({
+          channels: {
+            [channel]: {
+              status: "subscribed",
+            },
+          },
+        })
+
+        setState(response.marketing)
+        setMessage(
+          "Письмо для подтверждения подписки отправлено повторно. Проверьте папку спам, если не видите его во входящих."
+        )
+        setError(null)
+      } catch (cause) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Не удалось повторно отправить письмо подтверждения"
+        )
       }
     })
   }
@@ -271,6 +314,26 @@ export default function ProfileMarketingPreferences({
                   <dd className="font-medium">{bindings?.[channel]?.available ? "yes" : "no"}</dd>
                 </div>
               </dl>
+
+              {channel === "email" && channelState.status === "pending" ? (
+                <div className="mt-3 flex flex-col gap-2 rounded-rounded border border-orange-200 bg-orange-50 px-4 py-3">
+                  <p className="text-small-regular text-orange-900">
+                    Ожидаем подтверждение подписки. Проверьте почту и перейдите
+                    по ссылке из письма. Без подтверждения маркетинговые письма
+                    не отправляются.
+                  </p>
+                  <div>
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      isLoading={isPending}
+                      onClick={() => handleResendConfirmation(channel)}
+                    >
+                      Отправить подтверждение повторно
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           )
         })}

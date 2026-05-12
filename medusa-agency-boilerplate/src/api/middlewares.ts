@@ -27,6 +27,8 @@ import { AdminSmsNotificationSmokeSchema } from "./admin/notifications/smoke/sms
 import { AdminVkNotificationSmokeSchema } from "./admin/notifications/smoke/vk/route"
 import { StoreAssistantHistorySchema } from "./store/assistant/history/route"
 import { StoreCustomerMarketingPreferencesSchema } from "./store/customers/me/marketing-preferences/route"
+import { StoreMarketingConfirmSchema } from "./store/customers/marketing/confirm/route"
+import { StoreMarketingUnsubscribeSchema } from "./store/customers/marketing/unsubscribe/route"
 import { StoreRequestEmailVerificationSchema } from "./store/customers/me/request-email-verification/route"
 import { StoreUpdateCustomerPasswordSchema } from "./store/customers/me/password/route"
 import { StoreVkIdStartLinkSchema } from "./store/customers/me/vk-id/start/route"
@@ -204,6 +206,21 @@ export default defineMiddlewares({
       matcher: "/store/customers/verify-email",
       methods: ["POST"],
       middlewares: [validateAndTransformBody(StoreVerifyEmailSchema)],
+    },
+    {
+      matcher: "/store/customers/marketing/confirm",
+      methods: ["POST"],
+      middlewares: [validateAndTransformBody(StoreMarketingConfirmSchema)],
+    },
+    {
+      matcher: "/store/customers/marketing/unsubscribe",
+      methods: ["POST"],
+      middlewares: [validateAndTransformBody(StoreMarketingUnsubscribeSchema)],
+    },
+    {
+      matcher: "/store/customers/marketing/unsubscribe",
+      methods: ["GET"],
+      middlewares: [],
     },
     {
       matcher: "/admin/customers/:id/resend-email-verification",

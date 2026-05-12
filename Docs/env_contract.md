@@ -103,6 +103,15 @@
 - `BRAND_TEXT_COLOR`
 - `BRAND_BACKGROUND_COLOR`
 - `BRAND_FOOTER_HTML`
+- `MARKETING_EMAIL_FROM`
+- `MARKETING_EMAIL_FROM_NAME`
+- `MARKETING_EMAIL_REPLY_TO`
+- `MARKETING_UNSUBSCRIBE_MAILTO`
+- `MARKETING_DOUBLE_OPTIN_TOKEN_TTL_DAYS`
+- `MARKETING_UNSUBSCRIBE_TOKEN_TTL_DAYS`
+- `MARKETING_UNSUBSCRIBE_REDIRECT_PATH`
+- `MARKETING_CONFIRMATION_REDIRECT_PATH`
+- `MARKETING_DEFAULT_COUNTRY_CODE`
 - `MEDUSA_BACKEND_URL`
 - `NOTIFICATION_SMOKE_TO`
 - `NOTIFICATION_SMOKE_SUBJECT`
@@ -148,6 +157,25 @@ root-level скрипты используют этот файл как исто
 - текущий mail infra target без secrets: `SMTP_HOST=smtp.slavx.ru`, `SMTP_PORT=587`, `SMTP_FROM=noreply@notify.slavx.ru`; перед включением SMTP в staging/production нужны PTR `77.83.92.194 -> smtp.slavx.ru`, trusted TLS cert, актуальная DMARC-проверка и операторская установка реального `SMTP_PASSWORD` вне Git;
 - `BRAND_NAME`, `BRAND_LOGO_URL`, `BRAND_PRIMARY_COLOR`, `BRAND_ACCENT_COLOR`, `BRAND_TEXT_COLOR`, `BRAND_BACKGROUND_COLOR` и `BRAND_FOOTER_HTML` — полностью **optional** backend-only brand theming для transactional HTML templates через [`renderBrandedEmail()`](../medusa-agency-boilerplate/src/modules/email-template.ts:1); безопасные дефолты применяются, если значения пустые или отсутствуют, пустое значение не ломает startup/runtime, hex-цвета валидируются, `BRAND_LOGO_URL` принимается только как абсолютный http/https URL, `BRAND_FOOTER_HTML` санитизируется (drop `<script>`/`<style>`/`<iframe>`/`<object>`/`<embed>`/`<base>`/`<link>`, inline `on*=` handlers, а также `javascript:`/`vbscript:`/`data:` schemes), action URL CTA в branded templates принимает только `http:`/`https:` scheme (всё остальное отклоняется и CTA не рендерится), и ни один из этих ключей не является baseline requirement и не должен содержать реальные секреты;
 - **Breaking change (`2026-05` branded transactional templates):** subject-строки customer-facing order lifecycle email писем (`order placed`, `order shipped`, `order canceled`, `payment failed`, email verification, password reset) переведены с английского на русский, например `"Order #123 placed"` → `"Заказ #123 принят"`. Inbox-фильтры операторов/клиентов, построенные по старому английскому subject, перестанут срабатывать и требуют обновления. Sender identity (`NOTIFICATION_EMAIL_FROM`, `SMTP_FROM`, `SMTP_FROM_NAME`) не меняется, канонические trigger types и dedupe identity остаются прежними;
+- **Marketing v2 groundwork (`2026-05` Phase 4):** `MARKETING_EMAIL_FROM`, `MARKETING_EMAIL_FROM_NAME`, `MARKETING_EMAIL_REPLY_TO` — optional separate marketing sender для [`sendMarketingCampaignWorkflow`](../medusa-agency-boilerplate/src/workflows/send-marketing-campaign.ts) и [`sendMarketingConfirmationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-marketing-confirmation.ts); при пустых значениях используется `SMTP_FROM`/`NOTIFICATION_EMAIL_FROM` как fallback, чтобы не ломать baseline. Полное разделение transactional vs marketing mail stream требует отдельного SMTP account на mail server (`news@news.slavx.ru`) и считается manual operator task вне scope этой фазы.
+- `MARKETING_UNSUBSCRIBE_MAILTO` — **optional** mailto target для `List-Unsubscribe` header в marketing emails. По умолчанию пустой; при пустом значении header содержит только https URL (что полностью соответствует RFC 8058 / Gmail+Yahoo bulk-sender требованиям). Если значение задано, оно ДОЛЖНО резолвиться в реальный почтовый ящик на outbound mail server (например `unsubscribe@news.slavx.ru`), иначе Gmail/Yahoo могут посчитать header сломанным и снизить deliverability. Создание этого mailbox — manual operator task; hardcoded default в коде отсутствует.
+- `MARKETING_DOUBLE_OPTIN_TOKEN_TTL_DAYS` (default `7`) и `MARKETING_UNSUBSCRIBE_TOKEN_TTL_DAYS` (default `365`) управляют TTL подтверждения подписки и unsubscribe tokens соответственно; значения валидируются как positive integer, пустое/некорректное значение резолвится в safe default без failure.
+- `MARKETING_CONFIRMATION_REDIRECT_PATH` (default `/marketing/confirm`) и `MARKETING_UNSUBSCRIBE_REDIRECT_PATH` (default `/unsubscribe`) — storefront landing paths для confirm/opt-out UI; ссылки строятся с optional country segment и никогда не раскрывают raw token в логах.
+- `MARKETING_DEFAULT_COUNTRY_CODE` (default `ru`) определяет country segment в marketing confirm/unsubscribe storefront URLs (`https://host/{code}/marketing/confirm`, `https://host/{code}/unsubscribe`). Поведение: первым приоритетом читается `customer.metadata.marketing.preferred_country_code` (future расширение для multi-region customer-level preference), затем env `MARKETING_DEFAULT_COUNTRY_CODE`, затем `ru` как safe fallback. Hardcoded `"ru"` в workflow удалён.
+- Double opt-in: включение email через storefront marketing preferences переводит канал в `pending` state с sha256 token hash в `customer.metadata.marketing.channels.email.confirmation_token_hash`; workflow [`sendMarketingConfirmationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-marketing-confirmation.ts:1) отправляет branded confirmation email, [`applyMarketingConfirmationWorkflow`](../medusa-agency-boilerplate/src/workflows/apply-marketing-confirmation.ts:1) переводит канал в `subscribed` и очищает token. [`sendMarketingCampaignWorkflow`](../medusa-agency-boilerplate/src/workflows/send-marketing-campaign.ts:1) продолжает проверять channel status == `subscribed`, поэтому `pending` каналы автоматически исключаются из рассылок.
+- Unsubscribe: per-recipient токен ротируется на каждой marketing send через [`generateUnsubscribeToken()`](../medusa-agency-boilerplate/src/modules/marketing-unsubscribe.ts:1), hash живёт в `customer.metadata.marketing_unsubscribe`, а публичный токен формата `${customer_id}.${raw}` используется в https link и не передаётся провайдеру email напрямую. Rotation persist происходит **только после успешного `notificationModuleService.createNotifications(...)`** — если SMTP fails, предыдущий unsubscribe token остаётся валидным (CAN-SPAM compliance: отправленные ранее письма остаются отписываемыми даже при транзиентных провайдер-сбоях). Email-path также проставляет RFC 8058 headers `List-Unsubscribe`/`List-Unsubscribe-Post`/`X-Campaign-Id` через [`SmtpNotificationService`](../medusa-agency-boilerplate/src/modules/notification-smtp.ts:1) с allow-list и header sanitization. Публичный store endpoint [`POST /store/customers/marketing/unsubscribe`](../medusa-agency-boilerplate/src/api/store/customers/marketing/unsubscribe/route.ts:1) всегда отвечает `{ ok: true }`, чтобы не раскрывать existence токена и быть совместимым с One-Click unsubscribe; внутренние причины фиксируются только в server logs через sanitized helpers. Endpoint поддерживает (a) `POST` с `application/json` body `{token, channels?}` для storefront preference UI, (b) `POST` с `application/x-www-form-urlencoded` body `List-Unsubscribe=One-Click` + `?token=…` query для Gmail/Yahoo bulk-sender one-click flow, (c) `GET ?token=…&channels=email` для email-client prefetch scanners и direct mail link clicks — во всех трёх вариантах token читается с приоритетом query → validatedBody → fallback body.
+
+### ⚠️ Migration warning: existing customers (Phase 4 marketing opt-in)
+
+Customers, созданные до Phase 4 (без `customer.metadata.marketing.*` блока), через [`resolveDefaultChannelStatus()`](../medusa-agency-boilerplate/src/modules/marketing-preferences.ts:1) сейчас рассматриваются как `status=subscribed` по умолчанию, чтобы не ломать baseline и не требовать breaking миграцию. Это **противоречит GDPR explicit opt-in**, если исторически consent не был собран надлежащим образом.
+
+Перед первой реальной marketing campaign оператор ДОЛЖЕН выполнить одно из:
+
+1. Bulk миграцию всех существующих customers в `status=pending` плюс единоразовый confirmation-email blast через [`sendMarketingConfirmationWorkflow`](../medusa-agency-boilerplate/src/workflows/send-marketing-confirmation.ts:1) — чистый double opt-in reset.
+2. Отправку отдельной "re-confirm your subscription" campaign до любых promotional campaigns, если список старых customers уже загрязнён.
+3. Юридическое обоснование существующего consent (например, legitimate interest для транзакционных customers в соответствии с local regulations и DPA).
+
+Без одной из этих трёх опций первая marketing campaign может нарушить GDPR explicit opt-in требования, а ревью почтовых провайдеров (Gmail Postmaster, Yahoo Sender Hub) может привести к bulk-sender reputation penalty. Автоматической миграции в коде сознательно НЕТ — это операторское решение с юридической ответственностью.
 - `MEDUSA_BACKEND_URL`, `NOTIFICATION_SMOKE_TO`, `NOTIFICATION_SMOKE_SUBJECT`, `NOTIFICATION_SMOKE_MESSAGE` и `NOTIFICATION_SMOKE_DRY_RUN` — helper-переменные только для локального authenticated smoke path; `NOTIFICATION_SMOKE_DRY_RUN=true` проверяет admin auth/route contract без создания notification/send; они не являются baseline requirement и не должны содержать реальные боевые секреты;
 - fresh template delivery startup не требует Delivery Hub env, removed provider runtime routes, or provider-specific checkout activation flags; active delivery baseline is ApiShip/Gorgo through `@gorgo/medusa-fulfillment-apiship`;
 - direct `/store/apiship/*` is the canonical Store API contract for normal checkout; `/store/delivery/*` is not a current facade;
@@ -206,6 +234,15 @@ root-level скрипты используют этот файл как исто
 - `BRAND_TEXT_COLOR`
 - `BRAND_BACKGROUND_COLOR`
 - `BRAND_FOOTER_HTML`
+- `MARKETING_EMAIL_FROM`
+- `MARKETING_EMAIL_FROM_NAME`
+- `MARKETING_EMAIL_REPLY_TO`
+- `MARKETING_UNSUBSCRIBE_MAILTO`
+- `MARKETING_DOUBLE_OPTIN_TOKEN_TTL_DAYS`
+- `MARKETING_UNSUBSCRIBE_TOKEN_TTL_DAYS`
+- `MARKETING_UNSUBSCRIBE_REDIRECT_PATH`
+- `MARKETING_CONFIRMATION_REDIRECT_PATH`
+- `MARKETING_DEFAULT_COUNTRY_CODE`
 - `MEDUSA_BACKEND_URL`
 - `NOTIFICATION_SMOKE_TO`
 - `NOTIFICATION_SMOKE_SUBJECT`

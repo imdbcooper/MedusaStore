@@ -677,3 +677,128 @@ export async function updateCustomerPassword(options: {
     return { ok: false, code: "password_update_failed" }
   }
 }
+
+export type MarketingChannelId = "email" | "sms" | "vk"
+
+export type ConfirmMarketingSubscriptionResult = {
+  ok: boolean
+  code?: string
+  customer_id?: string
+  channel?: MarketingChannelId
+}
+
+export async function confirmMarketingSubscription(
+  token: string
+): Promise<ConfirmMarketingSubscriptionResult> {
+  if (!token?.trim()) {
+    return { ok: false, code: "invalid_or_expired_token" }
+  }
+
+  try {
+    const response = await fetch(
+      `${MEDUSA_BACKEND_URL}/store/customers/marketing/confirm`,
+      {
+        method: "POST",
+        headers: buildStorePublishableHeaders(),
+        body: JSON.stringify({ token: token.trim() }),
+        cache: "no-store",
+      }
+    )
+
+    let payload: Record<string, unknown> = {}
+
+    try {
+      const text = await response.text()
+
+      if (text) {
+        payload = JSON.parse(text) as Record<string, unknown>
+      }
+    } catch {
+      payload = {}
+    }
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        code:
+          (typeof payload.code === "string" && payload.code) ||
+          "invalid_or_expired_token",
+      }
+    }
+
+    try {
+      const customerCacheTag = await getCacheTag("customers")
+      revalidateTag(customerCacheTag)
+    } catch {
+      // best-effort cache invalidation after confirmation
+    }
+
+    return {
+      ok: true,
+      customer_id:
+        typeof payload.customer_id === "string"
+          ? payload.customer_id
+          : undefined,
+      channel:
+        typeof payload.channel === "string"
+          ? (payload.channel as MarketingChannelId)
+          : undefined,
+    }
+  } catch {
+    return { ok: false, code: "invalid_or_expired_token" }
+  }
+}
+
+export type UnsubscribeFromMarketingResult = {
+  ok: boolean
+}
+
+export async function unsubscribeFromMarketing(options: {
+  token: string
+  channels?: MarketingChannelId[] | null
+}): Promise<UnsubscribeFromMarketingResult> {
+  const token = options.token?.trim()
+
+  if (!token) {
+    // Endpoint is idempotent; still return ok:true so the page
+    // shows a generic success message.
+    return { ok: true }
+  }
+
+  const body: Record<string, unknown> = { token }
+
+  if (
+    Array.isArray(options.channels) &&
+    options.channels.length &&
+    options.channels.every(
+      (channel) =>
+        typeof channel === "string" &&
+        ["email", "sms", "vk"].includes(channel)
+    )
+  ) {
+    body.channels = options.channels
+  }
+
+  try {
+    await fetch(
+      `${MEDUSA_BACKEND_URL}/store/customers/marketing/unsubscribe`,
+      {
+        method: "POST",
+        headers: buildStorePublishableHeaders(),
+        body: JSON.stringify(body),
+        cache: "no-store",
+      }
+    )
+  } catch {
+    // Always succeed from the UI perspective; backend logs failures.
+  }
+
+  try {
+    const customerCacheTag = await getCacheTag("customers")
+    revalidateTag(customerCacheTag)
+  } catch {
+    // best-effort cache invalidation
+  }
+
+  return { ok: true }
+}

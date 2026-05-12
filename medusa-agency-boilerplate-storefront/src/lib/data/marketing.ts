@@ -13,18 +13,22 @@ export type MarketingChannelStatus =
   | "pending"
   | "unavailable"
 
+export type StoreMarketingChannelState = {
+  status: MarketingChannelStatus
+  updated_at: string | null
+  source: string | null
+  recipient_snapshot: Record<string, unknown> | null
+  requested_at?: string | null
+  confirmed_at?: string | null
+  unsubscribed_at?: string | null
+  confirmation_token_hash?: string | null
+  confirmation_expires_at?: string | null
+}
+
 export type StoreMarketingPreferences = {
   version: 1
   global_status: MarketingGlobalStatus
-  channels: Record<
-    MarketingChannel,
-    {
-      status: MarketingChannelStatus
-      updated_at: string | null
-      source: string | null
-      recipient_snapshot: Record<string, unknown> | null
-    }
-  >
+  channels: Record<MarketingChannel, StoreMarketingChannelState>
   segments: string[]
   suppressed_until: string | null
   last_marketing_sent_at: string | null
@@ -87,6 +91,7 @@ export async function updateMarketingPreferences(input: {
       }
     >
   >
+  country_code?: string | null
 }) {
   const headers = await getMarketingHeaders()
 

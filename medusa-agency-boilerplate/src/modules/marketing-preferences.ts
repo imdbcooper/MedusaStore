@@ -1,9 +1,27 @@
+import { createHash, randomBytes, timingSafeEqual } from "crypto"
 import { updateCustomersWorkflow } from "@medusajs/medusa/core-flows"
 import { normalizeNotificationRecipient } from "./notification-email"
 import { normalizeSmsPhone } from "./notification-sms"
 import { resolveCustomerVkPeerId } from "./notification-vk"
 
 export const MARKETING_PREFERENCES_VERSION = 1 as const
+export const DEFAULT_MARKETING_DOUBLE_OPTIN_TOKEN_TTL_DAYS = 7
+export const MARKETING_CHANNEL_CONFIRMATION_FAILURE_REASONS = [
+  "invalid_token_format",
+  "customer_not_found",
+  "token_mismatch",
+  "token_expired",
+  "token_already_consumed",
+  "token_missing",
+  "channel_not_pending",
+] as const
+
+export type MarketingChannelConfirmationFailureReason =
+  (typeof MARKETING_CHANNEL_CONFIRMATION_FAILURE_REASONS)[number]
+
+export type MarketingDoubleOptinRuntime = {
+  tokenTtlDays: number
+}
 export const MARKETING_GLOBAL_STATUS_VALUES = [
   "subscribed",
   "unsubscribed",
@@ -38,6 +56,11 @@ export type MarketingChannelPreferences = {
   updated_at: string | null
   source: string | null
   recipient_snapshot: MarketingRecipientSnapshot
+  requested_at: string | null
+  confirmed_at: string | null
+  unsubscribed_at: string | null
+  confirmation_token_hash: string | null
+  confirmation_expires_at: string | null
 }
 
 export type MarketingPreferences = {
@@ -304,18 +327,33 @@ export function resolveMarketingPreferences(
         updated_at: null,
         source: null,
         recipient_snapshot: bindings.email.recipient_snapshot,
+        requested_at: null,
+        confirmed_at: null,
+        unsubscribed_at: null,
+        confirmation_token_hash: null,
+        confirmation_expires_at: null,
       },
       sms: {
         status: resolveDefaultChannelStatus(bindings.sms),
         updated_at: null,
         source: null,
         recipient_snapshot: bindings.sms.recipient_snapshot,
+        requested_at: null,
+        confirmed_at: null,
+        unsubscribed_at: null,
+        confirmation_token_hash: null,
+        confirmation_expires_at: null,
       },
       vk: {
         status: resolveDefaultChannelStatus(bindings.vk),
         updated_at: null,
         source: null,
         recipient_snapshot: bindings.vk.recipient_snapshot,
+        requested_at: null,
+        confirmed_at: null,
+        unsubscribed_at: null,
+        confirmation_token_hash: null,
+        confirmation_expires_at: null,
       },
     },
     segments: normalizeStringArray(marketing.segments),
@@ -339,6 +377,15 @@ export function resolveMarketingPreferences(
         Object.keys(asRecord(currentChannel.recipient_snapshot)).length
           ? asRecord(currentChannel.recipient_snapshot)
           : bindings[channel].recipient_snapshot,
+      requested_at: normalizeIsoDate(currentChannel.requested_at),
+      confirmed_at: normalizeIsoDate(currentChannel.confirmed_at),
+      unsubscribed_at: normalizeIsoDate(currentChannel.unsubscribed_at),
+      confirmation_token_hash: normalizeString(
+        currentChannel.confirmation_token_hash
+      ),
+      confirmation_expires_at: normalizeIsoDate(
+        currentChannel.confirmation_expires_at
+      ),
     }
   }
 
@@ -391,6 +438,34 @@ export function buildCustomerMarketingMetadata(
       nextSnapshot
     )
 
+    // Double opt-in bookkeeping:
+    // - transitioning a channel to "subscribed" via this helper bypasses
+    //   double opt-in (admin override / explicit confirmation already
+    //   happened elsewhere); clears confirmation token state.
+    // - transitioning to "pending" preserves existing requested_at/token.
+    // - transitioning to "unsubscribed" stamps unsubscribed_at and clears
+    //   confirmation token state.
+    let nextRequestedAt = currentChannel.requested_at
+    let nextConfirmedAt = currentChannel.confirmed_at
+    let nextUnsubscribedAt = currentChannel.unsubscribed_at
+    let nextConfirmationTokenHash = currentChannel.confirmation_token_hash
+    let nextConfirmationExpiresAt = currentChannel.confirmation_expires_at
+
+    if (statusChanged) {
+      if (nextStatus === "subscribed") {
+        nextConfirmedAt = updatedAt
+        nextConfirmationTokenHash = null
+        nextConfirmationExpiresAt = null
+      } else if (nextStatus === "unsubscribed") {
+        nextUnsubscribedAt = updatedAt
+        nextConfirmationTokenHash = null
+        nextConfirmationExpiresAt = null
+      } else if (nextStatus === "unavailable") {
+        nextConfirmationTokenHash = null
+        nextConfirmationExpiresAt = null
+      }
+    }
+
     nextMarketing.channels[channel] = {
       status: nextStatus,
       updated_at:
@@ -402,6 +477,11 @@ export function buildCustomerMarketingMetadata(
           ? source
           : currentChannel.source,
       recipient_snapshot: nextSnapshot,
+      requested_at: nextRequestedAt,
+      confirmed_at: nextConfirmedAt,
+      unsubscribed_at: nextUnsubscribedAt,
+      confirmation_token_hash: nextConfirmationTokenHash,
+      confirmation_expires_at: nextConfirmationExpiresAt,
     }
   }
 
@@ -497,4 +577,390 @@ export function isMarketingSuppressedNow(
   const suppressedUntil = new Date(preferences.suppressed_until)
 
   return !Number.isNaN(suppressedUntil.getTime()) && suppressedUntil > now
+}
+
+export function getMarketingDoubleOptinRuntime(): MarketingDoubleOptinRuntime {
+  const raw = process.env.MARKETING_DOUBLE_OPTIN_TOKEN_TTL_DAYS
+  const fallback = DEFAULT_MARKETING_DOUBLE_OPTIN_TOKEN_TTL_DAYS
+
+  if (typeof raw === "string" && raw.trim()) {
+    const parsed = Number(raw.trim())
+
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return { tokenTtlDays: Math.floor(parsed) }
+    }
+  }
+
+  return { tokenTtlDays: fallback }
+}
+
+function base64UrlEncode(value: Buffer): string {
+  return value
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "")
+}
+
+export function generateConfirmationToken(byteLength = 32): string {
+  if (!Number.isInteger(byteLength) || byteLength < 16) {
+    throw new Error(
+      "Confirmation token byte length must be an integer >= 16"
+    )
+  }
+
+  return base64UrlEncode(randomBytes(byteLength))
+}
+
+export function hashConfirmationToken(rawToken: string): string {
+  return createHash("sha256").update(rawToken).digest("hex")
+}
+
+export function buildPublicConfirmationToken(
+  customerId: string,
+  channel: MarketingChannel,
+  rawToken: string
+): string {
+  const normalizedId = customerId.trim()
+
+  if (!normalizedId) {
+    throw new Error("Customer id is required to build a confirmation token")
+  }
+
+  if (!rawToken) {
+    throw new Error("Raw token is required to build a confirmation token")
+  }
+
+  if (normalizedId.includes(".")) {
+    throw new Error(
+      "Customer id must not contain '.' character for confirmation token encoding"
+    )
+  }
+
+  if (channel.includes(".")) {
+    throw new Error(
+      "Channel must not contain '.' character for confirmation token encoding"
+    )
+  }
+
+  return `${normalizedId}.${channel}.${rawToken}`
+}
+
+export type ConfirmationTokenParseResult =
+  | {
+      ok: true
+      customerId: string
+      channel: MarketingChannel
+      rawToken: string
+    }
+  | { ok: false; reason: "invalid_token_format" }
+
+export function parsePublicConfirmationToken(
+  token: string | null | undefined
+): ConfirmationTokenParseResult {
+  if (typeof token !== "string") {
+    return { ok: false, reason: "invalid_token_format" }
+  }
+
+  const trimmed = token.trim()
+
+  if (!trimmed) {
+    return { ok: false, reason: "invalid_token_format" }
+  }
+
+  const firstSeparator = trimmed.indexOf(".")
+
+  if (firstSeparator <= 0 || firstSeparator === trimmed.length - 1) {
+    return { ok: false, reason: "invalid_token_format" }
+  }
+
+  const customerId = trimmed.slice(0, firstSeparator)
+  const rest = trimmed.slice(firstSeparator + 1)
+  const secondSeparator = rest.indexOf(".")
+
+  if (secondSeparator <= 0 || secondSeparator === rest.length - 1) {
+    return { ok: false, reason: "invalid_token_format" }
+  }
+
+  const channelRaw = rest.slice(0, secondSeparator).trim().toLowerCase()
+  const rawToken = rest.slice(secondSeparator + 1)
+
+  if (!customerId || !rawToken || !channelRaw) {
+    return { ok: false, reason: "invalid_token_format" }
+  }
+
+  if (!(MARKETING_CHANNELS as readonly string[]).includes(channelRaw)) {
+    return { ok: false, reason: "invalid_token_format" }
+  }
+
+  return {
+    ok: true,
+    customerId,
+    channel: channelRaw as MarketingChannel,
+    rawToken,
+  }
+}
+
+export function secureConfirmationHashEquals(
+  left: string,
+  right: string
+): boolean {
+  if (left.length !== right.length) {
+    return false
+  }
+
+  const leftBuffer = Buffer.from(left)
+  const rightBuffer = Buffer.from(right)
+
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false
+  }
+
+  try {
+    return timingSafeEqual(leftBuffer, rightBuffer)
+  } catch {
+    return false
+  }
+}
+
+export type VerifyConfirmationTokenResult =
+  | {
+      ok: true
+      customerId: string
+      channel: MarketingChannel
+    }
+  | {
+      ok: false
+      reason: MarketingChannelConfirmationFailureReason
+      customerId?: string
+      channel?: MarketingChannel
+    }
+
+export function verifyConfirmationToken(input: {
+  customer: MarketingCustomerRecord
+  channel: MarketingChannel
+  rawToken: string
+  now?: Date
+}): VerifyConfirmationTokenResult {
+  const { customer, channel, rawToken } = input
+  const now = input.now ? new Date(input.now) : new Date()
+  const resolution = resolveMarketingPreferences(customer.metadata, customer)
+  const channelState = resolution.preferences.channels[channel]
+
+  if (!channelState.confirmation_token_hash) {
+    return {
+      ok: false,
+      reason: "token_missing",
+      customerId: customer.id,
+      channel,
+    }
+  }
+
+  if (channelState.status !== "pending") {
+    return {
+      ok: false,
+      reason: "channel_not_pending",
+      customerId: customer.id,
+      channel,
+    }
+  }
+
+  if (channelState.confirmation_expires_at) {
+    const expiresAt = new Date(channelState.confirmation_expires_at)
+
+    if (
+      !Number.isNaN(expiresAt.getTime()) &&
+      expiresAt.getTime() <= now.getTime()
+    ) {
+      return {
+        ok: false,
+        reason: "token_expired",
+        customerId: customer.id,
+        channel,
+      }
+    }
+  }
+
+  const providedHash = hashConfirmationToken(rawToken)
+
+  if (!secureConfirmationHashEquals(providedHash, channelState.confirmation_token_hash)) {
+    return {
+      ok: false,
+      reason: "token_mismatch",
+      customerId: customer.id,
+      channel,
+    }
+  }
+
+  return {
+    ok: true,
+    customerId: customer.id,
+    channel,
+  }
+}
+
+/**
+ * Build customer.metadata with a given channel transitioned to state
+ * `pending` and a fresh confirmation token hash stored. Used by the
+ * sendMarketingConfirmation workflow.
+ */
+export function buildChannelPendingMetadata(input: {
+  customer: MarketingCustomerRecord
+  channel: MarketingChannel
+  tokenHash: string
+  now?: Date
+  ttlDays?: number
+  source?: string | null
+}): Record<string, unknown> {
+  const currentMetadata = asRecord(input.customer.metadata)
+  const currentResolution = resolveMarketingPreferences(
+    input.customer.metadata,
+    input.customer
+  )
+  const bindings = currentResolution.bindings
+  const now = input.now ? new Date(input.now) : new Date()
+  const nowIso = now.toISOString()
+  const ttlDays =
+    typeof input.ttlDays === "number" && input.ttlDays > 0
+      ? Math.floor(input.ttlDays)
+      : DEFAULT_MARKETING_DOUBLE_OPTIN_TOKEN_TTL_DAYS
+  const expiresAt = new Date(
+    now.getTime() + ttlDays * 24 * 60 * 60 * 1000
+  ).toISOString()
+  const source = input.source?.trim() || DEFAULT_MARKETING_SOURCE
+
+  const nextMarketing: MarketingPreferences = {
+    ...currentResolution.preferences,
+    channels: {
+      email: { ...currentResolution.preferences.channels.email },
+      sms: { ...currentResolution.preferences.channels.sms },
+      vk: { ...currentResolution.preferences.channels.vk },
+    },
+  }
+
+  const previousChannel = nextMarketing.channels[input.channel]
+  const binding = bindings[input.channel]
+
+  nextMarketing.channels[input.channel] = {
+    ...previousChannel,
+    status: binding.available ? "pending" : "unavailable",
+    updated_at: nowIso,
+    source,
+    recipient_snapshot: binding.recipient_snapshot,
+    requested_at: nowIso,
+    confirmation_token_hash: input.tokenHash.trim(),
+    confirmation_expires_at: expiresAt,
+  }
+
+  return {
+    ...currentMetadata,
+    marketing: nextMarketing,
+  }
+}
+
+/**
+ * Build customer.metadata with a given channel confirmed. Clears
+ * confirmation token state and sets confirmed_at.
+ */
+export function buildChannelConfirmedMetadata(input: {
+  customer: MarketingCustomerRecord
+  channel: MarketingChannel
+  now?: Date
+  source?: string | null
+}): Record<string, unknown> {
+  const currentMetadata = asRecord(input.customer.metadata)
+  const currentResolution = resolveMarketingPreferences(
+    input.customer.metadata,
+    input.customer
+  )
+  const now = input.now ? new Date(input.now) : new Date()
+  const nowIso = now.toISOString()
+  const source = input.source?.trim() || DEFAULT_MARKETING_SOURCE
+
+  const nextMarketing: MarketingPreferences = {
+    ...currentResolution.preferences,
+    channels: {
+      email: { ...currentResolution.preferences.channels.email },
+      sms: { ...currentResolution.preferences.channels.sms },
+      vk: { ...currentResolution.preferences.channels.vk },
+    },
+  }
+
+  const previousChannel = nextMarketing.channels[input.channel]
+
+  nextMarketing.channels[input.channel] = {
+    ...previousChannel,
+    status: "subscribed",
+    updated_at: nowIso,
+    source,
+    confirmed_at: nowIso,
+    unsubscribed_at: null,
+    confirmation_token_hash: null,
+    confirmation_expires_at: null,
+  }
+
+  return {
+    ...currentMetadata,
+    marketing: nextMarketing,
+  }
+}
+
+/**
+ * Build customer.metadata with a given channel unsubscribed. Clears
+ * confirmation token state and sets unsubscribed_at.
+ */
+export function buildChannelUnsubscribedMetadata(input: {
+  customer: MarketingCustomerRecord
+  channel: MarketingChannel
+  now?: Date
+  source?: string | null
+}): Record<string, unknown> {
+  const currentMetadata = asRecord(input.customer.metadata)
+  const currentResolution = resolveMarketingPreferences(
+    input.customer.metadata,
+    input.customer
+  )
+  const now = input.now ? new Date(input.now) : new Date()
+  const nowIso = now.toISOString()
+  const source = input.source?.trim() || DEFAULT_MARKETING_SOURCE
+
+  const nextMarketing: MarketingPreferences = {
+    ...currentResolution.preferences,
+    channels: {
+      email: { ...currentResolution.preferences.channels.email },
+      sms: { ...currentResolution.preferences.channels.sms },
+      vk: { ...currentResolution.preferences.channels.vk },
+    },
+  }
+
+  const previousChannel = nextMarketing.channels[input.channel]
+
+  nextMarketing.channels[input.channel] = {
+    ...previousChannel,
+    status: "unsubscribed",
+    updated_at: nowIso,
+    source,
+    unsubscribed_at: nowIso,
+    confirmation_token_hash: null,
+    confirmation_expires_at: null,
+  }
+
+  return {
+    ...currentMetadata,
+    marketing: nextMarketing,
+  }
+}
+
+export function sanitizeMarketingLogValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "n/a"
+  }
+
+  const normalized = String(value).trim()
+
+  if (!normalized) {
+    return "n/a"
+  }
+
+  return normalized.replace(/[\r\n]+/g, " ").slice(0, 120)
 }

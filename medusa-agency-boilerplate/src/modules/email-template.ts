@@ -29,6 +29,19 @@ export type EmailTemplateInput = {
   action?: EmailTemplateAction | null
   body?: EmailTemplateBody | null
   footer?: string | null
+  footerAppend?: EmailTemplateFooterAppend | null
+}
+
+/**
+ * Optional per-recipient/per-campaign footer appendix that is rendered
+ * after the standard brand footer. Only safe http(s) URLs are allowed;
+ * `url` is validated with the same guard used for action buttons.
+ */
+export type EmailTemplateFooterAppend = {
+  text: string
+  html?: string | null
+  url?: string | null
+  linkLabel?: string | null
 }
 
 export type BrandEmailConfig = {
@@ -343,9 +356,56 @@ function renderActionHtml(
 </p>`.trim()
 }
 
+function renderFooterAppendHtml(
+  append: EmailTemplateFooterAppend | null | undefined,
+  config: BrandEmailConfig
+): string {
+  if (!append || typeof append !== "object") {
+    return ""
+  }
+
+  const text = typeof append.text === "string" ? append.text.trim() : ""
+
+  if (!text) {
+    return ""
+  }
+
+  // Consumer may provide pre-escaped html. If absent, build from text+url.
+  if (append.html && typeof append.html === "string" && append.html.trim()) {
+    const sanitized = sanitizeFooterHtml(append.html)
+
+    if (sanitized) {
+      return `<div style="margin:12px 0 0 0;padding:0;color:#9ca3af;font-size:12px;line-height:1.5;">${sanitized}</div>`
+    }
+  }
+
+  const safeUrl =
+    typeof append.url === "string" && append.url.trim()
+      ? safeActionUrl(append.url)
+      : null
+
+  if (!safeUrl) {
+    return `<p style="margin:12px 0 0 0;padding:0;color:#9ca3af;font-size:12px;line-height:1.5;">${escapeHtml(
+      text
+    )}</p>`
+  }
+
+  const label =
+    typeof append.linkLabel === "string" && append.linkLabel.trim()
+      ? escapeHtml(append.linkLabel.trim())
+      : escapeHtml(safeUrl)
+
+  return `<p style="margin:12px 0 0 0;padding:0;color:#9ca3af;font-size:12px;line-height:1.5;">${escapeHtml(
+    text
+  )} — <a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer" style="color:${
+    config.primaryColor
+  };text-decoration:underline;">${label}</a></p>`
+}
+
 function renderFooterHtml(
   footer: string | null | undefined,
-  config: BrandEmailConfig
+  config: BrandEmailConfig,
+  footerAppend?: EmailTemplateFooterAppend | null
 ): string {
   const parts: string[] = []
 
@@ -375,6 +435,12 @@ function renderFooterHtml(
     parts.push(
       `<div style="margin:16px 0 0 0;padding:0;color:#9ca3af;font-size:12px;line-height:1.5;">${config.footerHtml}</div>`
     )
+  }
+
+  const appendHtml = renderFooterAppendHtml(footerAppend, config)
+
+  if (appendHtml) {
+    parts.push(appendHtml)
   }
 
   return parts.join("\n")
@@ -424,7 +490,11 @@ function renderHtml(
     config.accentColor
   )
   const bodyHtml = renderBodyHtml(input.body ?? null, config.textColor)
-  const footerHtml = renderFooterHtml(input.footer ?? null, config)
+  const footerHtml = renderFooterHtml(
+    input.footer ?? null,
+    config,
+    input.footerAppend ?? null
+  )
 
   return `<!DOCTYPE html>
 <html lang="ru" dir="ltr">
@@ -615,6 +685,26 @@ function renderText(
 
   lines.push(`— Команда ${config.brandName}`)
 
+  const append = input.footerAppend
+  if (append && typeof append === "object") {
+    const appendText = typeof append.text === "string" ? append.text.trim() : ""
+
+    if (appendText) {
+      lines.push("")
+      const appendUrl =
+        typeof append.url === "string" && append.url.trim()
+          ? safeActionUrl(append.url)
+          : null
+
+      if (appendUrl) {
+        lines.push(`${appendText}:`)
+        lines.push(appendUrl)
+      } else {
+        lines.push(appendText)
+      }
+    }
+  }
+
   // Remove consecutive blank lines that may have been produced by
   // sections with missing parts, to keep the plain text compact.
   const compact: string[] = []
@@ -656,6 +746,7 @@ export function renderBrandedEmail(
     action: input.action ?? null,
     body: input.body ?? null,
     footer: typeof input.footer === "string" ? input.footer : null,
+    footerAppend: input.footerAppend ?? null,
   }
 
   return {
