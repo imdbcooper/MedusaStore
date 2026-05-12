@@ -87,6 +87,15 @@
 - `NOTIFICATION_EMAIL_FROM`
 - `UNISENDER_API_KEY`
 - `UNISENDER_BASE_URL`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_SECURE`
+- `SMTP_USER`
+- `SMTP_PASSWORD`
+- `SMTP_FROM`
+- `SMTP_FROM_NAME`
+- `SMTP_REPLY_TO`
+- `SMTP_TLS_REJECT_UNAUTHORIZED`
 - `MEDUSA_BACKEND_URL`
 - `NOTIFICATION_SMOKE_TO`
 - `NOTIFICATION_SMOKE_SUBJECT`
@@ -103,6 +112,23 @@
 - `YOOKASSA_WEBHOOK_URL`
 - `YOOKASSA_WEBHOOK_SECRET`
 - `YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS`
+- `AI_ASSISTANT_ENABLED`
+- `AI_ASSISTANT_BASE_URL`
+- `AI_ASSISTANT_SERVER_TOKEN`
+- `AI_ASSISTANT_TIMEOUT_MS`
+- `AI_ASSISTANT_API_TOKEN`
+- `AI_ASSISTANT_ENV`
+- `AI_ASSISTANT_CORS_ORIGINS`
+- `ASSISTANT_POSTGRES_URI`
+- `QDRANT_URL`
+- `QDRANT_API_KEY`
+- `AI_ASSISTANT_RETRIEVAL_MODE`
+- `LLM_PROVIDER`
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL`
+- `OPENAI_MODEL`
+- `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED`
+- `NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT`
 
 Примечание:
 root-level скрипты используют этот файл как источник портов и значений по умолчанию. Если файла нет, они могут читать `.env.example`, но для реальной работы проекта корневой `.env` должен существовать.
@@ -111,6 +137,8 @@ root-level скрипты используют этот файл как исто
 - `NOTIFICATION_EMAIL_PROVIDER` и `NOTIFICATION_EMAIL_FROM` описывают только желаемый notification runtime, но не делают внешнего email provider обязательным для baseline;
 - `NOTIFICATION_EMAIL_PROVIDER=local` — подтвержденный baseline-default как в [medusa-agency-boilerplate/.env.template](../medusa-agency-boilerplate/.env.template), так и в [.env.example](../.env.example);
 - `UNISENDER_API_KEY` и optional `UNISENDER_BASE_URL` — строго **opt-in** backend-only keys для текущего production email path; пустое значение не должно ломать startup, build и runtime, а при `NOTIFICATION_EMAIL_PROVIDER=unisender` система должна безопасно падать обратно на local provider;
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_FROM_NAME`, `SMTP_REPLY_TO` и `SMTP_TLS_REJECT_UNAUTHORIZED` — строго **opt-in** backend-only keys для собственного SMTP transactional provider. При `NOTIFICATION_EMAIL_PROVIDER=smtp` неполный набор `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` безопасно резолвится обратно в local provider с warning; `SMTP_TLS_REJECT_UNAUTHORIZED=false` допустим только как временный bootstrap/self-signed режим и не должен быть финальным production baseline;
+- текущий mail infra target без secrets: `SMTP_HOST=smtp.slavx.ru`, `SMTP_PORT=587`, `SMTP_FROM=noreply@notify.slavx.ru`; перед включением SMTP в staging/production нужны PTR `77.83.92.194 -> smtp.slavx.ru`, trusted TLS cert, актуальная DMARC-проверка и операторская установка реального `SMTP_PASSWORD` вне Git;
 - `MEDUSA_BACKEND_URL`, `NOTIFICATION_SMOKE_TO`, `NOTIFICATION_SMOKE_SUBJECT` и `NOTIFICATION_SMOKE_MESSAGE` — helper-переменные только для локального authenticated smoke path; они не являются baseline requirement и не должны содержать реальные боевые секреты;
 - fresh template delivery startup не требует Delivery Hub env, removed provider runtime routes, or provider-specific checkout activation flags; active delivery baseline is ApiShip/Gorgo through `@gorgo/medusa-fulfillment-apiship`;
 - direct `/store/apiship/*` is the canonical Store API contract for normal checkout; `/store/delivery/*` is not a current facade;
@@ -123,6 +151,9 @@ root-level скрипты используют этот файл как исто
 - `YOOKASSA_STOREFRONT_RETURN_ORIGINS` задает comma-separated allowlist storefront origin-ов для return redirect; канонический root path `cp .env.example .env` → `npm run bootstrap` должен протаскивать этот ключ в backend env через [scripts/env-sync.sh](../scripts/env-sync.sh), а при отсутствии root-переменной sync пишет детерминированный local default `http://localhost:8000`;
 - `YOOKASSA_WEBHOOK_SECRET` больше не означает permissive webhook baseline при пустом значении: unsigned webhook по умолчанию должен отклоняться, а controlled local/dev override допускается только через явный `YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS=true`;
 - `YOOKASSA_WEBHOOK_URL` — optional operator-facing URL для настройки уведомлений в YooKassa; root orchestration синхронизирует его в backend env, но startup и baseline onboarding не должны требовать непустого значения;
+- AI Assistant production profile is optional/default-off in root production Compose: the assistant service starts only when the `ai-assistant` profile is used, the backend adapter is active only with exact `AI_ASSISTANT_ENABLED=true`, and the storefront widget remains hidden unless `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=true` is explicitly configured;
+- `AI_ASSISTANT_BASE_URL`, `AI_ASSISTANT_TIMEOUT_MS`, `AI_ASSISTANT_ENV`, `AI_ASSISTANT_CORS_ORIGINS`, `ASSISTANT_POSTGRES_URI`, `QDRANT_URL`, `QDRANT_API_KEY`, `AI_ASSISTANT_RETRIEVAL_MODE`, and LLM provider variables describe optional assistant service/backend connectivity and must not become clean-clone baseline requirements;
+- `AI_ASSISTANT_SERVER_TOKEN` is backend-only for the Medusa adapter, while `AI_ASSISTANT_API_TOKEN` belongs to the assistant service; they must be managed as secrets and never copied into public storefront env;
 - AI Assistant LLM runtime is optional and controlled by `LLM_PROVIDER`; for OpenAI-compatible providers the assistant reads `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, and `OPENAI_MODEL`; `OPENAI_BASE_URL` must point to a provider-compatible `/v1` endpoint when set, while API keys remain secrets and must not be committed;
 - в документации и шаблонах допустимо фиксировать только сами имена переменных и их роль, но нельзя записывать реальный пользовательский токен, API key или другой секрет.
 
@@ -150,6 +181,15 @@ root-level скрипты используют этот файл как исто
 - `NOTIFICATION_EMAIL_FROM`
 - `UNISENDER_API_KEY`
 - `UNISENDER_BASE_URL`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_SECURE`
+- `SMTP_USER`
+- `SMTP_PASSWORD`
+- `SMTP_FROM`
+- `SMTP_FROM_NAME`
+- `SMTP_REPLY_TO`
+- `SMTP_TLS_REJECT_UNAUTHORIZED`
 - `MEDUSA_BACKEND_URL`
 - `NOTIFICATION_SMOKE_TO`
 - `NOTIFICATION_SMOKE_SUBJECT`
@@ -162,6 +202,10 @@ root-level скрипты используют этот файл как исто
 - `YOOKASSA_WEBHOOK_SECRET`
 - `YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS`
 - `APISHIP_SHIPMENT_EXECUTION_ENABLED`
+- `AI_ASSISTANT_ENABLED`
+- `AI_ASSISTANT_BASE_URL`
+- `AI_ASSISTANT_SERVER_TOKEN`
+- `AI_ASSISTANT_TIMEOUT_MS`
 - historical DB residue from removed Delivery Hub/direct Yandex provider (operator note only; no env activation keys or mode flags)
 - `NOTIFICATION_SMS_PROVIDER`
 - `MTS_EXOLVE_API_KEY`
@@ -175,14 +219,16 @@ root-level скрипты используют этот файл как исто
 
 #### Notifications
 
-- `NOTIFICATION_EMAIL_PROVIDER` нормализуется через [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:119) в два значения: `requestedProviderId` и `providerId`.
+- `NOTIFICATION_EMAIL_PROVIDER` нормализуется через [`getNotificationEmailRuntime()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:129) в два значения: `requestedProviderId` и `providerId`; допустимые значения: `local`, `unisender`, `smtp`.
 - `NOTIFICATION_EMAIL_PROVIDER=local` — подтвержденный baseline-default.
 - Если requested provider равен `unisender`, но `UNISENDER_API_KEY` пустой, runtime остается baseline-safe:
   - Medusa startup, build и runtime не ломаются;
-  - в [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts:17) фиксируется warn про fallback;
-  - итоговый provider definition остается local через [`getNotificationEmailProviderDefinition()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:143).
-- `NOTIFICATION_EMAIL_FROM` задает sender для runtime, smoke workflow и lifecycle workflows, но не делает внешний provider обязательным.
-- Ни один markdown-документ этого репозитория не должен содержать фактическое значение `UNISENDER_API_KEY`, `UNISENDER_BASE_URL` c секретным query/token payload или другого notification secret.
+  - в [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts:32) фиксируется warn про fallback;
+  - итоговый provider definition остается local через [`getNotificationEmailProviderDefinition()`](../medusa-agency-boilerplate/src/modules/notification-email.ts:195).
+- Если requested provider равен `smtp`, но отсутствует полный required set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, runtime также остается baseline-safe и резолвится в local provider с warning в [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts:41).
+- SMTP provider materialized как Notification Module provider [`notification-smtp.ts`](../medusa-agency-boilerplate/src/modules/notification-smtp.ts:1), использует `nodemailer`, поддерживает `text`, `html`, attachments и не отправляет письма вне Medusa Notification Module.
+- `NOTIFICATION_EMAIL_FROM` задает sender для generic email runtime, smoke workflow и lifecycle workflows; для SMTP final sender задается через `SMTP_FROM` и optional `SMTP_FROM_NAME`.
+- Ни один markdown-документ этого репозитория не должен содержать фактическое значение `UNISENDER_API_KEY`, `UNISENDER_BASE_URL` c секретным query/token payload, `SMTP_PASSWORD` или другого notification secret.
 
 #### Approved communication stack after delivered UniSender, VK, SMS and marketing workstreams
 
@@ -352,6 +398,20 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - Старые Delivery Hub provider ids/rows can exist only in previously used local/staging DBs and require separate operator-approved cleanup; destructive DB migration in this package is absent.
 - Ни один markdown-документ этого репозитория не должен содержать фактическое значение ApiShip credentials, Delivery Hub credentials, provider tokens, ciphertext, or raw provider payloads.
 
+#### AI Assistant optional/default-off env contract
+
+- Backend adapter variables are backend-only: `AI_ASSISTANT_ENABLED`, `AI_ASSISTANT_BASE_URL`, `AI_ASSISTANT_SERVER_TOKEN`, and `AI_ASSISTANT_TIMEOUT_MS` belong to Medusa backend runtime and must not be exposed to the browser.
+- `AI_ASSISTANT_ENABLED` is exact opt-in: only literal `true` enables backend adapter calls. Empty value, `false`, `1`, `yes`, or `on` must be treated as disabled.
+- `AI_ASSISTANT_SERVER_TOKEN` is the Medusa backend server-to-server token. It should match or intentionally correspond to the assistant service `AI_ASSISTANT_API_TOKEN`, but only the backend/worker boundary may use it.
+- Service-side assistant variables include `AI_ASSISTANT_API_TOKEN`, `AI_ASSISTANT_ENV`, `AI_ASSISTANT_CORS_ORIGINS`, `ASSISTANT_POSTGRES_URI`, `QDRANT_URL`, optional `QDRANT_API_KEY`, `AI_ASSISTANT_RETRIEVAL_MODE`, and LLM provider keys such as `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, and `OPENAI_MODEL`.
+- `ASSISTANT_POSTGRES_URI`, `QDRANT_URL`, Qdrant credentials, and LLM provider keys are secrets or infrastructure coordinates for the assistant service and must not be written into `NEXT_PUBLIC_*` values.
+- Public storefront flags are limited to browser-safe values: `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED` and `NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT`.
+- No `NEXT_PUBLIC_*` variable may contain `AI_ASSISTANT_API_TOKEN`, `AI_ASSISTANT_SERVER_TOKEN`, provider API keys, database URLs, Qdrant API keys, or any other secret-bearing value.
+- Browser requests to `/store/assistant/chat` and `/store/assistant/history` may send only safe session/context data such as `message`, anonymous assistant `session_id`, `store_id`, `locale`, `region_id`, `currency_code`, and page context.
+- Browser-provided `cart_id` is untrusted and is discarded by the current backend adapter. Cart-aware answers require a future trusted server-side cart ownership resolver before cart context can be forwarded.
+- `/store/assistant/history` is a scoped proxy for the active assistant session. It must not expose privileged assistant endpoints, server tokens, cross-session history, or raw backend-only diagnostics.
+- Subscribers enqueue durable assistant reindex intents only. Actual drain/processing is explicit through admin routes, worker, or cron and should not be described as automatic inline product indexing.
+
 ---
 
 ## 4. Storefront `.env.local`
@@ -369,6 +429,8 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - `NEXT_PUBLIC_BASE_URL` используется в [src/lib/util/env.ts](/home/somdev/Projects/medusa-agency-boilerplate/medusa-agency-boilerplate-storefront/src/lib/util/env.ts:2)
 - optional `NEXT_PUBLIC_STOREFRONT_PRESET` используется в [src/lib/env.ts](/home/somdev/Projects/medusa-agency-boilerplate/medusa-agency-boilerplate-storefront/src/lib/env.ts:14) и [src/lib/storefront-client-config.ts](/home/somdev/Projects/medusa-agency-boilerplate/medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:1) как единственный sanctioned Phase 6 switch между preset scenarios `atelier` и `market`, включая уже закрытые typed [`landingSurfaces`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:317) для `home`, `collectionLanding`, `contentPage`, `postPage`, adjacent typed [`productSurfaces.supportHighlights`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:323), typed listing/card contract [`listingSurfaces.productCard`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:324), typed global shell contract [`StorefrontShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:74) и typed catalog shell contract [`StorefrontCatalogShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:298)
 - `NEXT_PUBLIC_YOOKASSA_ENABLED` остается storefront opt-in flag для payment path и не является baseline requirement, что видно в [medusa-agency-boilerplate-storefront/.env.local.example](../medusa-agency-boilerplate-storefront/.env.local.example)
+- `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED` is the public default-off assistant widget flag; `false` keeps the installed widget hidden.
+- `NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT` is the browser-safe Store API proxy endpoint and should normally stay `/store/assistant/chat`; history sync uses the sibling backend proxy `/store/assistant/history`.
 
 Практическое правило:
 - publishable key хранится здесь и остается единственным storefront env, который preflight действительно hard-require'ит через [`check-env-variables.js`](../medusa-agency-boilerplate-storefront/check-env-variables.js:3);
@@ -379,6 +441,7 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` намеренно остается placeholder-only в template baseline и должен materialize'иться только успешным [`bootstrap.sh`](../scripts/bootstrap.sh:1) после seed, а не ручным копированием из старого клиента;
 - `PAYLOAD_CONTENT_PREVIEW_TOKEN`, `PAYLOAD_PREVIEW_SECRET`, `PAYLOAD_REVALIDATE_SECRET` и `REVALIDATE_SECRET` в storefront template baseline теперь намеренно пустые: secret values допускаются только при явном включении соответствующих preview/revalidate hooks;
 - storefront не хранит отдельный legacy provider token, `UNISENDER_API_KEY`, `UNISENDER_BASE_URL` с credential-параметрами или secret admin API key и не должен получать эти значения в публичный env;
+- storefront не хранит `AI_ASSISTANT_API_TOKEN`, `AI_ASSISTANT_SERVER_TOKEN`, `ASSISTANT_POSTGRES_URI`, `QDRANT_URL`, Qdrant API keys, LLM provider keys или любые другие assistant service/backend secrets в `NEXT_PUBLIC_*` env;
 - current delivery baseline keeps storefront as a consumer of backend Store API surfaces; all sensitive ApiShip/provider credentials remain backend/admin-only and must not reach public env;
 - notification authenticated smoke path является backend-admin concern и не должен переноситься в storefront env;
 - cart identity для checkout runtime хранится storefront-side cookie helper [`setCartId()`](../medusa-agency-boilerplate-storefront/src/lib/data/cookies.ts:74), и для подтвержденного YooKassa hosted return path эта cookie policy должна оставаться совместимой с cross-site return;

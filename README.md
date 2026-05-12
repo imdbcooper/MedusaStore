@@ -13,7 +13,7 @@ Operational entrypoint for the MedusaStore production/runtime repository. This f
 | Medusa backend | Container `medusastore-backend`; source of truth for catalog, cart, checkout, payments, orders, fulfillment, notifications. | [`medusa-config.ts`](medusa-agency-boilerplate/medusa-config.ts) |
 | Payload CMS | Container `medusastore-payload`; headless content service for marketing pages, globals, preview/revalidate hooks. | [`payload.config.ts`](payload-cms/src/payload.config.ts), [`Docs/payload_cms_runbook.md`](Docs/payload_cms_runbook.md) |
 | Data | PostgreSQL container `medusastore-db`; Redis container `medusastore-redis`; production Payload uses dedicated `payload_cms` DB in the same PostgreSQL server. | [`docker-compose.prod.yml`](docker-compose.prod.yml) |
-| AI Assistant | Optional FastAPI container `medusastore-ai-assistant` behind the Medusa `/store/assistant/chat` adapter; disabled until `AI_ASSISTANT_ENABLED=true`. | [`ai-assistant/README.md`](ai-assistant/README.md), [`docker-compose.prod.yml`](docker-compose.prod.yml) |
+| AI Assistant | Optional FastAPI container `medusastore-ai-assistant` behind the installed Medusa assistant adapter; storefront uses `/store/assistant/chat` and `/store/assistant/history`; disabled until `AI_ASSISTANT_ENABLED=true` and the storefront widget flag is enabled. | [`ai-assistant/README.md`](ai-assistant/README.md), [`docker-compose.prod.yml`](docker-compose.prod.yml) |
 | Deployment | Manual GitHub Actions workflow over SSH, branch input defaults to `main`, remote script rebuilds/starts compose and runs smoke checks. | [`.github/workflows/deploy-production.yml`](.github/workflows/deploy-production.yml), [`scripts/github-deploy-prod.sh`](scripts/github-deploy-prod.sh) |
 
 Full topology and responsibility split are documented in [`Docs/architecture.md`](Docs/architecture.md).
@@ -57,12 +57,13 @@ Required GitHub Secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`, `DEPLOY_SS
 | `/healthz` | Caddy response | Public proxy health endpoint returns `ok`. |
 | `/payload/*` | `payload-cms:3100` | Payload admin/API behind Caddy path stripping via `handle_path`. |
 | `/admin/*` | `medusa-backend:9000` | Medusa Admin/API surface. |
-| `/store/*` | `medusa-backend:9000` | Medusa Store API surface, including optional `/store/assistant/chat` proxy when the AI Assistant adapter is enabled. |
+| `/store/*` | `medusa-backend:9000` | Medusa Store API surface, including optional `/store/assistant/chat` and `/store/assistant/history` proxies when the AI Assistant adapter is enabled. |
 | `/auth/*` | `medusa-backend:9000` | Medusa auth routes. |
 | `/api/content/*` | `storefront:8000` | Storefront content preview/revalidate endpoints. |
 | `/{countryCode}/products/{handle}` | `storefront:8000` | Dynamic runtime product page; validate with at least one real handle. |
 | `/ru/about`, `/ru/promotions`, `/ru/delivery-and-payment`, `/ru/loyalty` | `storefront:8000` + Payload when enabled | Payload-rendered content pages when `PAYLOAD_ENABLED=true`; fallback/not-found semantics apply when disabled or missing. |
 | `/ru/contacts` | `storefront:8000` static route | Current contact page is a static storefront route, not Payload-rendered. |
+| `/admin/assistant/*` | `medusa-backend:9000` | Optional AI Assistant admin adapter routes for reindex queue, processing, stats, and job status; protected by Medusa admin auth. |
 
 ## Runtime URL precedence
 
@@ -97,7 +98,7 @@ Committed env files are contracts/placeholders only:
 - [`payload-cms/.env.example`](payload-cms/.env.example) — Payload local template.
 - [`ai-assistant/ENV.example`](ai-assistant/ENV.example) — standalone assistant template; real local secrets belong in ignored `ai-assistant/.env.local`.
 
-Never commit real `.env` files or production secret values.
+Never commit real `.env` files or production secret values. Transactional SMTP is opt-in through backend-only `SMTP_*` variables and must stay `NOTIFICATION_EMAIL_PROVIDER=local` until credentials, PTR/TLS/DNS checks, and smoke approval are complete.
 
 ## License
 

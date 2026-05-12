@@ -1,4 +1,4 @@
-export type NotificationEmailProviderId = "local" | "unisender"
+export type NotificationEmailProviderId = "local" | "unisender" | "smtp"
 
 export type NotificationEmailRuntime = {
   requestedProviderId: NotificationEmailProviderId
@@ -7,6 +7,16 @@ export type NotificationEmailRuntime = {
   unisenderConfigured: boolean
   unisenderApiKey?: string
   unisenderBaseUrl?: string
+  smtpConfigured: boolean
+  smtpHost?: string
+  smtpPort?: number
+  smtpSecure: boolean
+  smtpUser?: string
+  smtpPassword?: string
+  smtpFrom: string
+  smtpFromName?: string
+  smtpReplyTo?: string
+  smtpTlsRejectUnauthorized?: boolean
 }
 
 export type NotificationSmokeRequestInput = {
@@ -68,7 +78,13 @@ export const NOTIFICATION_DEDUPE_CANONICAL_FIELDS = [
 function normalizeNotificationEmailProvider(
   value?: string | null
 ): NotificationEmailProviderId {
-  return value?.trim().toLowerCase() === "unisender" ? "unisender" : "local"
+  const normalized = value?.trim().toLowerCase()
+
+  if (normalized === "unisender" || normalized === "smtp") {
+    return normalized
+  }
+
+  return "local"
 }
 
 function normalizeBaseUrl(value?: string | null) {
@@ -85,6 +101,36 @@ function normalizeUniSenderBaseUrl(value?: string | null) {
   }
 
   return normalized.replace(/\/+$/, "") || undefined
+}
+
+function parseSmtpPort(value?: string | null) {
+  const normalized = value?.trim()
+
+  if (!normalized) {
+    return undefined
+  }
+
+  const port = Number(normalized)
+
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return undefined
+  }
+
+  return port
+}
+
+function parseBoolean(value?: string | null, defaultValue = false) {
+  const normalized = value?.trim().toLowerCase()
+
+  if (normalized === "true" || normalized === "1" || normalized === "yes") {
+    return true
+  }
+
+  if (normalized === "false" || normalized === "0" || normalized === "no") {
+    return false
+  }
+
+  return defaultValue
 }
 
 function shellEscape(value: string) {
@@ -128,7 +174,30 @@ export function getNotificationEmailRuntime(): NotificationEmailRuntime {
     DEFAULT_UNISENDER_BASE_URL
   const unisenderConfigured =
     requestedProviderId === "unisender" && !!unisenderApiKey
-  const providerId = unisenderConfigured ? "unisender" : "local"
+
+  const smtpHost = process.env.SMTP_HOST?.trim() || undefined
+  const smtpPort = parseSmtpPort(process.env.SMTP_PORT)
+  const smtpSecure = parseBoolean(process.env.SMTP_SECURE, false)
+  const smtpUser = process.env.SMTP_USER?.trim() || undefined
+  const smtpPassword = process.env.SMTP_PASSWORD?.trim() || undefined
+  const smtpFrom = process.env.SMTP_FROM?.trim() || from
+  const smtpFromName = process.env.SMTP_FROM_NAME?.trim() || undefined
+  const smtpReplyTo = process.env.SMTP_REPLY_TO?.trim() || undefined
+  const smtpTlsRejectUnauthorized = process.env.SMTP_TLS_REJECT_UNAUTHORIZED
+    ? parseBoolean(process.env.SMTP_TLS_REJECT_UNAUTHORIZED, true)
+    : undefined
+  const smtpConfigured =
+    requestedProviderId === "smtp" &&
+    !!smtpHost &&
+    !!smtpPort &&
+    !!smtpUser &&
+    !!smtpPassword &&
+    !!smtpFrom
+  const providerId = unisenderConfigured
+    ? "unisender"
+    : smtpConfigured
+      ? "smtp"
+      : "local"
 
   return {
     requestedProviderId,
@@ -137,6 +206,16 @@ export function getNotificationEmailRuntime(): NotificationEmailRuntime {
     unisenderConfigured,
     unisenderApiKey,
     unisenderBaseUrl,
+    smtpConfigured,
+    smtpHost,
+    smtpPort,
+    smtpSecure,
+    smtpUser,
+    smtpPassword,
+    smtpFrom,
+    smtpFromName,
+    smtpReplyTo,
+    smtpTlsRejectUnauthorized,
   }
 }
 
@@ -152,6 +231,25 @@ export function getNotificationEmailProviderDefinition() {
         api_key: runtime.unisenderApiKey,
         from: runtime.from,
         base_url: runtime.unisenderBaseUrl,
+      },
+    }
+  }
+
+  if (runtime.providerId === "smtp") {
+    return {
+      resolve: "./src/modules/notification-smtp",
+      id: "smtp",
+      options: {
+        channels: ["email"],
+        host: runtime.smtpHost,
+        port: runtime.smtpPort,
+        secure: runtime.smtpSecure,
+        user: runtime.smtpUser,
+        password: runtime.smtpPassword,
+        from: runtime.smtpFrom,
+        from_name: runtime.smtpFromName,
+        reply_to: runtime.smtpReplyTo,
+        tls_reject_unauthorized: runtime.smtpTlsRejectUnauthorized,
       },
     }
   }

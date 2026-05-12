@@ -203,7 +203,52 @@ Common causes:
 - `DEPLOY_DOMAIN` or `ACME_EMAIL` wrong in remote `.env`.
 - Caddy data/config volume has stale ACME state after domain change.
 
-## 7. GitHub deploy hangs or fails
+## 7. SMTP notification provider falls back to local or cannot send
+
+Symptoms:
+
+- Admin notification smoke reports `provider.requested=smtp` but `provider.resolved=local`.
+- Backend logs include an SMTP fallback warning.
+- SMTP smoke/send fails after explicitly enabling the provider.
+
+Checks:
+
+```bash
+docker exec medusastore-backend printenv NOTIFICATION_EMAIL_PROVIDER
+```
+
+```bash
+docker exec medusastore-backend printenv SMTP_HOST
+```
+
+```bash
+docker exec medusastore-backend printenv SMTP_PORT
+```
+
+Do not print `SMTP_PASSWORD` in terminals, tickets, docs, or logs.
+
+Expected production activation shape after approval:
+
+```text
+NOTIFICATION_EMAIL_PROVIDER=smtp
+SMTP_HOST=smtp.slavx.ru
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=noreply@notify.slavx.ru
+SMTP_FROM=noreply@notify.slavx.ru
+SMTP_TLS_REJECT_UNAUTHORIZED=true
+```
+
+Common causes:
+
+- `SMTP_PASSWORD` is missing from the real backend `.env`.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, or `SMTP_FROM` is empty or mistyped.
+- PTR for `77.83.92.194 -> smtp.slavx.ru` is not set yet, which affects deliverability.
+- SMTP TLS certificate is still self-signed/untrusted. `SMTP_TLS_REJECT_UNAUTHORIZED=false` is only a temporary bootstrap diagnostic, not final production configuration.
+- DMARC was recently changed and should be rechecked before production rollout.
+- Smoke recipient points to a real user instead of an operator/test mailbox.
+
+## 8. GitHub deploy hangs or fails
 
 Symptoms:
 
@@ -303,13 +348,73 @@ Fix direction:
 - Run migration job explicitly during a maintenance window.
 - Inspect DB locks before killing long-running migrations.
 
-## 10. Quick log map
+## 10. AI Assistant failures
+
+Symptoms:
+
+- Storefront widget is missing, disabled, or cannot open chat.
+- `POST /store/assistant/chat` or `GET /store/assistant/history` fails from the browser.
+- Admin reindex, queue drain, queue stats, assistant stats, or job-status routes fail.
+- Product changes enqueue intents but assistant search results do not refresh.
+
+Implementation facts:
+
+- The backend adapter is installed in [`medusa-agency-boilerplate`](../medusa-agency-boilerplate) and is exact opt-in only when `AI_ASSISTANT_ENABLED=true`.
+- The storefront widget is installed under [`assistant`](../medusa-agency-boilerplate-storefront/src/modules/assistant) and is hidden by default with `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=false`.
+- Browser traffic must use backend Store API proxy routes: `/store/assistant/chat` and `/store/assistant/history`.
+- Backend server-to-server calls use `AI_ASSISTANT_SERVER_TOKEN`; the standalone assistant service expects `AI_ASSISTANT_API_TOKEN`.
+- Subscribers only enqueue durable reindex intents. Actual drain/processing is explicit through `/admin/assistant/reindex/process`, a worker, or cron.
+
+Checks:
+
+```bash
+docker compose -p medusastore -f docker-compose.prod.yml --env-file .env --profile ai-assistant ps
+```
+
+```bash
+docker compose -p medusastore -f docker-compose.prod.yml --env-file .env logs --tail=200 medusa-backend
+```
+
+```bash
+docker compose -p medusastore -f docker-compose.prod.yml --env-file .env --profile ai-assistant logs --tail=200 ai-assistant
+```
+
+```bash
+docker exec medusastore-backend printenv AI_ASSISTANT_ENABLED
+docker exec medusastore-backend printenv AI_ASSISTANT_BASE_URL
+docker exec medusastore-storefront printenv NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED
+```
+
+```bash
+curl -fsS https://slavx.mooo.com/store/assistant/history || true
+```
+
+Common causes:
+
+- The root Compose `ai-assistant` profile was not started, or the assistant container is unhealthy.
+- `AI_ASSISTANT_ENABLED` is missing or not exactly `true`, so the backend adapter returns a controlled disabled response.
+- `AI_ASSISTANT_BASE_URL` is not reachable from `medusastore-backend` on the Docker network.
+- `AI_ASSISTANT_SERVER_TOKEN` does not match the assistant service `AI_ASSISTANT_API_TOKEN`.
+- `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=false` intentionally hides the widget in the storefront.
+- Browser code is calling the assistant service directly instead of `/store/assistant/chat` or `/store/assistant/history`.
+- Reindex intents were enqueued but never drained through admin, worker, or cron processing.
+
+Fix direction:
+
+- Keep the widget default-off unless launch/review explicitly enables it.
+- Enable the backend adapter only with exact `AI_ASSISTANT_ENABLED=true` and matching backend/service tokens.
+- Verify `/store/assistant/history` remains a scoped proxy and does not expose server tokens.
+- Drain queued work explicitly with `POST /admin/assistant/reindex/process` or deploy a reviewed worker/cron path.
+- Do not paste assistant API tokens, server tokens, LLM keys, raw chat PII, or provider payloads into logs/tickets/docs.
+
+## 11. Quick log map
 
 | Symptom | First logs to inspect |
 | --- | --- |
 | Caddy route/HTTPS issue | `docker compose ... logs caddy` |
 | Product page `500` | `storefront`, then `medusa-backend` |
 | Store API route fails | `medusa-backend` |
+| AI Assistant chat/history/reindex fails | `medusa-backend`, then `medusastore-ai-assistant` |
 | Payload page missing | `payload-cms`, then storefront content logs |
 | Deploy stuck after build | GitHub workflow step logs and remote Docker logs |
 | Smoke fails only publicly | `caddy` plus public `curl -I` |

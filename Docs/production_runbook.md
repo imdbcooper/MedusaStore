@@ -49,7 +49,8 @@ Use [`.env.prod.example`](../.env.prod.example) as a non-secret contract referen
 - Payload secrets and `DOCKER_PAYLOAD_DATABASE_URL=postgresql://...@medusa-db:5432/payload_cms?sslmode=disable`.
 - Migration/seed toggles: `RUN_MEDUSA_MIGRATIONS`, `RUN_PAYLOAD_MIGRATIONS`, `RUN_PAYLOAD_SEED`.
 - Optional smoke overrides only when default public HTTPS checks are not appropriate.
-- Optional AI Assistant values when `AI_ASSISTANT_ENABLED=true`: `AI_ASSISTANT_BASE_URL=http://ai-assistant:8000/api/v1`, strong `AI_ASSISTANT_API_TOKEN`, strong backend-only `AI_ASSISTANT_SERVER_TOKEN`, explicit `AI_ASSISTANT_CORS_ORIGINS`, `ASSISTANT_POSTGRES_URI`, and browser-safe `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED` / `NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT`.
+- Optional AI Assistant values when `AI_ASSISTANT_ENABLED=true`: `AI_ASSISTANT_BASE_URL=http://ai-assistant:8000/api/v1`, strong `AI_ASSISTANT_API_TOKEN`, strong backend-only `AI_ASSISTANT_SERVER_TOKEN`, explicit `AI_ASSISTANT_CORS_ORIGINS`, `ASSISTANT_POSTGRES_URI`, and browser-safe `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED` / `NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT`. Keep the widget default-off unless launch is explicitly approved.
+- Optional own SMTP transactional email values only after explicit activation: `NOTIFICATION_EMAIL_PROVIDER=smtp`, `SMTP_HOST=smtp.slavx.ru`, `SMTP_PORT=587`, `SMTP_SECURE=false`, `SMTP_USER=noreply@notify.slavx.ru`, secret `SMTP_PASSWORD`, `SMTP_FROM=noreply@notify.slavx.ru`, optional `SMTP_FROM_NAME` / `SMTP_REPLY_TO`. Keep production baseline as `local` until PTR, trusted TLS cert, DMARC recheck, secret handling, and notification smoke are approved.
 
 Do not put GitHub-only deploy secrets into the app `.env`; keep `DEPLOY_SSH_PRIVATE_KEY` only in GitHub Secrets.
 
@@ -168,10 +169,12 @@ docker exec medusastore-payload wget -qO- http://127.0.0.1:3100/api/pages?limit=
 The first safe production step is intentionally conservative:
 
 1. Run one `ai-assistant` replica/container with `AI_ASSISTANT_ENABLED=true` and the Compose `ai-assistant` profile.
-2. Keep browser traffic on the existing public path `/store/assistant/chat`; Caddy routes `/store/*` to Medusa, and Medusa forwards to the assistant with `AI_ASSISTANT_SERVER_TOKEN` server-side.
-3. Use the assistant's in-memory limits only for that single-replica baseline, optionally combined with Caddy/API-gateway request limits.
-4. Before scaling the assistant horizontally, add Redis-backed distributed limiting or gateway/load-balancer limits. Without that, each replica counts its own requests and the global rate limit is multiplied by the replica count.
-5. Apply managed schema review using [`001_initial_schema.sql`](../ai-assistant/migrations/001_initial_schema.sql) before using a production assistant database if startup auto-schema initialization is not acceptable.
+2. Keep browser traffic on the existing public paths `/store/assistant/chat` and `/store/assistant/history`; Caddy routes `/store/*` to Medusa, and Medusa forwards to the assistant with `AI_ASSISTANT_SERVER_TOKEN` server-side.
+3. Keep the storefront widget gated by `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED`; enabling the backend adapter alone should not expose the widget.
+4. Drain product freshness work intentionally through `/admin/assistant/reindex/process`, a cron/worker, or a manually approved smoke step; subscribers only enqueue durable intents.
+5. Use the assistant's in-memory limits only for that single-replica baseline, optionally combined with Caddy/API-gateway request limits.
+6. Before scaling the assistant horizontally, add Redis-backed distributed limiting or gateway/load-balancer limits. Without that, each replica counts its own requests and the global rate limit is multiplied by the replica count.
+7. Apply managed schema review using [`001_initial_schema.sql`](../ai-assistant/migrations/001_initial_schema.sql) before using a production assistant database if startup auto-schema initialization is not acceptable.
 
 ## 9. Payload migrations and seed
 

@@ -39,6 +39,15 @@ if (
 }
 
 if (
+  notificationEmailRuntime.requestedProviderId === "smtp" &&
+  !notificationEmailRuntime.smtpConfigured
+) {
+  console.warn(
+    "[notifications] NOTIFICATION_EMAIL_PROVIDER=smtp requested without complete SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, and SMTP_FROM settings; falling back to local provider."
+  )
+}
+
+if (
   notificationSmsRuntime.requestedProviderId === "exolve" &&
   !notificationSmsRuntime.exolveConfigured
 ) {

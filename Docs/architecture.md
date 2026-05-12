@@ -27,7 +27,7 @@ medusastore-storefront ---> medusastore-payload:3100 server-side when Payload is
 medusastore-backend  ---> medusastore-ai-assistant:8000 when AI_ASSISTANT_ENABLED=true
 ```
 
-There is no Nginx layer in the current production topology. Caddy is the only reverse proxy. The AI Assistant is optional and is not exposed directly by Caddy; browser chat uses `/store/assistant/chat` through the Medusa backend adapter so server tokens stay server-side.
+There is no Nginx layer in the current production topology. Caddy is the only reverse proxy. The AI Assistant is optional and is not exposed directly by Caddy; browser chat and history use `/store/assistant/chat` and `/store/assistant/history` through the Medusa backend adapter so server tokens stay server-side.
 
 ## 2. Production services and containers
 
@@ -50,12 +50,13 @@ All services are attached to the `medusastore` Docker bridge network in [`docker
 | `/healthz` | Caddy local response | Caddy | Public smoke endpoint. |
 | `/payload/*` | `payload-cms:3100` | Payload CMS | `handle_path` strips `/payload` before proxying. |
 | `/admin/*` | `medusa-backend:9000` | Medusa | Admin/API routes. |
-| `/store/*` | `medusa-backend:9000` | Medusa | Store API routes used by storefront/browser, including optional `/store/assistant/chat` proxy when the assistant adapter is configured. |
+| `/store/*` | `medusa-backend:9000` | Medusa | Store API routes used by storefront/browser, including optional `/store/assistant/chat` and `/store/assistant/history` proxies when the assistant adapter is configured. |
 | `/auth/*` | `medusa-backend:9000` | Medusa | Auth routes. |
 | `/api/content/*` | `storefront:8000` | Storefront | Preview/revalidate endpoints implemented in Next.js. |
 | `/ru/products/{handle}` | `storefront:8000` | Storefront + Medusa | Product detail route is `force-dynamic`; runtime fetches Medusa product by handle. |
 | `/ru/about`, `/ru/promotions`, `/ru/delivery-and-payment`, `/ru/loyalty` | `storefront:8000` | Storefront + Payload | Payload content pages when `PAYLOAD_ENABLED=true` and documents exist. |
 | `/ru/contacts` | `storefront:8000` | Storefront static page | Current contacts page is not Payload-rendered because a concrete static route exists. |
+| `/admin/assistant/*` | `medusa-backend:9000` | Medusa + AI Assistant adapter | Optional protected admin routes for assistant reindex intents, queue drain/process, stats, and ingestion job status. |
 
 ## 4. Internal URLs and precedence
 
@@ -78,7 +79,7 @@ Storefront server runtime explicitly prefers `MEDUSA_BACKEND_URL` before `NEXT_P
 ### Medusa backend
 
 - Source of truth for products, variants, pricing, regions, carts, checkout, orders, fulfillment, payments, notification workflows, marketing preferences/campaigns, and admin APIs.
-- Registers optional providers such as YooKassa, UniSender, VK, SMS, and ApiShip/Gorgo according to env/runtime readiness.
+- Registers optional providers such as YooKassa, UniSender, SMTP email, VK, SMS, and ApiShip/Gorgo according to env/runtime readiness.
 - Uses PostgreSQL and Redis.
 - Does not own editorial marketing pages.
 
@@ -107,7 +108,9 @@ Storefront server runtime explicitly prefers `MEDUSA_BACKEND_URL` before `NEXT_P
 ### AI Assistant
 
 - Optional FastAPI service enabled with the Compose `ai-assistant` profile and `AI_ASSISTANT_ENABLED=true`.
-- Medusa owns the public `/store/assistant/chat` proxy and injects the server token for assistant calls.
+- Medusa owns the public `/store/assistant/chat` and `/store/assistant/history` proxies and injects the server token for assistant calls.
+- Storefront owns the optional widget under `src/modules/assistant`; it is mounted in the main shopper layout but remains hidden unless `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=true`.
+- Product/category/collection subscribers enqueue durable assistant reindex intents only; actual processing is an explicit admin/worker/cron drain through `/admin/assistant/reindex/process` or the assistant backend processor.
 - Safe first production topology is one assistant replica plus Caddy/API-gateway limits.
 - The assistant's current in-memory rate limiter is process-local: it is acceptable for one replica, but multi-replica scale-out requires Redis-backed distributed limiting or gateway/load-balancer limits because otherwise each replica counts limits independently.
 
