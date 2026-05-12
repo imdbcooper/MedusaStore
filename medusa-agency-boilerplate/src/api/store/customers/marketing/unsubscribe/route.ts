@@ -25,14 +25,21 @@ import {
  * fields optional. The handler validates that a token is ultimately
  * present from one of the known sources.
  */
-export const StoreMarketingUnsubscribeSchema = z.object({
-  token: z.string().trim().min(1).max(512).optional(),
-  channels: z
-    .array(z.enum(MARKETING_CHANNELS))
-    .min(1)
-    .max(MARKETING_CHANNELS.length)
-    .optional(),
-})
+export const StoreMarketingUnsubscribeSchema = z
+  .object({
+    token: z.string().trim().min(1).max(512).optional(),
+    channels: z
+      .array(z.enum(MARKETING_CHANNELS))
+      .min(1)
+      .max(MARKETING_CHANNELS.length)
+      .optional(),
+  })
+  // RFC 8058 one-click POST arrives as `application/x-www-form-urlencoded`
+  // body `List-Unsubscribe=One-Click`. Medusa applies `.strict()` by default
+  // in `validateAndTransformBody`, which rejects unknown keys. Passthrough
+  // keeps the handler responsible for token/channel resolution while
+  // tolerating the one-click marker field.
+  .passthrough()
 
 export type StoreMarketingUnsubscribeRequestBody = z.infer<
   typeof StoreMarketingUnsubscribeSchema
