@@ -31,7 +31,10 @@ const sendNotificationSmokeStep = createStep(
 
     const payload: CreateNotificationDTO = {
       to: input.to,
-      from: notificationRuntime.from,
+      from:
+        notificationRuntime.providerId === "smtp"
+          ? notificationRuntime.smtpFrom
+          : notificationRuntime.from,
       channel: "email",
       template: "notification-v1-smoke",
       trigger_type:

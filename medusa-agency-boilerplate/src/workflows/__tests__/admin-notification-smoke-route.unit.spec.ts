@@ -1,4 +1,6 @@
 import { describe, expect, it, jest } from "@jest/globals"
+import { asValue, createContainer } from "awilix"
+import { Modules } from "@medusajs/framework/utils"
 
 const runMock = jest.fn()
 
@@ -11,8 +13,55 @@ jest.mock("../send-notification-smoke", () => ({
 
 import { AdminNotificationSmokeSchema } from "../../api/admin/notifications/smoke/route"
 import { POST } from "../../api/admin/notifications/smoke/route"
+import sendNotificationSmokeWorkflow from "../send-notification-smoke"
 
 describe("admin notification smoke route", () => {
+  it("uses the SMTP envelope sender for real SMTP smoke notifications", async () => {
+    const originalEnv = { ...process.env }
+    process.env.NOTIFICATION_EMAIL_PROVIDER = "smtp"
+    process.env.NOTIFICATION_EMAIL_FROM = "notifications@example.com"
+    process.env.SMTP_HOST = "smtp.slavx.ru"
+    process.env.SMTP_PORT = "587"
+    process.env.SMTP_USER = "noreply@notify.slavx.ru"
+    process.env.SMTP_PASSWORD = "test-password"
+    process.env.SMTP_FROM = "noreply@notify.slavx.ru"
+
+    const notificationModuleService = {
+      createNotifications: jest.fn(async (payload: Record<string, unknown>) => ({
+        ...payload,
+        id: "noti_test",
+        status: "sent",
+        provider_id: "smtp",
+        created_at: new Date().toISOString(),
+      })),
+    }
+    const container = createContainer()
+    container.register({
+      [Modules.NOTIFICATION]: asValue(notificationModuleService),
+    })
+
+    try {
+      await sendNotificationSmokeWorkflow(container as any).run({
+        input: {
+          to: "ops@example.com",
+          subject: "SMTP smoke",
+          text: "SMTP smoke body.",
+          html: "<p>SMTP smoke body.</p>",
+        },
+      })
+
+      expect(notificationModuleService.createNotifications).toHaveBeenCalledWith(
+        expect.objectContaining({
+          from: "noreply@notify.slavx.ru",
+          to: "ops@example.com",
+          channel: "email",
+        })
+      )
+    } finally {
+      process.env = originalEnv
+    }
+  })
+
   it("accepts dry_run payloads without executing notification workflow", async () => {
     const req = {
       auth_context: {
