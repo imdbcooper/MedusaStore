@@ -3,13 +3,9 @@ import { Toaster } from "@medusajs/ui"
 import AccountLayout from "@modules/account/templates/account-layout"
 
 export default async function AccountPageLayout({
-  dashboard,
-  login,
   children,
   params,
 }: {
-  dashboard?: React.ReactNode
-  login?: React.ReactNode
   children?: React.ReactNode
   params?: { countryCode?: string } | Promise<{ countryCode?: string }>
 }) {
@@ -22,7 +18,7 @@ export default async function AccountPageLayout({
 
   return (
     <AccountLayout customer={customer} countryCode={countryCode}>
-      {children ?? (customer ? dashboard : login)}
+      {children}
       <Toaster />
     </AccountLayout>
   )
