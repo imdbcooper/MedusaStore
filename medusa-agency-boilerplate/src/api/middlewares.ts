@@ -28,7 +28,6 @@ import { AdminVkNotificationSmokeSchema } from "./admin/notifications/smoke/vk/r
 import { StoreAssistantHistorySchema } from "./store/assistant/history/route"
 import { StoreCustomerMarketingPreferencesSchema } from "./store/customers/me/marketing-preferences/route"
 import { StoreMarketingConfirmSchema } from "./store/customers/marketing/confirm/route"
-import { StoreMarketingUnsubscribeSchema } from "./store/customers/marketing/unsubscribe/route"
 import { StoreRequestEmailVerificationSchema } from "./store/customers/me/request-email-verification/route"
 import { StoreUpdateCustomerPasswordSchema } from "./store/customers/me/password/route"
 import { StoreVkIdStartLinkSchema } from "./store/customers/me/vk-id/start/route"
@@ -213,13 +212,14 @@ export default defineMiddlewares({
       middlewares: [validateAndTransformBody(StoreMarketingConfirmSchema)],
     },
     {
+      // Unsubscribe POST handler performs its own validation because it
+      // must also accept RFC 8058 one-click `application/x-www-form-urlencoded`
+      // bodies like `List-Unsubscribe=One-Click`, which Medusa's
+      // `validateAndTransformBody` rejects as unknown keys even when the
+      // Zod schema uses `.passthrough()`. GET requests do not have a body
+      // at all.
       matcher: "/store/customers/marketing/unsubscribe",
-      methods: ["POST"],
-      middlewares: [validateAndTransformBody(StoreMarketingUnsubscribeSchema)],
-    },
-    {
-      matcher: "/store/customers/marketing/unsubscribe",
-      methods: ["GET"],
+      methods: ["POST", "GET"],
       middlewares: [],
     },
     {

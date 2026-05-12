@@ -14,32 +14,30 @@ import {
 /**
  * RFC 8058 compliance:
  * - Regular JSON POST from storefront preference UI carries
- *   { token, channels } — token is still required there, validated by zod.
+ *   { token, channels } — token may also be read from query string.
  * - Gmail/Yahoo "one-click" POST carries `application/x-www-form-urlencoded`
- *   body `List-Unsubscribe=One-Click`, with token in the query string.
+ *   body `List-Unsubscribe=One-Click` and token in the query string.
  * - Email-client prefetch scanners may hit the link with GET and the token
  *   in the query string — we honour that as well.
  *
- * Token and channels can be omitted from the JSON body (they will be
- * resolved from the query string if absent) so the schema keeps both
- * fields optional. The handler validates that a token is ultimately
- * present from one of the known sources.
+ * The endpoint does NOT use `validateAndTransformBody` middleware because
+ * Medusa's framework middleware wraps Zod objects in `.strict()` mode which
+ * rejects the `List-Unsubscribe` key expected by RFC 8058 one-click senders
+ * even when the schema declares `.passthrough()`. The schema is still exported
+ * for consumers and tests, and the handler performs its own validation
+ * (token length bounds, allowed channel allow-list) before calling into the
+ * workflow. All failure reasons stay server-side only — the response is
+ * always `{ ok: true }` to keep the endpoint enumeration-safe and One-Click
+ * friendly.
  */
-export const StoreMarketingUnsubscribeSchema = z
-  .object({
-    token: z.string().trim().min(1).max(512).optional(),
-    channels: z
-      .array(z.enum(MARKETING_CHANNELS))
-      .min(1)
-      .max(MARKETING_CHANNELS.length)
-      .optional(),
-  })
-  // RFC 8058 one-click POST arrives as `application/x-www-form-urlencoded`
-  // body `List-Unsubscribe=One-Click`. Medusa applies `.strict()` by default
-  // in `validateAndTransformBody`, which rejects unknown keys. Passthrough
-  // keeps the handler responsible for token/channel resolution while
-  // tolerating the one-click marker field.
-  .passthrough()
+export const StoreMarketingUnsubscribeSchema = z.object({
+  token: z.string().trim().min(1).max(512).optional(),
+  channels: z
+    .array(z.enum(MARKETING_CHANNELS))
+    .min(1)
+    .max(MARKETING_CHANNELS.length)
+    .optional(),
+})
 
 export type StoreMarketingUnsubscribeRequestBody = z.infer<
   typeof StoreMarketingUnsubscribeSchema
