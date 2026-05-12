@@ -20,6 +20,7 @@ import {
   getNotificationEmailRuntime,
   normalizeNotificationRecipient,
 } from "../modules/notification-email"
+import { renderOrderCanceledEmail } from "../modules/order-email-templates"
 
 type SendOrderCanceledNotificationInput = {
   orderId: string
@@ -241,6 +242,13 @@ const sendOrderCanceledNotificationStep = createStep(
       })
     }
 
+    const renderedEmail = renderOrderCanceledEmail({
+      orderId: order.id,
+      displayId: order.display_id,
+      canceledAt,
+      storefrontUrl: process.env.STOREFRONT_URL || null,
+    })
+
     const payload: CreateNotificationDTO = {
       to: normalizedRecipient,
       from: notificationRuntime.from,
@@ -250,7 +258,9 @@ const sendOrderCanceledNotificationStep = createStep(
       resource_type: "order",
       resource_id: order.id,
       content: {
-        subject: `Order #${order.display_id ?? order.id} canceled`,
+        subject: renderedEmail.subject,
+        html: renderedEmail.html,
+        text: renderedEmail.text,
       },
       data: {
         order: {

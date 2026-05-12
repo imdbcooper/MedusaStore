@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "crypto"
+import { renderBrandedEmail } from "./email-template"
 import { normalizeNotificationRecipient } from "./notification-email"
 
 export const DEFAULT_PASSWORD_RESET_TOKEN_TTL_MINUTES = 60
@@ -520,27 +521,45 @@ export function buildPasswordResetLink(input: {
   return url.toString()
 }
 
+type PasswordResetRenderInput = {
+  link: string
+  ttlMinutes: number
+  firstName?: string | null
+}
+
+function buildPasswordResetTemplateInput(
+  input: PasswordResetRenderInput
+): import("./email-template").EmailTemplateInput {
+  const ttlSuffix = formatTtlSuffix(input.ttlMinutes)
+  const trimmedFirstName = input.firstName?.trim() || ""
+  const greeting = trimmedFirstName
+    ? `Здравствуйте, ${trimmedFirstName}!`
+    : "Здравствуйте!"
+
+  return {
+    preheader: `Восстановление пароля — ссылка действительна ${ttlSuffix}`,
+    heading: "Восстановление пароля",
+    intro: [
+      greeting,
+      "Мы получили запрос на восстановление пароля для вашей учётной записи.",
+    ],
+    action: {
+      label: "Создать новый пароль",
+      url: input.link,
+    },
+    body: [
+      `Ссылка действительна ${ttlSuffix}.`,
+      "Если вы не запрашивали восстановление пароля, просто проигнорируйте это письмо — пароль не будет изменён.",
+    ],
+  }
+}
+
 export function renderPasswordResetPlainText(input: {
   link: string
   ttlMinutes: number
   firstName?: string | null
 }): string {
-  const ttlSuffix = formatTtlSuffix(input.ttlMinutes)
-  const greeting = input.firstName?.trim()
-    ? `Здравствуйте, ${input.firstName.trim()}!`
-    : "Здравствуйте!"
-
-  return [
-    greeting,
-    "",
-    "Мы получили запрос на восстановление пароля для вашей учётной записи.",
-    "",
-    `Ссылка для установки нового пароля: ${input.link}`,
-    "",
-    `Ссылка действительна ${ttlSuffix}.`,
-    "",
-    "Если вы не запрашивали восстановление пароля, просто проигнорируйте это письмо — пароль не будет изменён.",
-  ].join("\n")
+  return renderBrandedEmail(buildPasswordResetTemplateInput(input)).text
 }
 
 export function renderPasswordResetHtml(input: {
@@ -548,19 +567,7 @@ export function renderPasswordResetHtml(input: {
   ttlMinutes: number
   firstName?: string | null
 }): string {
-  const ttlSuffix = formatTtlSuffix(input.ttlMinutes)
-  const greeting = input.firstName?.trim()
-    ? `Здравствуйте, ${escapeHtml(input.firstName.trim())}!`
-    : "Здравствуйте!"
-  const safeLink = escapeHtml(input.link)
-
-  return [
-    `<p>${greeting}</p>`,
-    "<p>Мы получили запрос на восстановление пароля для вашей учётной записи.</p>",
-    `<p><a href="${safeLink}">${safeLink}</a></p>`,
-    `<p>Ссылка действительна ${escapeHtml(ttlSuffix)}.</p>`,
-    "<p>Если вы не запрашивали восстановление пароля, просто проигнорируйте это письмо — пароль не будет изменён.</p>",
-  ].join("\n")
+  return renderBrandedEmail(buildPasswordResetTemplateInput(input)).html
 }
 
 export function sanitizeLogValue(value: unknown): string {

@@ -17,6 +17,7 @@ import {
   getNotificationEmailRuntime,
   normalizeNotificationRecipient,
 } from "../modules/notification-email"
+import { renderOrderShippedEmail } from "../modules/order-email-templates"
 
 type SendOrderShippedNotificationInput = {
   fulfillmentId: string
@@ -311,6 +312,13 @@ const sendOrderShippedNotificationStep = createStep(
       })
     }
 
+    const renderedEmail = renderOrderShippedEmail({
+      orderId: order.id,
+      displayId: order.display_id,
+      fulfillmentId: fulfillment.id,
+      storefrontUrl: process.env.STOREFRONT_URL || null,
+    })
+
     const payload: CreateNotificationDTO = {
       to: normalizedRecipient,
       from: notificationRuntime.from,
@@ -320,7 +328,9 @@ const sendOrderShippedNotificationStep = createStep(
       resource_type: "fulfillment",
       resource_id: fulfillment.id,
       content: {
-        subject: `Order #${order.display_id ?? order.id} shipped`,
+        subject: renderedEmail.subject,
+        html: renderedEmail.html,
+        text: renderedEmail.text,
       },
       data: {
         fulfillment: {

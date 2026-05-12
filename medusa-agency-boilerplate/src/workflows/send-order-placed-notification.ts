@@ -17,6 +17,7 @@ import {
   getNotificationEmailRuntime,
   normalizeNotificationRecipient,
 } from "../modules/notification-email"
+import { renderOrderPlacedEmail } from "../modules/order-email-templates"
 
 type SendOrderPlacedNotificationInput = {
   orderId: string
@@ -240,6 +241,12 @@ const sendOrderPlacedNotificationStep = createStep(
       })
     }
 
+    const renderedEmail = renderOrderPlacedEmail({
+      orderId: order.id,
+      displayId: order.display_id,
+      storefrontUrl: process.env.STOREFRONT_URL || null,
+    })
+
     const payload: CreateNotificationDTO = {
       to: normalizedRecipient,
       from: notificationRuntime.from,
@@ -249,7 +256,9 @@ const sendOrderPlacedNotificationStep = createStep(
       resource_type: "order",
       resource_id: order.id,
       content: {
-        subject: `Order #${order.display_id ?? order.id} placed`,
+        subject: renderedEmail.subject,
+        html: renderedEmail.html,
+        text: renderedEmail.text,
       },
       data: {
         order: {

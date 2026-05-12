@@ -400,8 +400,25 @@ describe("email-verification helpers", () => {
       })
 
       expect(text).toContain("Здравствуйте, Иван")
-      expect(text).toContain("Ссылка для подтверждения:")
-      expect(text).toContain("https://shop.example.com/ru/account/verify-email?token=abc")
+      expect(text).toContain("Подтвердить email")
+      expect(text).toContain(
+        "https://shop.example.com/ru/account/verify-email?token=abc"
+      )
+    })
+
+    it("renders branded HTML with DOCTYPE, dark-mode meta and CTA button", () => {
+      const html = renderEmailVerificationHtml({
+        link: "https://shop.example.com/ru/account/verify-email?token=abc",
+        ttlMinutes: 60,
+        firstName: "Иван",
+      })
+
+      expect(html).toContain("<!DOCTYPE html>")
+      expect(html).toContain('name="color-scheme"')
+      expect(html).toContain("Подтвердить email")
+      expect(html).toContain(
+        "https://shop.example.com/ru/account/verify-email?token=abc"
+      )
     })
 
     it("escapes html in rendered html body", () => {

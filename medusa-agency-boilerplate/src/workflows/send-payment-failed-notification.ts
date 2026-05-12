@@ -17,6 +17,7 @@ import {
   getNotificationEmailRuntime,
   normalizeNotificationRecipient,
 } from "../modules/notification-email"
+import { renderPaymentFailedEmail } from "../modules/order-email-templates"
 
 type SendPaymentFailedNotificationInput = {
   paymentSessionId: string
@@ -400,6 +401,13 @@ const sendPaymentFailedNotificationStep = createStep(
       })
     }
 
+    const renderedEmail = renderPaymentFailedEmail({
+      cartId: cart.id,
+      orderId: order?.id ?? null,
+      paymentProvider: providerId,
+      storefrontUrl: process.env.STOREFRONT_URL || null,
+    })
+
     const payload: CreateNotificationDTO = {
       to: normalizedRecipient,
       from: notificationRuntime.from,
@@ -409,7 +417,9 @@ const sendPaymentFailedNotificationStep = createStep(
       resource_type: "payment_session",
       resource_id: paymentSession.id,
       content: {
-        subject: `Payment attempt failed for cart ${cart.id}`,
+        subject: renderedEmail.subject,
+        html: renderedEmail.html,
+        text: renderedEmail.text,
       },
       data: {
         payment_session: {

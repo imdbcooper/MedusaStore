@@ -461,11 +461,27 @@ describe("password-reset helpers", () => {
       })
 
       expect(text).toContain("Здравствуйте, Иван!")
+      expect(text).toContain("Создать новый пароль")
       expect(text).toContain(
         "https://shop.example.com/ru/account/reset-password?token=abc"
       )
       expect(text).toContain("1 час")
       expect(text).toContain("пароль не будет изменён")
+    })
+
+    it("renders branded HTML with DOCTYPE and CTA", () => {
+      const html = renderPasswordResetHtml({
+        link: "https://shop.example.com/ru/account/reset-password?token=abc",
+        ttlMinutes: 60,
+        firstName: "Иван",
+      })
+
+      expect(html).toContain("<!DOCTYPE html>")
+      expect(html).toContain("Восстановление пароля")
+      expect(html).toContain("Создать новый пароль")
+      expect(html).toContain(
+        "https://shop.example.com/ru/account/reset-password?token=abc"
+      )
     })
 
     it("renders HTML and escapes user input", () => {

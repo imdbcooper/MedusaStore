@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "crypto"
+import { renderBrandedEmail } from "./email-template"
 import { normalizeNotificationRecipient } from "./notification-email"
 
 export const DEFAULT_EMAIL_VERIFICATION_TOKEN_TTL_MINUTES = 1440
@@ -500,32 +501,53 @@ export function buildEmailVerificationLink(input: {
   return url.toString()
 }
 
+function formatEmailVerificationTtlSuffix(ttlMinutes: number): string {
+  const ttlHours = Math.round(ttlMinutes / 60)
+
+  return ttlHours >= 1 ? `${ttlHours} ч.` : `${ttlMinutes} мин.`
+}
+
+type EmailVerificationRenderInput = {
+  link: string
+  ttlMinutes: number
+  firstName?: string | null
+}
+
+function buildEmailVerificationTemplateInput(
+  input: EmailVerificationRenderInput
+): import("./email-template").EmailTemplateInput {
+  const trimmedFirstName = input.firstName?.trim() || ""
+  const greeting = trimmedFirstName
+    ? `Здравствуйте, ${trimmedFirstName}!`
+    : "Здравствуйте!"
+  const ttlSuffix = formatEmailVerificationTtlSuffix(input.ttlMinutes)
+
+  return {
+    preheader:
+      "Подтвердите адрес электронной почты, чтобы завершить регистрацию",
+    heading: "Подтвердите email",
+    intro: [
+      greeting,
+      "Подтвердите адрес электронной почты, чтобы завершить регистрацию.",
+    ],
+    action: {
+      label: "Подтвердить email",
+      url: input.link,
+    },
+    body: [
+      `Ссылка действительна ${ttlSuffix}.`,
+      "Если вы не регистрировались, просто проигнорируйте это письмо.",
+    ],
+  }
+}
+
 export function renderEmailVerificationPlainText(input: {
   link: string
   ttlMinutes: number
   firstName?: string | null
   fallbackSubject?: string | null
 }): string {
-  const ttlHours = Math.round(input.ttlMinutes / 60)
-  const ttlSuffix =
-    ttlHours >= 1
-      ? `${ttlHours} ч.`
-      : `${input.ttlMinutes} мин.`
-  const greeting = input.firstName?.trim()
-    ? `Здравствуйте, ${input.firstName.trim()}!`
-    : "Здравствуйте!"
-
-  return [
-    greeting,
-    "",
-    "Подтвердите адрес электронной почты, чтобы завершить регистрацию.",
-    "",
-    `Ссылка для подтверждения: ${input.link}`,
-    "",
-    `Ссылка действительна ${ttlSuffix}.`,
-    "",
-    "Если вы не регистрировались, проигнорируйте это письмо.",
-  ].join("\n")
+  return renderBrandedEmail(buildEmailVerificationTemplateInput(input)).text
 }
 
 export function renderEmailVerificationHtml(input: {
@@ -533,21 +555,7 @@ export function renderEmailVerificationHtml(input: {
   ttlMinutes: number
   firstName?: string | null
 }): string {
-  const ttlHours = Math.round(input.ttlMinutes / 60)
-  const ttlSuffix =
-    ttlHours >= 1 ? `${ttlHours} ч.` : `${input.ttlMinutes} мин.`
-  const greeting = input.firstName?.trim()
-    ? `Здравствуйте, ${escapeHtml(input.firstName.trim())}!`
-    : "Здравствуйте!"
-  const safeLink = escapeHtml(input.link)
-
-  return [
-    `<p>${greeting}</p>`,
-    "<p>Подтвердите адрес электронной почты, чтобы завершить регистрацию.</p>",
-    `<p><a href="${safeLink}">${safeLink}</a></p>`,
-    `<p>Ссылка действительна ${escapeHtml(ttlSuffix)}.</p>`,
-    "<p>Если вы не регистрировались, проигнорируйте это письмо.</p>",
-  ].join("\n")
+  return renderBrandedEmail(buildEmailVerificationTemplateInput(input)).html
 }
 
 export function sanitizeLogValue(value: unknown): string {

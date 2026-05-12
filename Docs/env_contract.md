@@ -96,6 +96,13 @@
 - `SMTP_FROM_NAME`
 - `SMTP_REPLY_TO`
 - `SMTP_TLS_REJECT_UNAUTHORIZED`
+- `BRAND_NAME`
+- `BRAND_LOGO_URL`
+- `BRAND_PRIMARY_COLOR`
+- `BRAND_ACCENT_COLOR`
+- `BRAND_TEXT_COLOR`
+- `BRAND_BACKGROUND_COLOR`
+- `BRAND_FOOTER_HTML`
 - `MEDUSA_BACKEND_URL`
 - `NOTIFICATION_SMOKE_TO`
 - `NOTIFICATION_SMOKE_SUBJECT`
@@ -139,6 +146,8 @@ root-level скрипты используют этот файл как исто
 - `UNISENDER_API_KEY` и optional `UNISENDER_BASE_URL` — строго **opt-in** backend-only keys для текущего production email path; пустое значение не должно ломать startup, build и runtime, а при `NOTIFICATION_EMAIL_PROVIDER=unisender` система должна безопасно падать обратно на local provider;
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_FROM_NAME`, `SMTP_REPLY_TO` и `SMTP_TLS_REJECT_UNAUTHORIZED` — строго **opt-in** backend-only keys для собственного SMTP transactional provider. При `NOTIFICATION_EMAIL_PROVIDER=smtp` неполный набор `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` безопасно резолвится обратно в local provider с warning; `SMTP_TLS_REJECT_UNAUTHORIZED=false` допустим только как временный bootstrap/self-signed режим и не должен быть финальным production baseline;
 - текущий mail infra target без secrets: `SMTP_HOST=smtp.slavx.ru`, `SMTP_PORT=587`, `SMTP_FROM=noreply@notify.slavx.ru`; перед включением SMTP в staging/production нужны PTR `77.83.92.194 -> smtp.slavx.ru`, trusted TLS cert, актуальная DMARC-проверка и операторская установка реального `SMTP_PASSWORD` вне Git;
+- `BRAND_NAME`, `BRAND_LOGO_URL`, `BRAND_PRIMARY_COLOR`, `BRAND_ACCENT_COLOR`, `BRAND_TEXT_COLOR`, `BRAND_BACKGROUND_COLOR` и `BRAND_FOOTER_HTML` — полностью **optional** backend-only brand theming для transactional HTML templates через [`renderBrandedEmail()`](../medusa-agency-boilerplate/src/modules/email-template.ts:1); безопасные дефолты применяются, если значения пустые или отсутствуют, пустое значение не ломает startup/runtime, hex-цвета валидируются, `BRAND_LOGO_URL` принимается только как абсолютный http/https URL, `BRAND_FOOTER_HTML` санитизируется (drop `<script>`/`<style>`/`<iframe>`/`<object>`/`<embed>`/`<base>`/`<link>`, inline `on*=` handlers, а также `javascript:`/`vbscript:`/`data:` schemes), action URL CTA в branded templates принимает только `http:`/`https:` scheme (всё остальное отклоняется и CTA не рендерится), и ни один из этих ключей не является baseline requirement и не должен содержать реальные секреты;
+- **Breaking change (`2026-05` branded transactional templates):** subject-строки customer-facing order lifecycle email писем (`order placed`, `order shipped`, `order canceled`, `payment failed`, email verification, password reset) переведены с английского на русский, например `"Order #123 placed"` → `"Заказ #123 принят"`. Inbox-фильтры операторов/клиентов, построенные по старому английскому subject, перестанут срабатывать и требуют обновления. Sender identity (`NOTIFICATION_EMAIL_FROM`, `SMTP_FROM`, `SMTP_FROM_NAME`) не меняется, канонические trigger types и dedupe identity остаются прежними;
 - `MEDUSA_BACKEND_URL`, `NOTIFICATION_SMOKE_TO`, `NOTIFICATION_SMOKE_SUBJECT`, `NOTIFICATION_SMOKE_MESSAGE` и `NOTIFICATION_SMOKE_DRY_RUN` — helper-переменные только для локального authenticated smoke path; `NOTIFICATION_SMOKE_DRY_RUN=true` проверяет admin auth/route contract без создания notification/send; они не являются baseline requirement и не должны содержать реальные боевые секреты;
 - fresh template delivery startup не требует Delivery Hub env, removed provider runtime routes, or provider-specific checkout activation flags; active delivery baseline is ApiShip/Gorgo through `@gorgo/medusa-fulfillment-apiship`;
 - direct `/store/apiship/*` is the canonical Store API contract for normal checkout; `/store/delivery/*` is not a current facade;
@@ -190,6 +199,13 @@ root-level скрипты используют этот файл как исто
 - `SMTP_FROM_NAME`
 - `SMTP_REPLY_TO`
 - `SMTP_TLS_REJECT_UNAUTHORIZED`
+- `BRAND_NAME`
+- `BRAND_LOGO_URL`
+- `BRAND_PRIMARY_COLOR`
+- `BRAND_ACCENT_COLOR`
+- `BRAND_TEXT_COLOR`
+- `BRAND_BACKGROUND_COLOR`
+- `BRAND_FOOTER_HTML`
 - `MEDUSA_BACKEND_URL`
 - `NOTIFICATION_SMOKE_TO`
 - `NOTIFICATION_SMOKE_SUBJECT`
