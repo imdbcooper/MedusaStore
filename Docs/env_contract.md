@@ -2,7 +2,7 @@
 
 > Delivery baseline status: ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship` is the current fresh-template delivery baseline. Direct `/store/apiship/*` is the canonical Store API contract. Delivery Hub/direct Yandex is previous-baseline historical/quarantined context only. Live external shipment execution is default-off through `APISHIP_SHIPMENT_EXECUTION_ENABLED=false` and requires the exact opt-in value `true`.
 
-> Статус документа: рабочая спецификация окружения по состоянию на `2026-05-11`; production Docker/Caddy/Payload runtime and manual GitHub deploy now exist. For production env placeholders use [`.env.prod.example`](../.env.prod.example).
+> Статус документа: рабочая спецификация окружения по состоянию на `2026-05-11`; production Docker/Caddy/Payload runtime and manual GitHub deploy now exist. For production env placeholders use [`.env.staging.example`](../.env.staging.example).
 >
 > Назначение: зафиксировать, какой `.env` за что отвечает в проекте и какие команды теперь считаются каноническими для локальной разработки.
 
@@ -469,7 +469,7 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - route `POST /store/customers/verify-email` публичный (без customer auth), чтобы email-link работал до login, но privilege scoping через token possession и O(1) lookup по `customer_id`-префиксу;
 - route `POST /admin/customers/:id/resend-email-verification` защищён admin auth и используется операторами для ручного resend;
 - subscriber никогда не блокирует регистрацию: при failure пишет sanitized error log без секретов и не throw-ит наружу;
-- все новые ключи добавлены в [`.env.example`](../.env.example) и [`.env.prod.example`](../.env.prod.example); ни один markdown этого репозитория не должен содержать реальные token values, storefront URLs с токеном в query или raw user emails.
+- все новые ключи добавлены в [`.env.example`](../.env.example) и [`.env.staging.example`](../.env.staging.example); ни один markdown этого репозитория не должен содержать реальные token values, storefront URLs с токеном в query или raw user emails.
 
 #### Password reset (customer forgot/reset)
 
@@ -486,7 +486,7 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - TTL контролируется через `PASSWORD_RESET_TOKEN_TTL_MINUTES`, default = `60` минут (короче email verification, т.к. это security-sensitive); redirect path — `PASSWORD_RESET_REDIRECT_PATH`, default = `/account/reset-password`;
 - strength policy: `PASSWORD_MIN_LENGTH` default `8` (абсолютный минимум также 8), `PASSWORD_REQUIRE_LETTER` default `true`, `PASSWORD_REQUIRE_DIGIT` default `true`; максимум = 128 символов;
 - storefront base URL для ссылки резолвится из тех же `STOREFRONT_URL` → `STOREFRONT_BASE_URL` → `NEXT_PUBLIC_STOREFRONT_URL`; при отсутствии всех трёх workflow делает skip с reason `missing_storefront_url`, route всё равно возвращает success;
-- все новые ключи добавлены в [`.env.example`](../.env.example) и [`.env.prod.example`](../.env.prod.example); ни один markdown этого репозитория не должен содержать реальные reset token values, passwords или storefront reset URLs с токеном в query.
+- все новые ключи добавлены в [`.env.example`](../.env.example) и [`.env.staging.example`](../.env.staging.example); ни один markdown этого репозитория не должен содержать реальные reset token values, passwords или storefront reset URLs с токеном в query.
 
 Известные trade-offs baseline (accepted for current scope, не блокируют выкатку):
 - compensation race в [`apply-password-reset.ts`](../medusa-agency-boilerplate/src/workflows/apply-password-reset.ts:1) и [`update-customer-password.ts`](../medusa-agency-boilerplate/src/workflows/update-customer-password.ts:1): если `authModule.updateProvider` уже сменил пароль, а последующее `updateCustomersWorkflow` (mark consumed / clear metadata) падает, пароль уже изменён, а reset token остаётся валиден до своей TTL; rollback провайдера не делается, падение логируется как `[password-reset] apply consumed_mark_failed password_changed=true reset_token_still_active=true ...` и `[password-update] metadata_clear_failed password_changed=true outstanding_reset_token_valid=true ...` для операторского разбора; атомарная compensation step в workflow framework отложена;
@@ -532,7 +532,7 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 Практическое правило:
 - publishable key хранится здесь и остается единственным storefront env, который preflight действительно hard-require'ит через [`check-env-variables.js`](../medusa-agency-boilerplate-storefront/check-env-variables.js:3);
 - `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_BASE_URL` и `NEXT_PUBLIC_DEFAULT_REGION` — truthful optional storefront runtime inputs для tranche 1 baseline: [`env.ts`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:7) подставляет safe fallback'и, но backend URL precedence строго такая: `MEDUSA_BACKEND_URL` → `NEXT_PUBLIC_MEDUSA_BACKEND_URL` → `http://localhost:${NEXT_PUBLIC_MEDUSA_BACKEND_PORT || MEDUSA_BACKEND_PORT || 9000}`;
-- в production container `MEDUSA_BACKEND_URL`/`DOCKER_MEDUSA_BACKEND_URL` должен указывать на Docker-network backend `http://medusa-backend:9000`, а `NEXT_PUBLIC_MEDUSA_BACKEND_URL` может указывать на public Caddy origin `https://slavx.mooo.com`;
+- в production container `MEDUSA_BACKEND_URL`/`DOCKER_MEDUSA_BACKEND_URL` должен указывать на Docker-network backend `http://medusa-backend:9000`, а `NEXT_PUBLIC_MEDUSA_BACKEND_URL` может указывать на public Caddy origin `https://studio.slavx.ru`;
 - root-level скрипты могут подставлять `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_MEDUSA_BACKEND_URL` и `NEXT_PUBLIC_BASE_URL` сверху, если запуск идет через корневые команды;
 - `NEXT_PUBLIC_STOREFRONT_PRESET` остается optional public config: при отсутствии или невалидном значении storefront безопасно откатывается к preset `atelier`, а sanctioned client-specific divergence должна оформляться через preset/config layer, typed landing-surface registry, adjacent product surfaces, typed listing/card contract, typed global shell contract [`StorefrontShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:74), typed catalog shell contract [`StorefrontCatalogShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:298) и sanctioned resolver boundaries, а не через форк shared templates;
 - `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` намеренно остается placeholder-only в template baseline и должен materialize'иться только успешным [`bootstrap.sh`](../scripts/bootstrap.sh:1) после seed, а не ручным копированием из старого клиента;

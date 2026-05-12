@@ -85,7 +85,7 @@
 ### Явные assumptions и follow-up, которые нельзя выдумывать здесь
 
 - текущие артефакты **не** задают отдельную canonical staging topology для storefront hosting, reverse proxy или secret management system; это не относится к production, где topology/source of truth уже заданы в [`docker-compose.prod.yml`](../docker-compose.prod.yml) и [`docker/caddy/Caddyfile`](../docker/caddy/Caddyfile);
-- текущие артефакты **не** задают отдельный documented migration orchestration flow для staging; production deploy при этом уже имеет scripted Payload migration/seed toggles через [`scripts/github-deploy-prod.sh`](../scripts/github-deploy-prod.sh);
+- текущие артефакты **не** задают отдельный documented migration orchestration flow для staging; production deploy при этом уже имеет scripted Payload migration/seed toggles через [`scripts/github-deploy-staging.sh`](../scripts/github-deploy-staging.sh);
 - наличие script surface вроде `seed` или `prepare:checkout-runtime` в [medusa-agency-boilerplate/package.json](../medusa-agency-boilerplate/package.json) не делает их автоматически обязательным staging gate, если это прямо не подтверждено текущими operational artifacts.
 
 ## 4. Canonical staging deploy order

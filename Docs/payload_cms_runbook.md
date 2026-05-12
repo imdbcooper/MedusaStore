@@ -24,14 +24,14 @@ Production compose includes Payload:
 
 | Service | Container | Internal URL | Public route |
 | --- | --- | --- | --- |
-| `payload-cms` | `medusastore-payload` | `http://payload-cms:3100` | `https://slavx.mooo.com/payload/*` |
+| `payload-cms` | `medusastore-payload` | `http://payload-cms:3100` | `https://studio.slavx.ru/payload/*` |
 
 Caddy uses `handle_path /payload/*` in [`docker/caddy/Caddyfile`](../docker/caddy/Caddyfile), so requests under `/payload/*` are proxied to Payload with the prefix stripped.
 
 Expected production env split:
 
 - `PAYLOAD_CMS_URL=http://payload-cms:3100` / `DOCKER_PAYLOAD_CMS_URL=http://payload-cms:3100` for server-side container communication.
-- `PAYLOAD_PUBLIC_SERVER_URL=https://slavx.mooo.com/payload` for public/admin URL semantics.
+- `PAYLOAD_PUBLIC_SERVER_URL=https://studio.slavx.ru/payload` for public/admin URL semantics.
 - `PAYLOAD_DATABASE_URL` or `DOCKER_PAYLOAD_DATABASE_URL` points to the dedicated `payload_cms` database on `medusa-db`.
 - `PAYLOAD_ENABLED=true` in storefront enables content fetching. `false` means storefront content routes should not render Payload pages.
 
@@ -75,7 +75,7 @@ Correct local build flow:
 
 ## 5. Migrations and seed toggles
 
-Production deploy script [`scripts/github-deploy-prod.sh`](../scripts/github-deploy-prod.sh) controls Payload migrations and seed via environment:
+Production deploy script [`scripts/github-deploy-staging.sh`](../scripts/github-deploy-staging.sh) controls Payload migrations and seed via environment:
 
 | Variable | Default | Production semantics |
 | --- | --- | --- |
@@ -116,7 +116,7 @@ Do not commit real secrets. Keep committed env examples as placeholders or safe 
 | --- | --- | --- |
 | `PAYLOAD_ENABLED` | Storefront/root env | Enables storefront content reads. `false` means content routes are disabled/fallback. |
 | `PAYLOAD_CMS_URL` | Storefront server runtime | Internal production value should be `http://payload-cms:3100`; local value is usually `http://localhost:3100`. |
-| `PAYLOAD_PUBLIC_SERVER_URL` | Payload runtime | Public/admin URL, e.g. `https://slavx.mooo.com/payload` in production. |
+| `PAYLOAD_PUBLIC_SERVER_URL` | Payload runtime | Public/admin URL, e.g. `https://studio.slavx.ru/payload` in production. |
 | `PAYLOAD_DATABASE_URL` | Payload runtime | Dedicated Payload database. Production should use `payload_cms`, not Medusa commerce DB. |
 | `PAYLOAD_SECRET` | Payload runtime | Required Payload secret. Never commit real production value. |
 | `PAYLOAD_CONTENT_PREVIEW_TOKEN` | Preview | Optional preview token. |
@@ -149,7 +149,7 @@ Check database and seed state:
 
 ```bash
 docker exec medusastore-payload printenv PAYLOAD_DATABASE_URL
-curl -sS https://slavx.mooo.com/payload/api/pages?limit=10 | head
+curl -sS https://studio.slavx.ru/payload/api/pages?limit=10 | head
 ```
 
 If DB is correct but empty, run an intentional seed by setting `RUN_PAYLOAD_SEED=true` for one deploy or by running an approved one-off seed job.
@@ -161,7 +161,7 @@ Check:
 ```bash
 docker exec medusastore-storefront printenv PAYLOAD_ENABLED
 docker exec medusastore-storefront printenv PAYLOAD_CMS_URL
-curl -sS https://slavx.mooo.com/payload/api/pages?where[slug][equals]=about | head
+curl -sS https://studio.slavx.ru/payload/api/pages?where[slug][equals]=about | head
 ```
 
 Remember `/ru/contacts` is static and should be diagnosed separately from Payload-rendered pages.

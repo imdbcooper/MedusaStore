@@ -1,6 +1,6 @@
 ---
 name: medusa-master-repo
-description: Use when working in this MedusaStore repository on planning, implementation, architecture, integrations, storefront strategy, production Docker/Caddy runtime, GitHub Actions deployment, local/staging/production distinctions, ApiShip/Gorgo delivery baseline, Delivery Hub historical context, or documentation governance. This project-level Kilo Code skill defines current source-of-truth documents, verified operational reality, and mandatory doc-update rules.
+description: Use when working in this MedusaStore repository on planning, implementation, architecture, integrations, storefront strategy, staging Docker/Caddy runtime, GitHub Actions deployment, local/staging distinctions, ApiShip/Gorgo delivery baseline, Delivery Hub historical context, or documentation governance. This project-level Kilo Code skill defines current source-of-truth documents, verified operational reality, and mandatory doc-update rules.
 ---
 
 # Medusa Master Repo
@@ -16,26 +16,26 @@ Read documents and implementation sources in this order:
 1. `README.md`
    - Current operational entrypoint and concise source-of-truth summary.
 2. `Docs/architecture.md`
-   - Current production topology, service ownership, internal URLs, public routes, and local/production split.
+   - Current staging topology, service ownership, internal URLs, public routes, and local/staging split.
 3. `Docs/production_runbook.md`
-   - Concrete production host facts, GitHub Actions manual deploy flow, smoke checks, and incident commands.
+   - Concrete staging host facts, GitHub Actions deploy flow, smoke checks, and incident commands. This runbook currently applies to the single staging environment; it will be split into staging/production once real production is provisioned.
 4. `Docs/local_development.md`
-   - Canonical local developer flow and how local compose differs from production.
+   - Canonical local developer flow and how local compose differs from staging.
 5. `Docs/staging_runbook.md`
-   - Current staging reality: no concrete separate remote staging server is provisioned; staging docs are planning/generic unless a separate host is created.
+   - Current staging deployment target: `studio.slavx.ru` via GitHub Actions `Deploy Staging` workflow.
 6. `Docs/troubleshooting.md`
-   - Operational failure modes for Docker/Caddy production, Payload, dynamic product pages, backend URL precedence, and deploy smoke.
+   - Operational failure modes for Docker/Caddy staging, Payload, dynamic product pages, backend URL precedence, and deploy smoke.
 7. `Docs/payload_cms_runbook.md`
    - Payload CMS operations, migrations, seed behavior, preview/revalidate semantics, and content pages.
 8. `Docs/env_contract.md`
    - Read when working on startup, ports, env files, orchestration, secrets policy, delivery/payment/notification env behavior, or runtime contracts.
 9. Implementation/config files for the touched area:
-   - `docker-compose.prod.yml`
+   - `docker-compose.prod.yml` (filename retained as Medusa convention; hosts the staging runtime)
    - `docker/caddy/Caddyfile`
-   - `.github/workflows/deploy-production.yml`
-   - `scripts/github-deploy-prod.sh`
-   - `scripts/prod-container-smoke.sh`
-   - `.env.prod.example`
+   - `.github/workflows/deploy-staging.yml`
+   - `scripts/github-deploy-staging.sh`
+   - `scripts/staging-container-smoke.sh`
+   - `.env.staging.example`
    - relevant source code, tests, package scripts, and Dockerfiles.
 10. Current delivery baseline docs:
     - `Docs/current_work.md`
@@ -59,26 +59,30 @@ Before making claims, keep these verified facts in mind:
 
 - The repository is a Russian-market Medusa template/runtime repository named MedusaStore.
 - Baseline region/currency are `ru` / `rub`.
-- Production runtime is Docker Compose through `docker-compose.prod.yml`.
-- Production public ingress is Caddy only:
-  - no Nginx layer is part of the current production topology;
+- Single staging environment: `studio.slavx.ru` (SSH alias `slavx-store`, IP `171.22.180.206`, deploy path `/home/som/MedusaStore`).
+- Real production environment is **not provisioned yet**. It will be set up after development is complete. Treat any "production" wording in historical docs as either a technical Node.js build term (`NODE_ENV=production`) or a TBD future environment.
+- Mail VPS is a separate server (`smtpserv` / `77.83.92.194`) with hostname `smtp.slavx.ru`, docker-mailserver with Let's Encrypt TLS, and DKIM/SPF/DMARC for `notify.slavx.ru`.
+- Transactional email sender: `noreply@notify.slavx.ru`.
+- Staging runtime is Docker Compose through `docker-compose.prod.yml` (filename retained as Medusa convention).
+- Public ingress is Caddy only:
+  - no Nginx layer is part of the current topology;
   - `docker/caddy/Caddyfile` terminates HTTPS and routes public traffic.
-- Production server facts:
-  - domain: `slavx.mooo.com`;
-  - SSH/user: `som`;
+- Staging server facts:
+  - domain: `studio.slavx.ru`;
+  - SSH/user: `som` (alias `slavx-store`);
   - remote path: `/home/som/MedusaStore`;
   - GitHub repo: `imdbcooper/MedusaStore`;
   - default branch: `main`.
-- Production deployment is manual GitHub Actions workflow dispatch:
-  - workflow: `.github/workflows/deploy-production.yml`;
-  - remote deploy script: `scripts/github-deploy-prod.sh`;
-  - production smoke script: `scripts/prod-container-smoke.sh`.
-- Documentation-only or env-example-only changes do not require production deploy unless an operator explicitly wants the remote checkout updated.
-- Local, staging, and production are distinct:
+- Deployment is **only** through the GitHub Actions workflow dispatch:
+  - workflow: `.github/workflows/deploy-staging.yml` (name: `Deploy Staging`);
+  - remote deploy script: `scripts/github-deploy-staging.sh`;
+  - smoke script: `scripts/staging-container-smoke.sh`.
+- Direct SSH + docker build deploys are not the canonical path. If used in an emergency, document the reason in troubleshooting.
+- Documentation-only or env-example-only changes do not require a staging deploy unless an operator explicitly wants the remote checkout updated.
+- Local and staging are distinct:
   - local development uses `docker-compose.yml` for PostgreSQL/Redis/Medusa backend and usually host processes for storefront/Payload;
-  - production uses `docker-compose.prod.yml` with backend, Payload, storefront, DB, Redis, and Caddy containers;
-  - no concrete separate remote staging server is currently provisioned in this repository;
-  - `slavx.mooo.com` is production, not staging.
+  - staging uses `docker-compose.prod.yml` with backend, Payload, storefront, DB, Redis, and Caddy containers;
+  - `studio.slavx.ru` is staging, not production.
 - Canonical local startup remains:
   - `cp .env.example .env`
   - `npm run bootstrap`
@@ -98,21 +102,22 @@ Before making claims, keep these verified facts in mind:
 - Old local/staging databases may contain historical delivery rows/provider ids. Treat them as operator-approved cleanup work, not active template behavior.
 - The preset-driven storefront customization stack is closed. Do not reopen it without new regression evidence.
 
-## Production Runtime Reality
+## Staging Runtime Reality
 
-Production is governed by:
+Staging is governed by:
 
 - `README.md`
 - `Docs/architecture.md`
-- `Docs/production_runbook.md`
-- `docker-compose.prod.yml`
+- `Docs/production_runbook.md` (currently applies to staging; will be split once real production is provisioned)
+- `Docs/staging_runbook.md`
+- `docker-compose.prod.yml` (filename retained; hosts the staging runtime)
 - `docker/caddy/Caddyfile`
-- `.github/workflows/deploy-production.yml`
-- `scripts/github-deploy-prod.sh`
-- `scripts/prod-container-smoke.sh`
-- `.env.prod.example`
+- `.github/workflows/deploy-staging.yml`
+- `scripts/github-deploy-staging.sh`
+- `scripts/staging-container-smoke.sh`
+- `.env.staging.example`
 
-Current production services and container names:
+Current staging services and container names:
 
 | Compose service | Container | Responsibility |
 | --- | --- | --- |
@@ -131,28 +136,43 @@ Current public route ownership:
 - `/api/content/*` goes to storefront content preview/revalidate endpoints.
 - all other paths go to the storefront.
 
+## Deploy Governance
+
+- **Only** deploy method: GitHub Actions workflow `Deploy Staging` (`.github/workflows/deploy-staging.yml`).
+- **Never** deploy via direct SSH + docker build. If used in emergency, document reason in troubleshooting.
+- Pre-deploy: compose config validation, tests.
+- Post-deploy: automated smoke via `scripts/staging-container-smoke.sh`.
+- Real production deploy flow is TBD and will be added when real production is provisioned.
+
+## Secrets Governance
+
+- **Only** source of real secrets: GitHub Secrets (passwords, tokens, API keys) + GitHub Variables (non-secret config).
+- Never commit real secret values to git.
+- Remote `.env` on staging is built from GitHub Secrets/Variables during deploy.
+- `.env.template`, `.env.example`, `.env.staging.example` contain only placeholder values for documentation.
+
 ## Runtime URL Precedence
 
 Storefront server-side Medusa URL resolution explicitly prefers `MEDUSA_BACKEND_URL` before `NEXT_PUBLIC_MEDUSA_BACKEND_URL`.
 
-Production expectation:
+Staging expectation:
 
 - server-side/container URL: `MEDUSA_BACKEND_URL=http://medusa-backend:9000` or `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000`;
-- browser/public URL: `NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://slavx.mooo.com` or an equivalent public Caddy origin;
+- browser/public URL: `NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://studio.slavx.ru` or an equivalent public Caddy origin;
 - do not force SSR/product rendering to call the public HTTPS origin from inside Docker when the internal backend URL is available.
 
 Keep this distinction when editing env examples, Docker compose, deploy scripts, docs, storefront env code, or troubleshooting guidance.
 
-## Payload CMS Production Behavior
+## Payload CMS Staging Behavior
 
-Payload CMS is a production service in `docker-compose.prod.yml`:
+Payload CMS is a staging service in `docker-compose.prod.yml`:
 
-- production container: `medusastore-payload`;
+- staging container: `medusastore-payload`;
 - internal service URL: `http://payload-cms:3100`;
 - public admin/API path: `/payload/*` through Caddy;
-- production database is the dedicated `payload_cms` database in the same PostgreSQL server;
-- `PAYLOAD_DATABASE_URL` should use the Docker-network PostgreSQL host in production, normally via `DOCKER_PAYLOAD_DATABASE_URL`;
-- migrations are controlled by `RUN_PAYLOAD_MIGRATIONS` and are run as a one-off job by `scripts/github-deploy-prod.sh` only when explicitly true;
+- staging database is the dedicated `payload_cms` database in the same PostgreSQL server;
+- `PAYLOAD_DATABASE_URL` should use the Docker-network PostgreSQL host on staging, normally via `DOCKER_PAYLOAD_DATABASE_URL`;
+- migrations are controlled by `RUN_PAYLOAD_MIGRATIONS` and are run as a one-off job by `scripts/github-deploy-staging.sh` only when explicitly true;
 - content seed is controlled by `RUN_PAYLOAD_SEED` and must not be left true accidentally after a one-time seed unless idempotent reseeding is explicitly desired;
 - Payload owns editorial/content data, not commerce truth, provider secrets, payment credentials, or catalog/order source of truth.
 
@@ -166,12 +186,12 @@ Product detail pages are dynamic at runtime:
 - route behavior: `dynamic = "force-dynamic"`;
 - runtime fetches the product by handle and country/region from Medusa;
 - static params may be empty during build if Store API is unavailable, which does not by itself prove runtime product pages are broken;
-- production changes touching product rendering, backend URL precedence, Caddy routing, publishable key, or catalog data require a manual product page smoke with a real product handle.
+- staging changes touching product rendering, backend URL precedence, Caddy routing, publishable key, or catalog data require a manual product page smoke with a real product handle.
 
 Expected product smoke shape:
 
 ```bash
-curl -I https://slavx.mooo.com/ru/products/<real-product-handle>
+curl -I https://studio.slavx.ru/ru/products/<real-product-handle>
 ```
 
 Expected result for an existing handle is `200`, not `500`. A `404` means the handle/region/data is absent and should be checked against Medusa data before treating it as infrastructure failure.
@@ -214,9 +234,11 @@ Delivery Hub previous-baseline status:
 - Do not enable `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` by default; the only live-shipment opt-in is the exact value `true`.
 - Do not reintroduce Delivery Hub/direct Yandex or `/store/delivery/*` as an active checkout path.
 - Do not patch or fork official Medusa Admin unless explicitly scoped.
-- Do not call production `slavx.mooo.com` staging.
-- Do not infer production topology from local compose alone.
-- Do not deploy documentation-only changes to production unless there is an operational reason to update the remote checkout.
+- Do not call `studio.slavx.ru` production. It is staging. Real production is not provisioned yet.
+- Do not infer staging topology from local compose alone.
+- Do not deploy documentation-only changes to staging unless there is an operational reason to update the remote checkout.
+- Do not deploy by any method other than the `Deploy Staging` GitHub Actions workflow. Direct SSH + docker builds are not the canonical path.
+- Do not commit real secret values. Real secrets live only in GitHub Secrets; non-secret config lives only in GitHub Variables.
 - For unstable integration claims, verify against code, tests, official docs, or current runtime evidence.
 - Keep the distinction clear between:
   - confirmed repository state;
@@ -233,11 +255,11 @@ Current operational docs:
 - `Docs/architecture.md`
   - Current topology, service/container names, public routes, internal URLs, runtime responsibilities.
 - `Docs/production_runbook.md`
-  - Concrete production deploy/ops on `slavx.mooo.com`.
+  - Concrete staging deploy/ops on `studio.slavx.ru`. Will be split into staging/production runbooks once real production is provisioned.
 - `Docs/local_development.md`
   - Local compose/host runtime flow and local-only caveats.
 - `Docs/staging_runbook.md`
-  - Current no-concrete-staging reality and guidance for adding real staging.
+  - Current staging reality: single staging environment `studio.slavx.ru`; production TBD.
 - `Docs/troubleshooting.md`
   - Current failure-mode playbook.
 - `Docs/payload_cms_runbook.md`
@@ -280,16 +302,16 @@ Roadmap/audit/background docs:
 Update `README.md`, `Docs/architecture.md`, `Docs/production_runbook.md`, `Docs/local_development.md`, `Docs/staging_runbook.md`, and/or `Docs/troubleshooting.md` together with code when changes touch:
 
 - Docker or compose topology;
-- production service/container names;
+- staging service/container names;
 - Caddy/proxy/public route behavior;
 - CI/CD and GitHub Actions deployment;
 - deploy scripts or smoke scripts;
-- production server facts;
+- staging server facts;
 - env variable names, precedence, defaults, or required values;
 - runtime URL ownership, especially `MEDUSA_BACKEND_URL` / `NEXT_PUBLIC_MEDUSA_BACKEND_URL` behavior;
-- Payload production behavior, migrations, seed, database, public route, or content-page semantics;
+- Payload staging behavior, migrations, seed, database, public route, or content-page semantics;
 - product page rendering/runtime behavior;
-- local/staging/production environment boundaries.
+- local/staging environment boundaries (real production is TBD).
 
 Update `Docs/current_work.md` when:
 
@@ -334,7 +356,8 @@ Update this skill when:
 - repo structure changes in a way that affects navigation;
 - current known reality becomes outdated;
 - canonical regression commands or smoke paths change;
-- production runtime/deploy/proxy facts change;
+- staging runtime/deploy/proxy facts change;
+- real production is provisioned and begins to exist as a second environment;
 - a new mandatory rule for Kilo Code agents is introduced.
 
 ## Default Answering Behavior
@@ -350,6 +373,6 @@ When the user asks what is done, what is next, where to look, or asks for a prom
 7. Use `Docs/plan_analysis.md` only for audit/history.
 8. Verify code/tests/config before making fresh technical claims.
 
-Current default production answer: production runs through `docker-compose.prod.yml` on `som@slavx.mooo.com:/home/som/MedusaStore`, Caddy is the only public reverse proxy, deploy is manual GitHub Actions workflow dispatch for repo `imdbcooper/MedusaStore` branch `main`, Payload CMS is a production container, product pages are dynamic runtime-rendered, and storefront SSR must prefer internal `MEDUSA_BACKEND_URL` over public browser URLs.
+Current default staging answer: the single staging environment runs through `docker-compose.prod.yml` on `som@studio.slavx.ru:/home/som/MedusaStore`, Caddy is the only public reverse proxy, deploy is the `Deploy Staging` GitHub Actions workflow for repo `imdbcooper/MedusaStore` branch `main`, secrets flow only through GitHub Secrets/Variables, Payload CMS is a staging container, product pages are dynamic runtime-rendered, and storefront SSR must prefer internal `MEDUSA_BACKEND_URL` over public browser URLs. Real production is not provisioned yet.
 
 Current default delivery answer: ApiShip/Gorgo is the baseline, direct `/store/apiship/*` is canonical, Delivery Hub is previous-baseline/quarantined, and live ApiShip shipment execution stays default-off unless `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` is explicitly set.

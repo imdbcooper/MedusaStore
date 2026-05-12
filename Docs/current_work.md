@@ -35,7 +35,7 @@ Transactional SMTP mailserver is reachable on the separate VPS `smtpserv` (`77.8
 The repository remains a Russian-market Medusa template:
 
 - canonical local path: `cp .env.example .env` -> `npm run bootstrap` -> `npm run preflight` -> `npm run dev`;
-- production path: manual GitHub Actions deploy to `som@slavx.mooo.com:/home/som/MedusaStore` using [`docker-compose.prod.yml`](../docker-compose.prod.yml) and Caddy-only ingress;
+- production path: manual GitHub Actions deploy to `som@studio.slavx.ru:/home/som/MedusaStore` using [`docker-compose.prod.yml`](../docker-compose.prod.yml) and Caddy-only ingress;
 - stable local storefront production-preview path for browser/smoke verification: `npm run storefront:build` -> `npm run storefront:start` or `bash scripts/manage.sh start:storefront`;
 - baseline region/currency: `ru` / `rub`;
 - notification baseline: local provider by default, UniSender and VK messaging are opt-in integration paths;
@@ -95,7 +95,7 @@ Use these documents in this order:
 
 1. [current_work.md](./current_work.md) - operational status and next action.
 2. [architecture.md](./architecture.md) - current production/local topology, service names, routes, internal URLs, runtime responsibilities.
-3. [production_runbook.md](./production_runbook.md) - concrete production server/deploy/smoke/log operations for `slavx.mooo.com`.
+3. [production_runbook.md](./production_runbook.md) - concrete production server/deploy/smoke/log operations for `studio.slavx.ru`.
 4. [local_development.md](./local_development.md) - local compose vs host app runtimes.
 5. [staging_runbook.md](./staging_runbook.md) - current staging reality and how to provision a real stage host.
 6. [troubleshooting.md](./troubleshooting.md) - concrete operational failure modes and commands.

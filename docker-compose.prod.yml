@@ -48,7 +48,7 @@ services:
     environment:
       AI_ASSISTANT_ENV: production
       AI_ASSISTANT_API_TOKEN: ${AI_ASSISTANT_API_TOKEN}
-      AI_ASSISTANT_CORS_ORIGINS: ${AI_ASSISTANT_CORS_ORIGINS:-https://${DEPLOY_DOMAIN:-slavx.mooo.com}}
+      AI_ASSISTANT_CORS_ORIGINS: ${AI_ASSISTANT_CORS_ORIGINS:-https://${DEPLOY_DOMAIN:-studio.slavx.ru}}
       AI_ASSISTANT_RETRIEVAL_MODE: ${AI_ASSISTANT_RETRIEVAL_MODE:-markdown}
       ASSISTANT_POSTGRES_URI: ${ASSISTANT_POSTGRES_URI}
       MEDUSA_BACKEND_URL: ${DOCKER_MEDUSA_BACKEND_URL:-http://medusa-backend:9000}
@@ -134,9 +134,9 @@ services:
       dockerfile: docker/storefront/Dockerfile
       args:
         MEDUSA_BACKEND_URL: ${DOCKER_MEDUSA_BACKEND_URL:-http://medusa-backend:9000}
-        NEXT_PUBLIC_MEDUSA_BACKEND_URL: ${DOCKER_NEXT_PUBLIC_MEDUSA_BACKEND_URL:-http://${DEPLOY_DOMAIN:-slavx.mooo.com}}
+        NEXT_PUBLIC_MEDUSA_BACKEND_URL: ${DOCKER_NEXT_PUBLIC_MEDUSA_BACKEND_URL:-http://${DEPLOY_DOMAIN:-studio.slavx.ru}}
         NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: ${NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY:-pk_build_placeholder}
-        NEXT_PUBLIC_BASE_URL: ${DOCKER_NEXT_PUBLIC_BASE_URL:-http://${DEPLOY_DOMAIN:-slavx.mooo.com}}
+        NEXT_PUBLIC_BASE_URL: ${DOCKER_NEXT_PUBLIC_BASE_URL:-http://${DEPLOY_DOMAIN:-studio.slavx.ru}}
         NEXT_PUBLIC_DEFAULT_REGION: ${NEXT_PUBLIC_DEFAULT_REGION:-ru}
         PAYLOAD_ENABLED: ${PAYLOAD_ENABLED:-false}
         PAYLOAD_CMS_URL: ${DOCKER_PAYLOAD_CMS_URL:-http://payload-cms:3100}
@@ -151,8 +151,8 @@ services:
       NODE_ENV: production
       STOREFRONT_PORT: ${STOREFRONT_PORT:-8000}
       MEDUSA_BACKEND_URL: ${DOCKER_MEDUSA_BACKEND_URL:-http://medusa-backend:9000}
-      NEXT_PUBLIC_MEDUSA_BACKEND_URL: ${DOCKER_NEXT_PUBLIC_MEDUSA_BACKEND_URL:-http://${DEPLOY_DOMAIN:-slavx.mooo.com}}
-      NEXT_PUBLIC_BASE_URL: ${DOCKER_NEXT_PUBLIC_BASE_URL:-http://${DEPLOY_DOMAIN:-slavx.mooo.com}}
+      NEXT_PUBLIC_MEDUSA_BACKEND_URL: ${DOCKER_NEXT_PUBLIC_MEDUSA_BACKEND_URL:-http://${DEPLOY_DOMAIN:-studio.slavx.ru}}
+      NEXT_PUBLIC_BASE_URL: ${DOCKER_NEXT_PUBLIC_BASE_URL:-http://${DEPLOY_DOMAIN:-studio.slavx.ru}}
       PAYLOAD_CMS_URL: ${DOCKER_PAYLOAD_CMS_URL:-http://payload-cms:3100}
       NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED: ${NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED:-false}
       NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT: ${NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT:-/store/assistant/chat}
@@ -175,8 +175,8 @@ services:
     image: caddy:2-alpine
     container_name: medusastore-caddy
     environment:
-      DEPLOY_DOMAIN: ${DEPLOY_DOMAIN:-slavx.mooo.com}
-      ACME_EMAIL: ${ACME_EMAIL:-admin@slavx.mooo.com}
+      DEPLOY_DOMAIN: ${DEPLOY_DOMAIN:-studio.slavx.ru}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@studio.slavx.ru}
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"

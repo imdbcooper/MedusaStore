@@ -64,9 +64,9 @@ Production containers use internal Docker-network URLs for server-side calls:
 
 | Purpose | Production internal value | Public/browser value |
 | --- | --- | --- |
-| Medusa backend server-side storefront calls | `MEDUSA_BACKEND_URL=http://medusa-backend:9000` or `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000` | `NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://slavx.mooo.com` or proxy-relative public origin when used by browser code. |
+| Medusa backend server-side storefront calls | `MEDUSA_BACKEND_URL=http://medusa-backend:9000` or `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000` | `NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://studio.slavx.ru` or proxy-relative public origin when used by browser code. |
 | Payload server-side storefront calls | `PAYLOAD_CMS_URL=http://payload-cms:3100` or `DOCKER_PAYLOAD_CMS_URL=http://payload-cms:3100` | `/payload/*` through Caddy for admin/API access. |
-| Storefront base URL | `NEXT_PUBLIC_BASE_URL=https://slavx.mooo.com` in public semantics; compose build args may use the deploy domain. | `https://slavx.mooo.com`. |
+| Storefront base URL | `NEXT_PUBLIC_BASE_URL=https://studio.slavx.ru` in public semantics; compose build args may use the deploy domain. | `https://studio.slavx.ru`. |
 | Database | `postgresql://...@medusa-db:5432/medusa` | Not public. |
 | Payload database | `postgresql://...@medusa-db:5432/payload_cms` | Not public. |
 | Redis | `redis://medusa-redis:6379` | Not public. |
@@ -122,7 +122,7 @@ Do not infer production topology from local compose alone.
 
 ## 7. Deployment topology
 
-Manual production deploy is defined by [`.github/workflows/deploy-production.yml`](../.github/workflows/deploy-production.yml). It connects to the production server and runs [`scripts/github-deploy-prod.sh`](../scripts/github-deploy-prod.sh) inside `/home/som/MedusaStore`.
+Manual production deploy is defined by [`.github/workflows/deploy-staging.yml`](../.github/workflows/deploy-staging.yml). It connects to the production server and runs [`scripts/github-deploy-staging.sh`](../scripts/github-deploy-staging.sh) inside `/home/som/MedusaStore`.
 
 The deploy script:
 

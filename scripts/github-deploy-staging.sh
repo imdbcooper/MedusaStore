@@ -78,7 +78,7 @@ if [[ -z "$deploy_domain" ]]; then
   deploy_domain="$(grep -E '^DEPLOY_DOMAIN=' .env | tail -1 | cut -d= -f2- || true)"
 fi
 if [[ -z "$deploy_domain" ]]; then
-  deploy_domain="slavx.mooo.com"
+  deploy_domain="studio.slavx.ru"
 fi
 public_base_url="https://${deploy_domain}"
 
@@ -92,6 +92,6 @@ if [[ -z "${SMOKE_PAYLOAD_URL:-}" ]]; then
   export SMOKE_PAYLOAD_URL="${smoke_payload_url:-$public_base_url/payload/api/pages?limit=1}"
 fi
 
-bash ./scripts/prod-container-smoke.sh
+bash ./scripts/staging-container-smoke.sh
 
 echo "Deployment complete."

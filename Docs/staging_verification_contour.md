@@ -30,13 +30,13 @@
 
 ### Production HTTPS smoke expectations
 
-Для текущего production-контура отдельный источник истины — [`production_runbook.md`](./production_runbook.md) и [`scripts/prod-container-smoke.sh`](../scripts/prod-container-smoke.sh). Минимальные production HTTPS expectations:
+Для текущего production-контура отдельный источник истины — [`production_runbook.md`](./production_runbook.md) и [`scripts/staging-container-smoke.sh`](../scripts/staging-container-smoke.sh). Минимальные production HTTPS expectations:
 
-1. `https://slavx.mooo.com/healthz` отвечает `200` и `ok`.
-2. `https://slavx.mooo.com/ru/about`, `/ru/promotions`, `/ru/delivery-and-payment` отвечают `200` при включенном и заполненном Payload/content baseline.
-3. `https://slavx.mooo.com/admin/` отвечает `200`, `301`, `302` или `401`, но не connection/proxy error.
-4. `https://slavx.mooo.com/payload/api/pages?limit=1` отвечает `200`.
-5. Runtime product smoke обязателен для dynamic product route: `https://slavx.mooo.com/ru/products/<known-product-handle>` должен отвечать `200` для существующего товара; `404` допустим только если handle/region/data отсутствуют, а `500` считается regression signal.
+1. `https://studio.slavx.ru/healthz` отвечает `200` и `ok`.
+2. `https://studio.slavx.ru/ru/about`, `/ru/promotions`, `/ru/delivery-and-payment` отвечают `200` при включенном и заполненном Payload/content baseline.
+3. `https://studio.slavx.ru/admin/` отвечает `200`, `301`, `302` или `401`, но не connection/proxy error.
+4. `https://studio.slavx.ru/payload/api/pages?limit=1` отвечает `200`.
+5. Runtime product smoke обязателен для dynamic product route: `https://studio.slavx.ru/ru/products/<known-product-handle>` должен отвечать `200` для существующего товара; `404` допустим только если handle/region/data отсутствуют, а `500` считается regression signal.
 
 ## Минимальная конфигурация
 

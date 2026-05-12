@@ -1,4 +1,4 @@
-name: Deploy Production
+name: Deploy Staging
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
         required: true
         default: main
 concurrency:
-  group: production-deploy
+  group: staging-deploy
   cancel-in-progress: false
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Validate production compose config
+      - name: Validate staging compose config
         run: docker compose -f docker-compose.prod.yml --env-file .env.example config -q
 
       - name: Install SSH key
@@ -35,7 +35,7 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Run remote production deploy
+      - name: Run remote staging deploy
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
@@ -43,4 +43,4 @@ jobs:
           DEPLOY_BRANCH: ${{ github.event.inputs.branch || github.ref_name }}
         run: |
           ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "DEPLOY_PATH='${DEPLOY_PATH}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash '${DEPLOY_PATH}/scripts/github-deploy-prod.sh'"
+            "DEPLOY_PATH='${DEPLOY_PATH}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash '${DEPLOY_PATH}/scripts/github-deploy-staging.sh'"

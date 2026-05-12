@@ -1,107 +1,107 @@
 # Staging Runbook
 
-> Current reality: this repository documents production on `slavx.mooo.com`, but does not currently define a concrete separate staging server. Existing staging documents are a historical/generic contour unless a separate stage host is provisioned.
+> Current reality: this repository runs a **single staging environment** at `studio.slavx.ru`. Real production is **not provisioned yet** and will be added after development is complete. All current operational documents describe the staging environment; any historical "production" wording should be read as either a Node.js technical term (`NODE_ENV=production`) or as a TBD future environment.
 
 ## 1. Status
 
 | Question | Current answer |
 | --- | --- |
-| Is there a concrete remote staging host in this repo? | No. |
-| Is `slavx.mooo.com` staging? | No. It is production. |
-| Is there a staging GitHub Actions deploy workflow? | No concrete stage workflow is currently present. |
-| Are existing staging docs useless? | No. They remain planning/checklist/verification contours, but they are not evidence of a provisioned stage server. |
-| Is production deploy automation present? | Yes. See [`production_runbook.md`](./production_runbook.md). |
+| Is there a concrete remote staging host in this repo? | Yes. `studio.slavx.ru`. |
+| Is `studio.slavx.ru` production? | No. It is the single staging environment. |
+| Is there a staging GitHub Actions deploy workflow? | Yes: [`.github/workflows/deploy-staging.yml`](../.github/workflows/deploy-staging.yml) (`Deploy Staging`). |
+| Is there a real production environment? | No. Not provisioned yet. Will be added after development is complete. |
+| Is deployment by any method other than GitHub Actions supported? | No. Direct SSH + docker build is not canonical. |
+| How do secrets reach the staging server? | Only through GitHub Secrets and GitHub Variables, injected into the remote `.env` during deploy. |
 
-## 2. How to read existing staging docs
+## 2. Concrete staging facts
 
-- [`staging_deploy_path.md`](./staging_deploy_path.md) — generic/historical staging deploy contour; do not read its older limitations as statements about current production capability.
-- [`staging_verification_contour.md`](./staging_verification_contour.md) — executable verification concept via `npm run staging:verify`; can be used for any already-running remote candidate with a prepared env file.
-- [`staging_checklist.md`](./staging_checklist.md), [`staging_backup_restore_runbook.md`](./staging_backup_restore_runbook.md), [`staging_rollback_runbook.md`](./staging_rollback_runbook.md), [`staging_monitoring_baseline.md`](./staging_monitoring_baseline.md) — retained staging planning/checklist material.
+| Item | Value |
+| --- | --- |
+| Domain | `studio.slavx.ru` |
+| SSH alias | `slavx-store` |
+| IP | `171.22.180.206` |
+| SSH user | `som` |
+| Deploy path | `/home/som/MedusaStore` |
+| GitHub repo | `imdbcooper/MedusaStore` |
+| Default branch | `main` |
+| Compose file | [`docker-compose.prod.yml`](../docker-compose.prod.yml) (filename retained as Medusa convention) |
+| Deploy workflow | [`.github/workflows/deploy-staging.yml`](../.github/workflows/deploy-staging.yml) |
+| Remote deploy script | [`scripts/github-deploy-staging.sh`](../scripts/github-deploy-staging.sh) |
+| Smoke script | [`scripts/staging-container-smoke.sh`](../scripts/staging-container-smoke.sh) |
+| Env contract | [`.env.staging.example`](../.env.staging.example) |
 
-For actual production operations, use [`production_runbook.md`](./production_runbook.md), not staging docs.
+Mail infrastructure runs on a separate VPS (`smtpserv` / `77.83.92.194`, hostname `smtp.slavx.ru`, docker-mailserver with Let's Encrypt TLS and DKIM/SPF/DMARC for `notify.slavx.ru`). Transactional email sender is `noreply@notify.slavx.ru`.
 
-## 3. Minimum requirements to add real staging
+## 3. Deploy Governance
 
-Provision a separate environment; do not reuse production host/database as staging.
+- **Only** deploy method: GitHub Actions workflow `Deploy Staging` (`.github/workflows/deploy-staging.yml`).
+- **Never** deploy via direct SSH + docker build. If used in an emergency, document the reason in [`troubleshooting.md`](./troubleshooting.md).
+- Pre-deploy: compose config validation, tests.
+- Post-deploy: automated smoke via [`scripts/staging-container-smoke.sh`](../scripts/staging-container-smoke.sh).
 
-Required decisions:
+## 4. Secrets Governance
 
-1. Stage domain, for example `stage.<domain>` or another DNS name.
-2. Stage server/VM/container host.
-3. Stage SSH user and path.
-4. Stage branch policy: deploy `main`, `develop`, or a dedicated staging branch.
-5. Stage `.env` with non-production secrets and separate data.
-6. Stage PostgreSQL/Redis volumes distinct from production.
-7. Stage Caddy ACME/email configuration.
-8. Stage GitHub Secrets separate from production.
-9. Stage smoke URLs and product handle fixtures.
+- **Only** source of real secrets: GitHub Secrets (passwords, tokens, API keys).
+- **Only** source of non-secret config: GitHub Variables.
+- Never commit real secret values to git.
+- Remote `.env` on staging is built from GitHub Secrets/Variables during deploy.
+- [`.env.example`](../.env.example), [`.env.staging.example`](../.env.staging.example), and the per-app templates contain only placeholder values for documentation.
 
-## 4. Recommended staging topology
+## 5. How to read existing staging docs
 
-Use the same shape as production, but with different names/domains/secrets:
+- [`staging_deploy_path.md`](./staging_deploy_path.md) — historical planning contour; treat as background.
+- [`staging_verification_contour.md`](./staging_verification_contour.md) — executable verification via `npm run staging:verify` against any prepared env file.
+- [`staging_checklist.md`](./staging_checklist.md), [`staging_backup_restore_runbook.md`](./staging_backup_restore_runbook.md), [`staging_rollback_runbook.md`](./staging_rollback_runbook.md), [`staging_monitoring_baseline.md`](./staging_monitoring_baseline.md) — planning/checklist material.
 
-- `docker-compose.prod.yml` can be reused if env values point to staging domain and staging data.
-- Use a different `COMPOSE_PROJECT_NAME`, for example `medusastore-stage`, if staging shares a Docker host with anything else.
-- Use separate volumes. Never mount production volumes into staging.
-- Use Caddy for stage ingress, but with a stage domain.
-- Use a stage `.env`, never copy production secrets directly.
-
-## 5. Recommended staging deploy automation
-
-If staging is provisioned, add a new workflow rather than overloading production:
-
-- `.github/workflows/deploy-staging.yml`;
-- secrets like `STAGING_DEPLOY_HOST`, `STAGING_DEPLOY_USER`, `STAGING_DEPLOY_PATH`, `STAGING_DEPLOY_SSH_PRIVATE_KEY`;
-- branch input defaulting to a staging branch or `main`, per policy;
-- remote script can reuse [`scripts/github-deploy-prod.sh`](../scripts/github-deploy-prod.sh) if `DEPLOY_PATH`, `DEPLOY_BRANCH`, `COMPOSE_PROJECT_NAME`, and stage `.env` are correct, or a thin `github-deploy-staging.sh` wrapper can be introduced.
-
-Do not point staging secrets at `/home/som/MedusaStore` on production unless the operator explicitly intends to deploy production.
+For current concrete staging operations (deploy, env, smoke, Caddy routing), see [`production_runbook.md`](./production_runbook.md). That runbook is the single current staging source of truth and will be split into staging/production runbooks once real production is provisioned.
 
 ## 6. Stage env contract
 
-Use [`.env.prod.example`](../.env.prod.example) as the closest runtime contract, but set stage-specific values:
+Use [`.env.staging.example`](../.env.staging.example) as the runtime contract. Key stage-specific values already reflect the canonical staging reality:
 
-- `DEPLOY_DOMAIN=<stage-domain>`;
-- `NEXT_PUBLIC_BASE_URL=https://<stage-domain>`;
-- `DOCKER_NEXT_PUBLIC_BASE_URL=https://<stage-domain>`;
-- `NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://<stage-domain>` or stage public origin;
-- `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000`;
-- separate database credentials and volumes;
-- stage-only JWT/cookie/Payload secrets;
-- stage-specific CORS origins;
-- stage smoke overrides as needed.
+- `DEPLOY_DOMAIN=studio.slavx.ru`;
+- `NEXT_PUBLIC_BASE_URL=https://studio.slavx.ru`;
+- `DOCKER_NEXT_PUBLIC_BASE_URL=https://studio.slavx.ru`;
+- `NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://studio.slavx.ru` (public Caddy origin);
+- `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000` (internal Docker network);
+- staging-only JWT/cookie/Payload secrets;
+- staging-specific CORS origins;
+- staging smoke overrides as needed.
 
-## 7. Verification once staging exists
+Real secret values are sourced from GitHub Secrets and injected during deploy; the committed example only declares the contract.
 
-Prepare a stage env file locally or in CI and run:
+## 7. Verification after deploy
+
+After every staging deploy the workflow runs [`scripts/staging-container-smoke.sh`](../scripts/staging-container-smoke.sh). For ad-hoc verification on a prepared env file:
 
 ```bash
 ROOT_ENV_FILE=./staging.env npm run staging:verify
 ```
 
-Recommended stage checks:
+Recommended checks:
 
-- backend health;
-- storefront root;
-- `/ru/account` browser smoke;
-- notification smoke if admin key/data-plane path is intentionally configured;
-- `GET /healthz` through stage Caddy;
-- `GET /ru/about` and `GET /ru/promotions`;
-- `GET /ru/products/<known-stage-product-handle>` for dynamic product rendering;
-- `GET /payload/api/pages?limit=1` through the stage proxy if Payload is enabled.
+- `GET /healthz` through Caddy returns `200` / `ok`;
+- backend admin reachable (`200`, `301`, `302`, or `401`, not connection error);
+- storefront root renders;
+- `GET /ru/about` and `GET /ru/promotions` render when Payload is enabled;
+- `GET /ru/products/<known-product-handle>` returns `200` for an existing handle;
+- `GET /payload/api/pages?limit=1` returns `200` when Payload is enabled;
+- optional `/ru/account` browser smoke;
+- optional notification smoke when admin key/data-plane path is intentionally configured.
 
 ## 8. What not to do
 
-- Do not call production `slavx.mooo.com` staging.
-- Do not reuse production PostgreSQL volumes/data for staging tests.
-- Do not place production deploy SSH key in staging secrets.
-- Do not treat old statements like “production packaging is absent” as current truth; production packaging/deploy now exists.
-- Do not deploy documentation-only changes to production unless there is an operational reason to update the remote checkout.
+- Do not call `studio.slavx.ru` production. It is staging. Real production is not provisioned yet.
+- Do not deploy by any method other than the `Deploy Staging` GitHub Actions workflow.
+- Do not commit real secret values. They belong in GitHub Secrets.
+- Do not pass secrets through chat, email, or any channel other than GitHub Secrets/Variables.
+- Do not deploy documentation-only changes to staging unless there is an operational reason to update the remote checkout.
 
-## 9. Current practical path
+## 9. When real production is provisioned
 
-Until a concrete stage host is provisioned, use:
+When real production is set up as a second environment:
 
-- local checks for code/docs consistency;
-- production runbook for real production deploys;
-- staging docs only as planning material and verification contour examples.
+- add a new deploy workflow (for example `.github/workflows/deploy-production.yml`) that targets the production host;
+- add production-scoped GitHub Secrets separate from staging;
+- split [`production_runbook.md`](./production_runbook.md) into a dedicated staging runbook and a dedicated production runbook;
+- update [`.kilocode/skills/medusa-master-repo/SKILL.md`](../.kilocode/skills/medusa-master-repo/SKILL.md) to describe the two-environment reality.

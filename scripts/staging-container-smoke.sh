@@ -11,7 +11,7 @@ check_url() {
   local expected_regex="${3:-^2|^3|^4}"
   local output
 
-  output="$(curl -sS --max-time 20 --retry 3 --retry-delay 2 --retry-connrefused -o /tmp/prod-smoke-${name}.out -w '%{http_code} %{time_total}' "$url")"
+  output="$(curl -sS --max-time 20 --retry 3 --retry-delay 2 --retry-connrefused -o /tmp/staging-smoke-${name}.out -w '%{http_code} %{time_total}' "$url")"
   local code="${output%% *}"
   local time="${output#* }"
 
@@ -19,7 +19,7 @@ check_url() {
 
   if ! [[ "$code" =~ $expected_regex ]]; then
     echo "Unexpected HTTP status for ${name}: ${code}" >&2
-    head -c 500 "/tmp/prod-smoke-${name}.out" >&2 || true
+    head -c 500 "/tmp/staging-smoke-${name}.out" >&2 || true
     echo >&2
     return 1
   fi

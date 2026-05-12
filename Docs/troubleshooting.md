@@ -6,7 +6,7 @@
 
 Symptoms:
 
-- `https://slavx.mooo.com/ru/products/<handle>` returns `500`.
+- `https://studio.slavx.ru/ru/products/<handle>` returns `500`.
 - Storefront logs show Medusa fetch failures, missing publishable key, backend URL errors, or region/product lookup errors.
 
 Implementation facts:
@@ -18,7 +18,7 @@ Implementation facts:
 Checks:
 
 ```bash
-curl -I https://slavx.mooo.com/ru/products/<real-product-handle>
+curl -I https://studio.slavx.ru/ru/products/<real-product-handle>
 ```
 
 ```bash
@@ -70,7 +70,7 @@ docker exec medusastore-storefront printenv PAYLOAD_CMS_URL
 ```
 
 ```bash
-curl -sS https://slavx.mooo.com/payload/api/pages?limit=10 | head
+curl -sS https://studio.slavx.ru/payload/api/pages?limit=10 | head
 ```
 
 ```bash
@@ -127,7 +127,7 @@ Implementation fact:
 Production expectation:
 
 - `MEDUSA_BACKEND_URL` / `DOCKER_MEDUSA_BACKEND_URL`: `http://medusa-backend:9000`.
-- `NEXT_PUBLIC_MEDUSA_BACKEND_URL`: public/proxy origin, usually `https://slavx.mooo.com`, for browser-visible usage.
+- `NEXT_PUBLIC_MEDUSA_BACKEND_URL`: public/proxy origin, usually `https://studio.slavx.ru`, for browser-visible usage.
 
 Checks:
 
@@ -182,8 +182,8 @@ Symptoms:
 Checks:
 
 ```bash
-curl -I http://slavx.mooo.com/healthz
-curl -I https://slavx.mooo.com/healthz
+curl -I http://studio.slavx.ru/healthz
+curl -I https://studio.slavx.ru/healthz
 ```
 
 ```bash
@@ -198,7 +198,7 @@ Expected route ownership is in [`docker/caddy/Caddyfile`](../docker/caddy/Caddyf
 
 Common causes:
 
-- DNS for `slavx.mooo.com` does not point to the server.
+- DNS for `studio.slavx.ru` does not point to the server.
 - Ports `80`/`443` are blocked or already used.
 - `DEPLOY_DOMAIN` or `ACME_EMAIL` wrong in remote `.env`.
 - Caddy data/config volume has stale ACME state after domain change.
@@ -344,9 +344,9 @@ Default deploy smoke uses `https://${DEPLOY_DOMAIN}` unless `SMOKE_BASE_URL` is 
 Checks:
 
 ```bash
-curl -I http://slavx.mooo.com/healthz
-curl -I https://slavx.mooo.com/healthz
-curl -I https://slavx.mooo.com/ru/about
+curl -I http://studio.slavx.ru/healthz
+curl -I https://studio.slavx.ru/healthz
+curl -I https://studio.slavx.ru/ru/about
 ```
 
 If first ACME issuance is still pending, Caddy logs are authoritative:
@@ -358,7 +358,7 @@ docker compose -p medusastore -f docker-compose.prod.yml --env-file .env logs -f
 Temporary operator-only workaround for known first-boot cases:
 
 ```bash
-SMOKE_BASE_URL=http://slavx.mooo.com bash ./scripts/prod-container-smoke.sh
+SMOKE_BASE_URL=http://studio.slavx.ru bash ./scripts/staging-container-smoke.sh
 ```
 
 Do not leave HTTP-only smoke as the permanent production contract if HTTPS is intended.
@@ -436,7 +436,7 @@ docker exec medusastore-storefront printenv NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENAB
 ```
 
 ```bash
-curl -fsS https://slavx.mooo.com/store/assistant/history || true
+curl -fsS https://studio.slavx.ru/store/assistant/history || true
 ```
 
 Common causes:
