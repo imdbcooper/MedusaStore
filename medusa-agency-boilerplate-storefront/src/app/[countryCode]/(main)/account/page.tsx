@@ -1,16 +1,12 @@
 import { Metadata } from "next"
 
 import Overview from "@modules/account/components/overview"
+import LoginTemplate from "@modules/account/templates/login-template"
 import { retrieveCustomer } from "@lib/data/customer"
 import { listOrders } from "@lib/data/orders"
 import { getMetadataTitle, storefrontConfig } from "@lib/storefront-config"
 
-export const metadata: Metadata = {
-  title: getMetadataTitle(storefrontConfig.copy.account.title),
-  description: storefrontConfig.copy.account.dashboardDescription,
-}
-
-type DashboardPageProps = {
+type AccountPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>
 }
 
@@ -24,15 +20,27 @@ function readSearchParam(
   return typeof value === "string" ? value : null
 }
 
-export default async function OverviewTemplate(props: DashboardPageProps) {
+export async function generateMetadata(): Promise<Metadata> {
   const customer = await retrieveCustomer().catch(() => null)
 
-  // Dashboard slot is always rendered by Next.js parallel routes even when the
-  // layout chooses the login slot for anonymous visitors. Return null here so
-  // the slot stays inert for anonymous users instead of throwing notFound and
-  // triggering a 404 cascade across the whole /account route.
+  if (customer) {
+    return {
+      title: getMetadataTitle(storefrontConfig.copy.account.title),
+      description: storefrontConfig.copy.account.dashboardDescription,
+    }
+  }
+
+  return {
+    title: getMetadataTitle("Вход"),
+    description: `Вход в аккаунт ${storefrontConfig.storeName}.`,
+  }
+}
+
+export default async function AccountPage(props: AccountPageProps) {
+  const customer = await retrieveCustomer().catch(() => null)
+
   if (!customer) {
-    return null
+    return <LoginTemplate />
   }
 
   const orders = (await listOrders().catch(() => null)) || null
