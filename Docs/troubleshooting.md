@@ -248,6 +248,21 @@ Common causes:
 - DMARC was recently changed and should be rechecked before production rollout.
 - Smoke recipient points to a real user instead of an operator/test mailbox.
 
+Current external mailserver follow-ups:
+
+- mail VPS `smtpserv` (`77.83.92.194`) runs docker-mailserver from `/opt/mailserver` for `smtp.slavx.ru`;
+- provider-side PTR/rDNS `77.83.92.194 -> smtp.slavx.ru` is still pending;
+- trusted TLS certificate for `smtp.slavx.ru` is still pending;
+- current relaxed TLS setting `SMTP_TLS_REJECT_UNAUTHORIZED=false` is temporary for staging/bootstrap only;
+- after installing the trusted certificate, set `SMTP_TLS_REJECT_UNAUTHORIZED=true`, restart the backend, and verify SMTP smoke again.
+
+Certificate handling direction:
+
+- issue and keep the Let's Encrypt certificate directly on `smtpserv`, because the private key should live next to the TLS-terminating SMTP service (`docker-mailserver`);
+- use HTTP-01 if port `80` can be opened on the mail VPS without service conflicts; otherwise use DNS-01 through the DNS provider API/manual flow;
+- do not copy the private key through the main staging/production server;
+- mount/connect the issued cert paths into `/opt/mailserver/config/ssl` and docker-mailserver SSL config, then reload/recreate the mailserver container.
+
 ## 8. GitHub deploy hangs or fails
 
 Symptoms:

@@ -20,6 +20,14 @@ Delivery Hub/direct Yandex is previous-baseline historical/quarantined context o
 
 The uncommitted `ai-assistant/` integration patch now includes trusted anonymous-to-authenticated session binding and a durable assistant reindex intent queue/processor. The widget remains disabled by default, real LLM/provider secrets are still operator-supplied later, and the next step before commit is review of the full dirty integration tree plus validation evidence.
 
+Transactional SMTP mailserver is reachable on the separate VPS `smtpserv` (`77.83.92.194`) with docker-mailserver in `/opt/mailserver`; host name is `smtp.slavx.ru`, transactional sender is `noreply@notify.slavx.ru`, and the latest SMTP smoke to the operator-provided Yandex mailbox was accepted with `status=sent`. Remaining follow-ups before treating this as final strict TLS baseline:
+
+- provider must set PTR/rDNS `77.83.92.194 -> smtp.slavx.ru`;
+- trusted TLS certificate for `smtp.slavx.ru` is still pending;
+- current staging/backend SMTP verification uses temporary relaxed TLS/self-signed mode through `SMTP_TLS_REJECT_UNAUTHORIZED=false` and must not become final production configuration;
+- after the trusted certificate is installed, set `SMTP_TLS_REJECT_UNAUTHORIZED=true`, restart the backend, and run the SMTP smoke again;
+- certificate recommendation: issue and keep the Let's Encrypt certificate directly on `smtpserv`, because the private key should live next to the SMTP TLS terminator (`docker-mailserver`), not be copied through the main staging/production server.
+
 ---
 
 ## Repository Baseline

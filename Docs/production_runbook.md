@@ -34,6 +34,34 @@ Configure these in the GitHub repository secrets. Do not commit their values.
 
 The workflow also has a manual `branch` input, defaulting to `main`.
 
+## 2.1. External mailserver follow-ups
+
+Transactional SMTP is being prepared on a separate mail VPS, not inside the main production compose stack:
+
+| Item | Value |
+| --- | --- |
+| Mail VPS | `smtpserv` |
+| Mail IP | `77.83.92.194` |
+| docker-mailserver path | `/opt/mailserver` |
+| Mail host name | `smtp.slavx.ru` |
+| Transactional sender | `noreply@notify.slavx.ru` |
+
+Current status:
+
+- SMTP smoke to the operator-provided Yandex mailbox was accepted with `status=sent`.
+- PTR/rDNS is still pending with the provider: `77.83.92.194 -> smtp.slavx.ru`.
+- Trusted TLS certificate for `smtp.slavx.ru` is still pending.
+- Any current staging/backend setting with `SMTP_TLS_REJECT_UNAUTHORIZED=false` is temporary for relaxed TLS/self-signed bootstrap only.
+
+Certificate recommendation:
+
+1. Prefer issuing a Let's Encrypt certificate directly on `smtpserv`, because the private key should live on the host/service that terminates TLS for SMTP (`docker-mailserver`).
+2. Prefer HTTP-01 if port `80` can be opened temporarily or permanently on the mail VPS and does not conflict with other services.
+3. Use DNS-01 through the DNS provider API/manual flow if HTTP-01 is not practical.
+4. Do not copy the private key through the main staging/production server.
+5. After issuance, mount/connect the certificate paths into `/opt/mailserver/config/ssl` and docker-mailserver SSL config, then reload/recreate the mailserver container.
+6. After the trusted certificate is installed, set `SMTP_TLS_REJECT_UNAUTHORIZED=true`, restart the backend, and run SMTP smoke again.
+
 ## 3. Remote `.env` contract
 
 Production deploy requires `/home/som/MedusaStore/.env` to exist. The remote script exits if it is missing.
