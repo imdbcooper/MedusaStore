@@ -2,6 +2,8 @@ import type { Logger, NotificationTypes } from "@medusajs/framework/types"
 import {
   AbstractNotificationProviderService,
   MedusaError,
+  ModuleProvider,
+  Modules,
 } from "@medusajs/framework/utils"
 import nodemailer from "nodemailer"
 import type SMTPTransport from "nodemailer/lib/smtp-transport"
@@ -58,7 +60,7 @@ type SmtpAttachment = {
 
 const DEFAULT_SMTP_SUBJECT = "Notification"
 
-class SmtpNotificationService extends AbstractNotificationProviderService {
+export class SmtpNotificationService extends AbstractNotificationProviderService {
   static identifier = "notification-smtp"
 
   protected config_: SmtpServiceConfig
@@ -319,4 +321,6 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#39;")
 }
 
-export default SmtpNotificationService
+export default ModuleProvider(Modules.NOTIFICATION, {
+  services: [SmtpNotificationService],
+})

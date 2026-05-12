@@ -1,8 +1,9 @@
 import { describe, expect, it, jest, afterEach } from "@jest/globals"
 import type { Logger, NotificationTypes } from "@medusajs/framework/types"
-import SmtpNotificationService, {
+import smtpNotificationProvider, {
   resetSmtpTransportFactoryForTests,
   setSmtpTransportFactoryForTests,
+  SmtpNotificationService,
 } from "../notification-smtp"
 
 
@@ -44,6 +45,11 @@ describe("SmtpNotificationService", () => {
       }
     )
   }
+
+  it("exports a Medusa notification module provider with iterable services", () => {
+    expect(Array.isArray(smtpNotificationProvider.services)).toBe(true)
+    expect(smtpNotificationProvider.services).toEqual([SmtpNotificationService])
+  })
 
   it("creates a STARTTLS transport without sending during construction", () => {
     createService()
