@@ -194,7 +194,7 @@ docker compose -p medusastore -f docker-compose.prod.yml --env-file .env logs --
 docker exec medusastore-caddy caddy validate --config /etc/caddy/Caddyfile
 ```
 
-Expected route ownership is in [`docker/caddy/Caddyfile`](../docker/caddy/Caddyfile). There is no Nginx layer to check.
+Expected route ownership is in [`docker/caddy/Caddyfile`](../docker/caddy/Caddyfile). There is no Nginx layer to check. The Caddy Docker healthcheck intentionally uses the local `http://127.0.0.1/healthz` site; public HTTPS and redirects for `${DEPLOY_DOMAIN}` stay enabled separately.
 
 Common causes:
 

@@ -2,6 +2,13 @@
     email {$ACME_EMAIL}
 }
 
+http://127.0.0.1 {
+    handle /healthz {
+        header Content-Type text/plain
+        respond "ok" 200
+    }
+}
+
 {$DEPLOY_DOMAIN} {
     encode gzip zstd
 

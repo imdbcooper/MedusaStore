@@ -38,7 +38,7 @@ There is no Nginx layer in the current production topology. Caddy is the only re
 | `medusa-backend` | `medusastore-backend` | built from [`docker/medusa-backend/Dockerfile`](../docker/medusa-backend/Dockerfile) | Medusa Admin/API, commerce truth, catalog/cart/checkout/orders/fulfillment/payments/notifications. | Compose healthcheck from image/runtime plus Caddy/admin smoke. |
 | `payload-cms` | `medusastore-payload` | built from [`docker/payload/Dockerfile`](../docker/payload/Dockerfile) | Payload CMS API/admin/content runtime. | Compose healthcheck and `/payload/api/pages?limit=1` smoke. |
 | `storefront` | `medusastore-storefront` | built from [`docker/storefront/Dockerfile`](../docker/storefront/Dockerfile) | Next.js storefront, product pages, content page rendering, content preview/revalidate endpoints. | `GET /ru/about` inside container. |
-| `caddy` | `medusastore-caddy` | `caddy:2-alpine` | Public HTTP/HTTPS ingress, ACME certificates, route dispatch. | `GET /healthz` returns `ok`. |
+| `caddy` | `medusastore-caddy` | `caddy:2-alpine` | Public HTTP/HTTPS ingress, ACME certificates, route dispatch. | Public `GET /healthz` returns `ok`; Docker healthcheck uses local `http://127.0.0.1/healthz` to avoid internal HTTPS/SNI mismatch. |
 | `ai-assistant` | `medusastore-ai-assistant` | built from [`ai-assistant/Dockerfile`](../ai-assistant/Dockerfile) when profile `ai-assistant` is enabled | Optional FastAPI shopping assistant for Markdown/vector answers, Medusa live checks, feedback, and ingestion/admin endpoints. | `GET /api/v1/health` inside the container. |
 
 All services are attached to the `medusastore` Docker bridge network in [`docker-compose.prod.yml`](../docker-compose.prod.yml).
