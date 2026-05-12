@@ -28,7 +28,10 @@ import { AdminVkNotificationSmokeSchema } from "./admin/notifications/smoke/vk/r
 import { StoreAssistantHistorySchema } from "./store/assistant/history/route"
 import { StoreCustomerMarketingPreferencesSchema } from "./store/customers/me/marketing-preferences/route"
 import { StoreRequestEmailVerificationSchema } from "./store/customers/me/request-email-verification/route"
+import { StoreUpdateCustomerPasswordSchema } from "./store/customers/me/password/route"
 import { StoreVkIdStartLinkSchema } from "./store/customers/me/vk-id/start/route"
+import { StoreForgotPasswordSchema } from "./store/customers/forgot-password/route"
+import { StoreResetPasswordSchema } from "./store/customers/reset-password/route"
 import { StoreVerifyEmailSchema } from "./store/customers/verify-email/route"
 import { StoreYooKassaPaymentStatusSchema } from "./store/payment/yookassa/route"
 import { StoreYooKassaReturnSchema } from "./store/payment/yookassa/return/route"
@@ -204,6 +207,29 @@ export default defineMiddlewares({
     },
     {
       matcher: "/admin/customers/:id/resend-email-verification",
+      methods: ["POST"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/store/customers/forgot-password",
+      methods: ["POST"],
+      middlewares: [validateAndTransformBody(StoreForgotPasswordSchema)],
+    },
+    {
+      matcher: "/store/customers/reset-password",
+      methods: ["POST"],
+      middlewares: [validateAndTransformBody(StoreResetPasswordSchema)],
+    },
+    {
+      matcher: "/store/customers/me/password",
+      methods: ["POST"],
+      middlewares: [
+        authenticate("customer", ["session", "bearer"]),
+        validateAndTransformBody(StoreUpdateCustomerPasswordSchema),
+      ],
+    },
+    {
+      matcher: "/admin/customers/:id/send-password-reset",
       methods: ["POST"],
       middlewares: [adminAuth],
     },

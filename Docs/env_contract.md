@@ -415,6 +415,30 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - subscriber никогда не блокирует регистрацию: при failure пишет sanitized error log без секретов и не throw-ит наружу;
 - все новые ключи добавлены в [`.env.example`](../.env.example) и [`.env.prod.example`](../.env.prod.example); ни один markdown этого репозитория не должен содержать реальные token values, storefront URLs с токеном в query или raw user emails.
 
+#### Password reset (customer forgot/reset)
+
+Подтвержденный contract для password reset flow:
+- workflow [`sendPasswordResetWorkflow`](../medusa-agency-boilerplate/src/workflows/send-password-reset.ts:1) принимает email от публичной формы, нормализует его, выполняет lookup `customer` по email; если customer не найден — делает controlled skip с reason `customer_not_found`, чтобы route всегда возвращал identical success и не раскрывал существующие emails;
+- при найденном customer workflow генерирует 32-байтный random url-safe token и хранит `token_hash` (sha256 hex), `issued_at`, `expires_at`, `consumed_at` в `customer.metadata.password_reset`, затем отправляет письмо через Notification Module; при `NOTIFICATION_EMAIL_PROVIDER=smtp` envelope sender = `SMTP_FROM`;
+- token shape = `${customer_id}.${raw_token}`; raw token никогда не сохраняется ни в БД, ни в логах;
+- workflow [`applyPasswordResetWorkflow`](../medusa-agency-boilerplate/src/workflows/apply-password-reset.ts:1) verifies token + TTL + consumed + email match, обновляет credentials через `authModule.updateProvider("emailpass", { entity_id: email, password })` и помечает token `consumed_at` в metadata (one-time-use);
+- workflow [`updateCustomerPasswordWorkflow`](../medusa-agency-boilerplate/src/workflows/update-customer-password.ts:1) требует authenticated customer, верифицирует current password через `authModule.authenticate("emailpass", ...)` и обновляет через `updateProvider`; после успешного update очищает `customer.metadata.password_reset`, чтобы инвалидировать любые outstanding reset tokens;
+- route `POST /store/customers/forgot-password` публичный, всегда возвращает `{ ok: true }` независимо от существования email — specific внутренний reason логируется только server-side;
+- route `POST /store/customers/reset-password` публичный, возвращает generic `invalid_or_expired_token` для любого token-related failure; отдельный `weak_password` с `detail` возвращается только для password strength failures;
+- route `POST /store/customers/me/password` требует customer auth и защищён от проверки текущего пароля перед сменой;
+- route `POST /admin/customers/:id/send-password-reset` защищён admin auth и позволяет оператору вручную переотправить reset email;
+- TTL контролируется через `PASSWORD_RESET_TOKEN_TTL_MINUTES`, default = `60` минут (короче email verification, т.к. это security-sensitive); redirect path — `PASSWORD_RESET_REDIRECT_PATH`, default = `/account/reset-password`;
+- strength policy: `PASSWORD_MIN_LENGTH` default `8` (абсолютный минимум также 8), `PASSWORD_REQUIRE_LETTER` default `true`, `PASSWORD_REQUIRE_DIGIT` default `true`; максимум = 128 символов;
+- storefront base URL для ссылки резолвится из тех же `STOREFRONT_URL` → `STOREFRONT_BASE_URL` → `NEXT_PUBLIC_STOREFRONT_URL`; при отсутствии всех трёх workflow делает skip с reason `missing_storefront_url`, route всё равно возвращает success;
+- все новые ключи добавлены в [`.env.example`](../.env.example) и [`.env.prod.example`](../.env.prod.example); ни один markdown этого репозитория не должен содержать реальные reset token values, passwords или storefront reset URLs с токеном в query.
+
+Известные trade-offs baseline (accepted for current scope, не блокируют выкатку):
+- compensation race в [`apply-password-reset.ts`](../medusa-agency-boilerplate/src/workflows/apply-password-reset.ts:1) и [`update-customer-password.ts`](../medusa-agency-boilerplate/src/workflows/update-customer-password.ts:1): если `authModule.updateProvider` уже сменил пароль, а последующее `updateCustomersWorkflow` (mark consumed / clear metadata) падает, пароль уже изменён, а reset token остаётся валиден до своей TTL; rollback провайдера не делается, падение логируется как `[password-reset] apply consumed_mark_failed password_changed=true reset_token_still_active=true ...` и `[password-update] metadata_clear_failed password_changed=true outstanding_reset_token_valid=true ...` для операторского разбора; атомарная compensation step в workflow framework отложена;
+- SMTP-fail after token issue: если `sendPasswordResetWorkflow` сгенерировал token и записал metadata, но Notification Module не смог отправить письмо, token остаётся валиден до TTL и клиент никогда не получает ссылку; route всё равно возвращает `{ ok: true }`, чтобы не раскрывать факт существования email; поведение идентично Phase 1 email-verification baseline;
+- timing attack на `POST /store/customers/forgot-password`: ответ всегда `{ ok: true }`, но path для существующего customer делает SMTP send, а path для не существующего — сразу возвращает; разница ответа во времени теоретически детектируема (user enumeration via timing); acceptable for MVP, не блокер;
+- no rate limiting: ни `forgot-password`, ни `reset-password`, ни `me/password`, ни admin `send-password-reset` не имеют встроенного rate-limit layer; защита полагается на ingress/Caddy и SMTP provider limits;
+- no `customer.updated` subscriber: смена пароля через любой путь сейчас не эмитит отдельное Notification-событие ("your password was changed"); клиент узнаёт о смене только через UI success state; отложено до будущей итерации.
+
 #### AI Assistant optional/default-off env contract
 
 - Backend adapter variables are backend-only: `AI_ASSISTANT_ENABLED`, `AI_ASSISTANT_BASE_URL`, `AI_ASSISTANT_SERVER_TOKEN`, and `AI_ASSISTANT_TIMEOUT_MS` belong to Medusa backend runtime and must not be exposed to the browser.

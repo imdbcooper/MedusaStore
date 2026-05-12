@@ -495,3 +495,185 @@ export async function verifyEmail(token: string): Promise<VerifyEmailResult> {
     email: typeof payload.email === "string" ? payload.email : undefined,
   }
 }
+
+export type RequestPasswordResetResult = {
+  ok: boolean
+  code?: string
+}
+
+/**
+ * Request a password reset email. Always returns `{ ok: true }` for public
+ * requests to avoid user enumeration; only transport-level failures surface
+ * as `ok: false`.
+ */
+export async function requestPasswordReset(options: {
+  email: string
+  countryCode?: string | null
+}): Promise<RequestPasswordResetResult> {
+  const email = options.email?.trim()
+
+  if (!email) {
+    return { ok: false, code: "invalid_email" }
+  }
+
+  try {
+    const response = await fetch(
+      `${MEDUSA_BACKEND_URL}/store/customers/forgot-password`,
+      {
+        method: "POST",
+        headers: buildStorePublishableHeaders(),
+        body: JSON.stringify({
+          email,
+          country_code: options.countryCode || null,
+          reason: "forgot_password",
+        }),
+        cache: "no-store",
+      }
+    )
+
+    if (!response.ok) {
+      return { ok: false, code: "password_reset_request_failed" }
+    }
+
+    return { ok: true }
+  } catch {
+    return { ok: false, code: "password_reset_request_failed" }
+  }
+}
+
+export type ApplyPasswordResetResult = {
+  ok: boolean
+  code?: string
+  detail?: string
+  customer_id?: string
+}
+
+export async function applyPasswordReset(options: {
+  token: string
+  newPassword: string
+}): Promise<ApplyPasswordResetResult> {
+  const token = options.token?.trim()
+
+  if (!token) {
+    return { ok: false, code: "invalid_or_expired_token" }
+  }
+
+  const newPassword = options.newPassword ?? ""
+
+  try {
+    const response = await fetch(
+      `${MEDUSA_BACKEND_URL}/store/customers/reset-password`,
+      {
+        method: "POST",
+        headers: buildStorePublishableHeaders(),
+        body: JSON.stringify({
+          token,
+          new_password: newPassword,
+        }),
+        cache: "no-store",
+      }
+    )
+
+    let payload: Record<string, unknown> = {}
+
+    try {
+      const text = await response.text()
+
+      if (text) {
+        payload = JSON.parse(text) as Record<string, unknown>
+      }
+    } catch {
+      payload = {}
+    }
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        code:
+          (typeof payload.code === "string" && payload.code) ||
+          "invalid_or_expired_token",
+        detail:
+          typeof payload.detail === "string" ? payload.detail : undefined,
+      }
+    }
+
+    return {
+      ok: true,
+      customer_id:
+        typeof payload.customer_id === "string"
+          ? payload.customer_id
+          : undefined,
+    }
+  } catch {
+    return { ok: false, code: "invalid_or_expired_token" }
+  }
+}
+
+export type UpdateCustomerPasswordResult = {
+  ok: boolean
+  code?: string
+  detail?: string
+}
+
+export async function updateCustomerPassword(options: {
+  currentPassword: string
+  newPassword: string
+}): Promise<UpdateCustomerPasswordResult> {
+  const authHeaders = await getAuthHeaders()
+
+  if (!hasAuthorizationHeader(authHeaders)) {
+    return { ok: false, code: "customer_auth_required" }
+  }
+
+  try {
+    const response = await fetch(
+      `${MEDUSA_BACKEND_URL}/store/customers/me/password`,
+      {
+        method: "POST",
+        headers: {
+          ...buildStorePublishableHeaders(),
+          authorization: authHeaders.authorization,
+        },
+        body: JSON.stringify({
+          current_password: options.currentPassword ?? "",
+          new_password: options.newPassword ?? "",
+        }),
+        cache: "no-store",
+      }
+    )
+
+    let payload: Record<string, unknown> = {}
+
+    try {
+      const text = await response.text()
+
+      if (text) {
+        payload = JSON.parse(text) as Record<string, unknown>
+      }
+    } catch {
+      payload = {}
+    }
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        code:
+          (typeof payload.code === "string" && payload.code) ||
+          "password_update_failed",
+        detail:
+          typeof payload.detail === "string" ? payload.detail : undefined,
+      }
+    }
+
+    try {
+      const customerCacheTag = await getCacheTag("customers")
+      revalidateTag(customerCacheTag)
+    } catch {
+      // best-effort cache invalidation
+    }
+
+    return { ok: true }
+  } catch {
+    return { ok: false, code: "password_update_failed" }
+  }
+}
