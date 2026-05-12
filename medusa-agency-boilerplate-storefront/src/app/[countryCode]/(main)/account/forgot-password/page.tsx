@@ -1,6 +1,9 @@
 import { Metadata } from "next"
 
 import ForgotPasswordForm from "@modules/account/components/forgot-password"
+import AuthCardShell, {
+  KeyIcon,
+} from "@modules/account/components/auth-card-shell"
 import { getMetadataTitle } from "@lib/storefront-config"
 
 export const metadata: Metadata = {
@@ -19,8 +22,8 @@ export default async function ForgotPasswordPage(
   const { countryCode } = await props.params
 
   return (
-    <div className="w-full flex justify-start px-8 py-8">
+    <AuthCardShell icon={<KeyIcon />} testId="forgot-password-page">
       <ForgotPasswordForm countryCode={countryCode} />
-    </div>
+    </AuthCardShell>
   )
 }

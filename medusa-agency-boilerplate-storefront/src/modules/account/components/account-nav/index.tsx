@@ -12,6 +12,29 @@ import Package from "@modules/common/icons/package"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import { HttpTypes } from "@medusajs/types"
 import { signout } from "@lib/data/customer"
+import { IconProps } from "types/icon"
+
+const HomeIcon: React.FC<IconProps> = ({
+  size = 18,
+  color = "currentColor",
+  ...attributes
+}) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth="1.75"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    {...attributes}
+  >
+    <path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2h-4a1 1 0 0 1-1-1v-5h-4v5a1 1 0 0 1-1 1H5a2 2 0 0 1-2-2Z" />
+  </svg>
+)
 
 const AccountNav = ({
   customer,
@@ -26,8 +49,59 @@ const AccountNav = ({
     await signout(countryCode)
   }
 
+  const groups: Array<{
+    label: string
+    items: Array<{
+      href: string
+      label: string
+      icon: React.FC<IconProps>
+      testId: string
+    }>
+  }> = [
+    {
+      label: accountCopy.overview,
+      items: [
+        {
+          href: "/account",
+          label: accountCopy.overview,
+          icon: HomeIcon,
+          testId: "overview-link",
+        },
+      ],
+    },
+    {
+      label: "Профиль",
+      items: [
+        {
+          href: "/account/profile",
+          label: accountCopy.profile,
+          icon: User,
+          testId: "profile-link",
+        },
+        {
+          href: "/account/addresses",
+          label: accountCopy.addresses,
+          icon: MapPin,
+          testId: "addresses-link",
+        },
+      ],
+    },
+    {
+      label: accountCopy.orders,
+      items: [
+        {
+          href: "/account/orders",
+          label: accountCopy.orders,
+          icon: Package,
+          testId: "orders-link",
+        },
+      ],
+    },
+  ]
+
   return (
     <div>
+      {/* Mobile */}
       <div className="small:hidden" data-testid="mobile-account-nav">
         {route !== `/${countryCode}/account` ? (
           <LocalizedClientLink
@@ -48,53 +122,33 @@ const AccountNav = ({
             </div>
             <div className="text-base-regular">
               <ul>
-                <li>
-                  <LocalizedClientLink
-                    href="/account/profile"
-                    className="flex items-center justify-between py-4 border-b border-gray-200 px-8"
-                    data-testid="profile-link"
-                  >
-                    <>
-                      <div className="flex items-center gap-x-2">
-                        <User size={20} />
-                        <span>{accountCopy.profile}</span>
-                      </div>
-                      <ChevronDown className="transform -rotate-90" />
-                    </>
-                  </LocalizedClientLink>
-                </li>
-                <li>
-                  <LocalizedClientLink
-                    href="/account/addresses"
-                    className="flex items-center justify-between py-4 border-b border-gray-200 px-8"
-                    data-testid="addresses-link"
-                  >
-                    <>
-                      <div className="flex items-center gap-x-2">
-                        <MapPin size={20} />
-                        <span>{accountCopy.addresses}</span>
-                      </div>
-                      <ChevronDown className="transform -rotate-90" />
-                    </>
-                  </LocalizedClientLink>
-                </li>
-                <li>
-                  <LocalizedClientLink
-                    href="/account/orders"
-                    className="flex items-center justify-between py-4 border-b border-gray-200 px-8"
-                    data-testid="orders-link"
-                  >
-                    <div className="flex items-center gap-x-2">
-                      <Package size={20} />
-                      <span>{accountCopy.orders}</span>
-                    </div>
-                    <ChevronDown className="transform -rotate-90" />
-                  </LocalizedClientLink>
-                </li>
+                {groups
+                  .flatMap((group) => group.items)
+                  .filter((item) => item.href !== "/account")
+                  .map((item) => {
+                    const Icon = item.icon
+                    return (
+                      <li key={item.href}>
+                        <LocalizedClientLink
+                          href={item.href}
+                          className="flex items-center justify-between py-4 border-b border-gray-200 px-8 transition-colors hover:bg-gray-50"
+                          data-testid={item.testId}
+                        >
+                          <>
+                            <div className="flex items-center gap-x-2">
+                              <Icon size={20} />
+                              <span>{item.label}</span>
+                            </div>
+                            <ChevronDown className="transform -rotate-90" />
+                          </>
+                        </LocalizedClientLink>
+                      </li>
+                    )
+                  })}
                 <li>
                   <button
                     type="button"
-                    className="flex items-center justify-between py-4 border-b border-gray-200 px-8 w-full"
+                    className="flex items-center justify-between py-4 border-b border-gray-200 px-8 w-full transition-colors hover:bg-gray-50"
                     onClick={handleLogout}
                     data-testid="logout-button"
                   >
@@ -110,61 +164,58 @@ const AccountNav = ({
           </>
         )}
       </div>
-      <div className="hidden small:block" data-testid="account-nav">
-        <div>
-          <div className="pb-4">
-            <h3 className="text-base-semi">{accountCopy.title}</h3>
-          </div>
-          <div className="text-base-regular">
-            <ul className="flex mb-0 justify-start items-start flex-col gap-y-4">
-              <li>
-                <AccountNavLink
-                  href="/account"
-                  route={route!}
-                  data-testid="overview-link"
-                >
-                  {accountCopy.overview}
-                </AccountNavLink>
-              </li>
-              <li>
-                <AccountNavLink
-                  href="/account/profile"
-                  route={route!}
-                  data-testid="profile-link"
-                >
-                  {accountCopy.profile}
-                </AccountNavLink>
-              </li>
-              <li>
-                <AccountNavLink
-                  href="/account/addresses"
-                  route={route!}
-                  data-testid="addresses-link"
-                >
-                  {accountCopy.addresses}
-                </AccountNavLink>
-              </li>
-              <li>
-                <AccountNavLink
-                  href="/account/orders"
-                  route={route!}
-                  data-testid="orders-link"
-                >
-                  {accountCopy.orders}
-                </AccountNavLink>
-              </li>
-              <li className="text-grey-700">
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  data-testid="logout-button"
-                >
-                  {accountCopy.logOut}
-                </button>
-              </li>
-            </ul>
-          </div>
+
+      {/* Desktop */}
+      <div
+        className="hidden small:block sticky top-24"
+        data-testid="account-nav"
+      >
+        <div className="pb-4 mb-4 border-b border-gray-200">
+          <p className="text-[11px] uppercase tracking-[0.08em] text-ui-fg-muted mb-1">
+            {accountCopy.signedInAs}
+          </p>
+          <h3 className="text-base-semi truncate" title={customer?.email || undefined}>
+            {customer?.first_name
+              ? `${customer.first_name}${customer.last_name ? ` ${customer.last_name}` : ""}`
+              : customer?.email || accountCopy.title}
+          </h3>
         </div>
+
+        <nav aria-label={accountCopy.title}>
+          <ul className="flex flex-col gap-y-6">
+            {groups.map((group, groupIdx) => (
+              <li key={`${group.label}-${groupIdx}`}>
+                <ul className="flex flex-col gap-y-1">
+                  {group.items.map((item) => (
+                    <li key={item.href}>
+                      <AccountNavLink
+                        href={item.href}
+                        route={route!}
+                        icon={item.icon}
+                        data-testid={item.testId}
+                      >
+                        {item.label}
+                      </AccountNavLink>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+            <li className="pt-2 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex items-center gap-x-3 px-3 py-2 w-full rounded-md text-ui-fg-subtle hover:text-ui-fg-base hover:bg-gray-50 transition-colors text-left"
+                data-testid="logout-button"
+              >
+                <span className="flex-shrink-0">
+                  <ArrowRightOnRectangle />
+                </span>
+                <span>{accountCopy.logOut}</span>
+              </button>
+            </li>
+          </ul>
+        </nav>
       </div>
     </div>
   )
@@ -174,6 +225,7 @@ type AccountNavLinkProps = {
   href: string
   route: string
   children: React.ReactNode
+  icon: React.FC<IconProps>
   "data-testid"?: string
 }
 
@@ -181,20 +233,34 @@ const AccountNavLink = ({
   href,
   route,
   children,
+  icon: Icon,
   "data-testid": dataTestId,
 }: AccountNavLinkProps) => {
   const { countryCode }: { countryCode: string } = useParams()
 
   const active = route.split(countryCode)[1] === href
+
   return (
     <LocalizedClientLink
       href={href}
-      className={clx("text-ui-fg-subtle hover:text-ui-fg-base", {
-        "text-ui-fg-base font-semibold": active,
-      })}
+      className={clx(
+        "flex items-center gap-x-3 px-3 py-2 rounded-md border-l-2 transition-colors",
+        active
+          ? "border-emerald-500 bg-emerald-50 text-ui-fg-base font-semibold"
+          : "border-transparent text-ui-fg-subtle hover:text-ui-fg-base hover:bg-gray-50"
+      )}
+      aria-current={active ? "page" : undefined}
       data-testid={dataTestId}
     >
-      {children}
+      <span
+        className={clx(
+          "flex-shrink-0 transition-colors",
+          active ? "text-emerald-600" : "text-ui-fg-muted"
+        )}
+      >
+        <Icon size={18} />
+      </span>
+      <span>{children}</span>
     </LocalizedClientLink>
   )
 }

@@ -64,9 +64,7 @@ const ResetPasswordForm: React.FC<ResetPasswordFormProps> = ({
       })
 
       if (result.ok) {
-        router.push(
-          `/${countryCode}/account?password_reset=success`
-        )
+        router.push(`/${countryCode}/account?password_reset=success`)
         router.refresh()
         return
       }
@@ -80,13 +78,15 @@ const ResetPasswordForm: React.FC<ResetPasswordFormProps> = ({
 
   return (
     <div
-      className="max-w-sm w-full flex flex-col items-center"
+      className="w-full flex flex-col"
       data-testid="reset-password-form"
     >
-      <h1 className="text-large-semi uppercase mb-4">Новый пароль</h1>
-      <p className="text-center text-base-regular text-ui-fg-base mb-6">
-        Укажите новый пароль для вашей учётной записи.
-      </p>
+      <div className="mb-6 flex flex-col gap-y-1 text-center">
+        <h1 className="text-xl-semi">Новый пароль</h1>
+        <p className="text-small-regular text-ui-fg-subtle">
+          Укажите новый пароль для вашей учётной записи.
+        </p>
+      </div>
       <form className="w-full" action={onSubmit}>
         <div className="flex flex-col w-full gap-y-2">
           <Input
@@ -112,16 +112,18 @@ const ResetPasswordForm: React.FC<ResetPasswordFormProps> = ({
         </div>
         {mismatch ? (
           <p
-            className="text-small-regular text-rose-500 mt-3"
+            className="text-small-regular text-rose-600 mt-3"
             data-testid="reset-password-mismatch"
+            role="alert"
           >
             Пароли не совпадают.
           </p>
         ) : null}
         {errorCode ? (
           <p
-            className="text-small-regular text-rose-500 mt-3"
+            className="text-small-regular text-rose-600 mt-3"
             data-testid="reset-password-error"
+            role="alert"
           >
             {resolveErrorMessage(errorCode, errorDetail || undefined)}
           </p>
@@ -133,17 +135,17 @@ const ResetPasswordForm: React.FC<ResetPasswordFormProps> = ({
           {isPending ? "Сохраняем..." : "Сохранить пароль"}
         </SubmitButton>
       </form>
-      <div className="w-full flex justify-between mt-6 text-small-regular">
+      <div className="w-full flex flex-col small:flex-row justify-between gap-2 mt-6 text-small-regular">
         <LocalizedClientLink
           href="/account/forgot-password"
-          className="underline text-ui-fg-subtle"
+          className="text-ui-fg-subtle hover:text-ui-fg-base hover:underline underline-offset-4"
           data-testid="request-new-reset-link"
         >
           {invalidToken ? "Запросить новую ссылку" : "Отправить новую ссылку"}
         </LocalizedClientLink>
         <LocalizedClientLink
           href="/account"
-          className="underline text-ui-fg-subtle"
+          className="text-ui-fg-subtle hover:text-ui-fg-base hover:underline underline-offset-4"
           data-testid="back-to-login-link"
         >
           Вернуться ко входу

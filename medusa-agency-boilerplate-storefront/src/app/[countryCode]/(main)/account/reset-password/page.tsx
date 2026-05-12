@@ -2,6 +2,10 @@ import { Metadata } from "next"
 
 import ResetPasswordForm from "@modules/account/components/reset-password"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
+import AuthCardShell, {
+  AlertCircleIcon,
+  KeyIcon,
+} from "@modules/account/components/auth-card-shell"
 import { getMetadataTitle } from "@lib/storefront-config"
 
 export const metadata: Metadata = {
@@ -34,30 +38,31 @@ export default async function ResetPasswordPage(
 
   if (!token) {
     return (
-      <div className="w-full flex justify-start px-8 py-8">
-        <div
-          className="max-w-sm w-full flex flex-col items-start gap-4"
-          data-testid="reset-password-missing-token"
-        >
-          <h1 className="text-large-semi uppercase">Ссылка не найдена</h1>
-          <p className="text-base-regular text-ui-fg-base">
+      <AuthCardShell
+        tone="error"
+        icon={<AlertCircleIcon />}
+        testId="reset-password-missing-token"
+      >
+        <div className="w-full flex flex-col items-center gap-3 text-center">
+          <h1 className="text-xl-semi">Ссылка не найдена</h1>
+          <p className="text-small-regular text-ui-fg-subtle">
             В ссылке отсутствует токен. Запросите новую ссылку для
             восстановления пароля.
           </p>
           <LocalizedClientLink
             href="/account/forgot-password"
-            className="underline text-ui-fg-subtle text-small-regular"
+            className="text-small-semi underline decoration-dotted underline-offset-4 text-ui-fg-base hover:text-emerald-700"
           >
             Запросить новую ссылку
           </LocalizedClientLink>
         </div>
-      </div>
+      </AuthCardShell>
     )
   }
 
   return (
-    <div className="w-full flex justify-start px-8 py-8">
+    <AuthCardShell icon={<KeyIcon />} testId="reset-password-page">
       <ResetPasswordForm countryCode={countryCode} token={token} />
-    </div>
+    </AuthCardShell>
   )
 }

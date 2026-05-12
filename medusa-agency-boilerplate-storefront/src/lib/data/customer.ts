@@ -3,7 +3,7 @@
 import { sdk, MEDUSA_BACKEND_URL, STOREFRONT_BASE_URL } from "@lib/config"
 import medusaError from "@lib/util/medusa-error"
 import { HttpTypes } from "@medusajs/types"
-import { revalidateTag } from "next/cache"
+import { revalidatePath, revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import {
   getAuthHeaders,
@@ -421,6 +421,18 @@ export async function requestEmailVerification(options?: {
     }
   }
 
+  // Invalidate customer data so freshly-updated verification state
+  // (e.g. new expires_at / token_hash metadata) is visible on next render.
+  try {
+    const customerCacheTag = await getCacheTag("customers")
+    if (customerCacheTag) {
+      revalidateTag(customerCacheTag)
+    }
+    revalidatePath("/[countryCode]/account", "layout")
+  } catch {
+    // best-effort cache invalidation after resend
+  }
+
   return {
     ok: true,
     expires_at:
@@ -478,7 +490,12 @@ export async function verifyEmail(token: string): Promise<VerifyEmailResult> {
 
   try {
     const customerCacheTag = await getCacheTag("customers")
-    revalidateTag(customerCacheTag)
+    if (customerCacheTag) {
+      revalidateTag(customerCacheTag)
+    }
+    // Invalidate the whole account layout so the verification banner
+    // disappears on the next navigation without requiring a hard reload.
+    revalidatePath("/[countryCode]/account", "layout")
   } catch {
     // best-effort cache invalidation after verification
   }

@@ -32,6 +32,24 @@ function readSearchParam(
   return typeof value === "string" ? value : null
 }
 
+type SectionProps = {
+  title: string
+  description?: string
+  children: React.ReactNode
+}
+
+const Section = ({ title, description, children }: SectionProps) => (
+  <section className="rounded-xl border border-gray-200 bg-white p-5 small:p-6">
+    <header className="mb-4 flex flex-col gap-y-1">
+      <h2 className="text-large-semi text-ui-fg-base">{title}</h2>
+      {description ? (
+        <p className="text-small-regular text-ui-fg-subtle">{description}</p>
+      ) : null}
+    </header>
+    <div>{children}</div>
+  </section>
+)
+
 export default async function Profile(props: ProfilePageProps) {
   const customer = await retrieveCustomer()
   const regions = await listRegions()
@@ -47,37 +65,62 @@ export default async function Profile(props: ProfilePageProps) {
 
   return (
     <div className="w-full" data-testid="profile-page-wrapper">
-      <div className="mb-8 flex flex-col gap-y-4">
-        <h1 className="text-2xl-semi">{storefrontConfig.copy.account.profile}</h1>
-        <p className="text-base-regular">
+      <div className="mb-8 flex flex-col gap-y-2">
+        <h1 className="text-2xl-semi">
+          {storefrontConfig.copy.account.profile}
+        </h1>
+        <p className="text-base-regular text-ui-fg-subtle">
           {storefrontConfig.copy.account.profileDescription}
         </p>
       </div>
-      <div className="flex w-full flex-col gap-y-8">
-        <ProfileName customer={customer} />
-        <Divider />
-        <ProfileEmail customer={customer} />
-        <Divider />
-        <ProfilePhone customer={customer} />
-        <Divider />
-        <ProfileVkLink
-          customer={customer}
-          countryCode={countryCode}
-          initialResult={initialResult}
-          initialReason={initialReason}
-        />
-        <Divider />
-        <ProfileMarketingPreferences
-          preferences={marketingPreferences?.marketing || null}
-          bindings={marketingPreferences?.bindings || null}
-        />
-        <Divider />
-        <ProfileBillingAddress customer={customer} regions={regions} />
+      <div className="flex w-full flex-col gap-y-6">
+        <Section
+          title="Личные данные"
+          description="Имя и фамилия, как они будут указаны в заказах."
+        >
+          <ProfileName customer={customer} />
+        </Section>
+
+        <Section
+          title="Контакты"
+          description="Email и телефон для уведомлений и связи по заказам."
+        >
+          <div className="flex flex-col gap-y-6">
+            <ProfileEmail customer={customer} />
+            <div className="h-px w-full bg-gray-200" />
+            <ProfilePhone customer={customer} />
+          </div>
+        </Section>
+
+        <Section
+          title="Привязка VK ID"
+          description="Быстрый вход и подтверждение профиля через VK ID."
+        >
+          <ProfileVkLink
+            customer={customer}
+            countryCode={countryCode}
+            initialResult={initialResult}
+            initialReason={initialReason}
+          />
+        </Section>
+
+        <Section
+          title="Рассылки и уведомления"
+          description="Управляйте каналами маркетинговых сообщений."
+        >
+          <ProfileMarketingPreferences
+            preferences={marketingPreferences?.marketing || null}
+            bindings={marketingPreferences?.bindings || null}
+          />
+        </Section>
+
+        <Section
+          title="Платёжный адрес по умолчанию"
+          description="Будет подставляться при оформлении заказа."
+        >
+          <ProfileBillingAddress customer={customer} regions={regions} />
+        </Section>
       </div>
     </div>
   )
-}
-
-const Divider = () => {
-  return <div className="h-px w-full bg-gray-200" />
 }

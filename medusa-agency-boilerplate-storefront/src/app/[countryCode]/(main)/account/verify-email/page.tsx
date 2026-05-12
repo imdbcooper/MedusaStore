@@ -2,6 +2,10 @@ import { Metadata } from "next"
 import Link from "next/link"
 
 import { verifyEmail } from "@lib/data/customer"
+import AuthCardShell, {
+  AlertCircleIcon,
+  CheckCircleIcon,
+} from "@modules/account/components/auth-card-shell"
 import { getMetadataTitle, storefrontConfig } from "@lib/storefront-config"
 
 export const metadata: Metadata = {
@@ -116,36 +120,31 @@ function VerifyEmailShell({
   countryCode,
 }: VerifyEmailShellProps) {
   const accountHref = `/${countryCode}/account`
-  const toneClassName =
-    tone === "success"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-      : "border-red-200 bg-red-50 text-red-900"
+  const icon =
+    tone === "success" ? <CheckCircleIcon /> : <AlertCircleIcon />
 
   return (
-    <div
-      className="content-container mx-auto my-12 max-w-2xl"
-      data-testid="verify-email-page"
-    >
-      <div className={`rounded-rounded border px-6 py-8 ${toneClassName}`}>
-        <h1 className="text-2xl-semi mb-3">{heading}</h1>
-        <p className="text-base-regular mb-6">{message}</p>
-        <div className="flex flex-col gap-3 small:flex-row">
+    <AuthCardShell tone={tone} icon={icon} testId="verify-email-page">
+      <div className="flex flex-col items-center gap-4 text-center">
+        <h1 className="text-xl-semi">{heading}</h1>
+        <p className="text-small-regular text-ui-fg-subtle">{message}</p>
+        <div className="flex w-full flex-col gap-3 pt-2 small:flex-row small:justify-center">
           <Link
             href={accountHref}
-            className="inline-flex items-center justify-center rounded-rounded border border-gray-900 bg-gray-900 px-4 py-2 text-small-semi text-white hover:bg-gray-800"
+            className="inline-flex items-center justify-center rounded-md border border-gray-900 bg-gray-900 px-4 py-2 text-small-semi text-white transition-colors hover:bg-gray-800"
             data-testid="verify-email-account-link"
           >
             {storefrontConfig.copy.account.title || "Личный кабинет"}
           </Link>
           <Link
             href={`/${countryCode}`}
-            className="inline-flex items-center justify-center rounded-rounded border border-gray-300 bg-white px-4 py-2 text-small-semi text-gray-900 hover:bg-gray-100"
+            className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-small-semi text-gray-900 transition-colors hover:bg-gray-50"
             data-testid="verify-email-home-link"
           >
             На главную
           </Link>
         </div>
       </div>
-    </div>
+    </AuthCardShell>
   )
 }

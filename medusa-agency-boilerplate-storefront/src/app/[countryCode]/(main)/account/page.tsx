@@ -7,6 +7,7 @@ import { listOrders } from "@lib/data/orders"
 import { getMetadataTitle, storefrontConfig } from "@lib/storefront-config"
 
 type AccountPageProps = {
+  params?: Promise<{ countryCode: string }>
   searchParams?: Promise<Record<string, string | string[] | undefined>>
 }
 
@@ -44,21 +45,27 @@ export default async function AccountPage(props: AccountPageProps) {
   }
 
   const orders = (await listOrders().catch(() => null)) || null
+  const params = props.params ? await props.params : undefined
   const searchParams = props.searchParams ? await props.searchParams : {}
   const passwordResetStatus = readSearchParam(searchParams.password_reset)
+  const countryCode = params?.countryCode || null
 
   return (
     <div className="flex w-full flex-col gap-y-4">
       {passwordResetStatus === "success" ? (
         <div
-          className="rounded border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
+          className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
           role="status"
           data-testid="password-reset-success-banner"
         >
           Пароль успешно обновлён.
         </div>
       ) : null}
-      <Overview customer={customer} orders={orders} />
+      <Overview
+        customer={customer}
+        orders={orders || null}
+        countryCode={countryCode}
+      />
     </div>
   )
 }

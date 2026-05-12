@@ -38,14 +38,16 @@ const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
   if (status === "sent") {
     return (
       <div
-        className="max-w-sm w-full flex flex-col items-start gap-4"
+        className="w-full flex flex-col items-center gap-4 text-center"
         data-testid="forgot-password-sent"
       >
-        <h1 className="text-large-semi uppercase">Проверьте почту</h1>
-        <p className="text-base-regular text-ui-fg-base">{SUCCESS_MESSAGE}</p>
+        <h1 className="text-xl-semi">Проверьте почту</h1>
+        <p className="text-small-regular text-ui-fg-subtle">
+          {SUCCESS_MESSAGE}
+        </p>
         <LocalizedClientLink
           href="/account"
-          className="text-small-regular underline"
+          className="text-small-semi underline decoration-dotted underline-offset-4 text-ui-fg-base hover:text-emerald-700"
           data-testid="back-to-login-link"
         >
           Вернуться ко входу
@@ -56,14 +58,16 @@ const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
 
   return (
     <div
-      className="max-w-sm w-full flex flex-col items-center"
+      className="w-full flex flex-col"
       data-testid="forgot-password-form"
     >
-      <h1 className="text-large-semi uppercase mb-4">Восстановление пароля</h1>
-      <p className="text-center text-base-regular text-ui-fg-base mb-6">
-        Укажите email, указанный при регистрации. Мы отправим ссылку для
-        установки нового пароля.
-      </p>
+      <div className="mb-6 flex flex-col gap-y-1 text-center">
+        <h1 className="text-xl-semi">Восстановление пароля</h1>
+        <p className="text-small-regular text-ui-fg-subtle">
+          Укажите email, указанный при регистрации. Мы отправим ссылку для
+          установки нового пароля.
+        </p>
+      </div>
       <form className="w-full" action={onSubmit}>
         <div className="flex flex-col w-full gap-y-2">
           <Input
@@ -82,10 +86,10 @@ const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
           {isPending ? "Отправляем..." : "Отправить ссылку"}
         </SubmitButton>
       </form>
-      <div className="w-full flex justify-between mt-6 text-small-regular">
+      <div className="w-full flex justify-center mt-6 text-small-regular">
         <LocalizedClientLink
           href="/account"
-          className="underline text-ui-fg-subtle"
+          className="text-ui-fg-subtle hover:text-ui-fg-base hover:underline underline-offset-4"
           data-testid="back-to-login-link"
         >
           Вернуться ко входу

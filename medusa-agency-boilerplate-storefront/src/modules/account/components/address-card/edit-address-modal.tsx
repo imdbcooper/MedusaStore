@@ -65,34 +65,56 @@ const EditAddress: React.FC<EditAddressProps> = ({
   const accountCopy = storefrontConfig.copy.account
   const commonCopy = storefrontConfig.copy.common
  
+  const isDefaultShipping = Boolean(
+    (address as { is_default_shipping?: boolean }).is_default_shipping
+  )
+  const isDefaultBilling = Boolean(
+    (address as { is_default_billing?: boolean }).is_default_billing
+  )
+
   return (
     <>
       <div
         className={clx(
-          "border rounded-rounded p-5 min-h-[220px] h-full w-full flex flex-col justify-between transition-colors",
+          "group relative border rounded-xl p-5 min-h-[220px] h-full w-full flex flex-col justify-between bg-white transition-all hover:shadow-sm",
           {
-            "border-gray-900": isActive,
+            "border-emerald-500 ring-1 ring-emerald-200": isActive,
+            "border-gray-200": !isActive,
           }
         )}
         data-testid="address-container"
       >
-        <div className="flex flex-col">
+        <div className="flex flex-col gap-y-2">
+          {(isDefaultShipping || isDefaultBilling) && (
+            <div className="flex flex-wrap gap-1.5">
+              {isDefaultShipping ? (
+                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700 border border-emerald-200">
+                  Доставка
+                </span>
+              ) : null}
+              {isDefaultBilling ? (
+                <span className="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-700 border border-sky-200">
+                  Оплата
+                </span>
+              ) : null}
+            </div>
+          )}
           <Heading
-            className="text-left text-base-semi"
+            className="text-left text-base-semi text-ui-fg-base"
             data-testid="address-name"
           >
             {address.first_name} {address.last_name}
           </Heading>
           {address.company && (
             <Text
-              className="txt-compact-small text-ui-fg-base"
+              className="txt-compact-small text-ui-fg-subtle"
               data-testid="address-company"
             >
               {address.company}
             </Text>
           )}
-          <Text className="flex flex-col text-left text-base-regular mt-2">
-            <span data-testid="address-address">
+          <Text className="flex flex-col text-left text-base-regular text-ui-fg-subtle">
+            <span data-testid="address-address" className="text-ui-fg-base">
               {address.address_1}
               {address.address_2 && <span>, {address.address_2}</span>}
             </span>
@@ -105,18 +127,20 @@ const EditAddress: React.FC<EditAddressProps> = ({
             </span>
           </Text>
         </div>
-        <div className="flex items-center gap-x-4">
+        <div className="mt-4 flex items-center gap-x-3 pt-3 border-t border-gray-100">
           <button
-            className="text-small-regular text-ui-fg-base flex items-center gap-x-2"
+            className="inline-flex items-center gap-x-1.5 text-small-regular text-ui-fg-subtle transition-colors hover:text-emerald-700"
             onClick={open}
             data-testid="address-edit-button"
           >
             <Edit />
             {commonCopy.edit}
           </button>
+          <span aria-hidden="true" className="h-4 w-px bg-gray-200" />
           <button
-            className="text-small-regular text-ui-fg-base flex items-center gap-x-2"
+            className="inline-flex items-center gap-x-1.5 text-small-regular text-ui-fg-subtle transition-colors hover:text-rose-600 disabled:opacity-60"
             onClick={removeAddress}
+            disabled={removing}
             data-testid="address-delete-button"
           >
             {removing ? <Spinner /> : <Trash />}
