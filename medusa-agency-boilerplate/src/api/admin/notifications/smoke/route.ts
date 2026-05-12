@@ -17,6 +17,7 @@ export const AdminNotificationSmokeSchema = z.object({
   to: z.string().email(),
   subject: z.string().trim().min(1).max(120).optional(),
   message: z.string().trim().min(1).max(2000).optional(),
+  dry_run: z.boolean().optional(),
 })
 
 type AdminNotificationSmokeRequestBody = z.infer<
@@ -35,26 +36,16 @@ export async function POST(
     req.validatedBody.subject?.trim() || DEFAULT_NOTIFICATION_SMOKE_SUBJECT
   const message =
     req.validatedBody.message?.trim() || DEFAULT_NOTIFICATION_SMOKE_MESSAGE
-
-  const { result } = await sendNotificationSmokeWorkflow(req.scope).run({
-    input: {
-      to,
-      subject,
-      text: message,
-      html: `<p>${escapeHtml(message)}</p>`,
-      triggerType: DEFAULT_NOTIFICATION_SMOKE_TRIGGER_TYPE,
-    },
-  })
-
+  const dryRun = req.validatedBody.dry_run === true
   const authenticatedWithSecretApiKey = req.auth_context.actor_type === "api-key"
-
-  res.status(200).json({
+  const baseResponse = {
     ok: true,
     request: {
       to,
       subject,
       message,
       trigger_type: DEFAULT_NOTIFICATION_SMOKE_TRIGGER_TYPE,
+      dry_run: dryRun,
     },
     auth: {
       actor_id: req.auth_context.actor_id,
@@ -69,6 +60,28 @@ export async function POST(
         notificationRuntime.requestedProviderId !== notificationRuntime.providerId,
       from: notificationRuntime.from,
     },
+  }
+
+  if (dryRun) {
+    res.status(200).json({
+      ...baseResponse,
+      notification: null,
+    })
+    return
+  }
+
+  const { result } = await sendNotificationSmokeWorkflow(req.scope).run({
+    input: {
+      to,
+      subject,
+      text: message,
+      html: `<p>${escapeHtml(message)}</p>`,
+      triggerType: DEFAULT_NOTIFICATION_SMOKE_TRIGGER_TYPE,
+    },
+  })
+
+  res.status(200).json({
+    ...baseResponse,
     notification: {
       id: result.notification.id,
       to: result.notification.to,
