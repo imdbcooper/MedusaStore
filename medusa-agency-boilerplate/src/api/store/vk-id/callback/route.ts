@@ -22,6 +22,7 @@ import {
   resolveAllowedVkIdReturnUrl,
   resolveVkIdentity,
   VkIdCustomerCreationError,
+  withVkIdRegisterLock,
   type VkIdAuthIntent,
   type VkIdLinkSessionPayload,
   type VkIdRuntime,
@@ -171,6 +172,11 @@ export type VkIdLoginIntentDeps = {
    */
   lookupCustomerByEmail?: typeof lookupCustomerByEmail
   createVkIdCustomer?: typeof createVkIdCustomer
+  /**
+   * Phase 5.4: advisory-lock wrapper around the lookup + create pair. Exposed
+   * for tests so they can stub the DB connection without spinning up PG.
+   */
+  withVkIdRegisterLock?: typeof withVkIdRegisterLock
 }
 
 const defaultLoginIntentDeps: VkIdLoginIntentDeps = {
@@ -182,6 +188,7 @@ const defaultLoginIntentDeps: VkIdLoginIntentDeps = {
   issueCustomerJwt: issueCustomerJwtForVkIdentity,
   lookupCustomerByEmail,
   createVkIdCustomer,
+  withVkIdRegisterLock,
 }
 
 /**
@@ -411,18 +418,66 @@ async function tryVkIdRegisterBranch(
 
   const lookupByEmailFn = deps.lookupCustomerByEmail ?? lookupCustomerByEmail
   const createFn = deps.createVkIdCustomer ?? createVkIdCustomer
+  const registerLock = deps.withVkIdRegisterLock ?? withVkIdRegisterLock
   const pgConnection = req.scope.resolve(
     ContainerRegistrationKeys.PG_CONNECTION
   )
 
-  let existing
+  // Phase 5.4: wrap the lookup + create pair in a PG advisory lock keyed by
+  // both VK user id and email, so two concurrent callbacks for the same
+  // identity cannot both reach the create branch and race. The second
+  // request waits until the first finishes, then observes the created
+  // customer via `lookupCustomerByEmail` and takes the conflict branch.
+  let existing: Awaited<ReturnType<typeof lookupCustomerByEmail>>
+  let creation: Awaited<ReturnType<typeof createVkIdCustomer>> | null = null
   try {
-    existing = await lookupByEmailFn(pgConnection, identity.email)
+    const outcome = await registerLock(
+      pgConnection,
+      { vkUserId: identity.vkUserId, email: identity.email || "" },
+      async () => {
+        const lookup = await lookupByEmailFn(pgConnection, identity.email!)
+
+        if (lookup) {
+          return { kind: "existing" as const, existing: lookup }
+        }
+
+        const created = await createFn(req.scope, {
+          email: identity.email!,
+          firstName: identity.firstName,
+          lastName: identity.lastName,
+          identity,
+          verifiedAt: new Date().toISOString(),
+          linkSource: session.linkSource || "vk_id_register",
+          emailTrustPolicy: runtime.emailTrustPolicy,
+        })
+
+        return { kind: "created" as const, creation: created }
+      }
+    )
+
+    if (outcome.kind === "existing") {
+      existing = outcome.existing
+    } else {
+      existing = null
+      creation = outcome.creation
+    }
   } catch (error) {
-    console.error("[vk-id] register email lookup failed", {
-      error: error instanceof Error ? error.message : String(error),
+    // Fix #9: `error.message` from VkIdCustomerCreationError intentionally
+    // carries an opaque `code:details_length:name` hint (see vk-id.ts), and
+    // non-VK errors can echo the email back. We log code only, plus an
+    // opaque length, so the email never reaches logs here.
+    const code =
+      error instanceof VkIdCustomerCreationError
+        ? error.code
+        : "customer_account_creation_failed"
+    const rawMessage = error instanceof Error ? error.message : String(error)
+    console.error("[vk-id] register lookup/create failed", {
+      code,
+      vk_user_id: identity.vkUserId,
+      error_length: rawMessage.length,
+      error_name: error instanceof Error ? error.name : null,
     })
-    return { handled: false, fallbackReason: "not_linked" }
+    return { handled: false, fallbackReason: code }
   }
 
   if (existing) {
@@ -437,34 +492,9 @@ async function tryVkIdRegisterBranch(
     })
   }
 
-  let creation
-  try {
-    creation = await createFn(req.scope, {
-      email: identity.email,
-      firstName: identity.firstName,
-      lastName: identity.lastName,
-      identity,
-      verifiedAt: new Date().toISOString(),
-      linkSource: session.linkSource || "vk_id_register",
-      emailTrustPolicy: runtime.emailTrustPolicy,
-    })
-  } catch (error) {
-    // Fix #9: `error.message` from VkIdCustomerCreationError intentionally
-    // carries an opaque `code:details_length:name` hint (see vk-id.ts), and
-    // non-VK errors can echo the email back. We log code only, plus an
-    // opaque length, so the email never reaches logs here.
-    const code =
-      error instanceof VkIdCustomerCreationError
-        ? error.code
-        : "customer_account_creation_failed"
-    const rawMessage = error instanceof Error ? error.message : String(error)
-    console.error("[vk-id] register creation failed", {
-      code,
-      vk_user_id: identity.vkUserId,
-      error_length: rawMessage.length,
-      error_name: error instanceof Error ? error.name : null,
-    })
-    return { handled: false, fallbackReason: code }
+  if (!creation) {
+    // Defensive: the lock callback always sets one of the two branches.
+    return { handled: false, fallbackReason: "customer_account_creation_failed" }
   }
 
   const issued = await deps.issueCustomerJwt(req.scope, creation.customerId)

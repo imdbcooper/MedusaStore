@@ -78,6 +78,41 @@ const yookassaProviderOptions = {
   webhookSecret: process.env.YOOKASSA_WEBHOOK_SECRET?.trim() || "",
 }
 
+/**
+ * Phase 5.4: enforce explicit JWT/cookie secrets at startup.
+ *
+ * Previously these fell back to the literal string `"supersecret"` if the env
+ * variable was missing. That is a known-value token baked into Medusa's
+ * starter templates, and any instance running with it would accept tokens
+ * signed by any attacker who knows the default. We now refuse to boot without
+ * the env being set explicitly.
+ *
+ * Local dev picks the values up from `.env` (see `.env.example`); staging
+ * and production read them from GitHub Secrets via
+ * `scripts/github-deploy-staging.sh`.
+ */
+function requireSecret(name: "JWT_SECRET" | "COOKIE_SECRET"): string {
+  const raw = process.env[name]
+  const trimmed = typeof raw === "string" ? raw.trim() : ""
+
+  if (!trimmed) {
+    throw new Error(
+      `[medusa-config] ${name} is required. Populate the env from GitHub Secrets (staging) or your local .env before starting the backend.`
+    )
+  }
+
+  if (trimmed === "supersecret") {
+    throw new Error(
+      `[medusa-config] ${name}="supersecret" is a well-known default and is refused at startup. Generate a unique value (e.g. \`openssl rand -hex 48\`).`
+    )
+  }
+
+  return trimmed
+}
+
+const jwtSecret = requireSecret("JWT_SECRET")
+const cookieSecret = requireSecret("COOKIE_SECRET")
+
 const paymentProviders = isYooKassaConfigured(yookassaProviderOptions)
   ? [
       {
@@ -107,8 +142,8 @@ module.exports = defineConfig({
       storeCors: process.env.STORE_CORS!,
       adminCors: process.env.ADMIN_CORS!,
       authCors: process.env.AUTH_CORS!,
-      jwtSecret: process.env.JWT_SECRET || "supersecret",
-      cookieSecret: process.env.COOKIE_SECRET || "supersecret",
+      jwtSecret,
+      cookieSecret,
     },
   },
   admin: {

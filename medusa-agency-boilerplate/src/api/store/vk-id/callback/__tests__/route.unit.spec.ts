@@ -152,6 +152,12 @@ function buildLoginDeps(
       ok: false,
       code: "auth_identity_not_found",
     })) as any,
+    // Phase 5.4: advisory-lock wrapper is a pass-through in tests so the
+    // register branch uses the provided lookup/create mocks without touching
+    // a real PG connection. Individual tests can still override this to
+    // assert the serialization contract.
+    withVkIdRegisterLock: (async (_pg: unknown, _keys: unknown, cb: () => Promise<unknown>) =>
+      cb()) as any,
     ...overrides,
   }
 }

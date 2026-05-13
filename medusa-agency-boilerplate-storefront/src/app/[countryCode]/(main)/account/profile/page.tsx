@@ -11,6 +11,7 @@ import ProfileMarketingPreferences from "@modules/account/components/profile-mar
 import ProfileName from "@modules/account/components/profile-name"
 import ProfilePhone from "@modules/account//components/profile-phone"
 import ProfileVkLink from "@modules/account/components/profile-vk-link"
+import ProfileVkSetPassword from "@modules/account/components/profile-vk-set-password"
 
 export const metadata: Metadata = {
   title: getMetadataTitle(storefrontConfig.copy.account.profile),
@@ -96,12 +97,18 @@ export default async function Profile(props: ProfilePageProps) {
           title="Привязка VK ID"
           description="Быстрый вход и подтверждение профиля через VK ID."
         >
-          <ProfileVkLink
-            customer={customer}
-            countryCode={countryCode}
-            initialResult={initialResult}
-            initialReason={initialReason}
-          />
+          <div className="flex flex-col gap-y-4">
+            <ProfileVkLink
+              customer={customer}
+              countryCode={countryCode}
+              initialResult={initialResult}
+              initialReason={initialReason}
+            />
+            <ProfileVkSetPassword
+              customer={customer}
+              countryCode={countryCode}
+            />
+          </div>
         </Section>
 
         <Section

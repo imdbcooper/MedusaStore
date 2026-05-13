@@ -1327,6 +1327,58 @@ async function acquireVkIdOwnershipLock(
   )
 }
 
+/**
+ * Phase 5.4: serialize the VK ID register branch against concurrent callbacks
+ * for the same identity/email.
+ *
+ * Problem
+ * -------
+ * The register branch runs `lookupCustomerByEmail` followed by
+ * `createVkIdCustomer`. Two callbacks for the same `vk_user_id` or email can
+ * interleave between the two calls and both reach the `not_found` branch,
+ * racing to create the customer. The unique constraint on
+ * `provider_identities.entity_id` prevents two auth_identity rows, but the
+ * losing request fails with an opaque downstream error and potentially
+ * leaves an orphan customer row behind.
+ *
+ * Fix
+ * ---
+ * Wrap the lookup + create pair in a PostgreSQL advisory transaction lock
+ * keyed by both the VK user id and the normalized email. The key pair maps
+ * both colliding scenarios (same VK user, same email) to the same lock, so
+ * the second request waits until the first finishes. Once the first request
+ * commits, the second sees the created customer through `lookupCustomerByEmail`
+ * (or `findVkIdCustomersByIdentity` earlier in the callback) and takes the
+ * existing-customer branch.
+ *
+ * `pg_advisory_xact_lock` is automatically released at transaction end, so
+ * we do not need explicit cleanup. The lock scope is a wrapping transaction
+ * we open purely to hold it; we do NOT nest `createVkIdCustomer`'s own
+ * workflow DB work inside this transaction — that work still goes through
+ * the Medusa module stack using its own connection. The lock guarantees
+ * serialization between the VK lookup and the subsequent Medusa workflow
+ * at the *SQL session* level, which is the level at which the race occurs.
+ */
+export async function withVkIdRegisterLock<T>(
+  pgConnection: PgConnectionLike,
+  input: { vkUserId: string; email: string },
+  callback: () => Promise<T>
+): Promise<T> {
+  const keyA = `vk_register:${input.vkUserId}`
+  const keyB = `vk_register_email:${(input.email || "").toLowerCase()}`
+
+  return pgConnection.transaction(async (trx) => {
+    await trx.raw(
+      `
+        select pg_advisory_xact_lock(hashtext(?), hashtext(?))
+      `,
+      [keyA, keyB]
+    )
+
+    return callback()
+  })
+}
+
 async function getVkIdCustomerByIdForUpdate(
   trx: PgTransactionLike,
   customerId: string

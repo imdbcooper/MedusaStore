@@ -8,6 +8,14 @@ import { requestPasswordReset } from "@lib/data/customer"
 
 type ForgotPasswordFormProps = {
   countryCode: string
+  /**
+   * Phase 5.4: pre-fill the email field when the user lands here from a
+   * profile-level "set initial password" CTA. The CTA is surfaced for
+   * VK-registered customers who received a random password at sign-up; the
+   * storefront links them straight to `/account/forgot-password?email=<theirs>`
+   * so the existing reset flow doubles as a "set initial password" flow.
+   */
+  initialEmail?: string
 }
 
 const SUCCESS_MESSAGE =
@@ -15,6 +23,7 @@ const SUCCESS_MESSAGE =
 
 const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
   countryCode,
+  initialEmail,
 }) => {
   const [isPending, startTransition] = useTransition()
   const [status, setStatus] = useState<"idle" | "sent">("idle")
@@ -76,6 +85,7 @@ const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
             type="email"
             autoComplete="email"
             required
+            defaultValue={initialEmail}
             data-testid="forgot-password-email-input"
           />
         </div>

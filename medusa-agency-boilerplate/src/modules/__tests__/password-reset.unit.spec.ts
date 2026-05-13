@@ -195,6 +195,17 @@ describe("password-reset helpers", () => {
       })
       expect(consumed.password_reset).toBeNull()
     })
+
+    it("stamps emailpass_password_set=true so the VK set-password CTA hides", () => {
+      const consumed = buildPasswordResetConsumeMetadata({
+        currentMetadata: {
+          vk_link: { link_source: "vk_id_register" },
+        },
+      })
+      expect(consumed.emailpass_password_set).toBe(true)
+      // Does not clobber unrelated metadata branches.
+      expect(consumed.vk_link).toEqual({ link_source: "vk_id_register" })
+    })
   })
 
   describe("buildPasswordResetClearedMetadata", () => {
@@ -208,6 +219,19 @@ describe("password-reset helpers", () => {
 
       expect(cleared.password_reset).toBeNull()
       expect(cleared.other).toBe("keep")
+    })
+
+    it("stamps emailpass_password_set=true when the authenticated update runs", () => {
+      const cleared = buildPasswordResetClearedMetadata({
+        currentMetadata: {
+          password_reset: { token_hash: "h" },
+          vk_link: { link_source: "vk_id_register" },
+        },
+      })
+
+      expect(cleared.emailpass_password_set).toBe(true)
+      expect(cleared.password_reset).toBeNull()
+      expect(cleared.vk_link).toEqual({ link_source: "vk_id_register" })
     })
   })
 

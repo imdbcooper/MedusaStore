@@ -15,6 +15,10 @@ import {
   enforceApishipOrderFulfillmentCreateExecutionGuard,
 } from "../modules/apiship-shipment-execution-guard"
 import { enforceDeliveryHubRuntimeQuarantine } from "../modules/delivery-hub-runtime-quarantine"
+import {
+  publicRateLimit,
+  VK_ID_PUBLIC_RATE_LIMIT,
+} from "../modules/public-rate-limit"
 
 import { AdminAssistantReindexSchema } from "./admin/assistant/reindex/route"
 import { AdminAssistantReindexProcessSchema } from "./admin/assistant/reindex/process/route"
@@ -200,18 +204,23 @@ export default defineMiddlewares({
       // Public, customer-less endpoint for the VK ID login flow. Phase 5.1
       // only logs in customers that already have a working VK link.
       //
-      // The endpoint is deliberately unauthenticated, so we enforce an
-      // Origin/Referer allowlist to stop third-party sites from minting
-      // signed state on behalf of our users (CSRF-flavored abuse) and to
-      // protect our VK_ID_CLIENT_ID rate budget.
-      //
-      // TODO(Phase 5.4): pair this with a shared rate-limit middleware once
-      // the project gains one. A proper token bucket keyed by client IP is
-      // out of scope for this follow-up — introducing a new rate-limiter
-      // (Redis-backed or in-memory) is a separate infra change.
+      // The endpoint is deliberately unauthenticated, so we layer two
+      // guardrails before hitting the handler:
+      //   1. Origin/Referer allowlist stops third-party sites from minting
+      //      signed state on behalf of our users (CSRF-flavored abuse) and
+      //      protects our VK_ID_CLIENT_ID rate budget.
+      //   2. Phase 5.4 per-IP rate limit (`publicRateLimit`, 10 req/min)
+      //      shuts down state-token flooding DoS attempts. Staging runs a
+      //      single Medusa replica so the in-memory limiter is enough; the
+      //      primitive is swappable for a Redis-backed version without
+      //      touching call sites.
       matcher: "/store/auth/vk-id/start",
       methods: ["POST"],
       middlewares: [
+        publicRateLimit({
+          ...VK_ID_PUBLIC_RATE_LIMIT,
+          bucketKey: "vk-id-start",
+        }),
         enforceVkIdStartOriginAllowlist,
         validateAndTransformBody(StoreAuthVkIdStartSchema),
       ],
@@ -220,13 +229,20 @@ export default defineMiddlewares({
       // Phase 5.3 conflict-resolution endpoint. Unauthenticated like
       // `/store/auth/vk-id/start` — the caller is a storefront user who
       // does not yet have a Medusa session. The security envelope is:
-      //   1. Origin/Referer allowlist (same CSRF guard as the login start).
-      //   2. Signed, short-lived `pending_token` carrying the VK identity.
-      //   3. Emailpass password verification before the VK link is persisted.
-      // All three must pass; any single one missing makes the flow a no-op.
+      //   1. Phase 5.4 per-IP rate limit (`publicRateLimit`, 10 req/min) to
+      //      block password brute-force attempts against emailpass
+      //      verification.
+      //   2. Origin/Referer allowlist (same CSRF guard as the login start).
+      //   3. Signed, short-lived `pending_token` carrying the VK identity.
+      //   4. Emailpass password verification before the VK link is persisted.
+      // All four must pass; any single one missing makes the flow a no-op.
       matcher: "/store/auth/vk-id/link-conflict-resolve",
       methods: ["POST"],
       middlewares: [
+        publicRateLimit({
+          ...VK_ID_PUBLIC_RATE_LIMIT,
+          bucketKey: "vk-id-link-conflict-resolve",
+        }),
         enforceVkIdStartOriginAllowlist,
         validateAndTransformBody(StoreAuthVkIdLinkConflictResolveSchema),
       ],

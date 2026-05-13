@@ -357,9 +357,16 @@ export function buildPasswordResetConsumeMetadata(input: {
       }
     : null
 
+  // Phase 5.4: stamp a flag indicating the customer has set their own
+  // emailpass password at least once. For VK-registered customers this flips
+  // the storefront profile CTA from "set initial password" to a normal
+  // "change password" affordance. For emailpass-registered customers the
+  // flag is harmless (already true semantically from registration), just
+  // redundant.
   return {
     ...currentMetadata,
     [PASSWORD_RESET_METADATA_KEY]: state,
+    emailpass_password_set: true,
   }
 }
 
@@ -368,9 +375,14 @@ export function buildPasswordResetClearedMetadata(input: {
 }): Record<string, unknown> {
   const currentMetadata = asRecord(input.currentMetadata)
 
+  // Phase 5.4: parallel to `buildPasswordResetConsumeMetadata`, stamp the
+  // `emailpass_password_set` flag so the VK-registered-customer CTA in the
+  // storefront profile page disappears after an authenticated password
+  // change too.
   return {
     ...currentMetadata,
     [PASSWORD_RESET_METADATA_KEY]: null,
+    emailpass_password_set: true,
   }
 }
 
