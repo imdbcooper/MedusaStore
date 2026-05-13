@@ -142,6 +142,15 @@ services:
         PAYLOAD_CMS_URL: ${DOCKER_PAYLOAD_CMS_URL:-http://payload-cms:3100}
         NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED: ${NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED:-false}
         NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT: ${NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT:-/store/assistant/chat}
+        # Public feature flags must be passed at build time so Next.js can
+        # inline them into the client bundle. Without these args the server
+        # bundle reads `true` from runtime env while the client bundle keeps
+        # the literal `process.env.NEXT_PUBLIC_*` reference (undefined in the
+        # browser), causing a hydration mismatch (React error #418).
+        NEXT_PUBLIC_VK_ID_ENABLED: ${NEXT_PUBLIC_VK_ID_ENABLED:-false}
+        NEXT_PUBLIC_YOOKASSA_ENABLED: ${NEXT_PUBLIC_YOOKASSA_ENABLED:-false}
+        NEXT_PUBLIC_STOREFRONT_PRESET: ${NEXT_PUBLIC_STOREFRONT_PRESET:-}
+        NEXT_PUBLIC_STRIPE_KEY: ${NEXT_PUBLIC_STRIPE_KEY:-}
     image: medusastore-storefront:prod
     container_name: medusastore-storefront
     env_file:

@@ -533,3 +533,79 @@ order by created_at asc;
 
 Do not commit emails, vk_user_ids, or other customer PII into logs, tickets,
 or commit messages while diagnosing. Reference them by row id only.
+
+## 13. Hydration mismatch on storefront (`NEXT_PUBLIC_*` build-time inlining)
+
+### Symptoms
+
+- A storefront UI element (for example the VK login button on `/ru/account`)
+  briefly appears in SSR HTML and then disappears in the browser.
+- Browser console shows `Uncaught Error: Minified React error #418`
+  ("Hydration failed because the initial UI does not match what was rendered
+  on the server").
+- `curl -s https://studio.slavx.ru/ru/account` shows the element in HTML, but
+  it is removed from the DOM after first client render.
+
+### Root cause
+
+`NEXT_PUBLIC_*` flags read in
+[`src/lib/env.ts`](../medusa-agency-boilerplate-storefront/src/lib/env.ts)
+(`VK_ID_ENABLED`, `YOOKASSA_ENABLED`, `STOREFRONT_PRESET`, `STRIPE_COMPAT_ENABLED`)
+must be present at `next build` time so Next.js can inline the literal value
+into the **client** bundle. If they are only injected at container runtime,
+the **server** side reads `true` from `process.env` while the **client**
+bundle keeps the unresolved `process.env.NEXT_PUBLIC_*` reference (which is
+`undefined` in the browser). Server renders one tree, client renders another,
+React reports #418, and the conditional UI flickers.
+
+### Diagnosis
+
+Confirm the inlining state inside the running storefront container:
+
+```bash
+ssh slavx-store 'docker exec medusastore-storefront sh -c \
+  "grep -oE \".{40}NEXT_PUBLIC_VK_ID_ENABLED.{40}\" \
+   .next/static/chunks/app/\\[countryCode\\]/\\(main\\)/account/*.js | head -1"'
+```
+
+- Healthy build inlines a literal: `let h="true"==="true";` (or `=false`).
+- Broken build keeps the reference: `let h="true"===d.env.NEXT_PUBLIC_VK_ID_ENABLED;`
+  (where `d.env` is `process.env`, empty in the browser).
+
+Cross-check container runtime env to make sure SSR sees a different value:
+
+```bash
+ssh slavx-store 'docker exec medusastore-storefront env | grep NEXT_PUBLIC_'
+```
+
+### Fix
+
+`NEXT_PUBLIC_*` flags consumed in client components must be passed to the
+storefront image as build args, not only as runtime container env:
+
+- [`docker/storefront/Dockerfile`](../docker/storefront/Dockerfile) declares an
+  `ARG` plus a matching `ENV` for each public flag in the `builder` stage.
+- [`docker-compose.prod.yml`](../docker-compose.prod.yml) `storefront.build.args`
+  forwards those flags from the staging `.env` so `next build` inlines the
+  value into the client bundle.
+
+Currently wired through this contract:
+`NEXT_PUBLIC_VK_ID_ENABLED`, `NEXT_PUBLIC_YOOKASSA_ENABLED`,
+`NEXT_PUBLIC_STOREFRONT_PRESET`, `NEXT_PUBLIC_STRIPE_KEY`,
+`NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED`,
+`NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT`,
+`NEXT_PUBLIC_MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_BASE_URL`,
+`NEXT_PUBLIC_DEFAULT_REGION`, `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY`.
+
+When adding a new `NEXT_PUBLIC_*` flag that gates UI in a server-rendered
+client component, extend both the `Dockerfile` and `docker-compose.prod.yml`
+build args to keep SSR and the client bundle in sync.
+
+### Validate after redeploy
+
+```bash
+curl -s https://studio.slavx.ru/ru/account | grep -o 'data-testid="vk-login-button"' | head -1
+```
+
+In a private browser window the element must remain visible after first
+render and the console must be free of React error #418.

@@ -23,6 +23,17 @@ ARG PAYLOAD_ENABLED=false
 ARG PAYLOAD_CMS_URL=http://127.0.0.1:3100
 ARG NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=false
 ARG NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT=/store/assistant/chat
+# Public feature flags read from `process.env.NEXT_PUBLIC_*` in
+# `medusa-agency-boilerplate-storefront/src/lib/env.ts`. They MUST be
+# available at `next build` time so Next.js can inline the values into the
+# client bundle. If they are only injected at runtime via container env, the
+# server reads `true` while the client bundle keeps the literal
+# `process.env.NEXT_PUBLIC_*` reference (which is `undefined` in the browser),
+# producing a hydration mismatch (React error #418) and flicker.
+ARG NEXT_PUBLIC_VK_ID_ENABLED=false
+ARG NEXT_PUBLIC_YOOKASSA_ENABLED=false
+ARG NEXT_PUBLIC_STOREFRONT_PRESET=
+ARG NEXT_PUBLIC_STRIPE_KEY=
 
 ENV MEDUSA_BACKEND_URL=$MEDUSA_BACKEND_URL
 ENV NEXT_PUBLIC_MEDUSA_BACKEND_URL=$NEXT_PUBLIC_MEDUSA_BACKEND_URL
@@ -33,6 +44,10 @@ ENV PAYLOAD_ENABLED=$PAYLOAD_ENABLED
 ENV PAYLOAD_CMS_URL=$PAYLOAD_CMS_URL
 ENV NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=$NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED
 ENV NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT=$NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT
+ENV NEXT_PUBLIC_VK_ID_ENABLED=$NEXT_PUBLIC_VK_ID_ENABLED
+ENV NEXT_PUBLIC_YOOKASSA_ENABLED=$NEXT_PUBLIC_YOOKASSA_ENABLED
+ENV NEXT_PUBLIC_STOREFRONT_PRESET=$NEXT_PUBLIC_STOREFRONT_PRESET
+ENV NEXT_PUBLIC_STRIPE_KEY=$NEXT_PUBLIC_STRIPE_KEY
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY medusa-agency-boilerplate-storefront/ ./
