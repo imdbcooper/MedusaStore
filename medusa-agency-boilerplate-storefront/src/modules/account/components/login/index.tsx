@@ -1,20 +1,56 @@
 import { login } from "@lib/data/customer"
+import { VK_ID_ENABLED } from "@lib/config"
 import { storefrontConfig } from "@lib/storefront-config"
 import { LOGIN_VIEW } from "@modules/account/templates/login-template"
 import ErrorMessage from "@modules/checkout/components/error-message"
 import { SubmitButton } from "@modules/checkout/components/submit-button"
 import Input from "@modules/common/components/input"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
+import VkLoginButton from "@modules/account/components/vk-login-button"
 import { useActionState } from "react"
 
 type Props = {
   setCurrentView: (view: LOGIN_VIEW) => void
+  countryCode?: string | null
+  vkLoginError?: string | null
 }
 
-const Login = ({ setCurrentView }: Props) => {
+function getVkLoginErrorMessage(error: string | null | undefined) {
+  if (!error) {
+    return null
+  }
+
+  switch (error) {
+    case "not_linked":
+      return "Этот VK ID не привязан ни к одному аккаунту. Войдите по email и паролю, затем привяжите VK в профиле."
+    case "auth_identity_not_found":
+      return "Не удалось войти через VK: у этого аккаунта нет email-пароля. Свяжитесь с поддержкой."
+    case "vk_id_login_disabled":
+      return "Вход через VK сейчас отключён. Используйте email и пароль."
+    case "vk_id_disabled":
+      return "VK ID сейчас отключён. Используйте email и пароль."
+    case "missing_vk_peer_id":
+      return "VK не вернул идентификатор пользователя. Попробуйте ещё раз."
+    case "invalid_or_expired_state":
+      return "Сессия VK ID устарела. Попробуйте войти заново."
+    case "missing_callback_params":
+      return "Параметры VK ID callback неполные. Попробуйте ещё раз."
+    case "token_exchange_failed":
+      return "Не удалось обменять код VK ID на токен. Попробуйте позже."
+    case "jwt_secret_missing":
+    case "jwt_signing_failed":
+      return "Не удалось выпустить токен сессии. Попробуйте войти по email/паролю."
+    default:
+      return "Не удалось войти через ВКонтакте. Попробуйте ещё раз."
+  }
+}
+
+const Login = ({ setCurrentView, countryCode, vkLoginError }: Props) => {
   const [message, formAction] = useActionState(login, null)
   const accountCopy = storefrontConfig.copy.account
   const cartCopy = storefrontConfig.copy.cart
+  const vkLoginErrorMessage = getVkLoginErrorMessage(vkLoginError)
+  const resolvedCountryCode = countryCode || "ru"
 
   return (
     <div className="w-full flex flex-col" data-testid="login-page">
@@ -24,6 +60,15 @@ const Login = ({ setCurrentView }: Props) => {
           {accountCopy.signInDescription}
         </p>
       </div>
+      {vkLoginErrorMessage ? (
+        <div
+          role="alert"
+          data-testid="vk-login-error-banner"
+          className="mb-4 rounded-rounded border border-red-200 bg-red-50 px-4 py-3 text-small-regular text-red-800"
+        >
+          {vkLoginErrorMessage}
+        </div>
+      ) : null}
       <form className="w-full" action={formAction}>
         <div className="flex flex-col w-full gap-y-2">
           <Input
@@ -58,6 +103,18 @@ const Login = ({ setCurrentView }: Props) => {
           {cartCopy.signIn}
         </SubmitButton>
       </form>
+      {VK_ID_ENABLED ? (
+        <div className="mt-6 flex flex-col gap-y-3">
+          <div className="flex items-center gap-x-3 text-ui-fg-subtle">
+            <span className="h-px flex-1 bg-ui-border-base" aria-hidden />
+            <span className="text-xsmall-regular uppercase tracking-wider">
+              или
+            </span>
+            <span className="h-px flex-1 bg-ui-border-base" aria-hidden />
+          </div>
+          <VkLoginButton countryCode={resolvedCountryCode} />
+        </div>
+      ) : null}
       <p className="text-center text-ui-fg-subtle text-small-regular mt-6">
         {accountCopy.notMember}{" "}
         <button

@@ -280,6 +280,16 @@ function buildVkIdProfileUrl(countryCode: string, result?: string, reason?: stri
   return url.toString()
 }
 
+function buildVkIdLoginReturnUrl(countryCode: string, error?: string) {
+  const url = new URL(`/${countryCode}/account`, STOREFRONT_BASE_URL)
+
+  if (error) {
+    url.searchParams.set("vk_login_error", error)
+  }
+
+  return url.toString()
+}
+
 async function parseVkIdResponse(response: Response) {
   const text = await response.text()
 
@@ -321,6 +331,29 @@ export async function startVkIdLink(countryCode: string) {
       (typeof payload.code === "string" && payload.code) || "vk_id_start_failed"
 
     redirect(buildVkIdProfileUrl(countryCode, "failed", reason))
+  }
+
+  redirect(payload.authorize_url)
+}
+
+export async function startVkLogin(countryCode: string) {
+  const response = await fetch(`${MEDUSA_BACKEND_URL}/store/auth/vk-id/start`, {
+    method: "POST",
+    headers: buildStorePublishableHeaders(),
+    body: JSON.stringify({
+      return_url: buildVkIdLoginReturnUrl(countryCode),
+      login_source: "storefront.account.login",
+    }),
+    cache: "no-store",
+  })
+
+  const payload = await parseVkIdResponse(response)
+
+  if (!response.ok || typeof payload.authorize_url !== "string") {
+    const reason =
+      (typeof payload.code === "string" && payload.code) || "vk_login_start_failed"
+
+    redirect(buildVkIdLoginReturnUrl(countryCode, reason))
   }
 
   redirect(payload.authorize_url)

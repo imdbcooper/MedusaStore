@@ -30,6 +30,7 @@ import { StoreCustomerMarketingPreferencesSchema } from "./store/customers/me/ma
 import { StoreMarketingConfirmSchema } from "./store/customers/marketing/confirm/route"
 import { StoreRequestEmailVerificationSchema } from "./store/customers/me/request-email-verification/route"
 import { StoreUpdateCustomerPasswordSchema } from "./store/customers/me/password/route"
+import { StoreAuthVkIdStartSchema } from "./store/auth/vk-id/start/route"
 import { StoreVkIdStartLinkSchema } from "./store/customers/me/vk-id/start/route"
 import { StoreForgotPasswordSchema } from "./store/customers/forgot-password/route"
 import { StoreResetPasswordSchema } from "./store/customers/reset-password/route"
@@ -192,6 +193,13 @@ export default defineMiddlewares({
       matcher: "/store/customers/me/vk-id/unlink",
       methods: ["POST"],
       middlewares: [authenticate("customer", ["session", "bearer"])],
+    },
+    {
+      // Public, customer-less endpoint for the VK ID login flow. Phase 5.1
+      // only logs in customers that already have a working VK link.
+      matcher: "/store/auth/vk-id/start",
+      methods: ["POST"],
+      middlewares: [validateAndTransformBody(StoreAuthVkIdStartSchema)],
     },
     {
       matcher: "/store/customers/me/request-email-verification",

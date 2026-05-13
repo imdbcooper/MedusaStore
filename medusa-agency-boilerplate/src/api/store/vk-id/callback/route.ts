@@ -2,16 +2,25 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { z } from "@medusajs/framework/zod"
 import {
+  buildVkIdLoginErrorReturnUrl,
   buildVkIdResultReturnUrl,
   exchangeVkIdAuthorizationCode,
   fetchVkIdUserInfo,
+  findVkIdentityCustomer,
   getVkIdCustomerById,
   getVkIdRuntime,
+  getVkIdSessionIntent,
+  listVkIdCustomers,
   persistVkIdCustomerLinkWithOwnershipGuard,
   readVkIdLinkSession,
+  resolveAllowedVkIdLoginReturnUrl,
   resolveAllowedVkIdReturnUrl,
   resolveVkIdentity,
+  type VkIdAuthIntent,
+  type VkIdLinkSessionPayload,
+  type VkResolvedIdentity,
 } from "../../../../modules/vk-id"
+import { issueCustomerJwtForVkIdentity } from "../../../../modules/vk-id-auth"
 
 export const StoreVkIdCallbackSchema = z.object({
   state: z.string().trim().min(1),
@@ -23,21 +32,29 @@ export const StoreVkIdCallbackSchema = z.object({
 
 type StoreVkIdCallbackRequest = z.infer<typeof StoreVkIdCallbackSchema>
 
+const MEDUSA_JWT_COOKIE = "_medusa_jwt"
+const MEDUSA_JWT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7
+
 function sanitizeReason(value?: string | null) {
   return value?.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_") || null
 }
 
 function resolveCallbackReturnUrl(state?: string | null) {
   const session = readVkIdLinkSession(state)
-  const returnUrl = resolveAllowedVkIdReturnUrl(session?.returnUrl || null)
+  const intent = getVkIdSessionIntent(session)
+  const returnUrl =
+    intent === "login"
+      ? resolveAllowedVkIdLoginReturnUrl(session?.returnUrl || null)
+      : resolveAllowedVkIdReturnUrl(session?.returnUrl || null)
 
   return {
     session,
+    intent,
     returnUrl,
   }
 }
 
-function redirectWithResult(
+function redirectWithLinkResult(
   res: MedusaResponse,
   returnUrl: URL,
   result: string,
@@ -54,51 +71,168 @@ function redirectWithResult(
   res.redirect(302, nextUrl.toString())
 }
 
-export async function GET(
-  req: MedusaRequest<StoreVkIdCallbackRequest>,
-  res: MedusaResponse
+function redirectWithLoginError(
+  res: MedusaResponse,
+  returnUrl: URL,
+  reason: string
 ) {
-  const runtime = getVkIdRuntime()
-  const validatedQuery = req.validatedQuery as StoreVkIdCallbackRequest
-  const { session, returnUrl } = resolveCallbackReturnUrl(validatedQuery.state)
+  const nextUrl = buildVkIdLoginErrorReturnUrl({
+    returnUrl,
+    reason,
+  })
 
-  if (!runtime.enabled) {
-    redirectWithResult(res, returnUrl, "failed", "vk_id_disabled")
+  res.redirect(302, nextUrl.toString())
+}
+
+function setMedusaJwtCookie(res: MedusaResponse, token: string) {
+  // Mirrors `setAuthToken` semantics on the storefront. Caddy publishes both
+  // backend and storefront under the same public origin (studio.slavx.ru), so
+  // a single Secure cookie is readable by the storefront after redirect.
+  const isProduction = process.env.NODE_ENV === "production"
+  const parts = [
+    `${MEDUSA_JWT_COOKIE}=${encodeURIComponent(token)}`,
+    "Path=/",
+    `Max-Age=${MEDUSA_JWT_COOKIE_MAX_AGE_SECONDS}`,
+    "HttpOnly",
+    "SameSite=Lax",
+  ]
+
+  if (isProduction) {
+    parts.push("Secure")
+  }
+
+  res.setHeader("set-cookie", parts.join("; "))
+}
+
+export type VkIdLoginIntentDeps = {
+  exchangeAuthorizationCode: typeof exchangeVkIdAuthorizationCode
+  fetchUserInfo: typeof fetchVkIdUserInfo
+  resolveIdentity: typeof resolveVkIdentity
+  listCustomers: typeof listVkIdCustomers
+  findIdentityCustomer: typeof findVkIdentityCustomer
+  issueCustomerJwt: typeof issueCustomerJwtForVkIdentity
+}
+
+const defaultLoginIntentDeps: VkIdLoginIntentDeps = {
+  exchangeAuthorizationCode: exchangeVkIdAuthorizationCode,
+  fetchUserInfo: fetchVkIdUserInfo,
+  resolveIdentity: resolveVkIdentity,
+  listCustomers: listVkIdCustomers,
+  findIdentityCustomer: findVkIdentityCustomer,
+  issueCustomerJwt: issueCustomerJwtForVkIdentity,
+}
+
+export async function handleVkIdLoginIntent(
+  req: MedusaRequest,
+  res: MedusaResponse,
+  input: {
+    runtime: ReturnType<typeof getVkIdRuntime>
+    session: VkIdLinkSessionPayload
+    returnUrl: URL
+    code: string
+    deviceId: string
+    state: string
+  },
+  deps: VkIdLoginIntentDeps = defaultLoginIntentDeps
+) {
+  const { runtime, session, returnUrl, code, deviceId, state } = input
+
+  if (!runtime.loginEnabled) {
+    redirectWithLoginError(res, returnUrl, "vk_id_login_disabled")
     return
   }
 
-  if (!session) {
-    redirectWithResult(res, returnUrl, "failed", "invalid_or_expired_state")
+  let identity: VkResolvedIdentity | null = null
+
+  try {
+    const tokenResult = await deps.exchangeAuthorizationCode({
+      runtime,
+      code,
+      state,
+      deviceId,
+      codeVerifier: session.codeVerifier,
+    })
+    const userInfo = tokenResult.access_token
+      ? await deps.fetchUserInfo({
+          runtime,
+          accessToken: tokenResult.access_token,
+        })
+      : null
+
+    identity = deps.resolveIdentity({ tokenResult, userInfo })
+  } catch (error) {
+    console.error("[vk-id] login token exchange failed", {
+      error: error instanceof Error ? error.message : String(error),
+    })
+
+    redirectWithLoginError(res, returnUrl, "token_exchange_failed")
     return
   }
 
-  if (validatedQuery.error) {
-    redirectWithResult(
-      res,
-      returnUrl,
-      "failed",
-      validatedQuery.error,
-      session.customerId
-    )
-    return
-  }
-
-  if (!validatedQuery.code || !validatedQuery.device_id) {
-    redirectWithResult(
-      res,
-      returnUrl,
-      "failed",
-      "missing_callback_params",
-      session.customerId
-    )
+  if (!identity?.vkPeerId) {
+    redirectWithLoginError(res, returnUrl, "missing_vk_peer_id")
     return
   }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
-  const customer = await getVkIdCustomerById(query, session.customerId)
+  const customers = await deps.listCustomers(query)
+  const customer = deps.findIdentityCustomer({ customers, identity })
 
   if (!customer) {
-    redirectWithResult(
+    redirectWithLoginError(res, returnUrl, "not_linked")
+    return
+  }
+
+  const issued = await deps.issueCustomerJwt(req.scope, customer.id)
+
+  if (!issued.ok) {
+    console.error("[vk-id] login jwt issue failed", {
+      customer_id: customer.id,
+      code: issued.code,
+    })
+    redirectWithLoginError(res, returnUrl, issued.code)
+    return
+  }
+
+  setMedusaJwtCookie(res, issued.token)
+  res.redirect(302, returnUrl.toString())
+}
+
+export type VkIdLinkIntentDeps = {
+  exchangeAuthorizationCode: typeof exchangeVkIdAuthorizationCode
+  fetchUserInfo: typeof fetchVkIdUserInfo
+  resolveIdentity: typeof resolveVkIdentity
+  getCustomerById: typeof getVkIdCustomerById
+  persistLink: typeof persistVkIdCustomerLinkWithOwnershipGuard
+}
+
+const defaultLinkIntentDeps: VkIdLinkIntentDeps = {
+  exchangeAuthorizationCode: exchangeVkIdAuthorizationCode,
+  fetchUserInfo: fetchVkIdUserInfo,
+  resolveIdentity: resolveVkIdentity,
+  getCustomerById: getVkIdCustomerById,
+  persistLink: persistVkIdCustomerLinkWithOwnershipGuard,
+}
+
+export async function handleVkIdLinkIntent(
+  req: MedusaRequest,
+  res: MedusaResponse,
+  input: {
+    runtime: ReturnType<typeof getVkIdRuntime>
+    session: VkIdLinkSessionPayload
+    returnUrl: URL
+    code: string
+    deviceId: string
+    state: string
+  },
+  deps: VkIdLinkIntentDeps = defaultLinkIntentDeps
+) {
+  const { runtime, session, returnUrl, code, deviceId, state } = input
+  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+  const customer = await deps.getCustomerById(query, session.customerId)
+
+  if (!customer) {
+    redirectWithLinkResult(
       res,
       returnUrl,
       "failed",
@@ -109,26 +243,26 @@ export async function GET(
   }
 
   try {
-    const tokenResult = await exchangeVkIdAuthorizationCode({
+    const tokenResult = await deps.exchangeAuthorizationCode({
       runtime,
-      code: validatedQuery.code,
-      state: validatedQuery.state,
-      deviceId: validatedQuery.device_id,
+      code,
+      state,
+      deviceId,
       codeVerifier: session.codeVerifier,
     })
     const userInfo = tokenResult.access_token
-      ? await fetchVkIdUserInfo({
+      ? await deps.fetchUserInfo({
           runtime,
           accessToken: tokenResult.access_token,
         })
       : null
-    const identity = resolveVkIdentity({
+    const identity = deps.resolveIdentity({
       tokenResult,
       userInfo,
     })
 
     if (!identity?.vkPeerId) {
-      redirectWithResult(
+      redirectWithLinkResult(
         res,
         returnUrl,
         "failed",
@@ -138,7 +272,7 @@ export async function GET(
       return
     }
 
-    const mutation = await persistVkIdCustomerLinkWithOwnershipGuard(
+    const mutation = await deps.persistLink(
       req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION),
       {
         customerId: customer.id,
@@ -149,7 +283,7 @@ export async function GET(
     )
 
     if (mutation.status === "conflict") {
-      redirectWithResult(
+      redirectWithLinkResult(
         res,
         returnUrl,
         "conflict",
@@ -159,7 +293,7 @@ export async function GET(
       return
     }
 
-    redirectWithResult(
+    redirectWithLinkResult(
       res,
       returnUrl,
       mutation.status === "already_linked" ? "already_linked" : "linked",
@@ -172,7 +306,7 @@ export async function GET(
       error: error instanceof Error ? error.message : String(error),
     })
 
-    redirectWithResult(
+    redirectWithLinkResult(
       res,
       returnUrl,
       "failed",
@@ -180,4 +314,95 @@ export async function GET(
       customer.id
     )
   }
+}
+
+export async function GET(
+  req: MedusaRequest<StoreVkIdCallbackRequest>,
+  res: MedusaResponse
+) {
+  const runtime = getVkIdRuntime()
+  const validatedQuery = req.validatedQuery as StoreVkIdCallbackRequest
+  const { session, intent, returnUrl } = resolveCallbackReturnUrl(
+    validatedQuery.state
+  )
+
+  if (!runtime.enabled) {
+    if (intent === "login") {
+      redirectWithLoginError(res, returnUrl, "vk_id_disabled")
+    } else {
+      redirectWithLinkResult(res, returnUrl, "failed", "vk_id_disabled")
+    }
+    return
+  }
+
+  if (!session) {
+    if (intent === "login") {
+      redirectWithLoginError(res, returnUrl, "invalid_or_expired_state")
+    } else {
+      redirectWithLinkResult(
+        res,
+        returnUrl,
+        "failed",
+        "invalid_or_expired_state"
+      )
+    }
+    return
+  }
+
+  if (validatedQuery.error) {
+    if (intent === "login") {
+      redirectWithLoginError(
+        res,
+        returnUrl,
+        validatedQuery.error || "vk_login_failed"
+      )
+    } else {
+      redirectWithLinkResult(
+        res,
+        returnUrl,
+        "failed",
+        validatedQuery.error,
+        session.customerId
+      )
+    }
+    return
+  }
+
+  if (!validatedQuery.code || !validatedQuery.device_id) {
+    if (intent === "login") {
+      redirectWithLoginError(res, returnUrl, "missing_callback_params")
+    } else {
+      redirectWithLinkResult(
+        res,
+        returnUrl,
+        "failed",
+        "missing_callback_params",
+        session.customerId
+      )
+    }
+    return
+  }
+
+  const sessionIntent: VkIdAuthIntent = intent
+
+  if (sessionIntent === "login") {
+    await handleVkIdLoginIntent(req, res, {
+      runtime,
+      session,
+      returnUrl,
+      code: validatedQuery.code,
+      deviceId: validatedQuery.device_id,
+      state: validatedQuery.state,
+    })
+    return
+  }
+
+  await handleVkIdLinkIntent(req, res, {
+    runtime,
+    session,
+    returnUrl,
+    code: validatedQuery.code,
+    deviceId: validatedQuery.device_id,
+    state: validatedQuery.state,
+  })
 }

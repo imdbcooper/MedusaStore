@@ -39,14 +39,22 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function AccountPage(props: AccountPageProps) {
   const customer = await retrieveCustomer().catch(() => null)
+  const params = props.params ? await props.params : undefined
+  const searchParams = props.searchParams ? await props.searchParams : {}
 
   if (!customer) {
-    return <LoginTemplate />
+    const vkLoginError = readSearchParam(searchParams.vk_login_error)
+    const countryCode = params?.countryCode || null
+
+    return (
+      <LoginTemplate
+        countryCode={countryCode}
+        vkLoginError={vkLoginError}
+      />
+    )
   }
 
   const orders = (await listOrders().catch(() => null)) || null
-  const params = props.params ? await props.params : undefined
-  const searchParams = props.searchParams ? await props.searchParams : {}
   const passwordResetStatus = readSearchParam(searchParams.password_reset)
   const countryCode = params?.countryCode || null
 

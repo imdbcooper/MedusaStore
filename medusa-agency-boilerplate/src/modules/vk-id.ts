@@ -7,9 +7,13 @@ export const DEFAULT_VK_ID_AUTHORIZE_URL = "https://id.vk.ru/authorize"
 export const DEFAULT_VK_ID_TOKEN_URL = "https://id.vk.ru/oauth2/auth"
 export const DEFAULT_VK_ID_USER_INFO_URL = "https://id.vk.ru/oauth2/user_info"
 export const DEFAULT_VK_ID_LINK_SOURCE = "storefront.account.profile"
+export const DEFAULT_VK_ID_LOGIN_SOURCE = "storefront.account.login"
 export const DEFAULT_VK_ID_LINK_SESSION_TTL_SECONDS = 10 * 60
 export const DEFAULT_VK_ID_PROFILE_PATH = "/ru/account/profile"
+export const DEFAULT_VK_ID_LOGIN_RETURN_PATH = "/ru/account"
 const DEFAULT_LOCAL_STOREFRONT_ORIGIN = "http://localhost:8000"
+
+export type VkIdAuthIntent = "link" | "login"
 
 type NullableString = string | null
 
@@ -52,6 +56,8 @@ export type VkIdRuntime = {
   requestedEnabled: boolean
   enabled: boolean
   configured: boolean
+  loginRequestedEnabled: boolean
+  loginEnabled: boolean
   clientId?: string
   clientSecret?: string
   redirectUri?: string
@@ -106,11 +112,16 @@ export type VkIdLinkSessionPayload = {
   codeVerifier: string
   expiresAt: string
   linkSource: string
+  intent?: VkIdAuthIntent
 }
 
 export type VkIdLinkSession = VkIdLinkSessionPayload & {
   state: string
   codeChallenge: string
+}
+
+export type VkIdLoginEnvFlag = {
+  loginEnabled: boolean
 }
 
 export type VkIdTokenExchangeResult = {
@@ -332,17 +343,23 @@ export function createCodeChallenge(codeVerifier: string) {
 
 export function getVkIdRuntime(): VkIdRuntime {
   const requestedEnabled = normalizeBooleanFlag(process.env.VK_ID_ENABLED)
+  const loginRequestedEnabled = normalizeBooleanFlag(
+    process.env.VK_ID_LOGIN_ENABLED
+  )
   const clientId = normalizeOptionalString(process.env.VK_ID_CLIENT_ID)
   const clientSecret = normalizeOptionalString(process.env.VK_ID_CLIENT_SECRET)
   const redirectUri = normalizeOptionalString(process.env.VK_ID_REDIRECT_URI)
   const scopes =
     normalizeOptionalString(process.env.VK_ID_SCOPES) || DEFAULT_VK_ID_SCOPES
   const configured = requestedEnabled && Boolean(clientId && redirectUri)
+  const loginEnabled = configured && loginRequestedEnabled
 
   return {
     requestedEnabled,
     enabled: configured,
     configured,
+    loginRequestedEnabled,
+    loginEnabled,
     clientId,
     clientSecret,
     redirectUri,
@@ -354,8 +371,12 @@ export function getVkIdRuntime(): VkIdRuntime {
   }
 }
 
-export function resolveAllowedVkIdReturnUrl(requestedUrl?: string | null) {
+export function resolveAllowedVkIdReturnUrl(
+  requestedUrl?: string | null,
+  options?: { defaultPath?: string }
+) {
   const allowedOrigins = getAllowedStorefrontOrigins()
+  const defaultPath = options?.defaultPath || DEFAULT_VK_ID_PROFILE_PATH
 
   if (requestedUrl?.trim()) {
     try {
@@ -372,11 +393,11 @@ export function resolveAllowedVkIdReturnUrl(requestedUrl?: string | null) {
   const defaultOrigin = allowedOrigins[0]
 
   if (defaultOrigin) {
-    return new URL(DEFAULT_VK_ID_PROFILE_PATH, defaultOrigin)
+    return new URL(defaultPath, defaultOrigin)
   }
 
   if (allowLocalStorefrontFallback()) {
-    return new URL(DEFAULT_VK_ID_PROFILE_PATH, DEFAULT_LOCAL_STOREFRONT_ORIGIN)
+    return new URL(defaultPath, DEFAULT_LOCAL_STOREFRONT_ORIGIN)
   }
 
   throw new Error(
@@ -384,12 +405,26 @@ export function resolveAllowedVkIdReturnUrl(requestedUrl?: string | null) {
   )
 }
 
+export function resolveAllowedVkIdLoginReturnUrl(requestedUrl?: string | null) {
+  return resolveAllowedVkIdReturnUrl(requestedUrl, {
+    defaultPath: DEFAULT_VK_ID_LOGIN_RETURN_PATH,
+  })
+}
+
+function resolveDefaultLinkSourceForIntent(intent: VkIdAuthIntent) {
+  return intent === "login"
+    ? DEFAULT_VK_ID_LOGIN_SOURCE
+    : DEFAULT_VK_ID_LINK_SOURCE
+}
+
 export function createVkIdLinkSession(input: {
   customerId: string
   returnUrl: string
   linkSource?: string | null
   ttlSeconds?: number
+  intent?: VkIdAuthIntent
 }) {
+  const intent: VkIdAuthIntent = input.intent === "login" ? "login" : "link"
   const stateId = createRandomToken(18)
   const nonce = createRandomToken(18)
   const codeVerifier = createRandomToken(48)
@@ -405,8 +440,8 @@ export function createVkIdLinkSession(input: {
     codeVerifier,
     expiresAt,
     linkSource:
-      input.linkSource?.trim() ||
-      DEFAULT_VK_ID_LINK_SOURCE,
+      input.linkSource?.trim() || resolveDefaultLinkSourceForIntent(intent),
+    intent,
   }
 
   return {
@@ -414,6 +449,32 @@ export function createVkIdLinkSession(input: {
     state: buildSignedState(payload),
     codeChallenge: createCodeChallenge(codeVerifier),
   } satisfies VkIdLinkSession
+}
+
+/**
+ * Public, customer-less variant for the login intent. The caller does not yet
+ * have a Medusa customer id – it will be resolved from the VK identity in the
+ * callback. The session keeps `customerId` empty by design and pins
+ * `intent: "login"` so the callback branch is unambiguous.
+ */
+export function createVkIdLoginSession(input: {
+  returnUrl: string
+  loginSource?: string | null
+  ttlSeconds?: number
+}) {
+  return createVkIdLinkSession({
+    customerId: "",
+    returnUrl: input.returnUrl,
+    linkSource: input.loginSource || null,
+    ttlSeconds: input.ttlSeconds,
+    intent: "login",
+  })
+}
+
+export function getVkIdSessionIntent(
+  session: VkIdLinkSessionPayload | null | undefined
+): VkIdAuthIntent {
+  return session?.intent === "login" ? "login" : "link"
 }
 
 export function readVkIdLinkSession(state?: string | null) {
@@ -1009,6 +1070,56 @@ export async function persistVkIdCustomerLinkWithOwnershipGuard(
 
     return mutation
   })
+}
+
+/**
+ * Finds the customer that already owns the given VK identity. Used by the
+ * login intent: we never create a customer here; the caller decides what to do
+ * if no match is found.
+ */
+export function findVkIdentityCustomer(input: {
+  customers: VkLinkableCustomerRecord[]
+  identity: VkResolvedIdentity
+}) {
+  for (const customer of input.customers) {
+    const linkState = resolveVkLinkState(customer.metadata)
+
+    if (!linkState.isLinked) {
+      continue
+    }
+
+    if (isSameVkIdentity(linkState, input.identity)) {
+      return customer
+    }
+  }
+
+  return null
+}
+
+export async function getVkIdCustomerByVkIdentity(
+  query: QueryGraphLike,
+  identity: VkResolvedIdentity
+) {
+  const customers = await listVkIdCustomers(query)
+
+  return findVkIdentityCustomer({ customers, identity })
+}
+
+export function buildVkIdLoginErrorReturnUrl(input: {
+  returnUrl: string | URL
+  reason: string
+}) {
+  const url =
+    input.returnUrl instanceof URL
+      ? new URL(input.returnUrl.toString())
+      : new URL(input.returnUrl)
+  const sanitized = input.reason
+    ?.trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+
+  url.searchParams.set("vk_login_error", sanitized || "vk_login_failed")
+  return url
 }
 
 export async function persistVkIdCustomerMetadata(
