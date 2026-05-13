@@ -1,6 +1,6 @@
 # AI Assistant Production Deployment
 
-This document is scoped to `ai-assistant/` only. It does not modify the root production compose or the real Medusa backend/storefront.
+This document describes the standalone `ai-assistant/` service and its current repository integration. The current repository now has an optional disabled-by-default root production Compose `ai-assistant` profile, an installed Medusa backend adapter, and an installed storefront widget. Production enablement still requires explicit env/profile opt-in plus review/validation.
 
 ## Deployment shape
 
@@ -74,7 +74,7 @@ Leave `OPENAI_BASE_URL` empty for the default OpenAI host. Never expose `AI_ASSI
 
 ## Root production integration notes
 
-The root production Compose can enable the assistant with profile `ai-assistant` and `AI_ASSISTANT_ENABLED=true`. Browser traffic should still go through `/store/assistant/chat` on the Medusa backend adapter; do not publish the assistant container directly through Caddy unless a separate auth/rate-limit review is completed.
+The root production Compose already contains an optional assistant service behind profile `ai-assistant`. The installed Medusa backend adapter is still exact opt-in through `AI_ASSISTANT_ENABLED=true`, and the installed storefront widget is default-off through `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=false`. Browser traffic should go through `/store/assistant/chat` and `/store/assistant/history` on the Medusa backend adapter; do not publish the assistant container directly through Caddy unless a separate auth/rate-limit review is completed.
 
 Recommended first launch:
 
@@ -100,6 +100,7 @@ Tables covered:
 - `assistant_sources`;
 - `assistant_source_chunks`;
 - `assistant_ingestion_jobs`;
+- `assistant_reindex_intents`;
 - `assistant_feedback`.
 
 ## Backup and restore

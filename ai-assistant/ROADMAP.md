@@ -109,7 +109,7 @@ Implementation notes:
 
 ## Phase 5 — Medusa adapter automation
 
-Status: implemented as copy-ready adapter templates in `ai-assistant/medusa-adapter/`; not installed into the real Medusa backend in this phase.
+Status: implemented as copy-ready adapter templates in `ai-assistant/medusa-adapter/` and installed into the current repository's real Medusa backend; pending review/validation before production enablement.
 
 Goal: automatic freshness.
 
@@ -128,8 +128,8 @@ Acceptance:
 
 Implementation notes:
 
-- Store chat proxy template keeps `AI_ASSISTANT_SERVER_TOKEN` server-side and supports JSON/SSE passthrough.
-- Admin templates cover reindex, stats, and job status routes behind Medusa admin auth middleware.
+- Store chat proxy keeps `AI_ASSISTANT_SERVER_TOKEN` server-side and supports JSON/SSE passthrough; scoped history is exposed through `/store/assistant/history`.
+- Admin templates/current routes cover reindex, reindex processing, reindex intents, stats, and job status routes behind Medusa admin auth middleware.
 - Product subscribers enqueue lightweight intents for product create/update/delete and variant update instead of doing heavy indexing inline or running assistant network workflows from the event hot path.
 - Category/collection subscribers enqueue broad catalog stale-marker/reindex intents with reason/event id and a stable coalescing key; a separate worker/job should debounce/coalesce these before full reindex execution.
 - Reindex workflows support selected products, all products, vector source deletion for deleted products, and bounded retry on retryable assistant backend failures when run from admin routes or worker/job processors.
@@ -160,20 +160,21 @@ Acceptance:
 
 ## Phase 7 — Real monorepo integration readiness
 
-Status: prepared inside `ai-assistant/`; real Medusa backend/storefront were not modified.
+Status: installed integration in the current repository, pending review/validation before production enablement.
 
-Prepared:
+Prepared/installed:
 
-1. `integration-plan/README.md` with step-by-step copy plan for Medusa adapter templates.
-2. Storefront widget connection plan and safe browser/server token boundary.
-3. `e2e-checklist.md` covering chat, Markdown answer, recommendation, live price/stock, safe add-to-cart proposal, admin reindex, product update reindex intent, vector fallback, and security checks.
-4. Safe smoke script example in `scripts/smoke_assistant.py`.
-5. Production deployment artifacts remain scoped to `ai-assistant/`.
+1. `integration-plan/README.md` with step-by-step copy plan for Medusa adapter templates and audit reference for this repository.
+2. Storefront widget module installed under `medusa-agency-boilerplate-storefront/src/modules/assistant` with safe browser/server token boundary and default-off public flag.
+3. Backend adapter installed under `medusa-agency-boilerplate` with exact `AI_ASSISTANT_ENABLED=true` opt-in.
+4. `e2e-checklist.md` covering chat/history, Markdown answer, recommendation, live price/stock, safe add-to-cart proposal, admin reindex/process/intents/stats, product update reindex intent, vector fallback, and security checks.
+5. Safe smoke script example in `scripts/smoke_assistant.py`.
+6. Root production Compose has an optional `ai-assistant` profile; launch still requires review, secrets, DB/Qdrant decisions, backups, rate limiting, and worker scheduling.
 
 ## Remaining gaps before real production launch
 
-- Install/copy adapter templates into the real Medusa backend only after review and explicit approval.
-- Implement the real storefront widget/module or copy an approved widget implementation into the Next.js storefront.
+- Review/validate the installed backend adapter, storefront widget, and optional root Compose profile before production enablement.
+- Decide production database/Qdrant ownership, backups, LLM/embedding provider credentials, rate limiting, and worker/cron scheduling.
 - Replace in-memory rate limiting with Redis or gateway-level distributed limits for multi-replica production.
 - Add managed migrations instead of relying only on startup schema initialization.
 - Configure a production embedding/LLM provider if deterministic local responses are insufficient.
@@ -181,4 +182,4 @@ Prepared:
 
 ## Recommended immediate next task
 
-Proceed to review/fixes for Phase 6/7 changes, then commit in a separate subtask. Do not install the adapter into the real Medusa backend until the copy-ready template and integration plan are reviewed and explicitly approved.
+Proceed to review/fixes for the installed Phase 5/7 integration, then validate the optional enabled smoke path before any production enablement. Keep the widget/backend adapter disabled by default until launch decisions and secrets are approved.

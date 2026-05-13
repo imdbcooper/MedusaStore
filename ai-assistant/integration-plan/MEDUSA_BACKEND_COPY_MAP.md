@@ -1,6 +1,6 @@
 # Medusa Backend Copy Map
 
-Safe production-launch preparation artifact for copying the AI Assistant Medusa adapter into the real backend after explicit approval.
+Safe production-launch preparation and audit artifact for the AI Assistant Medusa adapter. The adapter has already been copied into the current repository's real backend after explicit approval and remains pending review/validation before production enablement.
 
 ## Scope and current repository reality
 
@@ -10,7 +10,7 @@ Safe production-launch preparation artifact for copying the AI Assistant Medusa 
 - The target backend package exposes `npm run typecheck`, `npm run build`, `npm run test:unit`, `npm run test:integration:http`, and `npm run test:integration:modules`.
 - Production backend container is `medusastore-backend`, built from `docker/medusa-backend/Dockerfile` and attached to the `medusastore` Docker network.
 
-No real backend files are changed by this document.
+This document no longer describes a not-yet-started copy for the current repository; it records the installed target state and remains useful as a copy map for future template reuse.
 
 ## Exact copy map
 
@@ -18,10 +18,13 @@ Copy these files from `ai-assistant/medusa-adapter/src/` to matching target path
 
 | Source | Target | Action |
 | --- | --- | --- |
-| `api/store/assistant/chat/route.ts` | `medusa-agency-boilerplate/src/api/store/assistant/chat/route.ts` | Create new route directory/file. |
-| `api/admin/assistant/reindex/route.ts` | `medusa-agency-boilerplate/src/api/admin/assistant/reindex/route.ts` | Create new route directory/file. |
-| `api/admin/assistant/stats/route.ts` | `medusa-agency-boilerplate/src/api/admin/assistant/stats/route.ts` | Create new route directory/file. |
-| `api/admin/assistant/jobs/[id]/route.ts` | `medusa-agency-boilerplate/src/api/admin/assistant/jobs/[id]/route.ts` | Create new route directory/file. |
+| `api/store/assistant/chat/route.ts` | `medusa-agency-boilerplate/src/api/store/assistant/chat/route.ts` | Installed/current route directory/file. |
+| `api/store/assistant/history/route.ts` | `medusa-agency-boilerplate/src/api/store/assistant/history/route.ts` | Installed/current scoped history proxy route. |
+| `api/admin/assistant/reindex/route.ts` | `medusa-agency-boilerplate/src/api/admin/assistant/reindex/route.ts` | Installed/current route directory/file. |
+| `api/admin/assistant/reindex/process/route.ts` | `medusa-agency-boilerplate/src/api/admin/assistant/reindex/process/route.ts` | Installed/current explicit queue processor route. |
+| `api/admin/assistant/reindex/intents/route.ts` | `medusa-agency-boilerplate/src/api/admin/assistant/reindex/intents/route.ts` | Installed/current queue status route. |
+| `api/admin/assistant/stats/route.ts` | `medusa-agency-boilerplate/src/api/admin/assistant/stats/route.ts` | Installed/current route directory/file. |
+| `api/admin/assistant/jobs/[id]/route.ts` | `medusa-agency-boilerplate/src/api/admin/assistant/jobs/[id]/route.ts` | Installed/current route directory/file. |
 | `lib/assistant-client.ts` | `medusa-agency-boilerplate/src/lib/assistant-client.ts` | Create new helper file. |
 | `lib/config.ts` | `medusa-agency-boilerplate/src/lib/config.ts` | Copy only after checking for existing generic `config.ts`; current target tree has no `src/lib/`. If a later branch adds one, rename to `assistant-config.ts` or merge exports intentionally. |
 | `lib/route-utils.ts` | `medusa-agency-boilerplate/src/lib/route-utils.ts` | Create new helper file. |
@@ -52,13 +55,23 @@ The target file already imports `authenticate`, `defineMiddlewares`, `validateAn
 const adminAuth = authenticate("user", ["session", "bearer", "api-key"])
 ```
 
-Add only these route entries to the existing `routes` array, preferably near other `/admin/*` route guards:
+For future copies, add these route entries to the existing `routes` array, preferably near other `/admin/*` route guards:
 
 ```ts
 {
   matcher: "/admin/assistant/reindex",
   methods: ["POST"],
   middlewares: [adminAuth, validateAndTransformBody(AdminAssistantReindexSchema)],
+},
+{
+  matcher: "/admin/assistant/reindex/process",
+  methods: ["POST"],
+  middlewares: [adminAuth, validateAndTransformBody(AdminAssistantReindexProcessSchema)],
+},
+{
+  matcher: "/admin/assistant/reindex/intents",
+  methods: ["GET"],
+  middlewares: [adminAuth],
 },
 {
   matcher: "/admin/assistant/stats",
@@ -72,7 +85,7 @@ Add only these route entries to the existing `routes` array, preferably near oth
 },
 ```
 
-No middleware is needed for `/store/assistant/chat`; it is intentionally a public Store API proxy and must keep server-side token handling inside the route/client.
+No middleware is needed for `/store/assistant/chat` or `/store/assistant/history`; they are intentionally public Store API proxies and must keep server-side token handling inside the route/client.
 
 ## Imports and path risks to verify during patch
 
@@ -85,7 +98,7 @@ No middleware is needed for `/store/assistant/chat`; it is intentionally a publi
 
 ## Backend env additions
 
-Add these to backend runtime env surfaces only after approval:
+Backend runtime env surfaces for the installed adapter:
 
 ```env
 AI_ASSISTANT_ENABLED=true
@@ -167,9 +180,9 @@ bash ./scripts/prod-container-smoke.sh
 
 ## Risks and assumptions
 
-- The assistant service is not yet part of root production Compose/Caddy topology; adding it requires a separate explicit infrastructure patch.
+- The root production Compose already has an optional `ai-assistant` profile, but production enablement still requires explicit profile/env opt-in and reviewed infrastructure ownership.
 - PostgreSQL/Qdrant ownership for assistant data is still a launch decision: reuse production PostgreSQL with a separate `assistant` database/user, or provision managed services.
 - In-memory assistant rate limiting is not distributed; multi-replica production needs Redis/gateway rate limiting before scale-out.
 - Automatic PostgreSQL schema initialization exists in the assistant; stricter production launch should extract managed migrations first.
-- Product freshness automation is incomplete until enqueue intents are persisted and a worker consumes them outside Medusa subscriber hot paths.
+- Product freshness automation persists enqueue intents, but production freshness is incomplete until an explicit worker/cron/admin drain schedule consumes them outside Medusa subscriber hot paths.
 - All smoke commands require real secrets/admin credentials supplied by the operator outside Git.

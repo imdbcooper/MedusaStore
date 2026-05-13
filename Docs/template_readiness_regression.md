@@ -37,7 +37,7 @@
 1. из корня репозитория создан локальный root `.env` из `.env.example`;
 2. root orchestration остается канонической точкой входа;
 3. разработчик работает из корня репозитория, а не из отдельных подпроектов;
-4. для базового regression pass не требуются обязательные внешние notification/payment/shipping secrets.
+4. для базового regression pass не требуются обязательные внешние notification/payment/shipping/assistant secrets.
 
 ### Базовые команды подготовки
 
@@ -322,7 +322,45 @@ Current route family: direct `/store/apiship/*` Store API surfaces. Historical `
 
 ---
 
-## 7. Минимальные helper artifacts этого pack
+## 7. Regression 05 — optional/default-off AI Assistant
+
+### Цель
+
+Зафиксировать, что установленная AI Assistant integration остается optional/default-off для template baseline, не требует assistant secrets для clean onboarding и не раскрывает server tokens в browser runtime.
+
+### Baseline/default-off ожидания
+
+Для обычного regression pass без assistant secrets должно быть true:
+
+- `cp .env.example .env`, `npm run bootstrap`, `npm run preflight`, build/static checks and baseline runtime smoke do not require `AI_ASSISTANT_API_TOKEN`, `AI_ASSISTANT_SERVER_TOKEN`, `ASSISTANT_POSTGRES_URI`, `QDRANT_URL`, or LLM provider keys.
+- Backend adapter remains disabled unless `AI_ASSISTANT_ENABLED=true` exactly.
+- Storefront widget remains hidden unless `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=true` explicitly.
+- Browser-facing env contains only public flags such as `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED` and `NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT`; no server token or provider secret appears in JavaScript bundles, responses, or DevTools network payloads.
+
+### Optional enabled smoke scope
+
+When the operator intentionally starts the assistant service/profile and supplies non-committed runtime secrets, the optional smoke should cover:
+
+1. `POST /store/assistant/chat` for JSON chat through the Medusa Store API proxy.
+2. `GET /store/assistant/history` for scoped session history through the Medusa Store API proxy.
+3. `POST /admin/assistant/reindex` for selected/all product reindex intent creation.
+4. `POST /admin/assistant/reindex/process` for explicit queue drain/processing.
+5. `GET /admin/assistant/reindex/intents` for durable queue status.
+6. `GET /admin/assistant/stats` for assistant operational stats.
+7. `GET /admin/assistant/jobs/:id` for assistant ingestion job status when a job id is returned.
+8. Browser smoke with DevTools verification that `AI_ASSISTANT_SERVER_TOKEN`, `AI_ASSISTANT_API_TOKEN`, database URLs, Qdrant keys, and LLM provider keys are absent from JS bundles, public env, network requests, and responses.
+
+### Expected behavior and failure signals
+
+- Product/catalog subscribers only enqueue durable reindex intents. A freshness smoke must explicitly run admin/worker/cron drain before expecting indexed data to refresh.
+- Browser requests may send safe session/page context only; untrusted `cart_id` from browser payload must be discarded by the backend adapter.
+- `/store/assistant/history` must remain scoped to the active assistant session and must not expose privileged assistant history/admin endpoints.
+- Direct browser calls to the assistant service or privileged assistant API endpoints are regression signals unless a separately reviewed public route policy exists.
+- Any baseline path that starts requiring assistant secrets is a template-readiness regression.
+
+---
+
+## 8. Минимальные helper artifacts этого pack
 
 В pack добавлен только один operational helper:
 
@@ -392,7 +430,7 @@ Truthful assumptions этого CI slice:
 
 ---
 
-## 8. Как использовать этот документ как source of truth
+## 9. Как использовать этот документ как source of truth
 
 Если нужно понять, что именно прогонять для template readiness, использовать этот документ как канонический regression-pack, а рядом держать. Для closure sync `2026-04-19` этот документ также удерживает truthful final readiness marker для `Фазы 6 storefront customization`: первоначальный closure verdict был later reopened по трём валидным gap'ам, затем remediation закрыла category browse contour, related products rail и loading/skeleton contract sync, а post-remediation cross-preset pass зафиксировал финальный readiness verdict **PASS**. Accepted baseline observations для этого финального checkpoint ограничены controlled Store API warnings during static params generation; storefront [`npm run lint`](../medusa-agency-boilerplate-storefront/package.json:14) после remediation lint stack и hook-dependency cleanup проходит clean. Эти warnings не считаются blockers закрытой `Фазы 6 storefront customization` и не относятся к reopened gap'ам.
 

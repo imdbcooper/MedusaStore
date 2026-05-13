@@ -2,7 +2,7 @@
 
 Reusable intelligent shopping assistant module for Medusa-based e-commerce projects.
 
-This directory contains a standalone FastAPI assistant service, Medusa adapter templates, integration documentation, deployment artifacts, and tests. It is intentionally separated from the real Medusa backend/storefront code so it can be reviewed and reused before being installed into a project.
+This directory contains the standalone FastAPI assistant service, reusable Medusa adapter reference templates, integration documentation, deployment artifacts, and tests. In this repository the integration is no longer only a template: the Medusa backend adapter is installed in [`medusa-agency-boilerplate`](../medusa-agency-boilerplate), the storefront widget is installed in [`assistant`](../medusa-agency-boilerplate-storefront/src/modules/assistant), and root production Compose includes an optional disabled-by-default `ai-assistant` profile.
 
 ## Documents
 
@@ -28,7 +28,7 @@ Implemented in [backend/](./backend/) with FastAPI health, chat, streaming chat,
 
 ### Phase 2 — Medusa product ingestion
 
-Implemented without modifying the real Medusa backend/storefront:
+Implemented in the standalone assistant service and now connected through the installed repository adapter/widget when explicitly enabled:
 
 - `POST /api/v1/ingest/medusa/products/sync` reads products from Medusa Store API.
 - Products are normalized into `medusa_product` documents/chunks with metadata matching [DATA_MODEL.md](./DATA_MODEL.md).
@@ -56,12 +56,12 @@ Implemented as optional/guarded functionality:
 
 ### Phase 5 — Medusa adapter automation
 
-Implemented as copy-ready templates under [medusa-adapter/](./medusa-adapter/) without modifying the real Medusa backend:
+Implemented as reusable templates under [medusa-adapter/](./medusa-adapter/) and installed into the current repository's real Medusa backend:
 
-- Store proxy route template for `POST /store/assistant/chat`, including SSE passthrough.
-- Admin route templates for reindex, stats, and ingestion job status.
-- Product freshness subscriber templates for create/update/delete, variant update, category update, and collection update events.
-- Reindex workflow templates for selected-product and all-product sync with bounded retry behavior.
+- Store proxy routes for `POST /store/assistant/chat` and `/store/assistant/history`, including SSE passthrough for chat.
+- Admin routes for reindex, reindex processing, reindex intents, stats, and ingestion job status.
+- Product freshness subscribers for create/update/delete, variant update, category update, and collection update events.
+- Durable reindex intent flow for selected-product, all-product, and delete-source actions; subscribers enqueue intents only, while drain/processing is explicit via admin route, worker, or cron.
 - Typed server-side client using `AI_ASSISTANT_BASE_URL`, `AI_ASSISTANT_SERVER_TOKEN`, `AI_ASSISTANT_TIMEOUT_MS`, and exact opt-in `AI_ASSISTANT_ENABLED=true`.
 
 ### Phase 6 — Production hardening
@@ -79,10 +79,12 @@ Implemented/prepared inside `ai-assistant/`:
 
 ### Phase 7 — Real monorepo integration readiness
 
-Prepared without modifying real Medusa/backend/storefront directories:
+Installed in the current repository and pending final review/validation before production launch:
 
-- [integration-plan/README.md](./integration-plan/README.md) gives copy steps for adapter templates and storefront widget connection.
-- [e2e-checklist.md](./e2e-checklist.md) covers storefront chat, Markdown answers, product recommendation, live price/stock, safe add-to-cart proposal, admin reindex, product update triggers, vector fallback, and security checks.
+- [integration-plan/README.md](./integration-plan/README.md) remains the copy/integration reference for future projects and audits.
+- The current repository has the backend adapter copied into [`medusa-agency-boilerplate`](../medusa-agency-boilerplate) and the widget implemented under [`assistant`](../medusa-agency-boilerplate-storefront/src/modules/assistant).
+- The widget is disabled by default through `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=false`; backend adapter calls are disabled unless `AI_ASSISTANT_ENABLED=true` exactly.
+- [e2e-checklist.md](./e2e-checklist.md) covers storefront chat/history, Markdown answers, product recommendation, live price/stock, safe add-to-cart proposal, admin reindex/process/intents/stats, product update intent triggers, vector fallback, and security checks.
 - [scripts/smoke_assistant.py](./scripts/smoke_assistant.py) provides a safe non-destructive smoke example.
 
 ## Local development
@@ -136,7 +138,7 @@ Optional LLM configuration uses `LLM_PROVIDER`, provider API key variables such 
 
 ## Medusa integration
 
-Do not install templates into the real backend without review/approval. When approved, copy [medusa-adapter/src/](./medusa-adapter/src/) files according to [integration-plan/README.md](./integration-plan/README.md), merge middleware carefully, and configure:
+The current repository already has the adapter installed for review/validation. For future projects, copy [medusa-adapter/src/](./medusa-adapter/src/) files according to [integration-plan/README.md](./integration-plan/README.md), merge middleware carefully, and configure:
 
 ```env
 AI_ASSISTANT_ENABLED=true
@@ -147,14 +149,14 @@ AI_ASSISTANT_TIMEOUT_MS=60000
 
 ## Storefront integration
 
-Preferred browser route is same-origin or Medusa proxy:
+Preferred browser routes are Medusa Store API proxies:
 
 ```text
-POST /api/assistant/chat/stream
 POST {MEDUSA_BACKEND_URL}/store/assistant/chat
+GET {MEDUSA_BACKEND_URL}/store/assistant/history
 ```
 
-The browser must never receive `AI_ASSISTANT_API_TOKEN` or `AI_ASSISTANT_SERVER_TOKEN`. Treat `add_to_cart_proposal` as UI-only; use the existing trusted storefront/Medusa cart flow after explicit user confirmation.
+The browser must never receive `AI_ASSISTANT_API_TOKEN` or `AI_ASSISTANT_SERVER_TOKEN`. Treat `add_to_cart_proposal` as UI-only; use the existing trusted storefront/Medusa cart flow after explicit user confirmation. Browser-supplied `cart_id` is untrusted and discarded by the current backend adapter until a trusted server-side cart resolver is added.
 
 ## Testing commands
 
@@ -175,9 +177,8 @@ git diff --check -- ai-assistant
 
 ## Remaining production launch gaps
 
-- Review/fix Phase 6/7 changes and commit in a separate orchestration step.
-- Copy adapter templates into real Medusa backend only after explicit approval.
-- Implement/copy the real storefront widget.
-- Replace in-memory rate limiting with Redis or gateway-level distributed limits for multi-replica production.
-- Add managed migrations before production schema changes.
+- Review and validate the installed backend adapter, storefront widget, and optional root Compose profile before production enablement.
+- Decide production ownership for assistant PostgreSQL, Qdrant, backups, LLM/embedding provider credentials, rate limiting, and worker/cron scheduling.
+- Replace in-memory rate limiting with Redis or gateway-level distributed limits before multi-replica production.
+- Add/approve managed migrations before production schema changes; include `assistant_reindex_intents` in assistant database migration review.
 - Run full E2E against real Medusa, storefront, PostgreSQL, Qdrant, and optional Neo4j.

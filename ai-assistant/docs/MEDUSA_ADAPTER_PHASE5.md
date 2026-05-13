@@ -1,12 +1,13 @@
 # Phase 5 Medusa Adapter Automation
 
-Phase 5 adds a copy-ready Medusa backend adapter under `ai-assistant/medusa-adapter/`. The adapter is intentionally not installed into the real `medusa-agency-boilerplate/` backend in this subtask.
+Phase 5 adds a copy-ready Medusa backend adapter under `ai-assistant/medusa-adapter/`. The adapter remains a reusable template reference, and in the current repository it has also been installed into the real `medusa-agency-boilerplate/` backend for review/validation. Runtime remains disabled unless `AI_ASSISTANT_ENABLED=true` exactly.
 
 ## What the adapter provides
 
-- Store chat proxy route:
+- Store proxy routes:
   - `POST /store/assistant/chat` -> `POST /api/v1/chat`;
-  - `Accept: text/event-stream` -> SSE passthrough to `POST /api/v1/chat/stream`.
+  - `Accept: text/event-stream` -> SSE passthrough to `POST /api/v1/chat/stream`;
+  - `GET /store/assistant/history` -> scoped assistant history proxy.
 - Admin routes:
   - `POST /admin/assistant/reindex` queues durable intents;
   - `POST /admin/assistant/reindex/process` drains/processes queued intents;
@@ -43,7 +44,7 @@ AI_ASSISTANT_ENABLED=true
 
 ## Copy instructions
 
-Copy files from `ai-assistant/medusa-adapter/src/` into the target Medusa backend `src/` with the same relative paths.
+For a new target project, copy files from `ai-assistant/medusa-adapter/src/` into the target Medusa backend `src/` with the same relative paths. In this repository, this copy has already been performed and should be treated as installed current state pending review/validation.
 
 If the target backend already has `src/api/middlewares.ts`, merge the assistant middleware entries instead of overwriting the existing file:
 
@@ -125,7 +126,14 @@ curl http://localhost:9000/admin/assistant/jobs/<assistant_job_id> \
   -H 'Authorization: Bearer <admin-or-api-key>'
 ```
 
-8. Test JSON chat proxy:
+8. Test scoped history proxy:
+
+```bash
+curl 'http://localhost:9000/store/assistant/history?session_id=assistant_session_id' \
+  -H 'Content-Type: application/json'
+```
+
+9. Test JSON chat proxy:
 
 ```bash
 curl -X POST http://localhost:9000/store/assistant/chat \
@@ -133,7 +141,7 @@ curl -X POST http://localhost:9000/store/assistant/chat \
   -d '{"message":"Помоги выбрать товар","store_id":"default","locale":"ru","mode":"auto"}'
 ```
 
-9. Test SSE passthrough:
+10. Test SSE passthrough:
 
 ```bash
 curl -N -X POST http://localhost:9000/store/assistant/chat \
@@ -144,8 +152,9 @@ curl -N -X POST http://localhost:9000/store/assistant/chat \
 
 ## Safety notes
 
-- Store route does not expose `AI_ASSISTANT_SERVER_TOKEN` to the browser.
-- Store route does not forward untrusted browser-supplied `cart_id` or `customer_id`.
+- Store routes do not expose `AI_ASSISTANT_SERVER_TOKEN` to the browser.
+- Store chat route does not forward untrusted browser-supplied `cart_id` or `customer_id`.
+- Store history route must remain scoped to the active assistant session and must not expose privileged assistant history/admin endpoints.
 - Admin routes should live behind the Medusa admin auth middleware.
 - Subscribers only enqueue lightweight intents and do not run workflows from the event hot path.
 - Product deletion maps to a selected product source deletion intent; selected/all reindex network execution belongs to the worker/job workflow step.

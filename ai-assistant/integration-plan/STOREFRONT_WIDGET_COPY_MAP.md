@@ -1,6 +1,6 @@
 # Storefront Widget Copy Map
 
-Safe production-launch preparation artifact for adding an AI Assistant chat widget to the real Next.js storefront after explicit approval.
+Safe production-launch preparation and audit artifact for the AI Assistant chat widget. The widget has already been installed in the current repository's real Next.js storefront after explicit approval and remains pending review/validation before production enablement.
 
 ## Scope and current repository reality
 
@@ -10,7 +10,7 @@ Safe production-launch preparation artifact for adding an AI Assistant chat widg
 - Current public proxy routes in production Caddy send `/store/*` to Medusa backend and `/api/content/*` to storefront. There is no current `/api/assistant/*` Caddy special case.
 - Storefront server-side Medusa URL resolution already prefers `MEDUSA_BACKEND_URL` over `NEXT_PUBLIC_MEDUSA_BACKEND_URL` in `src/lib/env.ts`.
 
-No real storefront files are changed by this document.
+This document no longer describes a not-yet-started widget for the current repository; it records the installed target state and remains useful as a copy map for future template reuse.
 
 ## Recommended integration shape
 
@@ -29,15 +29,15 @@ Rationale:
 
 A same-origin Next.js route is still possible, but would require an additional storefront server route and server-only env handling. That should be a separate explicit patch if chosen.
 
-## Suggested widget file map
+## Installed widget file map
 
-Create a new module namespace in the real storefront:
+The current repository has a module namespace in the real storefront:
 
 | Target | Purpose |
 | --- | --- |
 | `medusa-agency-boilerplate-storefront/src/modules/assistant/types.ts` | Shared request/response/product/action types copied from `ai-assistant/API_CONTRACT.md` semantics. |
 | `medusa-agency-boilerplate-storefront/src/modules/assistant/lib/session.ts` | Client-side anonymous `assistant_session_id` storage in `localStorage` or first-party cookie. No secrets. |
-| `medusa-agency-boilerplate-storefront/src/modules/assistant/lib/client.ts` | Browser-safe fetch/SSE client that calls `/store/assistant/chat` through the configured public Medusa backend origin or relative same-origin URL. |
+| `medusa-agency-boilerplate-storefront/src/modules/assistant/lib/client.ts` | Browser-safe fetch/SSE/history client that calls `/store/assistant/chat` and `/store/assistant/history` through the configured public Medusa backend origin or relative same-origin URL. |
 | `medusa-agency-boilerplate-storefront/src/modules/assistant/components/assistant-widget/index.tsx` | Client component for launcher, panel, messages, product cards, add-to-cart proposals, feedback controls. |
 | `medusa-agency-boilerplate-storefront/src/modules/assistant/components/assistant-product-card/index.tsx` | Optional product card renderer using existing product URL conventions. |
 | `medusa-agency-boilerplate-storefront/src/modules/assistant/components/assistant-markdown/index.tsx` | Minimal safe Markdown renderer or restricted text renderer. Avoid raw HTML. |
@@ -80,10 +80,11 @@ If the widget uses existing Medusa URL resolution, no new token is needed in sto
 - `NEXT_PUBLIC_MEDUSA_BACKEND_URL` for browser calls, for example `https://slavx.mooo.com` in production;
 - or a relative same-origin `/store/assistant/chat` path when served through the same public Caddy origin.
 
-Recommended production browser endpoint:
+Recommended production browser endpoints:
 
 ```text
 /store/assistant/chat
+/store/assistant/history
 ```
 
 because `https://slavx.mooo.com/store/*` is already routed to Medusa backend by Caddy.
@@ -124,6 +125,8 @@ Do not send:
 - `AI_ASSISTANT_SERVER_TOKEN`;
 - untrusted `cart_id` as an authority for mutation. The current Medusa adapter discards browser-supplied `cart_id` by design.
 
+History sync uses `GET /store/assistant/history` with the same anonymous assistant session identity. It must remain a scoped proxy and must not expose privileged assistant tokens, cross-session history, or backend-only diagnostics.
+
 ## Product cards and actions
 
 - Render product cards only from `products[]` returned by assistant.
@@ -161,7 +164,7 @@ Browser smoke checklist:
 
 - Chat launcher visible and keyboard accessible on `/ru`.
 - Open/close works without layout shift breaking nav/cart.
-- Anonymous session persists after reload.
+- Anonymous session persists after reload and history sync reloads only that scoped session.
 - Markdown/policy answer renders safely.
 - Product recommendation prompt returns cards linking to `/ru/products/<handle>`.
 - Price/stock display is hidden or marked unknown unless live grounding succeeds.
@@ -188,8 +191,8 @@ https://slavx.mooo.com/ru/cart
 
 ## Risks and assumptions
 
-- The real widget implementation does not yet exist; this is a copy/patch map, not a completed UI patch.
-- The Medusa adapter must be installed first if using `/store/assistant/chat`.
+- The real widget implementation exists under `medusa-agency-boilerplate-storefront/src/modules/assistant` and is disabled by default through `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=false`.
+- The Medusa adapter is installed in the current repository and must stay exact opt-in through `AI_ASSISTANT_ENABLED=true` when using `/store/assistant/chat` and `/store/assistant/history`.
 - Public Caddy currently routes `/store/*` to Medusa, so no Caddy change is required for the preferred endpoint.
 - If a same-origin `/api/assistant/*` route is chosen later, Caddy route ownership and storefront env/docs must be reviewed separately.
 - The storefront uses React `19.0.5`; any third-party Markdown or chat UI dependency must be checked for React 19 compatibility before adding dependencies.

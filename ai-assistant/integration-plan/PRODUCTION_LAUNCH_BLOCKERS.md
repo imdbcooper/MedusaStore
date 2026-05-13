@@ -1,6 +1,6 @@
 # Production Launch Blockers
 
-This file lists the real inputs and approvals needed before turning the prepared `ai-assistant/` module into a production launch. It is intentionally limited to planning and readiness; it does not authorize destructive actions or changes outside `ai-assistant/`.
+This file lists the real inputs and approvals needed before turning the installed-but-disabled `ai-assistant/` integration into a production launch. It is intentionally limited to planning and readiness; it does not authorize destructive actions, secret creation, or production enablement.
 
 ## Current readiness snapshot
 
@@ -51,16 +51,17 @@ Production launch requires a concrete runtime topology for:
 - LLM provider and embedding provider outbound network access from the assistant container/runtime.
 - Optional Neo4j/LightRAG only if explicitly enabled; current safe default is disabled.
 
-Current root production topology has these services only:
+Current root production topology has the baseline services plus an optional disabled-by-default assistant profile:
 
 - `medusastore-db`;
 - `medusastore-redis`;
 - `medusastore-backend`;
 - `medusastore-payload`;
 - `medusastore-storefront`;
-- `medusastore-caddy`.
+- `medusastore-caddy`;
+- optional `medusastore-ai-assistant` only when the `ai-assistant` profile and required env are explicitly enabled.
 
-A separate approved patch is required to add `ai-assistant`, Qdrant, assistant PostgreSQL ownership, volumes, healthchecks, and backup hooks to production infrastructure.
+The root Compose profile exists, but production launch still requires decisions for assistant PostgreSQL ownership, Qdrant/container or managed endpoint, volumes, healthchecks, backups/snapshots, rate limiting, and worker scheduling. Do not treat the profile's existence as completed production readiness.
 
 ## Blocker 3 — Redis/gateway rate limit decision for multi-replica production
 
@@ -89,7 +90,7 @@ The backend patch used `ai-assistant/integration-plan/MEDUSA_BACKEND_COPY_MAP.md
 - merge `src/api/middlewares.ts`, not overwrite it;
 - add backend-only env names to the proper env contracts;
 - verify typecheck/build;
-- smoke `/admin/assistant/reindex`, `/admin/assistant/jobs/:id`, `/admin/assistant/stats`, `/store/assistant/chat`, and SSE passthrough;
+- smoke `/admin/assistant/reindex`, `/admin/assistant/reindex/process`, `/admin/assistant/reindex/intents`, `/admin/assistant/jobs/:id`, `/admin/assistant/stats`, `/store/assistant/chat`, `/store/assistant/history`, and SSE passthrough;
 - keep `cart_id` untrusted until a trusted ownership resolver is implemented;
 - avoid reintroducing Delivery Hub/direct Yandex active checkout routes.
 

@@ -13,7 +13,7 @@ Medusa backend
   -> service/client for AI backend
 ```
 
-Phase 5 implements this as copy-ready templates in [`medusa-adapter/`](./medusa-adapter/) and docs in [`docs/MEDUSA_ADAPTER_PHASE5.md`](./docs/MEDUSA_ADAPTER_PHASE5.md). The templates are not installed into the real Medusa backend until explicitly approved.
+Phase 5 implements this as copy-ready templates in [`medusa-adapter/`](./medusa-adapter/) and docs in [`docs/MEDUSA_ADAPTER_PHASE5.md`](./docs/MEDUSA_ADAPTER_PHASE5.md). In the current repository, those adapter files have also been installed into the real [`medusa-agency-boilerplate`](../medusa-agency-boilerplate) backend for review/validation and remain disabled unless `AI_ASSISTANT_ENABLED=true` exactly.
 
 ## 2. Proposed Medusa backend files
 
@@ -23,8 +23,11 @@ Target location after implementation/copy into a real Medusa backend:
 medusa-agency-boilerplate/src/
 ├── api/
 │   ├── store/assistant/chat/route.ts
+│   ├── store/assistant/history/route.ts
 │   ├── admin/assistant/
 │   │   ├── reindex/route.ts
+│   │   ├── reindex/process/route.ts
+│   │   ├── reindex/intents/route.ts
 │   │   ├── stats/route.ts
 │   │   └── jobs/[id]/route.ts
 │   └── middlewares.ts          # merge assistant admin route auth into existing file
@@ -66,6 +69,15 @@ Responsibilities:
 - never expose internal assistant token to browser.
 
 The route uses `AI_ASSISTANT_SERVER_TOKEN` only inside the server-side typed client. `customer_id` is derived from Medusa `auth_context` and sent only to the privileged bind endpoint, never accepted from the browser payload. If cart-aware answers are needed in a real copy, add a trusted cart resolver that derives/validates cart ownership from Medusa/storefront server context before forwarding cart context. Until then, forward `cart_id: null` or omit it.
+
+### `GET /store/assistant/history`
+
+Responsibilities:
+
+- return scoped assistant history for the active anonymous/authenticated assistant session;
+- proxy through the Medusa backend so the browser never calls privileged assistant endpoints directly;
+- use only safe session context and never expose `AI_ASSISTANT_SERVER_TOKEN` or assistant service diagnostics to the browser;
+- reject or empty-scope requests without a usable session id instead of returning cross-session data.
 
 ## 4. Admin routes
 
@@ -136,6 +148,7 @@ The adapter includes `src/lib/assistant-client.ts` with typed methods:
 - `bindSession(payload)` -> `POST /api/v1/admin/sessions/bind`;
 - `chat(payload)` -> `POST /api/v1/chat`;
 - `streamChat(payload)` -> `POST /api/v1/chat/stream` with SSE passthrough response;
+- `history(params)` -> scoped assistant history endpoint used by `GET /store/assistant/history`;
 - `enqueueReindexIntent(payload)` -> `POST /api/v1/admin/reindex/intents`;
 - `listReindexIntents(params)` -> `GET /api/v1/admin/reindex/intents`;
 - `processReindexQueue(payload)` -> `POST /api/v1/admin/reindex/process`;
@@ -182,7 +195,8 @@ Use the smoke commands in [`docs/MEDUSA_ADAPTER_PHASE5.md`](./docs/MEDUSA_ADAPTE
 3. Call `POST /admin/assistant/reindex` for full and selected product sync.
 4. Call `GET /admin/assistant/jobs/:id` for returned assistant job id.
 5. Call `POST /store/assistant/chat` for JSON chat.
-6. Call `POST /store/assistant/chat` with `Accept: text/event-stream` for SSE passthrough.
+6. Call `GET /store/assistant/history` for scoped session history.
+7. Call `POST /store/assistant/chat` with `Accept: text/event-stream` for SSE passthrough.
 
 ## 11. Implementation reference
 
