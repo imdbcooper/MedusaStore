@@ -1,20 +1,24 @@
 "use client"
 
 import { signup } from "@lib/data/customer"
+import { VK_ID_ENABLED } from "@lib/config"
 import { storefrontConfig } from "@lib/storefront-config"
 import { useActionState } from "react"
 import { LOGIN_VIEW } from "@modules/account/templates/login-template"
 import Input from "@modules/common/components/input"
 import ErrorMessage from "@modules/checkout/components/error-message"
 import { SubmitButton } from "@modules/checkout/components/submit-button"
+import VkLoginButton from "@modules/account/components/vk-login-button"
 
 type Props = {
   setCurrentView: (view: LOGIN_VIEW) => void
+  countryCode?: string | null
 }
 
-const Register = ({ setCurrentView }: Props) => {
+const Register = ({ setCurrentView, countryCode }: Props) => {
   const [message, formAction] = useActionState(signup, null)
   const accountCopy = storefrontConfig.copy.account
+  const resolvedCountryCode = countryCode || "ru"
 
   return (
     <div className="w-full flex flex-col" data-testid="register-page">
@@ -74,6 +78,18 @@ const Register = ({ setCurrentView }: Props) => {
           {accountCopy.join}
         </SubmitButton>
       </form>
+      {VK_ID_ENABLED ? (
+        <div className="mt-6 flex flex-col gap-y-3">
+          <div className="flex items-center gap-x-3 text-ui-fg-subtle">
+            <span className="h-px flex-1 bg-ui-border-base" aria-hidden />
+            <span className="text-xsmall-regular uppercase tracking-wider">
+              или
+            </span>
+            <span className="h-px flex-1 bg-ui-border-base" aria-hidden />
+          </div>
+          <VkLoginButton countryCode={resolvedCountryCode} />
+        </div>
+      ) : null}
       <p className="text-center text-ui-fg-subtle text-small-regular mt-6">
         Уже есть аккаунт?{" "}
         <button

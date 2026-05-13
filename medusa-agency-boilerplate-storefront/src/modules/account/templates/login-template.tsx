@@ -65,7 +65,10 @@ const LoginTemplate = ({
             vkRegistered={vkRegistered || null}
           />
         ) : (
-          <Register setCurrentView={setCurrentView} />
+          <Register
+            setCurrentView={setCurrentView}
+            countryCode={countryCode || null}
+          />
         )}
       </div>
     </div>
