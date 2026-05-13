@@ -4,6 +4,7 @@ import {
   buildVkIdResultReturnUrl,
   createVkIdLinkSession,
   createVkIdLoginSession,
+  findVkIdCustomersByIdentity,
   findVkIdentityCustomer,
   getVkIdRuntime,
   getVkIdSessionIntent,
@@ -426,6 +427,16 @@ describe("VK ID auth intent state semantics", () => {
 
     expect(readVkIdLinkSession(session.state)).toBeNull()
   })
+
+  it("readVkIdLinkSession rejects expired login states explicitly (expiresAt in the past)", () => {
+    const session = createVkIdLoginSession({
+      returnUrl: "http://localhost:8000/ru/account",
+      ttlSeconds: -60,
+    })
+
+    expect(Date.parse(session.expiresAt)).toBeLessThan(Date.now())
+    expect(readVkIdLinkSession(session.state)).toBeNull()
+  })
 })
 
 describe("VK ID login lookup helpers", () => {
@@ -437,15 +448,18 @@ describe("VK ID login lookup helpers", () => {
     }
   }
 
-  it("findVkIdentityCustomer returns the customer that owns the VK identity", () => {
-    const target: VkLinkableCustomerRecord = {
-      id: "cust_target",
+  function linkedCustomer(
+    id: string,
+    vkPeerId = "2000000777"
+  ): VkLinkableCustomerRecord {
+    return {
+      id,
       metadata: {
-        vk_peer_id: "2000000777",
+        vk_peer_id: vkPeerId,
         vk_link: {
           provider: "vkid",
-          vk_user_id: "2000000777",
-          vk_peer_id: "2000000777",
+          vk_user_id: vkPeerId,
+          vk_peer_id: vkPeerId,
           linked_at: "2026-01-01T00:00:00.000Z",
           link_source: "storefront.account.profile",
           link_status: "linked",
@@ -454,31 +468,58 @@ describe("VK ID login lookup helpers", () => {
         },
       },
     }
+  }
 
+  it("findVkIdentityCustomer returns the customer that owns the VK identity", () => {
+    const target = linkedCustomer("cust_target")
     const customers: VkLinkableCustomerRecord[] = [
       { id: "cust_other", metadata: {} },
       target,
     ]
 
-    const found = findVkIdentityCustomer({
+    const result = findVkIdentityCustomer({
       customers,
       identity: buildIdentityFor("2000000777"),
     })
 
-    expect(found?.id).toBe("cust_target")
+    expect(result.status).toBe("ok")
+    expect(result.customer?.id).toBe("cust_target")
   })
 
-  it("findVkIdentityCustomer returns null when no customer holds the identity", () => {
+  it("findVkIdentityCustomer returns not_found when no customer holds the identity", () => {
     const customers: VkLinkableCustomerRecord[] = [
       { id: "cust_other", metadata: {} },
     ]
 
-    expect(
-      findVkIdentityCustomer({
-        customers,
-        identity: buildIdentityFor("2000000777"),
-      })
-    ).toBeNull()
+    const result = findVkIdentityCustomer({
+      customers,
+      identity: buildIdentityFor("2000000777"),
+    })
+
+    expect(result.status).toBe("not_found")
+    expect(result.customer).toBeNull()
+  })
+
+  it("findVkIdentityCustomer flags two or more matches as ambiguous", () => {
+    const customers: VkLinkableCustomerRecord[] = [
+      linkedCustomer("cust_a"),
+      linkedCustomer("cust_b"),
+      { id: "cust_other", metadata: {} },
+    ]
+
+    const result = findVkIdentityCustomer({
+      customers,
+      identity: buildIdentityFor("2000000777"),
+    })
+
+    expect(result.status).toBe("ambiguous")
+    expect(result.customer).toBeNull()
+    if (result.status === "ambiguous") {
+      expect(result.matches.map((m) => m.id).sort()).toEqual([
+        "cust_a",
+        "cust_b",
+      ])
+    }
   })
 
   it("findVkIdentityCustomer ignores customers whose VK link is in unlinked status", () => {
@@ -500,12 +541,46 @@ describe("VK ID login lookup helpers", () => {
       },
     ]
 
-    expect(
-      findVkIdentityCustomer({
-        customers,
-        identity: buildIdentityFor("2000000777"),
-      })
-    ).toBeNull()
+    const result = findVkIdentityCustomer({
+      customers,
+      identity: buildIdentityFor("2000000777"),
+    })
+
+    expect(result.status).toBe("not_found")
+  })
+
+  it("findVkIdCustomersByIdentity uses an SQL prefilter and returns matching customers", async () => {
+    const rawCalls: Array<{ sql: string; bindings?: unknown[] }> = []
+    const pgConnection = {
+      transaction: async <T>(cb: (trx: any) => Promise<T>) => {
+        return cb({
+          raw: async (sql: string, bindings?: unknown[]) => {
+            rawCalls.push({ sql, bindings })
+            return {
+              rows: [
+                linkedCustomer("cust_sql_match"),
+              ],
+            }
+          },
+        })
+      },
+    }
+
+    const rows = await findVkIdCustomersByIdentity(pgConnection, {
+      provider: "vkid",
+      vkUserId: "2000000777",
+      vkPeerId: "2000000777",
+    })
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0].id).toBe("cust_sql_match")
+    expect(rawCalls).toHaveLength(1)
+    expect(rawCalls[0].sql).toContain("metadata->'vk_link'->>'vk_user_id'")
+    expect(rawCalls[0].bindings).toEqual([
+      "2000000777",
+      "2000000777",
+      "2000000777",
+    ])
   })
 })
 
@@ -636,5 +711,63 @@ describe("VK ID storefront return URL resolver", () => {
 
     expect(url.origin).toBe("https://studio.slavx.ru")
     expect(url.pathname).toBe("/ru/account")
+  })
+
+  it("rejects non-URL garbage return_url and falls back to allowed origin", () => {
+    process.env.VK_ID_STOREFRONT_RETURN_ORIGINS = "https://studio.slavx.ru"
+
+    const url = resolveAllowedVkIdLoginReturnUrl("javascript:alert(1)")
+
+    expect(url.origin).toBe("https://studio.slavx.ru")
+    expect(url.pathname).toBe("/ru/account")
+  })
+})
+
+describe("VK ID session secret hardening", () => {
+  const ORIGINAL_ENV = { ...process.env }
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV }
+  })
+
+  it("refuses to mint a login session when no secret env is configured", () => {
+    delete process.env.VK_ID_SESSION_SECRET
+    delete process.env.JWT_SECRET
+    delete process.env.COOKIE_SECRET
+
+    expect(() =>
+      createVkIdLoginSession({
+        returnUrl: "http://localhost:8000/ru/account",
+      })
+    ).toThrow(/VK_ID_SESSION_SECRET is not configured/)
+  })
+
+  it("accepts JWT_SECRET as a fallback when VK_ID_SESSION_SECRET is unset", () => {
+    delete process.env.VK_ID_SESSION_SECRET
+    delete process.env.COOKIE_SECRET
+    process.env.JWT_SECRET = "test-fallback-jwt"
+
+    const session = createVkIdLoginSession({
+      returnUrl: "http://localhost:8000/ru/account",
+    })
+
+    expect(session.state).toBeTruthy()
+    expect(readVkIdLinkSession(session.state)?.intent).toBe("login")
+  })
+
+  it("prefers VK_ID_SESSION_SECRET over JWT_SECRET / COOKIE_SECRET", () => {
+    process.env.VK_ID_SESSION_SECRET = "primary-secret"
+    process.env.JWT_SECRET = "different-secret"
+    process.env.COOKIE_SECRET = "yet-another-secret"
+
+    const sessionWithPrimary = createVkIdLoginSession({
+      returnUrl: "http://localhost:8000/ru/account",
+    })
+
+    // Rotating the primary secret while leaving JWT_SECRET intact must
+    // invalidate the previously minted state.
+    process.env.VK_ID_SESSION_SECRET = "rotated-secret"
+
+    expect(readVkIdLinkSession(sessionWithPrimary.state)).toBeNull()
   })
 })

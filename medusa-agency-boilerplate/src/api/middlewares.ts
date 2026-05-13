@@ -31,6 +31,7 @@ import { StoreMarketingConfirmSchema } from "./store/customers/marketing/confirm
 import { StoreRequestEmailVerificationSchema } from "./store/customers/me/request-email-verification/route"
 import { StoreUpdateCustomerPasswordSchema } from "./store/customers/me/password/route"
 import { StoreAuthVkIdStartSchema } from "./store/auth/vk-id/start/route"
+import { enforceVkIdStartOriginAllowlist } from "./store/auth/vk-id/start/origin-guard"
 import { StoreVkIdStartLinkSchema } from "./store/customers/me/vk-id/start/route"
 import { StoreForgotPasswordSchema } from "./store/customers/forgot-password/route"
 import { StoreResetPasswordSchema } from "./store/customers/reset-password/route"
@@ -197,9 +198,22 @@ export default defineMiddlewares({
     {
       // Public, customer-less endpoint for the VK ID login flow. Phase 5.1
       // only logs in customers that already have a working VK link.
+      //
+      // The endpoint is deliberately unauthenticated, so we enforce an
+      // Origin/Referer allowlist to stop third-party sites from minting
+      // signed state on behalf of our users (CSRF-flavored abuse) and to
+      // protect our VK_ID_CLIENT_ID rate budget.
+      //
+      // TODO(Phase 5.4): pair this with a shared rate-limit middleware once
+      // the project gains one. A proper token bucket keyed by client IP is
+      // out of scope for this follow-up — introducing a new rate-limiter
+      // (Redis-backed or in-memory) is a separate infra change.
       matcher: "/store/auth/vk-id/start",
       methods: ["POST"],
-      middlewares: [validateAndTransformBody(StoreAuthVkIdStartSchema)],
+      middlewares: [
+        enforceVkIdStartOriginAllowlist,
+        validateAndTransformBody(StoreAuthVkIdStartSchema),
+      ],
     },
     {
       matcher: "/store/customers/me/request-email-verification",

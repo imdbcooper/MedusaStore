@@ -266,13 +266,27 @@ function getAllowedStorefrontOrigins() {
   return []
 }
 
+/**
+ * Resolves the secret used to HMAC-sign VK ID session state.
+ *
+ * The session state is minted by the public `/store/auth/vk-id/start`
+ * endpoint (intent="login") and therefore must not be forgeable. Falling back
+ * to a hardcoded literal would let any attacker forge arbitrary states, so we
+ * refuse to start the flow when none of the expected secret env vars is set.
+ */
 function getVkIdSessionSecret() {
-  return (
+  const secret =
     normalizeOptionalString(process.env.VK_ID_SESSION_SECRET) ||
     normalizeOptionalString(process.env.JWT_SECRET) ||
-    normalizeOptionalString(process.env.COOKIE_SECRET) ||
-    "supersecret"
-  )
+    normalizeOptionalString(process.env.COOKIE_SECRET)
+
+  if (!secret) {
+    throw new Error(
+      "VK_ID_SESSION_SECRET is not configured (and no JWT_SECRET/COOKIE_SECRET fallback); refusing to mint VK ID login/link state."
+    )
+  }
+
+  return secret
 }
 
 function base64UrlEncode(value: Buffer | string) {
@@ -1072,15 +1086,32 @@ export async function persistVkIdCustomerLinkWithOwnershipGuard(
   })
 }
 
+export type VkIdentityLookupResult =
+  | { status: "not_found"; customer: null }
+  | { status: "ok"; customer: VkLinkableCustomerRecord }
+  | {
+      status: "ambiguous"
+      customer: null
+      matches: Array<Pick<VkLinkableCustomerRecord, "id">>
+    }
+
 /**
  * Finds the customer that already owns the given VK identity. Used by the
  * login intent: we never create a customer here; the caller decides what to do
  * if no match is found.
+ *
+ * Returns `{ status: "ambiguous" }` when two or more distinct customers appear
+ * to own the same VK identity. This is a data-integrity breach (the persist
+ * path is guarded by an advisory lock and a conflict check), and the login
+ * flow must refuse to pick a customer rather than silently authenticate the
+ * first match.
  */
 export function findVkIdentityCustomer(input: {
   customers: VkLinkableCustomerRecord[]
   identity: VkResolvedIdentity
-}) {
+}): VkIdentityLookupResult {
+  const matches: VkLinkableCustomerRecord[] = []
+
   for (const customer of input.customers) {
     const linkState = resolveVkLinkState(customer.metadata)
 
@@ -1089,11 +1120,55 @@ export function findVkIdentityCustomer(input: {
     }
 
     if (isSameVkIdentity(linkState, input.identity)) {
-      return customer
+      matches.push(customer)
     }
   }
 
-  return null
+  if (matches.length === 0) {
+    return { status: "not_found", customer: null }
+  }
+
+  if (matches.length === 1) {
+    return { status: "ok", customer: matches[0] }
+  }
+
+  return {
+    status: "ambiguous",
+    customer: null,
+    matches: matches.map((c) => ({ id: c.id })),
+  }
+}
+
+/**
+ * SQL-prefiltered lookup for the VK ID login flow. Replaces the previous
+ * full-table scan through `listVkIdCustomers` followed by in-memory
+ * `findVkIdentityCustomer`.
+ *
+ * Returns every customer whose metadata references the given VK identity, so
+ * that the caller can still detect ambiguity with `findVkIdentityCustomer`
+ * semantics on top of a much smaller result set.
+ */
+export async function findVkIdCustomersByIdentity(
+  pgConnection: PgConnectionLike,
+  identity: VkResolvedIdentity
+): Promise<VkLinkableCustomerRecord[]> {
+  return pgConnection.transaction(async (trx) => {
+    return getRawRows<VkLinkableCustomerRecord>(
+      await trx.raw(
+        `
+          select id, metadata
+          from customer
+          where deleted_at is null
+            and (
+              metadata->>'vk_peer_id' = ?
+              or metadata->'vk_link'->>'vk_peer_id' = ?
+              or metadata->'vk_link'->>'vk_user_id' = ?
+            )
+        `,
+        [identity.vkPeerId, identity.vkPeerId, identity.vkUserId]
+      )
+    )
+  })
 }
 
 export async function getVkIdCustomerByVkIdentity(

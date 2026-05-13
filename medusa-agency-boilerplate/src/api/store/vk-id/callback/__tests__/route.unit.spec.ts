@@ -31,15 +31,22 @@ import {
 type Recorder = {
   redirected?: { status: number; url: string }
   setCookies: string[]
+  appendedHeaders: Array<{ name: string; value: string }>
 }
 
 function buildResponse() {
-  const recorder: Recorder = { setCookies: [] }
+  const recorder: Recorder = { setCookies: [], appendedHeaders: [] }
   const res: any = {
     redirect: jest.fn((status: number, url: string) => {
       recorder.redirected = { status, url }
     }),
     setHeader: jest.fn((name: string, value: string) => {
+      if (name.toLowerCase() === "set-cookie") {
+        recorder.setCookies.push(value)
+      }
+    }),
+    appendHeader: jest.fn((name: string, value: string) => {
+      recorder.appendedHeaders.push({ name, value })
       if (name.toLowerCase() === "set-cookie") {
         recorder.setCookies.push(value)
       }
@@ -117,8 +124,11 @@ function buildLoginDeps(
       user: { user_id: "2000000777" },
     })) as any,
     resolveIdentity: jest.fn(() => baseIdentity) as any,
-    listCustomers: jest.fn(async () => []) as any,
-    findIdentityCustomer: jest.fn(() => null) as any,
+    findCustomersByIdentity: jest.fn(async () => []) as any,
+    findIdentityCustomer: jest.fn(() => ({
+      status: "not_found",
+      customer: null,
+    })) as any,
     issueCustomerJwt: jest.fn(async () => ({
       ok: false,
       code: "auth_identity_not_found",
@@ -184,10 +194,14 @@ function buildLinkDeps(
   }
 }
 
-function buildReq() {
+function buildReq(overrides?: { logger?: { warn?: jest.Mock } }) {
+  const logger = overrides?.logger
   return {
     scope: {
-      resolve: jest.fn((_key: string) => {
+      resolve: jest.fn((key: string) => {
+        if (logger && typeof key === "string" && key === "logger") {
+          return logger as any
+        }
         // Return a generic stub for QUERY and PG_CONNECTION; deps doubles are
         // wired so handlers never actually call into the resolved value.
         return {} as any
@@ -225,7 +239,10 @@ describe("handleVkIdLoginIntent", () => {
   it("redirects with vk_login_error=not_linked when no customer owns the VK identity", async () => {
     const { res, recorder } = buildResponse()
     const deps = buildLoginDeps({
-      findIdentityCustomer: jest.fn(() => null) as any,
+      findIdentityCustomer: jest.fn(() => ({
+        status: "not_found",
+        customer: null,
+      })) as any,
     })
 
     await handleVkIdLoginIntent(
@@ -247,11 +264,50 @@ describe("handleVkIdLoginIntent", () => {
     expect(deps.issueCustomerJwt).not.toHaveBeenCalled()
   })
 
+  it("treats ambiguous multi-match lookup as not_linked and logs a warning", async () => {
+    const { res, recorder } = buildResponse()
+    const warn = jest.fn()
+    const deps = buildLoginDeps({
+      findIdentityCustomer: jest.fn(() => ({
+        status: "ambiguous",
+        customer: null,
+        matches: [{ id: "cust_a" }, { id: "cust_b" }],
+      })) as any,
+    })
+
+    await handleVkIdLoginIntent(
+      buildReq({ logger: { warn } }),
+      res,
+      {
+        runtime: buildLoginRuntime(true),
+        session: buildLoginSession(),
+        returnUrl: new URL("https://studio.slavx.ru/ru/account"),
+        code: "code",
+        deviceId: "dev",
+        state: "state",
+      },
+      deps
+    )
+
+    expect(recorder.redirected?.url).toContain("vk_login_error=not_linked")
+    expect(recorder.setCookies).toHaveLength(0)
+    expect(deps.issueCustomerJwt).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("ambiguous VK identity"),
+      expect.objectContaining({
+        match_ids: ["cust_a", "cust_b"],
+      })
+    )
+  })
+
   it("issues JWT cookie and redirects to clean return URL when customer is linked", async () => {
     const { res, recorder } = buildResponse()
     const linkedCustomer = { id: "cust_linked", metadata: {} }
     const deps = buildLoginDeps({
-      findIdentityCustomer: jest.fn(() => linkedCustomer) as any,
+      findIdentityCustomer: jest.fn(() => ({
+        status: "ok",
+        customer: linkedCustomer,
+      })) as any,
       issueCustomerJwt: jest.fn(async () => ({
         ok: true,
         token: "signed.jwt.value",
@@ -281,16 +337,146 @@ describe("handleVkIdLoginIntent", () => {
     expect(recorder.setCookies[0]).toContain("_medusa_jwt=signed.jwt.value")
     expect(recorder.setCookies[0]).toContain("HttpOnly")
     expect(recorder.setCookies[0]).toContain("SameSite=Lax")
+    // redirect URI is https → Secure must be present regardless of NODE_ENV.
+    expect(recorder.setCookies[0]).toContain("Secure")
+    // The cookie must be appended, not set, so other Set-Cookie headers are
+    // preserved by downstream middleware.
+    expect(recorder.appendedHeaders).toHaveLength(1)
+    expect(recorder.appendedHeaders[0].name.toLowerCase()).toBe("set-cookie")
     expect(recorder.redirected?.url).toBe("https://studio.slavx.ru/ru/account")
     expect(recorder.redirected?.url).not.toContain("vk_login_error")
+  })
+
+  it("omits Secure when the runtime redirect URI is plain http (local dev)", async () => {
+    const { res, recorder } = buildResponse()
+    const runtime = buildLoginRuntime(true)
+    runtime.redirectUri = "http://localhost:9000/store/vk-id/callback"
+
+    const deps = buildLoginDeps({
+      findIdentityCustomer: jest.fn(() => ({
+        status: "ok",
+        customer: { id: "cust_linked", metadata: {} },
+      })) as any,
+      issueCustomerJwt: jest.fn(async () => ({
+        ok: true,
+        token: "signed.jwt.value",
+        authIdentityId: "authid_1",
+      })) as any,
+    })
+
+    await handleVkIdLoginIntent(
+      buildReq(),
+      res,
+      {
+        runtime,
+        session: buildLoginSession(),
+        returnUrl: new URL("http://localhost:8000/ru/account"),
+        code: "code",
+        deviceId: "dev",
+        state: "state",
+      },
+      deps
+    )
+
+    expect(recorder.setCookies).toHaveLength(1)
+    expect(recorder.setCookies[0]).not.toContain("Secure")
+  })
+
+  it("honors VK_ID_COOKIE_SECURE=true even when redirect URI is plain http", async () => {
+    const ORIGINAL = process.env.VK_ID_COOKIE_SECURE
+    process.env.VK_ID_COOKIE_SECURE = "true"
+
+    try {
+      const { res, recorder } = buildResponse()
+      const runtime = buildLoginRuntime(true)
+      runtime.redirectUri = "http://localhost:9000/store/vk-id/callback"
+
+      const deps = buildLoginDeps({
+        findIdentityCustomer: jest.fn(() => ({
+          status: "ok",
+          customer: { id: "cust_linked", metadata: {} },
+        })) as any,
+        issueCustomerJwt: jest.fn(async () => ({
+          ok: true,
+          token: "signed.jwt.value",
+          authIdentityId: "authid_1",
+        })) as any,
+      })
+
+      await handleVkIdLoginIntent(
+        buildReq(),
+        res,
+        {
+          runtime,
+          session: buildLoginSession(),
+          returnUrl: new URL("http://localhost:8000/ru/account"),
+          code: "code",
+          deviceId: "dev",
+          state: "state",
+        },
+        deps
+      )
+
+      expect(recorder.setCookies).toHaveLength(1)
+      expect(recorder.setCookies[0]).toContain("Secure")
+    } finally {
+      if (ORIGINAL === undefined) {
+        delete process.env.VK_ID_COOKIE_SECURE
+      } else {
+        process.env.VK_ID_COOKIE_SECURE = ORIGINAL
+      }
+    }
+  })
+
+  it("honors VK_ID_COOKIE_SECURE=false even when redirect URI is https", async () => {
+    const ORIGINAL = process.env.VK_ID_COOKIE_SECURE
+    process.env.VK_ID_COOKIE_SECURE = "false"
+
+    try {
+      const { res, recorder } = buildResponse()
+      const deps = buildLoginDeps({
+        findIdentityCustomer: jest.fn(() => ({
+          status: "ok",
+          customer: { id: "cust_linked", metadata: {} },
+        })) as any,
+        issueCustomerJwt: jest.fn(async () => ({
+          ok: true,
+          token: "signed.jwt.value",
+          authIdentityId: "authid_1",
+        })) as any,
+      })
+
+      await handleVkIdLoginIntent(
+        buildReq(),
+        res,
+        {
+          runtime: buildLoginRuntime(true),
+          session: buildLoginSession(),
+          returnUrl: new URL("https://studio.slavx.ru/ru/account"),
+          code: "code",
+          deviceId: "dev",
+          state: "state",
+        },
+        deps
+      )
+
+      expect(recorder.setCookies).toHaveLength(1)
+      expect(recorder.setCookies[0]).not.toContain("Secure")
+    } finally {
+      if (ORIGINAL === undefined) {
+        delete process.env.VK_ID_COOKIE_SECURE
+      } else {
+        process.env.VK_ID_COOKIE_SECURE = ORIGINAL
+      }
+    }
   })
 
   it("translates jwt issue failure into a vk_login_error redirect", async () => {
     const { res, recorder } = buildResponse()
     const deps = buildLoginDeps({
       findIdentityCustomer: jest.fn(() => ({
-        id: "cust_linked",
-        metadata: {},
+        status: "ok",
+        customer: { id: "cust_linked", metadata: {} },
       })) as any,
       issueCustomerJwt: jest.fn(async () => ({
         ok: false,
@@ -342,7 +528,7 @@ describe("handleVkIdLoginIntent", () => {
       "vk_login_error=missing_vk_peer_id"
     )
     expect(recorder.setCookies).toHaveLength(0)
-    expect(deps.listCustomers).not.toHaveBeenCalled()
+    expect(deps.findCustomersByIdentity).not.toHaveBeenCalled()
   })
 })
 

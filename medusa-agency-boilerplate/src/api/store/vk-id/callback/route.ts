@@ -6,11 +6,11 @@ import {
   buildVkIdResultReturnUrl,
   exchangeVkIdAuthorizationCode,
   fetchVkIdUserInfo,
+  findVkIdCustomersByIdentity,
   findVkIdentityCustomer,
   getVkIdCustomerById,
   getVkIdRuntime,
   getVkIdSessionIntent,
-  listVkIdCustomers,
   persistVkIdCustomerLinkWithOwnershipGuard,
   readVkIdLinkSession,
   resolveAllowedVkIdLoginReturnUrl,
@@ -18,9 +18,48 @@ import {
   resolveVkIdentity,
   type VkIdAuthIntent,
   type VkIdLinkSessionPayload,
+  type VkIdRuntime,
   type VkResolvedIdentity,
 } from "../../../../modules/vk-id"
 import { issueCustomerJwtForVkIdentity } from "../../../../modules/vk-id-auth"
+
+function normalizeCookieSecureFlag(value?: string | null) {
+  const normalized = value?.trim().toLowerCase()
+  if (normalized === "true") return "true"
+  if (normalized === "false") return "false"
+  if (normalized === "auto" || !normalized) return "auto"
+  return "auto"
+}
+
+/**
+ * Resolves the Secure flag for the `_medusa_jwt` cookie minted by the VK ID
+ * login callback.
+ *
+ * Order of precedence:
+ * 1. Explicit override via `VK_ID_COOKIE_SECURE` (`true` | `false`).
+ * 2. Auto mode: derived from the scheme of `runtime.redirectUri`. HTTPS wins
+ *    Secure, plain HTTP (local dev) omits it so the cookie still sticks.
+ *
+ * Unlike the previous `NODE_ENV === "production"` heuristic, this does not
+ * depend on env mode labels that might be wrong in staging (our staging
+ * containers legitimately run `NODE_ENV=production`, but even if that flips,
+ * the cookie stays Secure as long as the callback is served over HTTPS).
+ */
+export function shouldUseSecureCookie(runtime: VkIdRuntime): boolean {
+  const mode = normalizeCookieSecureFlag(process.env.VK_ID_COOKIE_SECURE)
+  if (mode === "true") return true
+  if (mode === "false") return false
+
+  if (!runtime.redirectUri) {
+    return false
+  }
+
+  try {
+    return new URL(runtime.redirectUri).protocol === "https:"
+  } catch {
+    return false
+  }
+}
 
 export const StoreVkIdCallbackSchema = z.object({
   state: z.string().trim().min(1),
@@ -84,11 +123,17 @@ function redirectWithLoginError(
   res.redirect(302, nextUrl.toString())
 }
 
-function setMedusaJwtCookie(res: MedusaResponse, token: string) {
+function setMedusaJwtCookie(
+  res: MedusaResponse,
+  token: string,
+  runtime: VkIdRuntime
+) {
   // Mirrors `setAuthToken` semantics on the storefront. Caddy publishes both
   // backend and storefront under the same public origin (studio.slavx.ru), so
   // a single Secure cookie is readable by the storefront after redirect.
-  const isProduction = process.env.NODE_ENV === "production"
+  //
+  // `Secure` is decided from the callback URL scheme (+ VK_ID_COOKIE_SECURE
+  // override), not from NODE_ENV. See shouldUseSecureCookie for rationale.
   const parts = [
     `${MEDUSA_JWT_COOKIE}=${encodeURIComponent(token)}`,
     "Path=/",
@@ -97,18 +142,20 @@ function setMedusaJwtCookie(res: MedusaResponse, token: string) {
     "SameSite=Lax",
   ]
 
-  if (isProduction) {
+  if (shouldUseSecureCookie(runtime)) {
     parts.push("Secure")
   }
 
-  res.setHeader("set-cookie", parts.join("; "))
+  // `appendHeader` preserves any other Set-Cookie headers the response might
+  // already carry (e.g. from upstream middleware) instead of overwriting them.
+  res.appendHeader("Set-Cookie", parts.join("; "))
 }
 
 export type VkIdLoginIntentDeps = {
   exchangeAuthorizationCode: typeof exchangeVkIdAuthorizationCode
   fetchUserInfo: typeof fetchVkIdUserInfo
   resolveIdentity: typeof resolveVkIdentity
-  listCustomers: typeof listVkIdCustomers
+  findCustomersByIdentity: typeof findVkIdCustomersByIdentity
   findIdentityCustomer: typeof findVkIdentityCustomer
   issueCustomerJwt: typeof issueCustomerJwtForVkIdentity
 }
@@ -117,7 +164,7 @@ const defaultLoginIntentDeps: VkIdLoginIntentDeps = {
   exchangeAuthorizationCode: exchangeVkIdAuthorizationCode,
   fetchUserInfo: fetchVkIdUserInfo,
   resolveIdentity: resolveVkIdentity,
-  listCustomers: listVkIdCustomers,
+  findCustomersByIdentity: findVkIdCustomersByIdentity,
   findIdentityCustomer: findVkIdentityCustomer,
   issueCustomerJwt: issueCustomerJwtForVkIdentity,
 }
@@ -174,15 +221,38 @@ export async function handleVkIdLoginIntent(
     return
   }
 
-  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
-  const customers = await deps.listCustomers(query)
-  const customer = deps.findIdentityCustomer({ customers, identity })
+  const pgConnection = req.scope.resolve(
+    ContainerRegistrationKeys.PG_CONNECTION
+  )
+  const customers = await deps.findCustomersByIdentity(pgConnection, identity)
+  const lookup = deps.findIdentityCustomer({ customers, identity })
 
-  if (!customer) {
+  if (lookup.status === "ambiguous") {
+    // Data-integrity breach: two or more customers claim the same VK identity.
+    // The persist path is guarded by an advisory lock, so reaching this branch
+    // means something bypassed it (manual SQL / historical import). Fail
+    // closed with a generic error instead of silently authenticating the first
+    // match.
+    let logger: { warn?: (msg: string, meta?: unknown) => void } | null = null
+    try {
+      logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER)
+    } catch {
+      logger = null
+    }
+    logger?.warn?.("[vk-id] ambiguous VK identity login attempt", {
+      vk_peer_id: identity.vkPeerId,
+      match_ids: lookup.matches.map((m) => m.id),
+    })
     redirectWithLoginError(res, returnUrl, "not_linked")
     return
   }
 
+  if (lookup.status === "not_found" || !lookup.customer) {
+    redirectWithLoginError(res, returnUrl, "not_linked")
+    return
+  }
+
+  const customer = lookup.customer
   const issued = await deps.issueCustomerJwt(req.scope, customer.id)
 
   if (!issued.ok) {
@@ -194,7 +264,7 @@ export async function handleVkIdLoginIntent(
     return
   }
 
-  setMedusaJwtCookie(res, issued.token)
+  setMedusaJwtCookie(res, issued.token, runtime)
   res.redirect(302, returnUrl.toString())
 }
 

@@ -40,6 +40,16 @@ function getVkLoginErrorMessage(error: string | null | undefined) {
     case "jwt_secret_missing":
     case "jwt_signing_failed":
       return "Не удалось выпустить токен сессии. Попробуйте войти по email/паролю."
+    // Server misconfiguration: no VK_ID_STOREFRONT_RETURN_ORIGINS / STORE_CORS.
+    // Surfaced explicitly so support can triage without reading the log.
+    case "vk_id_return_origin_unconfigured":
+      return "Сервис входа через VK временно недоступен. Пожалуйста, обратитесь в поддержку."
+    // The public /store/auth/vk-id/start endpoint refused the request because
+    // its Origin/Referer is outside the storefront allowlist. Users normally
+    // never see this in a correctly-configured deployment; show a friendly
+    // generic message instead of leaking the policy detail.
+    case "vk_id_origin_not_allowed":
+      return "Запрос на вход через VK был отклонён. Откройте страницу снова из нашего сайта и попробуйте ещё раз."
     default:
       return "Не удалось войти через ВКонтакте. Попробуйте ещё раз."
   }
