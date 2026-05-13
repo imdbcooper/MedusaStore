@@ -3,7 +3,9 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { z } from "@medusajs/framework/zod"
 import {
   buildVkIdLoginErrorReturnUrl,
+  buildVkIdRegisteredReturnUrl,
   buildVkIdResultReturnUrl,
+  createVkIdCustomer,
   exchangeVkIdAuthorizationCode,
   fetchVkIdUserInfo,
   findVkIdCustomersByIdentity,
@@ -11,11 +13,13 @@ import {
   getVkIdCustomerById,
   getVkIdRuntime,
   getVkIdSessionIntent,
+  lookupCustomerByEmail,
   persistVkIdCustomerLinkWithOwnershipGuard,
   readVkIdLinkSession,
   resolveAllowedVkIdLoginReturnUrl,
   resolveAllowedVkIdReturnUrl,
   resolveVkIdentity,
+  VkIdCustomerCreationError,
   type VkIdAuthIntent,
   type VkIdLinkSessionPayload,
   type VkIdRuntime,
@@ -158,6 +162,13 @@ export type VkIdLoginIntentDeps = {
   findCustomersByIdentity: typeof findVkIdCustomersByIdentity
   findIdentityCustomer: typeof findVkIdentityCustomer
   issueCustomerJwt: typeof issueCustomerJwtForVkIdentity
+  /**
+   * Phase 5.2: register-branch injections. These are kept optional at the
+   * type level so existing Phase 5.1 tests that pass `deps` without touching
+   * registration keep working without edits.
+   */
+  lookupCustomerByEmail?: typeof lookupCustomerByEmail
+  createVkIdCustomer?: typeof createVkIdCustomer
 }
 
 const defaultLoginIntentDeps: VkIdLoginIntentDeps = {
@@ -167,6 +178,8 @@ const defaultLoginIntentDeps: VkIdLoginIntentDeps = {
   findCustomersByIdentity: findVkIdCustomersByIdentity,
   findIdentityCustomer: findVkIdentityCustomer,
   issueCustomerJwt: issueCustomerJwtForVkIdentity,
+  lookupCustomerByEmail,
+  createVkIdCustomer,
 }
 
 export async function handleVkIdLoginIntent(
@@ -248,7 +261,19 @@ export async function handleVkIdLoginIntent(
   }
 
   if (lookup.status === "not_found" || !lookup.customer) {
-    redirectWithLoginError(res, returnUrl, "not_linked")
+    const registered = await tryVkIdRegisterBranch(req, res, {
+      runtime,
+      returnUrl,
+      identity,
+      session,
+      deps,
+    })
+
+    if (registered.handled) {
+      return
+    }
+
+    redirectWithLoginError(res, returnUrl, registered.fallbackReason)
     return
   }
 
@@ -266,6 +291,116 @@ export async function handleVkIdLoginIntent(
 
   setMedusaJwtCookie(res, issued.token, runtime)
   res.redirect(302, returnUrl.toString())
+}
+
+/**
+ * Phase 5.2 register branch. Invoked when the VK identity is not yet linked
+ * to any Medusa customer. Returns `{ handled: true }` if the branch fully
+ * answered the request (cookie + redirect already written), or
+ * `{ handled: false, fallbackReason }` so the caller can keep the Phase 5.1
+ * `?vk_login_error=...` redirect as the final answer.
+ *
+ * Conditions for REGISTER (all must hold):
+ * 1. `runtime.registerEnabled === true` — the operator explicitly opted in.
+ * 2. VK returned an email, or `runtime.requireEmail === false`.
+ * 3. No existing Medusa customer already owns that email with an account.
+ *
+ * Any failure in (1)–(3) returns a specific `fallbackReason` so the
+ * storefront banner can describe the exact mismatch.
+ */
+async function tryVkIdRegisterBranch(
+  req: MedusaRequest,
+  res: MedusaResponse,
+  input: {
+    runtime: VkIdRuntime
+    returnUrl: URL
+    identity: VkResolvedIdentity
+    session: VkIdLinkSessionPayload
+    deps: VkIdLoginIntentDeps
+  }
+): Promise<
+  | { handled: true }
+  | {
+      handled: false
+      fallbackReason: string
+    }
+> {
+  const { runtime, returnUrl, identity, session, deps } = input
+
+  if (!runtime.registerEnabled) {
+    return { handled: false, fallbackReason: "not_linked" }
+  }
+
+  if (!identity.email) {
+    if (runtime.requireEmail) {
+      return { handled: false, fallbackReason: "email_required" }
+    }
+
+    // `requireEmail=false` without an email is not supported in Phase 5.2 —
+    // Medusa rejects `createCustomer` when email is empty, so we fall back to
+    // the not-linked banner instead of synthesizing placeholder addresses.
+    return { handled: false, fallbackReason: "not_linked" }
+  }
+
+  const lookupByEmailFn = deps.lookupCustomerByEmail ?? lookupCustomerByEmail
+  const createFn = deps.createVkIdCustomer ?? createVkIdCustomer
+  const pgConnection = req.scope.resolve(
+    ContainerRegistrationKeys.PG_CONNECTION
+  )
+
+  let existing
+  try {
+    existing = await lookupByEmailFn(pgConnection, identity.email)
+  } catch (error) {
+    console.error("[vk-id] register email lookup failed", {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return { handled: false, fallbackReason: "not_linked" }
+  }
+
+  if (existing) {
+    // Phase 5.3 will turn this into a proper conflict flow that lets the
+    // user log in with their existing password and link VK in profile. For
+    // now we surface a specific banner so the storefront copy is unambiguous.
+    return { handled: false, fallbackReason: "email_exists" }
+  }
+
+  let creation
+  try {
+    creation = await createFn(req.scope, {
+      email: identity.email,
+      firstName: identity.firstName,
+      lastName: identity.lastName,
+      identity,
+      verifiedAt: new Date().toISOString(),
+      linkSource: session.linkSource || "vk_id_register",
+    })
+  } catch (error) {
+    const code =
+      error instanceof VkIdCustomerCreationError
+        ? error.code
+        : "customer_account_creation_failed"
+    console.error("[vk-id] register creation failed", {
+      code,
+      vk_user_id: identity.vkUserId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return { handled: false, fallbackReason: code }
+  }
+
+  const issued = await deps.issueCustomerJwt(req.scope, creation.customerId)
+
+  if (!issued.ok) {
+    console.error("[vk-id] register jwt issue failed", {
+      customer_id: creation.customerId,
+      code: issued.code,
+    })
+    return { handled: false, fallbackReason: issued.code }
+  }
+
+  setMedusaJwtCookie(res, issued.token, runtime)
+  res.redirect(302, buildVkIdRegisteredReturnUrl({ returnUrl }).toString())
+  return { handled: true }
 }
 
 export type VkIdLinkIntentDeps = {

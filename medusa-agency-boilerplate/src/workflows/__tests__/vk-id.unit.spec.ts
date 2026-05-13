@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, jest } from "@jest/globals"
 import {
   buildVkIdLoginErrorReturnUrl,
+  buildVkIdRegisteredReturnUrl,
   buildVkIdResultReturnUrl,
   createVkIdLinkSession,
   createVkIdLoginSession,
@@ -8,10 +9,12 @@ import {
   findVkIdentityCustomer,
   getVkIdRuntime,
   getVkIdSessionIntent,
+  lookupCustomerByEmail,
   persistVkIdCustomerLinkWithOwnershipGuard,
   planVkIdLinkMutation,
   planVkIdUnlinkMutation,
   readVkIdLinkSession,
+  resolveVkIdentity,
   resolveAllowedVkIdLoginReturnUrl,
   resolveAllowedVkIdReturnUrl,
   resolveVkLinkState,
@@ -29,6 +32,10 @@ function buildIdentity(
     provider: "vkid",
     vkUserId: "2000000001",
     vkPeerId: "2000000001",
+    email: null,
+    emailVerified: false,
+    firstName: null,
+    lastName: null,
     ...overrides,
   }
 }
@@ -445,6 +452,10 @@ describe("VK ID login lookup helpers", () => {
       provider: "vkid",
       vkUserId: vkPeerId,
       vkPeerId,
+      email: null,
+      emailVerified: false,
+      firstName: null,
+      lastName: null,
     }
   }
 
@@ -570,6 +581,10 @@ describe("VK ID login lookup helpers", () => {
       provider: "vkid",
       vkUserId: "2000000777",
       vkPeerId: "2000000777",
+      email: null,
+      emailVerified: false,
+      firstName: null,
+      lastName: null,
     })
 
     expect(rows).toHaveLength(1)
@@ -769,5 +784,191 @@ describe("VK ID session secret hardening", () => {
     process.env.VK_ID_SESSION_SECRET = "rotated-secret"
 
     expect(readVkIdLinkSession(sessionWithPrimary.state)).toBeNull()
+  })
+})
+
+describe("VK ID Phase 5.2 register runtime flags", () => {
+  const ORIGINAL_ENV = { ...process.env }
+
+  function applyEnv(overrides: Record<string, string | undefined>) {
+    for (const key of Object.keys(overrides)) {
+      const value = overrides[key]
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
+  }
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV }
+  })
+
+  it("registerEnabled is false when VK_ID_REGISTER_ENABLED is unset even with login enabled", () => {
+    applyEnv({
+      VK_ID_ENABLED: "true",
+      VK_ID_LOGIN_ENABLED: "true",
+      VK_ID_REGISTER_ENABLED: undefined,
+      VK_ID_CLIENT_ID: "test_client",
+      VK_ID_REDIRECT_URI: "https://studio.slavx.ru/store/vk-id/callback",
+      VK_ID_STOREFRONT_RETURN_ORIGINS: "https://studio.slavx.ru",
+    })
+
+    const runtime = getVkIdRuntime()
+
+    expect(runtime.loginEnabled).toBe(true)
+    expect(runtime.registerRequestedEnabled).toBe(false)
+    expect(runtime.registerEnabled).toBe(false)
+  })
+
+  it("registerEnabled requires the full VK_ID / login / register chain", () => {
+    applyEnv({
+      VK_ID_ENABLED: "true",
+      VK_ID_LOGIN_ENABLED: "true",
+      VK_ID_REGISTER_ENABLED: "true",
+      VK_ID_CLIENT_ID: "test_client",
+      VK_ID_REDIRECT_URI: "https://studio.slavx.ru/store/vk-id/callback",
+      VK_ID_STOREFRONT_RETURN_ORIGINS: "https://studio.slavx.ru",
+    })
+
+    const runtime = getVkIdRuntime()
+
+    expect(runtime.registerEnabled).toBe(true)
+  })
+
+  it("registerEnabled stays false when VK_ID_LOGIN_ENABLED is false", () => {
+    applyEnv({
+      VK_ID_ENABLED: "true",
+      VK_ID_LOGIN_ENABLED: "false",
+      VK_ID_REGISTER_ENABLED: "true",
+      VK_ID_CLIENT_ID: "test_client",
+      VK_ID_REDIRECT_URI: "https://studio.slavx.ru/store/vk-id/callback",
+      VK_ID_STOREFRONT_RETURN_ORIGINS: "https://studio.slavx.ru",
+    })
+
+    const runtime = getVkIdRuntime()
+
+    expect(runtime.loginEnabled).toBe(false)
+    expect(runtime.registerRequestedEnabled).toBe(true)
+    expect(runtime.registerEnabled).toBe(false)
+  })
+
+  it("requireEmail defaults to true when VK_ID_REQUIRE_EMAIL is unset", () => {
+    applyEnv({
+      VK_ID_ENABLED: "true",
+      VK_ID_CLIENT_ID: "test_client",
+      VK_ID_REDIRECT_URI: "https://studio.slavx.ru/store/vk-id/callback",
+      VK_ID_REQUIRE_EMAIL: undefined,
+      VK_ID_STOREFRONT_RETURN_ORIGINS: "https://studio.slavx.ru",
+    })
+
+    expect(getVkIdRuntime().requireEmail).toBe(true)
+  })
+
+  it("requireEmail is false only when VK_ID_REQUIRE_EMAIL=\"false\" explicitly", () => {
+    applyEnv({
+      VK_ID_ENABLED: "true",
+      VK_ID_CLIENT_ID: "test_client",
+      VK_ID_REDIRECT_URI: "https://studio.slavx.ru/store/vk-id/callback",
+      VK_ID_REQUIRE_EMAIL: "false",
+      VK_ID_STOREFRONT_RETURN_ORIGINS: "https://studio.slavx.ru",
+    })
+
+    expect(getVkIdRuntime().requireEmail).toBe(false)
+  })
+})
+
+describe("VK ID Phase 5.2 identity resolver", () => {
+  it("extracts email/firstName/lastName from userInfo and flags email as verified", () => {
+    const identity = resolveVkIdentity({
+      tokenResult: { user_id: "2000000777" },
+      userInfo: {
+        user: {
+          user_id: "2000000777",
+          first_name: "VK",
+          last_name: "User",
+          email: "vkuser@example.com",
+        },
+      },
+    })
+
+    expect(identity).toEqual(
+      expect.objectContaining({
+        vkUserId: "2000000777",
+        email: "vkuser@example.com",
+        emailVerified: true,
+        firstName: "VK",
+        lastName: "User",
+      })
+    )
+  })
+
+  it("marks identity as not verified when VK does not return an email", () => {
+    const identity = resolveVkIdentity({
+      tokenResult: { user_id: "2000000777" },
+      userInfo: {
+        user: {
+          user_id: "2000000777",
+        },
+      },
+    })
+
+    expect(identity?.email).toBeNull()
+    expect(identity?.emailVerified).toBe(false)
+  })
+})
+
+describe("VK ID Phase 5.2 return URL helpers", () => {
+  it("buildVkIdRegisteredReturnUrl sets vk_registered=success and strips vk_login_error", () => {
+    const url = buildVkIdRegisteredReturnUrl({
+      returnUrl:
+        "https://studio.slavx.ru/ru/account?vk_login_error=not_linked",
+    })
+
+    expect(url.searchParams.get("vk_registered")).toBe("success")
+    expect(url.searchParams.get("vk_login_error")).toBeNull()
+  })
+})
+
+describe("VK ID Phase 5.2 lookupCustomerByEmail", () => {
+  it("returns the matching customer using a case-insensitive lookup", async () => {
+    let capturedSql = ""
+    let capturedBindings: unknown[] = []
+    const pgConnection = {
+      transaction: async <T>(cb: (trx: any) => Promise<T>): Promise<T> => {
+        return cb({
+          raw: async (sql: string, bindings?: unknown[]) => {
+            capturedSql = sql
+            capturedBindings = bindings || []
+            return {
+              rows: [{ id: "cust_match", metadata: {} }],
+            }
+          },
+        })
+      },
+    }
+
+    const row = await lookupCustomerByEmail(pgConnection as any, "Foo@Bar.Com")
+
+    expect(row?.id).toBe("cust_match")
+    expect(capturedSql).toContain("lower(email) = lower(?)")
+    expect(capturedSql).toContain("has_account = true")
+    expect(capturedSql).toContain("deleted_at is null")
+    expect(capturedBindings).toEqual(["Foo@Bar.Com"])
+  })
+
+  it("returns null and skips SQL when email is empty", async () => {
+    const rawSpy = jest.fn()
+    const pgConnection = {
+      transaction: async <T>(cb: (trx: any) => Promise<T>): Promise<T> => {
+        return cb({ raw: rawSpy as any })
+      },
+    }
+
+    const row = await lookupCustomerByEmail(pgConnection as any, "   ")
+
+    expect(row).toBeNull()
+    expect(rawSpy).not.toHaveBeenCalled()
   })
 })

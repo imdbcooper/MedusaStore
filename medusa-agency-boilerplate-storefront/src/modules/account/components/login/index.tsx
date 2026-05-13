@@ -13,6 +13,7 @@ type Props = {
   setCurrentView: (view: LOGIN_VIEW) => void
   countryCode?: string | null
   vkLoginError?: string | null
+  vkRegistered?: string | null
 }
 
 function getVkLoginErrorMessage(error: string | null | undefined) {
@@ -25,6 +26,19 @@ function getVkLoginErrorMessage(error: string | null | undefined) {
       return "Этот VK ID не привязан ни к одному аккаунту. Войдите по email и паролю, затем привяжите VK в профиле."
     case "auth_identity_not_found":
       return "Не удалось войти через VK: у этого аккаунта нет email-пароля. Свяжитесь с поддержкой."
+    // Phase 5.2: VK didn't return an email and `VK_ID_REQUIRE_EMAIL=true`.
+    // The user can still register through the classic email/password form.
+    case "email_required":
+      return "ВКонтакте не передал ваш email. Зарегистрируйтесь через email и пароль, а затем привяжите VK в профиле."
+    // Phase 5.2: the VK email collides with an existing email/password
+    // account. Until Phase 5.3 ships the link-after-login conflict UX,
+    // we guide the user to the classic password path.
+    case "email_exists":
+      return "Email, полученный от ВКонтакте, уже используется другим аккаунтом. Войдите по паролю и привяжите VK в профиле."
+    // Phase 5.2: internal failures coming back from the register helper.
+    case "auth_identity_creation_failed":
+    case "customer_account_creation_failed":
+      return "Не удалось создать аккаунт через ВКонтакте. Попробуйте позже или зарегистрируйтесь по email и паролю."
     case "vk_id_login_disabled":
       return "Вход через VK сейчас отключён. Используйте email и пароль."
     case "vk_id_disabled":
@@ -55,11 +69,17 @@ function getVkLoginErrorMessage(error: string | null | undefined) {
   }
 }
 
-const Login = ({ setCurrentView, countryCode, vkLoginError }: Props) => {
+const Login = ({
+  setCurrentView,
+  countryCode,
+  vkLoginError,
+  vkRegistered,
+}: Props) => {
   const [message, formAction] = useActionState(login, null)
   const accountCopy = storefrontConfig.copy.account
   const cartCopy = storefrontConfig.copy.cart
   const vkLoginErrorMessage = getVkLoginErrorMessage(vkLoginError)
+  const showVkRegisteredBanner = vkRegistered === "success"
   const resolvedCountryCode = countryCode || "ru"
 
   return (
@@ -70,6 +90,16 @@ const Login = ({ setCurrentView, countryCode, vkLoginError }: Props) => {
           {accountCopy.signInDescription}
         </p>
       </div>
+      {showVkRegisteredBanner ? (
+        <div
+          role="status"
+          data-testid="vk-registered-success-banner"
+          className="mb-4 rounded-rounded border border-green-200 bg-green-50 px-4 py-3 text-small-regular text-green-800"
+        >
+          Аккаунт создан через ВКонтакте. Добро пожаловать! Чтобы добавить пароль
+          для входа без VK, воспользуйтесь ссылкой «Забыли пароль?».
+        </div>
+      ) : null}
       {vkLoginErrorMessage ? (
         <div
           role="alert"

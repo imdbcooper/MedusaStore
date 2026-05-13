@@ -13,11 +13,13 @@ export enum LOGIN_VIEW {
 type LoginTemplateProps = {
   countryCode?: string | null
   vkLoginError?: string | null
+  vkRegistered?: string | null
 }
 
 const LoginTemplate = ({
   countryCode,
   vkLoginError,
+  vkRegistered,
 }: LoginTemplateProps = {}) => {
   const [currentView, setCurrentView] = useState<LOGIN_VIEW>(LOGIN_VIEW.SIGN_IN)
 
@@ -60,6 +62,7 @@ const LoginTemplate = ({
             setCurrentView={setCurrentView}
             countryCode={countryCode || null}
             vkLoginError={vkLoginError || null}
+            vkRegistered={vkRegistered || null}
           />
         ) : (
           <Register setCurrentView={setCurrentView} />

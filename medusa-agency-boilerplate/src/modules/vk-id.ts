@@ -1,4 +1,12 @@
-import { updateCustomersWorkflow } from "@medusajs/medusa/core-flows"
+import {
+  createCustomerAccountWorkflow,
+  updateCustomersWorkflow,
+} from "@medusajs/medusa/core-flows"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
+import type {
+  IAuthModuleService,
+  MedusaContainer,
+} from "@medusajs/framework/types"
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto"
 import { normalizeVkPeerId } from "./notification-vk"
 
@@ -58,6 +66,22 @@ export type VkIdRuntime = {
   configured: boolean
   loginRequestedEnabled: boolean
   loginEnabled: boolean
+  /**
+   * Phase 5.2: gate for the VK ID registration branch. Requires
+   * `VK_ID_ENABLED`, `VK_ID_LOGIN_ENABLED`, and `VK_ID_REGISTER_ENABLED` to
+   * all be `true`. When `false`, the callback falls back to the Phase 5.1
+   * `?vk_login_error=not_linked` redirect for previously-unknown VK
+   * identities.
+   */
+  registerRequestedEnabled: boolean
+  registerEnabled: boolean
+  /**
+   * Phase 5.2: when `true` (default), refuse to auto-create a customer if
+   * VK did not return an email. Falling back to `?vk_login_error=email_required`
+   * is the safer default — it avoids synthesizing placeholder emails and
+   * keeps password reset / transactional email paths functional.
+   */
+  requireEmail: boolean
   clientId?: string
   clientSecret?: string
   redirectUri?: string
@@ -97,6 +121,25 @@ export type VkResolvedIdentity = {
   provider: "vkid"
   vkUserId: string
   vkPeerId: string
+  /**
+   * Email returned by VK ID. VK ID Web SDK v2 and OAuth 2.1 public API both
+   * surface this through `userInfo.user.email`. The field is optional at the
+   * provider layer because the user may have declined the `email` scope or
+   * not connected one to their VK profile.
+   */
+  email: string | null
+  /**
+   * Best-effort verified flag. VK ID does not currently publish a public
+   * `email_verified` claim on the user_info endpoint; `userInfo.user.verified`
+   * describes the overall VK profile verification (celebrity checkmark),
+   * not the email. We treat any truthy email from VK as "verified enough" to
+   * pass to Medusa because VK only releases a user's primary email after
+   * VK-side confirmation, but flag this explicitly so future callers can
+   * react if VK introduces a real claim.
+   */
+  emailVerified: boolean
+  firstName: string | null
+  lastName: string | null
 }
 
 export type VkLinkableCustomerRecord = {
@@ -169,6 +212,16 @@ export type VkIdUnlinkMutationResult = {
 
 function normalizeBooleanFlag(value?: string | null) {
   return value?.trim().toLowerCase() === "true"
+}
+
+/**
+ * Default-true boolean env flag. Only an explicit `"false"` disables the
+ * feature; unset, empty, or any unknown value is treated as `true`. Used by
+ * `VK_ID_REQUIRE_EMAIL` so forgetting to set it does not silently drop the
+ * email safety guard.
+ */
+function normalizeBooleanFlagDefaultTrue(value?: string | null) {
+  return value?.trim().toLowerCase() !== "false"
 }
 
 function normalizeOptionalString(value?: string | null) {
@@ -360,6 +413,12 @@ export function getVkIdRuntime(): VkIdRuntime {
   const loginRequestedEnabled = normalizeBooleanFlag(
     process.env.VK_ID_LOGIN_ENABLED
   )
+  const registerRequestedEnabled = normalizeBooleanFlag(
+    process.env.VK_ID_REGISTER_ENABLED
+  )
+  const requireEmail = normalizeBooleanFlagDefaultTrue(
+    process.env.VK_ID_REQUIRE_EMAIL
+  )
   const clientId = normalizeOptionalString(process.env.VK_ID_CLIENT_ID)
   const clientSecret = normalizeOptionalString(process.env.VK_ID_CLIENT_SECRET)
   const redirectUri = normalizeOptionalString(process.env.VK_ID_REDIRECT_URI)
@@ -367,6 +426,11 @@ export function getVkIdRuntime(): VkIdRuntime {
     normalizeOptionalString(process.env.VK_ID_SCOPES) || DEFAULT_VK_ID_SCOPES
   const configured = requestedEnabled && Boolean(clientId && redirectUri)
   const loginEnabled = configured && loginRequestedEnabled
+  // Register requires the whole chain to be explicitly opted in. This is the
+  // safer default: turning on `VK_ID_REGISTER_ENABLED` alone without the
+  // preceding flags is almost certainly a misconfiguration, and we do not want
+  // to auto-create customers from a half-enabled VK ID stack.
+  const registerEnabled = loginEnabled && registerRequestedEnabled
 
   return {
     requestedEnabled,
@@ -374,6 +438,9 @@ export function getVkIdRuntime(): VkIdRuntime {
     configured,
     loginRequestedEnabled,
     loginEnabled,
+    registerRequestedEnabled,
+    registerEnabled,
+    requireEmail,
     clientId,
     clientSecret,
     redirectUri,
@@ -644,6 +711,16 @@ export async function fetchVkIdUserInfo(input: {
   return payload
 }
 
+function normalizeIdentityString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const trimmed = value.trim()
+
+  return trimmed ? trimmed : null
+}
+
 export function resolveVkIdentity(input: {
   tokenResult: VkIdTokenExchangeResult
   userInfo?: VkIdUserInfoResult | null
@@ -657,10 +734,23 @@ export function resolveVkIdentity(input: {
     return null
   }
 
+  const user = input.userInfo?.user ?? null
+  const email = normalizeIdentityString(user?.email)
+  // VK does not publish a stable `email_verified` claim today. We treat the
+  // presence of a VK-released email as verified-enough for the register flow
+  // because VK surfaces the primary email only after VK-side confirmation.
+  // `user.verified` describes the celebrity-style profile checkmark, not the
+  // email — do NOT conflate the two.
+  const emailVerified = Boolean(email)
+
   return {
     provider: "vkid",
     vkUserId,
     vkPeerId,
+    email,
+    emailVerified,
+    firstName: normalizeIdentityString(user?.first_name),
+    lastName: normalizeIdentityString(user?.last_name),
   } satisfies VkResolvedIdentity
 }
 
@@ -1197,6 +1287,24 @@ export function buildVkIdLoginErrorReturnUrl(input: {
   return url
 }
 
+/**
+ * Phase 5.2: success redirect marker for a fresh VK ID customer. We use a
+ * dedicated query key (`vk_registered=success`) instead of overloading
+ * `vk_login_error` so the storefront can render a different banner without
+ * string-based switch on error codes.
+ */
+export function buildVkIdRegisteredReturnUrl(input: { returnUrl: string | URL }) {
+  const url =
+    input.returnUrl instanceof URL
+      ? new URL(input.returnUrl.toString())
+      : new URL(input.returnUrl)
+
+  url.searchParams.set("vk_registered", "success")
+  url.searchParams.delete("vk_login_error")
+
+  return url
+}
+
 export async function persistVkIdCustomerMetadata(
   container: any,
   customerId: string,
@@ -1214,4 +1322,177 @@ export async function persistVkIdCustomerMetadata(
   })
 
   return result
+}
+
+/**
+ * Phase 5.2: lookup an existing customer by email for the VK ID register
+ * branch. Used to detect the "email_exists" conflict before we try to
+ * auto-create a customer and before we decide whether auto-linking is safe.
+ *
+ * Runs through raw SQL because the query module filter for `email` on the
+ * `customer` entity is case-sensitive and does not cover soft-deleted rows
+ * the way we want for this flow. We explicitly:
+ *
+ * - lower-case the input email and compare with `lower(email)` for
+ *   case-insensitive match (Medusa stores email verbatim);
+ * - skip soft-deleted customers (`deleted_at is null`);
+ * - only return rows that `has_account = true`, because guest-customer rows
+ *   carry the email without an auth identity and should not block VK
+ *   registration.
+ */
+export async function lookupCustomerByEmail(
+  pgConnection: PgConnectionLike,
+  email: string
+): Promise<VkLinkableCustomerRecord | null> {
+  const trimmed = email.trim()
+
+  if (!trimmed) {
+    return null
+  }
+
+  return pgConnection.transaction(async (trx) => {
+    const rows = getRawRows<VkLinkableCustomerRecord>(
+      await trx.raw(
+        `
+          select id, metadata
+          from customer
+          where deleted_at is null
+            and has_account = true
+            and lower(email) = lower(?)
+          limit 1
+        `,
+        [trimmed]
+      )
+    )
+
+    return rows[0] || null
+  })
+}
+
+export type VkIdCustomerCreationResult = {
+  customerId: string
+  authIdentityId: string
+}
+
+export type VkIdCustomerCreationErrorCode =
+  | "auth_identity_creation_failed"
+  | "customer_account_creation_failed"
+  | "email_required"
+
+export class VkIdCustomerCreationError extends Error {
+  readonly code: VkIdCustomerCreationErrorCode
+
+  constructor(code: VkIdCustomerCreationErrorCode, message?: string) {
+    super(message || code)
+    this.name = "VkIdCustomerCreationError"
+    this.code = code
+  }
+}
+
+/**
+ * Phase 5.2: atomically creates the Medusa auth_identity + customer pair for
+ * a fresh VK ID registration and persists the `vk_link` metadata.
+ *
+ * The sequence mirrors the emailpass register → createCustomerAccountWorkflow
+ * pipeline but substitutes the provider:
+ *
+ *   1. AuthModule.createAuthIdentities with a `vk-id` provider_identity where
+ *      `entity_id = vkid:<vk_user_id>` for uniqueness.
+ *   2. createCustomerAccountWorkflow to spawn the customer and link
+ *      app_metadata.customer_id back onto the auth_identity.
+ *   3. updateCustomersWorkflow to stamp `metadata.vk_link` (same shape used by
+ *      the Phase 5.0 linking helper) so subsequent lookups find the customer
+ *      through the established `findVkIdCustomersByIdentity` path.
+ *
+ * We do NOT create an `emailpass` provider_identity here. Customers who want
+ * a password as a backup can establish it later through the existing
+ * forgot-password / reset flow — Phase 5.4 will add a "set password" CTA.
+ */
+export async function createVkIdCustomer(
+  container: MedusaContainer,
+  input: {
+    email: string
+    firstName?: string | null
+    lastName?: string | null
+    identity: VkResolvedIdentity
+    verifiedAt: string
+    linkSource: string
+  }
+): Promise<VkIdCustomerCreationResult> {
+  const email = input.email.trim()
+
+  if (!email) {
+    throw new VkIdCustomerCreationError("email_required")
+  }
+
+  const authModule = container.resolve<IAuthModuleService>(Modules.AUTH)
+  const entityId = `vkid:${input.identity.vkUserId}`
+  let authIdentityId: string
+
+  try {
+    const authIdentity = await authModule.createAuthIdentities({
+      provider_identities: [
+        {
+          provider: "vk-id",
+          entity_id: entityId,
+          user_metadata: {
+            vk_user_id: input.identity.vkUserId,
+            vk_peer_id: input.identity.vkPeerId,
+            email,
+            first_name: input.firstName || null,
+            last_name: input.lastName || null,
+          },
+        },
+      ],
+    })
+
+    authIdentityId = authIdentity.id
+  } catch (error) {
+    throw new VkIdCustomerCreationError(
+      "auth_identity_creation_failed",
+      error instanceof Error ? error.message : String(error)
+    )
+  }
+
+  let customerId: string
+
+  try {
+    const { result: customer } = await createCustomerAccountWorkflow(
+      container
+    ).run({
+      input: {
+        authIdentityId,
+        customerData: {
+          email,
+          first_name: input.firstName || undefined,
+          last_name: input.lastName || undefined,
+        },
+      },
+    })
+
+    customerId = customer.id
+  } catch (error) {
+    throw new VkIdCustomerCreationError(
+      "customer_account_creation_failed",
+      error instanceof Error ? error.message : String(error)
+    )
+  }
+
+  // Stamp the vk_link metadata so `findVkIdCustomersByIdentity` can locate
+  // this customer on the next login. We build the metadata via the existing
+  // helper to keep the shape identical to the Phase 5.0 linking path.
+  const linkMetadata = buildLinkedMetadata({
+    currentMetadata: {},
+    currentLink: resolveVkLinkState({}),
+    identity: input.identity,
+    verifiedAt: input.verifiedAt,
+    linkSource: input.linkSource,
+  })
+
+  await persistVkIdCustomerMetadata(container, customerId, linkMetadata)
+
+  return {
+    customerId,
+    authIdentityId,
+  }
 }
