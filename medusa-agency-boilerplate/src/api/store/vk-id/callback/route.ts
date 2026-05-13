@@ -376,14 +376,20 @@ async function tryVkIdRegisterBranch(
       linkSource: session.linkSource || "vk_id_register",
     })
   } catch (error) {
+    // Fix #9: `error.message` from VkIdCustomerCreationError intentionally
+    // carries an opaque `code:details_length:name` hint (see vk-id.ts), and
+    // non-VK errors can echo the email back. We log code only, plus an
+    // opaque length, so the email never reaches logs here.
     const code =
       error instanceof VkIdCustomerCreationError
         ? error.code
         : "customer_account_creation_failed"
+    const rawMessage = error instanceof Error ? error.message : String(error)
     console.error("[vk-id] register creation failed", {
       code,
       vk_user_id: identity.vkUserId,
-      error: error instanceof Error ? error.message : String(error),
+      error_length: rawMessage.length,
+      error_name: error instanceof Error ? error.name : null,
     })
     return { handled: false, fallbackReason: code }
   }

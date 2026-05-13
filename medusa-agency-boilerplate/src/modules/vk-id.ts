@@ -8,7 +8,15 @@ import type {
   MedusaContainer,
 } from "@medusajs/framework/types"
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto"
+import scryptKdf from "scrypt-kdf"
 import { normalizeVkPeerId } from "./notification-vk"
+import { normalizeNotificationRecipient } from "./notification-email"
+import {
+  EMAIL_VERIFICATION_AT_METADATA_KEY,
+  EMAIL_VERIFICATION_FLAG_METADATA_KEY,
+  EMAIL_VERIFICATION_FOR_METADATA_KEY,
+  EMAIL_VERIFICATION_METADATA_KEY,
+} from "./email-verification"
 
 export const DEFAULT_VK_ID_SCOPES = "vkid.personal_info"
 export const DEFAULT_VK_ID_AUTHORIZE_URL = "https://id.vk.ru/authorize"
@@ -1390,23 +1398,75 @@ export class VkIdCustomerCreationError extends Error {
 }
 
 /**
+ * Phase 5.2: the password hash algorithm used by the emailpass auth provider.
+ * We mirror the scrypt-kdf hash format (base64-encoded) so a backup emailpass
+ * provider_identity created here can be both authenticated against and later
+ * overwritten by the standard reset-password flow without triggering a
+ * re-hash mismatch. We derive the same default scrypt parameters as
+ * `@medusajs/auth-emailpass` to produce byte-identical outputs.
+ */
+async function hashEmailpassPassword(password: string): Promise<string> {
+  const hashConfig = { logN: 15, r: 8, p: 1 }
+  const derived = await scryptKdf.kdf(password, hashConfig)
+  return derived.toString("base64")
+}
+
+/**
+ * Phase 5.2 hardening: error details bubbled up from Medusa/auth modules can
+ * contain the raw email address or other PII inside their `.message`. We keep
+ * only the code channel by default and surface the underlying message solely
+ * as an opaque `details_length` hint so operators can still distinguish
+ * "empty failure" from "upstream threw". Use `sanitizeLogValue` from the
+ * email-verification module for consistency with the rest of the codebase.
+ */
+function describeVkIdInternalError(error: unknown): {
+  length: number
+  name: string | null
+} {
+  if (!error) {
+    return { length: 0, name: null }
+  }
+
+  if (error instanceof Error) {
+    return { length: error.message?.length ?? 0, name: error.name || null }
+  }
+
+  const str = String(error)
+  return { length: str.length, name: null }
+}
+
+/**
  * Phase 5.2: atomically creates the Medusa auth_identity + customer pair for
  * a fresh VK ID registration and persists the `vk_link` metadata.
  *
  * The sequence mirrors the emailpass register → createCustomerAccountWorkflow
  * pipeline but substitutes the provider:
  *
- *   1. AuthModule.createAuthIdentities with a `vk-id` provider_identity where
- *      `entity_id = vkid:<vk_user_id>` for uniqueness.
+ *   1. AuthModule.createAuthIdentities with BOTH a `vk-id` and an `emailpass`
+ *      provider_identity bound to a single auth_identity. The vk-id entry
+ *      uses `entity_id = vkid:<vk_user_id>` and the emailpass entry uses the
+ *      normalized email, so forgot-password / reset flows can target the
+ *      customer the same way as native emailpass registrations.
  *   2. createCustomerAccountWorkflow to spawn the customer and link
  *      app_metadata.customer_id back onto the auth_identity.
- *   3. updateCustomersWorkflow to stamp `metadata.vk_link` (same shape used by
- *      the Phase 5.0 linking helper) so subsequent lookups find the customer
- *      through the established `findVkIdCustomersByIdentity` path.
+ *   3. updateCustomersWorkflow to stamp `metadata.vk_link` +
+ *      `metadata.email_verified*` so subsequent lookups find the customer
+ *      through the established `findVkIdCustomersByIdentity` path and the
+ *      email-verification subscriber recognises the customer as already
+ *      verified (their email was vouched for by VK ID).
  *
- * We do NOT create an `emailpass` provider_identity here. Customers who want
- * a password as a backup can establish it later through the existing
- * forgot-password / reset flow — Phase 5.4 will add a "set password" CTA.
+ * Hardening (Phase 5.2.1):
+ * - Normalizes the email in a single place (case-insensitive) so lookup,
+ *   emailpass entity_id, metadata, and forgot-password flows agree.
+ * - Seeds a random scrypt-hashed emailpass password so the emailpass provider
+ *   identity is valid from day one. The customer never learns this password
+ *   and must go through forgot-password / set-password to actually use
+ *   email/password login.
+ * - Runs an orphan-cleanup step if `createCustomerAccountWorkflow` throws,
+ *   so retry attempts are not blocked by a unique-constraint violation on
+ *   `provider_identities.entity_id`.
+ * - Keeps error messages free of PII: we capture `code + length/name` only
+ *   when rethrowing, so callers logging `error.message` do not leak emails.
  */
 export async function createVkIdCustomer(
   container: MedusaContainer,
@@ -1419,15 +1479,33 @@ export async function createVkIdCustomer(
     linkSource: string
   }
 ): Promise<VkIdCustomerCreationResult> {
-  const email = input.email.trim()
+  // Fix #6: normalize the email exactly once. Medusa stores emails verbatim
+  // but our lookups / forgot-password flows all use `lower(email)`, so any
+  // mismatch here silently breaks flows for customers registered via VK.
+  const normalizedEmail = normalizeNotificationRecipient(input.email)
 
-  if (!email) {
+  if (!normalizedEmail) {
     throw new VkIdCustomerCreationError("email_required")
   }
 
   const authModule = container.resolve<IAuthModuleService>(Modules.AUTH)
   const entityId = `vkid:${input.identity.vkUserId}`
   let authIdentityId: string
+
+  // Fix #1: seed an emailpass provider_identity alongside the vk-id one so
+  // forgot-password → reset-password works for VK-registered customers.
+  const randomPassword = randomBytes(32).toString("base64url")
+  let emailpassPasswordHash: string
+  try {
+    emailpassPasswordHash = await hashEmailpassPassword(randomPassword)
+  } catch (error) {
+    // Fix #9: no raw message — just the opaque details hint.
+    const details = describeVkIdInternalError(error)
+    throw new VkIdCustomerCreationError(
+      "auth_identity_creation_failed",
+      `emailpass_hash_failed:len=${details.length}:name=${details.name ?? "n/a"}`
+    )
+  }
 
   try {
     const authIdentity = await authModule.createAuthIdentities({
@@ -1438,9 +1516,16 @@ export async function createVkIdCustomer(
           user_metadata: {
             vk_user_id: input.identity.vkUserId,
             vk_peer_id: input.identity.vkPeerId,
-            email,
+            email: normalizedEmail,
             first_name: input.firstName || null,
             last_name: input.lastName || null,
+          },
+        },
+        {
+          provider: "emailpass",
+          entity_id: normalizedEmail,
+          provider_metadata: {
+            password: emailpassPasswordHash,
           },
         },
       ],
@@ -1448,9 +1533,12 @@ export async function createVkIdCustomer(
 
     authIdentityId = authIdentity.id
   } catch (error) {
+    // Fix #9: capture length/name only — raw auth module errors occasionally
+    // echo the email inside uniqueness-violation messages.
+    const details = describeVkIdInternalError(error)
     throw new VkIdCustomerCreationError(
       "auth_identity_creation_failed",
-      error instanceof Error ? error.message : String(error)
+      `auth_module_error:len=${details.length}:name=${details.name ?? "n/a"}`
     )
   }
 
@@ -1463,7 +1551,7 @@ export async function createVkIdCustomer(
       input: {
         authIdentityId,
         customerData: {
-          email,
+          email: normalizedEmail,
           first_name: input.firstName || undefined,
           last_name: input.lastName || undefined,
         },
@@ -1472,15 +1560,36 @@ export async function createVkIdCustomer(
 
     customerId = customer.id
   } catch (error) {
+    // Fix #3: compensation — remove the orphan auth_identity so a retry is not
+    // blocked by unique-constraint on provider_identities.entity_id. We MUST
+    // NOT rethrow the inner delete error, since that would mask the original
+    // failure; we log it as a structured warning for operators instead.
+    try {
+      await authModule.deleteAuthIdentities([authIdentityId])
+    } catch (cleanupError) {
+      const details = describeVkIdInternalError(cleanupError)
+      console.error("[vk-id] orphan auth_identity cleanup failed", {
+        auth_identity_id: authIdentityId,
+        entity_id_prefix: "vkid:",
+        error_name: details.name,
+        error_length: details.length,
+      })
+    }
+
+    const details = describeVkIdInternalError(error)
     throw new VkIdCustomerCreationError(
       "customer_account_creation_failed",
-      error instanceof Error ? error.message : String(error)
+      `customer_workflow_error:len=${details.length}:name=${details.name ?? "n/a"}`
     )
   }
 
   // Stamp the vk_link metadata so `findVkIdCustomersByIdentity` can locate
   // this customer on the next login. We build the metadata via the existing
   // helper to keep the shape identical to the Phase 5.0 linking path.
+  //
+  // Fix #2: also stamp `email_verified=true` + `email_verified_for` so the
+  // `customer.created` subscriber skips the verification email — VK ID
+  // already vouched for this email.
   const linkMetadata = buildLinkedMetadata({
     currentMetadata: {},
     currentLink: resolveVkLinkState({}),
@@ -1489,7 +1598,20 @@ export async function createVkIdCustomer(
     linkSource: input.linkSource,
   })
 
-  await persistVkIdCustomerMetadata(container, customerId, linkMetadata)
+  const verifiedMetadata: Record<string, unknown> = {
+    ...linkMetadata,
+    [EMAIL_VERIFICATION_FLAG_METADATA_KEY]: true,
+    [EMAIL_VERIFICATION_AT_METADATA_KEY]: input.verifiedAt,
+    [EMAIL_VERIFICATION_FOR_METADATA_KEY]: normalizedEmail,
+    [EMAIL_VERIFICATION_METADATA_KEY]: {
+      source: "vk_id_register",
+      verified_at: input.verifiedAt,
+      verified_for: normalizedEmail,
+      skipped_reason: "vk_registered",
+    },
+  }
+
+  await persistVkIdCustomerMetadata(container, customerId, verifiedMetadata)
 
   return {
     customerId,

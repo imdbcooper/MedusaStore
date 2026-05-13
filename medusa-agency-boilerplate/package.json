@@ -34,7 +34,8 @@
     "@medusajs/medusa": "2.13.6",
     "@medusajs/notification-local": "2.13.6",
     "@medusajs/ui": "4.1.6",
-    "nodemailer": "^8.0.7"
+    "nodemailer": "^8.0.7",
+    "scrypt-kdf": "2.0.1"
   },
   "devDependencies": {
     "@medusajs/test-utils": "2.13.6",

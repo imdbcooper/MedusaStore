@@ -29,11 +29,22 @@ beforeAll(() => {
     require("../../subscribers/customer-created-email-verification").default
 })
 
-function buildContext() {
+function buildContext(options?: {
+  customerMetadataById?: Record<string, Record<string, unknown> | null>
+}) {
   const logger = {
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
+  }
+
+  const customersById = options?.customerMetadataById ?? {}
+  const query = {
+    graph: jest.fn(async (args: { filters?: { id?: string } }) => {
+      const id = String(args.filters?.id ?? "")
+      const metadata = id in customersById ? customersById[id] : null
+      return { data: metadata !== undefined ? [{ id, metadata }] : [] }
+    }),
   }
 
   const container = {
@@ -41,11 +52,14 @@ function buildContext() {
       if (key === ContainerRegistrationKeys.LOGGER) {
         return logger
       }
+      if (key === ContainerRegistrationKeys.QUERY) {
+        return query
+      }
       throw new Error(`Unexpected resolve: ${key}`)
     }),
   }
 
-  return { logger, container: container as any }
+  return { logger, container: container as any, query }
 }
 
 describe("customer-created-email-verification subscriber", () => {
@@ -117,5 +131,152 @@ describe("customer-created-email-verification subscriber", () => {
     ).resolves.toBeUndefined()
 
     expect(logger.error).toHaveBeenCalled()
+  })
+
+  it("fix #2: skips send when customer metadata has vk_link + email_verified=true (VK-registered)", async () => {
+    const { container, logger, query } = buildContext({
+      customerMetadataById: {
+        cus_vk: {
+          email_verified: true,
+          email_verified_for: "vkuser@example.com",
+          vk_link: {
+            vk_user_id: "2000000777",
+            vk_peer_id: "2000000777",
+            link_status: "linked",
+          },
+        },
+      },
+    })
+
+    await customerCreatedEmailVerificationHandler({
+      event: { data: { id: "cus_vk" } },
+      container,
+    })
+
+    expect(query.graph).toHaveBeenCalledTimes(1)
+    expect(mockWorkflowRun).not.toHaveBeenCalled()
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("vk_registered_already_verified")
+    )
+  })
+
+  it("fix #2 regression: still sends for plain emailpass customer without vk_link", async () => {
+    const { container, query } = buildContext({
+      customerMetadataById: {
+        cus_plain: {
+          // no vk_link
+          some_other_flag: true,
+        },
+      },
+    })
+
+    ;(mockWorkflowRun as any).mockResolvedValue({
+      result: {
+        result: {
+          status: "sent",
+          reason: null,
+          customer_id: "cus_plain",
+          recipient: "plain@example.com",
+          provider_requested: "local",
+          provider_resolved: "local",
+          notification: { id: "noti_2" },
+          expires_at: null,
+        },
+      },
+    })
+
+    await customerCreatedEmailVerificationHandler({
+      event: { data: { id: "cus_plain" } },
+      container,
+    })
+
+    expect(query.graph).toHaveBeenCalledTimes(1)
+    expect(mockWorkflowRun).toHaveBeenCalledTimes(1)
+  })
+
+  it("fix #2 regression: still sends when vk_link exists but email_verified=false", async () => {
+    const { container, query } = buildContext({
+      customerMetadataById: {
+        cus_half: {
+          email_verified: false,
+          vk_link: {
+            vk_user_id: "2000000001",
+            vk_peer_id: "2000000001",
+            link_status: "linked",
+          },
+        },
+      },
+    })
+
+    ;(mockWorkflowRun as any).mockResolvedValue({
+      result: {
+        result: {
+          status: "sent",
+          reason: null,
+          customer_id: "cus_half",
+          recipient: "half@example.com",
+          provider_requested: "local",
+          provider_resolved: "local",
+          notification: { id: "noti_3" },
+          expires_at: null,
+        },
+      },
+    })
+
+    await customerCreatedEmailVerificationHandler({
+      event: { data: { id: "cus_half" } },
+      container,
+    })
+
+    expect(query.graph).toHaveBeenCalledTimes(1)
+    expect(mockWorkflowRun).toHaveBeenCalledTimes(1)
+  })
+
+  it("falls back to send workflow if metadata lookup throws", async () => {
+    const { container, logger } = buildContext()
+    const query = (container.resolve as jest.Mock).mock.results.find(
+      () => true
+    )
+    // The above buildContext pre-registered `query.graph` to return []; we
+    // re-wire it so this specific test simulates a hard failure.
+    const brokenContainer = {
+      resolve: jest.fn((key: string) => {
+        if (key === ContainerRegistrationKeys.LOGGER) return logger
+        if (key === ContainerRegistrationKeys.QUERY) {
+          return {
+            graph: jest.fn(async () => {
+              throw new Error("db_offline")
+            }),
+          }
+        }
+        throw new Error(`Unexpected: ${key}`)
+      }),
+    } as any
+
+    ;(mockWorkflowRun as any).mockResolvedValue({
+      result: {
+        result: {
+          status: "sent",
+          reason: null,
+          customer_id: "cus_fallback",
+          recipient: "fb@example.com",
+          provider_requested: "local",
+          provider_resolved: "local",
+          notification: { id: "noti_fb" },
+          expires_at: null,
+        },
+      },
+    })
+
+    await customerCreatedEmailVerificationHandler({
+      event: { data: { id: "cus_fallback" } },
+      container: brokenContainer,
+    })
+
+    expect(mockWorkflowRun).toHaveBeenCalledTimes(1)
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("metadata lookup failed")
+    )
+    void query
   })
 })
