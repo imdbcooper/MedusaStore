@@ -61,7 +61,7 @@ function buildLoginRuntime(
   overrides: Partial<{
     registerEnabled: boolean
     registerRequestedEnabled: boolean
-    requireEmail: boolean
+    emailTrustPolicy: "any" | "require_verification" | "reject"
   }> = {}
 ) {
   const registerRequestedEnabled = overrides.registerRequestedEnabled ?? false
@@ -76,7 +76,7 @@ function buildLoginRuntime(
     loginEnabled,
     registerRequestedEnabled,
     registerEnabled,
-    requireEmail: overrides.requireEmail ?? true,
+    emailTrustPolicy: overrides.emailTrustPolicy ?? "any",
     clientId: "client",
     clientSecret: undefined,
     redirectUri: "https://studio.slavx.ru/store/vk-id/callback",
@@ -605,7 +605,7 @@ describe("handleVkIdLoginIntent Phase 5.2 register branch", () => {
     expect(createFn).not.toHaveBeenCalled()
   })
 
-  it("redirects with vk_login_error=email_required when VK did not return email and requireEmail=true", async () => {
+  it("redirects with vk_login_error=email_required when VK did not return email (scope drop fallback)", async () => {
     const { res, recorder } = buildResponse()
     const createFn = jest.fn()
     const deps = buildLoginDeps({
@@ -641,7 +641,7 @@ describe("handleVkIdLoginIntent Phase 5.2 register branch", () => {
     expect(createFn).not.toHaveBeenCalled()
   })
 
-  it("redirects with vk_login_error=email_exists when email already belongs to another customer", async () => {
+  it("redirects to vk-link-conflict page with pending_token when email already belongs to another customer", async () => {
     const { res, recorder } = buildResponse()
     const createFn = jest.fn()
     const lookupEmailFn = jest.fn(async () => ({
@@ -658,29 +658,39 @@ describe("handleVkIdLoginIntent Phase 5.2 register branch", () => {
       createVkIdCustomer: createFn as any,
     })
 
-    await handleVkIdLoginIntent(
-      buildReq(),
-      res,
-      {
-        runtime: buildLoginRuntime(true, { registerEnabled: true }),
-        session: buildLoginSession(),
-        returnUrl: new URL("https://studio.slavx.ru/ru/account"),
-        code: "code",
-        deviceId: "dev",
-        state: "state",
-      },
-      deps
-    )
+    const ORIGINAL_SECRET = process.env.VK_ID_SESSION_SECRET
+    process.env.VK_ID_SESSION_SECRET =
+      ORIGINAL_SECRET || "test-secret-for-conflict-flow"
+    try {
+      await handleVkIdLoginIntent(
+        buildReq(),
+        res,
+        {
+          runtime: buildLoginRuntime(true, { registerEnabled: true }),
+          session: buildLoginSession(),
+          returnUrl: new URL("https://studio.slavx.ru/ru/account"),
+          code: "code",
+          deviceId: "dev",
+          state: "state",
+        },
+        deps
+      )
 
-    expect(recorder.redirected?.url).toContain(
-      "vk_login_error=email_exists"
-    )
-    expect(recorder.setCookies).toHaveLength(0)
-    expect(lookupEmailFn).toHaveBeenCalledWith(
-      expect.anything(),
-      "vkuser@example.com"
-    )
-    expect(createFn).not.toHaveBeenCalled()
+      expect(recorder.redirected?.url).toContain("/ru/account/vk-link-conflict")
+      expect(recorder.redirected?.url).toContain("pending_token=")
+      expect(recorder.setCookies).toHaveLength(0)
+      expect(lookupEmailFn).toHaveBeenCalledWith(
+        expect.anything(),
+        "vkuser@example.com"
+      )
+      expect(createFn).not.toHaveBeenCalled()
+    } finally {
+      if (ORIGINAL_SECRET === undefined) {
+        delete process.env.VK_ID_SESSION_SECRET
+      } else {
+        process.env.VK_ID_SESSION_SECRET = ORIGINAL_SECRET
+      }
+    }
   })
 
   it("creates customer, issues JWT, and redirects with vk_registered=success on happy path", async () => {

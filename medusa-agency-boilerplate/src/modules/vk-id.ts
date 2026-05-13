@@ -27,7 +27,30 @@ export const DEFAULT_VK_ID_LOGIN_SOURCE = "storefront.account.login"
 export const DEFAULT_VK_ID_LINK_SESSION_TTL_SECONDS = 10 * 60
 export const DEFAULT_VK_ID_PROFILE_PATH = "/ru/account/profile"
 export const DEFAULT_VK_ID_LOGIN_RETURN_PATH = "/ru/account"
+export const DEFAULT_VK_ID_LINK_CONFLICT_PATH = "/ru/account/vk-link-conflict"
+export const DEFAULT_VK_ID_PENDING_TOKEN_TTL_MINUTES = 10
 const DEFAULT_LOCAL_STOREFRONT_ORIGIN = "http://localhost:8000"
+
+/**
+ * Phase 5.3: VK ID email trust policy.
+ *
+ * - `any` (default): current Phase 5.2 behaviour. VK-registered customers get
+ *   `metadata.email_verified=true` + skip the transactional verification
+ *   email. Keeps the MVP UX but trusts VK's email on face value.
+ * - `require_verification`: VK-registered customers get
+ *   `metadata.email_verified=false`. The `customer.created` subscriber does
+ *   NOT skip the email; the customer goes through the same verification flow
+ *   as any emailpass registration.
+ * - `reject`: VK ID registration is disabled entirely because VK does not
+ *   publish a verified-email claim today. The callback surfaces
+ *   `email_trust_policy_reject` so the storefront can explain the policy.
+ *
+ * Runtime flag because production may want to raise the trust bar without
+ * blocking MVP staging; default stays `any` so existing tests/deployments
+ * keep working.
+ */
+export type VkIdEmailTrustPolicy = "any" | "require_verification" | "reject"
+export const DEFAULT_VK_ID_EMAIL_TRUST_POLICY: VkIdEmailTrustPolicy = "any"
 
 export type VkIdAuthIntent = "link" | "login"
 
@@ -84,12 +107,16 @@ export type VkIdRuntime = {
   registerRequestedEnabled: boolean
   registerEnabled: boolean
   /**
-   * Phase 5.2: when `true` (default), refuse to auto-create a customer if
-   * VK did not return an email. Falling back to `?vk_login_error=email_required`
-   * is the safer default — it avoids synthesizing placeholder emails and
-   * keeps password reset / transactional email paths functional.
+   * Phase 5.3: VK ID email trust policy. Default `"any"` keeps the Phase 5.2
+   * behaviour; `"require_verification"` forces the subscriber to send the
+   * verification email; `"reject"` refuses VK ID registration entirely.
+   *
+   * Replaces the Phase 5.2 `VK_ID_REQUIRE_EMAIL` flag: VK ID always returns
+   * an email in practice (the scope is `vkid.personal_info` + `email`), and
+   * the "require email" toggle never gained a real use case — the only
+   * remaining knob is whether we trust that email without re-verification.
    */
-  requireEmail: boolean
+  emailTrustPolicy: VkIdEmailTrustPolicy
   clientId?: string
   clientSecret?: string
   redirectUri?: string
@@ -223,13 +250,48 @@ function normalizeBooleanFlag(value?: string | null) {
 }
 
 /**
- * Default-true boolean env flag. Only an explicit `"false"` disables the
- * feature; unset, empty, or any unknown value is treated as `true`. Used by
- * `VK_ID_REQUIRE_EMAIL` so forgetting to set it does not silently drop the
- * email safety guard.
+ * Phase 5.3: parse `VK_ID_EMAIL_TRUST_POLICY`. Unset/empty/unknown values
+ * fall back to the default (`"any"`) so an operator who forgets to set the
+ * flag gets the Phase 5.2 behaviour instead of an unexpected hard rejection.
  */
-function normalizeBooleanFlagDefaultTrue(value?: string | null) {
-  return value?.trim().toLowerCase() !== "false"
+export function normalizeVkIdEmailTrustPolicy(
+  value?: string | null
+): VkIdEmailTrustPolicy {
+  const normalized = value?.trim().toLowerCase()
+
+  if (
+    normalized === "any" ||
+    normalized === "require_verification" ||
+    normalized === "reject"
+  ) {
+    return normalized
+  }
+
+  return DEFAULT_VK_ID_EMAIL_TRUST_POLICY
+}
+
+/**
+ * Phase 5.3: parse `VK_ID_PENDING_TOKEN_TTL_MINUTES` with a safe floor.
+ * Falls back to the default when the value is missing or unparseable.
+ * Values below 1 minute are raised to 1 minute to prevent accidentally
+ * short-circuiting the conflict flow.
+ */
+export function resolveVkIdPendingTokenTtlMinutes(
+  value?: string | null
+): number {
+  const normalized = value?.trim()
+
+  if (!normalized) {
+    return DEFAULT_VK_ID_PENDING_TOKEN_TTL_MINUTES
+  }
+
+  const parsed = Number(normalized)
+
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return DEFAULT_VK_ID_PENDING_TOKEN_TTL_MINUTES
+  }
+
+  return Math.floor(parsed)
 }
 
 function normalizeOptionalString(value?: string | null) {
@@ -412,6 +474,188 @@ function createRandomToken(size = 32) {
   return base64UrlEncode(randomBytes(size))
 }
 
+/**
+ * Phase 5.3 pending link token.
+ *
+ * Signed, short-lived token that carries the VK identity fields needed to
+ * complete the conflict-resolution flow on the storefront:
+ *
+ * 1. `/store/vk-id/callback` detects `email_exists` and mints a token that
+ *    captures the VK identity (`vk_user_id`, `vk_peer_id`, `email`,
+ *    `first_name`, `last_name`) plus a minted-at timestamp.
+ * 2. Storefront renders the `/ru/account/vk-link-conflict` page, showing the
+ *    email and asking the user to log in with their existing password.
+ * 3. `/store/auth/vk-id/link-conflict-resolve` verifies the password via
+ *    the emailpass auth provider and, on success, links the VK identity
+ *    from the token to the authenticated customer.
+ *
+ * The token is HMAC-signed with the same secret chain as the login/link
+ * session (`VK_ID_SESSION_SECRET` -> `JWT_SECRET` -> `COOKIE_SECRET`). It is
+ * NOT a bearer credential: it can only drive the link flow after the caller
+ * also proves knowledge of the customer password.
+ */
+export type VkIdPendingLinkTokenPayload = {
+  vkUserId: string
+  vkPeerId: string
+  email: string
+  firstName: string | null
+  lastName: string | null
+  mintedAt: string
+  expiresAt: string
+}
+
+export function createVkIdPendingLinkToken(input: {
+  identity: VkResolvedIdentity
+  ttlMinutes?: number
+  now?: Date
+}): { token: string; payload: VkIdPendingLinkTokenPayload } {
+  const ttlMinutes =
+    typeof input.ttlMinutes === "number" && input.ttlMinutes > 0
+      ? Math.floor(input.ttlMinutes)
+      : resolveVkIdPendingTokenTtlMinutes(
+          process.env.VK_ID_PENDING_TOKEN_TTL_MINUTES
+        )
+  const now = input.now ?? new Date()
+  const mintedAt = now.toISOString()
+  const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000).toISOString()
+
+  if (!input.identity.email) {
+    throw new Error(
+      "VK ID pending link token requires an email in the VK identity; caller must not mint a conflict token without one."
+    )
+  }
+
+  const payload: VkIdPendingLinkTokenPayload = {
+    vkUserId: input.identity.vkUserId,
+    vkPeerId: input.identity.vkPeerId,
+    email: normalizeNotificationRecipient(input.identity.email) || input.identity.email,
+    firstName: input.identity.firstName,
+    lastName: input.identity.lastName,
+    mintedAt,
+    expiresAt,
+  }
+
+  const encodedPayload = base64UrlEncode(JSON.stringify(payload))
+  const signature = signPayload(encodedPayload)
+
+  return {
+    token: `${encodedPayload}.${signature}`,
+    payload,
+  }
+}
+
+export type VkIdPendingLinkTokenVerifyResult =
+  | { ok: true; payload: VkIdPendingLinkTokenPayload }
+  | {
+      ok: false
+      code:
+        | "pending_token_missing"
+        | "pending_token_malformed"
+        | "pending_token_invalid_signature"
+        | "pending_token_expired"
+    }
+
+export function verifyVkIdPendingLinkToken(
+  token: string | null | undefined,
+  options?: { now?: Date }
+): VkIdPendingLinkTokenVerifyResult {
+  const trimmed = token?.trim()
+
+  if (!trimmed) {
+    return { ok: false, code: "pending_token_missing" }
+  }
+
+  const [encodedPayload, providedSignature] = trimmed.split(".")
+
+  if (!encodedPayload || !providedSignature) {
+    return { ok: false, code: "pending_token_malformed" }
+  }
+
+  let expectedSignature: string
+
+  try {
+    expectedSignature = signPayload(encodedPayload)
+  } catch {
+    // `getVkIdSessionSecret` throws when no secret env is configured. Treat
+    // that the same as an invalid signature rather than leaking the error.
+    return { ok: false, code: "pending_token_invalid_signature" }
+  }
+
+  const expectedBuffer = Buffer.from(expectedSignature)
+  const providedBuffer = Buffer.from(providedSignature)
+
+  if (
+    expectedBuffer.length !== providedBuffer.length ||
+    !timingSafeEqual(expectedBuffer, providedBuffer)
+  ) {
+    return { ok: false, code: "pending_token_invalid_signature" }
+  }
+
+  let payload: VkIdPendingLinkTokenPayload
+
+  try {
+    payload = JSON.parse(
+      decodeBase64Url(encodedPayload).toString("utf8")
+    ) as VkIdPendingLinkTokenPayload
+  } catch {
+    return { ok: false, code: "pending_token_malformed" }
+  }
+
+  if (
+    typeof payload?.vkUserId !== "string" ||
+    typeof payload?.vkPeerId !== "string" ||
+    typeof payload?.email !== "string" ||
+    typeof payload?.expiresAt !== "string"
+  ) {
+    return { ok: false, code: "pending_token_malformed" }
+  }
+
+  const expiresAt = Date.parse(payload.expiresAt)
+  const nowMs = (options?.now ?? new Date()).getTime()
+
+  if (!Number.isFinite(expiresAt) || expiresAt <= nowMs) {
+    return { ok: false, code: "pending_token_expired" }
+  }
+
+  return { ok: true, payload }
+}
+
+/**
+ * Phase 5.3: convert a verified pending-link token back into a
+ * `VkResolvedIdentity` shape so existing linking helpers
+ * (`persistVkIdCustomerLinkWithOwnershipGuard`) can consume it directly.
+ */
+export function identityFromPendingLinkTokenPayload(
+  payload: VkIdPendingLinkTokenPayload
+): VkResolvedIdentity {
+  return {
+    provider: "vkid",
+    vkUserId: payload.vkUserId,
+    vkPeerId: payload.vkPeerId,
+    email: payload.email || null,
+    emailVerified: Boolean(payload.email),
+    firstName: payload.firstName,
+    lastName: payload.lastName,
+  }
+}
+
+/**
+ * Phase 5.3: build the storefront URL that the VK ID callback redirects to
+ * when it detects the `email_exists` conflict. The storefront renders the
+ * conflict page and submits the password form that hits
+ * `/store/auth/vk-id/link-conflict-resolve`.
+ */
+export function buildVkIdLinkConflictReturnUrl(input: {
+  allowedOrigin: string
+  pendingToken: string
+  path?: string
+}) {
+  const path = input.path || DEFAULT_VK_ID_LINK_CONFLICT_PATH
+  const url = new URL(path, input.allowedOrigin)
+  url.searchParams.set("pending_token", input.pendingToken)
+  return url
+}
+
 export function createCodeChallenge(codeVerifier: string) {
   return base64UrlEncode(createHash("sha256").update(codeVerifier).digest())
 }
@@ -424,8 +668,13 @@ export function getVkIdRuntime(): VkIdRuntime {
   const registerRequestedEnabled = normalizeBooleanFlag(
     process.env.VK_ID_REGISTER_ENABLED
   )
-  const requireEmail = normalizeBooleanFlagDefaultTrue(
-    process.env.VK_ID_REQUIRE_EMAIL
+  // Phase 5.3: `VK_ID_REQUIRE_EMAIL` is dead. VK ID always returns an email
+  // in the configured `vkid.personal_info` scope, and the `requireEmail=false`
+  // branch fell back to `not_linked` anyway. The flag is kept documented in
+  // env examples as "removed" so operators upgrading staging see an explicit
+  // migration note; reading it here is intentionally skipped.
+  const emailTrustPolicy = normalizeVkIdEmailTrustPolicy(
+    process.env.VK_ID_EMAIL_TRUST_POLICY
   )
   const clientId = normalizeOptionalString(process.env.VK_ID_CLIENT_ID)
   const clientSecret = normalizeOptionalString(process.env.VK_ID_CLIENT_SECRET)
@@ -448,7 +697,7 @@ export function getVkIdRuntime(): VkIdRuntime {
     loginEnabled,
     registerRequestedEnabled,
     registerEnabled,
-    requireEmail,
+    emailTrustPolicy,
     clientId,
     clientSecret,
     redirectUri,
@@ -1467,6 +1716,27 @@ function describeVkIdInternalError(error: unknown): {
  *   `provider_identities.entity_id`.
  * - Keeps error messages free of PII: we capture `code + length/name` only
  *   when rethrowing, so callers logging `error.message` do not leak emails.
+ *
+ * Phase 5.3 policy hook (`emailTrustPolicy`):
+ * - `any` (default): stamp `email_verified=true` and skip the verification
+ *   email — same behaviour as Phase 5.2. This is the MVP default.
+ * - `require_verification`: stamp `email_verified=false` and omit the
+ *   `email_verification.skipped_reason` marker, so the `customer.created`
+ *   subscriber sends the transactional verification email as it would for
+ *   any emailpass registration.
+ *
+ * TODO(Phase 5.4): Concurrent race window. Two VK callbacks for the same
+ * `vk_user_id` or the same `email` can, in rare cases, interleave between
+ * `lookupCustomerByEmail` and `createAuthIdentities` and both try to create
+ * a customer. The unique constraint on `provider_identities.entity_id`
+ * prevents two auth identities from being created, so only one request
+ * wins the race at the auth layer. However, both can observe a
+ * `not_found` branch in the register path and race to `createCustomer`,
+ * leaving one of them to fail with a downstream uniqueness violation.
+ * Staging traffic is low enough that this is acceptable; for production we
+ * need a `pg_advisory_xact_lock(hashtext('vkid-register'), hashtext(email))`
+ * or equivalent around the lookup + create pair. Emergency response for
+ * duplicates is captured in `Docs/troubleshooting.md`.
  */
 export async function createVkIdCustomer(
   container: MedusaContainer,
@@ -1477,6 +1747,7 @@ export async function createVkIdCustomer(
     identity: VkResolvedIdentity
     verifiedAt: string
     linkSource: string
+    emailTrustPolicy?: VkIdEmailTrustPolicy
   }
 ): Promise<VkIdCustomerCreationResult> {
   // Fix #6: normalize the email exactly once. Medusa stores emails verbatim
@@ -1598,17 +1869,30 @@ export async function createVkIdCustomer(
     linkSource: input.linkSource,
   })
 
+  // Phase 5.3: the email trust policy decides whether we mark the email as
+  // verified and skip the transactional verification email. `any` keeps the
+  // Phase 5.2 shortcut; `require_verification` forces the subscriber to send
+  // the verification email so a VK-provided email still has to be confirmed.
+  const trustPolicy: VkIdEmailTrustPolicy = input.emailTrustPolicy ?? "any"
+  const emailVerifiedFlag = trustPolicy !== "require_verification"
+
   const verifiedMetadata: Record<string, unknown> = {
     ...linkMetadata,
-    [EMAIL_VERIFICATION_FLAG_METADATA_KEY]: true,
-    [EMAIL_VERIFICATION_AT_METADATA_KEY]: input.verifiedAt,
-    [EMAIL_VERIFICATION_FOR_METADATA_KEY]: normalizedEmail,
-    [EMAIL_VERIFICATION_METADATA_KEY]: {
-      source: "vk_id_register",
-      verified_at: input.verifiedAt,
-      verified_for: normalizedEmail,
-      skipped_reason: "vk_registered",
-    },
+    [EMAIL_VERIFICATION_FLAG_METADATA_KEY]: emailVerifiedFlag,
+    [EMAIL_VERIFICATION_AT_METADATA_KEY]: emailVerifiedFlag
+      ? input.verifiedAt
+      : null,
+    [EMAIL_VERIFICATION_FOR_METADATA_KEY]: emailVerifiedFlag
+      ? normalizedEmail
+      : null,
+    [EMAIL_VERIFICATION_METADATA_KEY]: emailVerifiedFlag
+      ? {
+          source: "vk_id_register",
+          verified_at: input.verifiedAt,
+          verified_for: normalizedEmail,
+          skipped_reason: "vk_registered",
+        }
+      : null,
   }
 
   await persistVkIdCustomerMetadata(container, customerId, verifiedMetadata)

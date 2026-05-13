@@ -2,10 +2,12 @@ import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { z } from "@medusajs/framework/zod"
 import {
+  buildVkIdLinkConflictReturnUrl,
   buildVkIdLoginErrorReturnUrl,
   buildVkIdRegisteredReturnUrl,
   buildVkIdResultReturnUrl,
   createVkIdCustomer,
+  createVkIdPendingLinkToken,
   exchangeVkIdAuthorizationCode,
   fetchVkIdUserInfo,
   findVkIdCustomersByIdentity,
@@ -182,6 +184,59 @@ const defaultLoginIntentDeps: VkIdLoginIntentDeps = {
   createVkIdCustomer,
 }
 
+/**
+ * Phase 5.3 conflict UX: VK callback detected an existing email/password
+ * customer with the same email. We mint a signed, short-lived pending-link
+ * token carrying the VK identity and redirect the storefront to the conflict
+ * page, where the user logs in with the existing password to complete the
+ * VK linking.
+ *
+ * Returns `{ handled: true }` so the caller stops processing. Falls back to
+ * the legacy `?vk_login_error=email_exists` banner if the return origin is
+ * not configured or the token cannot be built (no session secret): minting a
+ * token without a trustworthy signing key would let attackers forge the
+ * conflict flow, so we prefer a benign error banner over a broken security
+ * posture.
+ */
+function handleEmailExistsConflict(
+  res: MedusaResponse,
+  input: {
+    runtime: VkIdRuntime
+    returnUrl: URL
+    identity: VkResolvedIdentity
+  }
+): { handled: true } | { handled: false; fallbackReason: string } {
+  const { runtime, returnUrl, identity } = input
+
+  if (!identity.email) {
+    // Defensive: the caller already checked this, but we never want to mint
+    // a pending token without an email — the conflict page depends on it.
+    return { handled: false, fallbackReason: "email_exists" }
+  }
+
+  const allowedOrigin =
+    runtime.allowedStorefrontOrigins[0] || new URL(returnUrl.toString()).origin
+
+  let pendingToken: string
+  try {
+    const minted = createVkIdPendingLinkToken({ identity })
+    pendingToken = minted.token
+  } catch (error) {
+    console.error("[vk-id] pending link token mint failed", {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return { handled: false, fallbackReason: "email_exists" }
+  }
+
+  const conflictUrl = buildVkIdLinkConflictReturnUrl({
+    allowedOrigin,
+    pendingToken,
+  })
+
+  res.redirect(302, conflictUrl.toString())
+  return { handled: true }
+}
+
 export async function handleVkIdLoginIntent(
   req: MedusaRequest,
   res: MedusaResponse,
@@ -302,11 +357,17 @@ export async function handleVkIdLoginIntent(
  *
  * Conditions for REGISTER (all must hold):
  * 1. `runtime.registerEnabled === true` — the operator explicitly opted in.
- * 2. VK returned an email, or `runtime.requireEmail === false`.
- * 3. No existing Medusa customer already owns that email with an account.
+ * 2. VK returned an email (the configured `vkid.personal_info + email`
+ *    scope always returns one in practice; if the provider drops it we
+ *    surface `email_required`).
+ * 3. `runtime.emailTrustPolicy !== "reject"` — otherwise the register flow
+ *    is shut off and we surface `email_trust_policy_reject`.
+ * 4. No existing Medusa customer already owns that email with an account.
+ *    If one exists, we redirect to the Phase 5.3 conflict page instead of
+ *    surfacing a dead-end banner.
  *
- * Any failure in (1)–(3) returns a specific `fallbackReason` so the
- * storefront banner can describe the exact mismatch.
+ * Any failure returns a specific `fallbackReason` so the storefront banner
+ * can describe the exact mismatch.
  */
 async function tryVkIdRegisterBranch(
   req: MedusaRequest,
@@ -332,14 +393,20 @@ async function tryVkIdRegisterBranch(
   }
 
   if (!identity.email) {
-    if (runtime.requireEmail) {
-      return { handled: false, fallbackReason: "email_required" }
-    }
+    // Phase 5.3: VK ID always returns an email under the configured
+    // `vkid.personal_info + email` scope. If the provider ever drops the
+    // field (scope mismatch, consent revoked), fall back to the classic
+    // `email_required` banner — we never synthesise placeholder emails.
+    return { handled: false, fallbackReason: "email_required" }
+  }
 
-    // `requireEmail=false` without an email is not supported in Phase 5.2 —
-    // Medusa rejects `createCustomer` when email is empty, so we fall back to
-    // the not-linked banner instead of synthesizing placeholder addresses.
-    return { handled: false, fallbackReason: "not_linked" }
+  // Phase 5.3: `reject` trust policy disables VK-driven registration entirely
+  // even before we try to look up the email. Operators opting into this
+  // policy are declaring that VK's email is not trustworthy enough to seed
+  // an account without a separate verification step; we surface a specific
+  // banner so the storefront copy explains why the VK flow stopped.
+  if (runtime.emailTrustPolicy === "reject") {
+    return { handled: false, fallbackReason: "email_trust_policy_reject" }
   }
 
   const lookupByEmailFn = deps.lookupCustomerByEmail ?? lookupCustomerByEmail
@@ -359,10 +426,15 @@ async function tryVkIdRegisterBranch(
   }
 
   if (existing) {
-    // Phase 5.3 will turn this into a proper conflict flow that lets the
-    // user log in with their existing password and link VK in profile. For
-    // now we surface a specific banner so the storefront copy is unambiguous.
-    return { handled: false, fallbackReason: "email_exists" }
+    // Phase 5.3 conflict UX: instead of showing a dead-end banner, mint a
+    // short-lived pending-link token that carries the VK identity and
+    // redirect to the storefront conflict page. The user signs in with the
+    // existing password; the backend then completes VK linking.
+    return handleEmailExistsConflict(res, {
+      runtime,
+      returnUrl,
+      identity,
+    })
   }
 
   let creation
@@ -374,6 +446,7 @@ async function tryVkIdRegisterBranch(
       identity,
       verifiedAt: new Date().toISOString(),
       linkSource: session.linkSource || "vk_id_register",
+      emailTrustPolicy: runtime.emailTrustPolicy,
     })
   } catch (error) {
     // Fix #9: `error.message` from VkIdCustomerCreationError intentionally

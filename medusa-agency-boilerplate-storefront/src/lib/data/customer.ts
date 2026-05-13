@@ -400,6 +400,100 @@ function buildStorePublishableHeaders(): Record<string, string> {
   return headers
 }
 
+export type ResolveVkLinkConflictResult =
+  | {
+      ok: true
+      redirectTo: string
+    }
+  | {
+      ok: false
+      code: string
+      message?: string
+    }
+
+/**
+ * Phase 5.3: resolve the VK ID conflict by logging in with the existing
+ * password. Calls the backend route that verifies the password and links
+ * the VK identity carried by the pending token. On success we set the
+ * `_medusa_jwt` cookie so subsequent navigation is authenticated.
+ */
+export async function resolveVkLinkConflict(input: {
+  email: string
+  password: string
+  pendingToken: string
+}): Promise<ResolveVkLinkConflictResult> {
+  const email = input.email?.trim()
+  const pendingToken = input.pendingToken?.trim()
+
+  if (!email || !input.password || !pendingToken) {
+    return { ok: false, code: "invalid_input" }
+  }
+
+  let response: Response
+
+  try {
+    response = await fetch(
+      `${MEDUSA_BACKEND_URL}/store/auth/vk-id/link-conflict-resolve`,
+      {
+        method: "POST",
+        headers: buildStorePublishableHeaders(),
+        body: JSON.stringify({
+          email,
+          password: input.password,
+          pending_token: pendingToken,
+        }),
+        cache: "no-store",
+      }
+    )
+  } catch {
+    return { ok: false, code: "network_error" }
+  }
+
+  type BackendResponse = {
+    ok?: boolean
+    code?: string
+    message?: string
+    token?: string
+    redirect_to?: string
+  }
+
+  let payload: BackendResponse
+  try {
+    payload = (await response.json()) as BackendResponse
+  } catch {
+    return { ok: false, code: "invalid_response" }
+  }
+
+  if (!response.ok || !payload.ok) {
+    return {
+      ok: false,
+      code: payload.code || "vk_link_conflict_resolve_failed",
+      message: payload.message,
+    }
+  }
+
+  if (typeof payload.token !== "string" || !payload.token) {
+    return { ok: false, code: "missing_token" }
+  }
+
+  await setAuthToken(payload.token)
+
+  const customerCacheTag = await getCacheTag("customers")
+  revalidateTag(customerCacheTag)
+
+  try {
+    await transferCart()
+  } catch {
+    // Cart transfer is best-effort; the account is already linked and the
+    // user is authenticated. We swallow errors rather than roll back.
+  }
+
+  return {
+    ok: true,
+    redirectTo: payload.redirect_to || "/ru/account?vk_linked=success",
+  }
+}
+
 export type RequestEmailVerificationResult = {
   ok: boolean
   code?: string

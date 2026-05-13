@@ -468,3 +468,68 @@ Fix direction:
 | Payload page missing | `payload-cms`, then storefront content logs |
 | Deploy stuck after build | GitHub workflow step logs and remote Docker logs |
 | Smoke fails only publicly | `caddy` plus public `curl -I` |
+
+## 12. VK ID duplicate customers (Phase 5.3 concurrent-race emergency response)
+
+`createVkIdCustomer` runs `lookupCustomerByEmail` and
+`createAuthIdentities` in two separate steps. Two VK callbacks that race for
+the same `vk_user_id` or the same email can, in rare cases, both observe the
+"not found" branch and both try to create a customer. The unique constraint
+on `provider_identities.entity_id` prevents a duplicate auth identity from
+being created (the second request fails), but the race window is documented
+as a Phase 5.4 advisory-lock item.
+
+### Detect duplicates
+
+Against the staging database, run:
+
+```sql
+select lower(email) as email, count(*) as customers
+from customer
+where has_account = true
+  and deleted_at is null
+group by lower(email)
+having count(*) > 1
+order by customers desc;
+```
+
+Expected healthy result is an empty set. A non-empty result means at least
+one email has two or more `has_account=true` customer rows.
+
+For each affected email, list the suspects:
+
+```sql
+select id, email, created_at, metadata->'vk_link'->>'vk_user_id' as vk_user_id,
+       metadata->'vk_link'->>'link_status' as vk_link_status
+from customer
+where lower(email) = lower('<affected-email>')
+  and has_account = true
+  and deleted_at is null
+order by created_at asc;
+```
+
+### Resolve
+
+1. Pick the earliest `created_at` row as the canonical customer.
+2. Verify which row actually has the VK link
+   (`metadata.vk_link.link_status = 'linked'`). That row wins the VK link; if
+   none does, the canonical row is chosen.
+3. Soft-delete the duplicates with `update customer set deleted_at = now()
+   where id = '<duplicate-id>';`. Do NOT `delete`; the historical audit
+   chain (orders, carts, addresses) must survive.
+4. If the customer already has orders or carts linked to the duplicate
+   row, escalate to engineering before deleting — those have to be
+   reassigned to the canonical customer first.
+
+### Prevent recurrence
+
+- Keep `VK_ID_REGISTER_ENABLED=false` on environments where the race is
+  actively problematic until Phase 5.4 ships the advisory lock.
+- Monitor `[vk-id] register creation failed` log lines with
+  `code=customer_account_creation_failed` — they are the symptom of the
+  second caller losing the race.
+- Never run the detection query on production credentials when copy-pasting;
+  scope it to the staging DB as described in `Docs/staging_runbook.md`.
+
+Do not commit emails, vk_user_ids, or other customer PII into logs, tickets,
+or commit messages while diagnosing. Reference them by row id only.

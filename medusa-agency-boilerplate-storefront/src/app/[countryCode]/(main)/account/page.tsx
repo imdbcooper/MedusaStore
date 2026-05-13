@@ -59,6 +59,7 @@ export default async function AccountPage(props: AccountPageProps) {
   const orders = (await listOrders().catch(() => null)) || null
   const passwordResetStatus = readSearchParam(searchParams.password_reset)
   const vkRegistered = readSearchParam(searchParams.vk_registered)
+  const vkLinked = readSearchParam(searchParams.vk_linked)
   const countryCode = params?.countryCode || null
 
   return (
@@ -80,6 +81,16 @@ export default async function AccountPage(props: AccountPageProps) {
         >
           Аккаунт создан через ВКонтакте. Добро пожаловать! Чтобы задать пароль
           для входа без VK, воспользуйтесь ссылкой «Забыли пароль?».
+        </div>
+      ) : null}
+      {vkLinked === "success" ? (
+        <div
+          className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
+          role="status"
+          data-testid="vk-linked-success-banner"
+        >
+          Аккаунт успешно связан с ВКонтакте. Теперь вы можете входить через
+          ВК одной кнопкой.
         </div>
       ) : null}
       <Overview

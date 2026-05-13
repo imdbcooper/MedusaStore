@@ -32,6 +32,7 @@ import { StoreRequestEmailVerificationSchema } from "./store/customers/me/reques
 import { StoreUpdateCustomerPasswordSchema } from "./store/customers/me/password/route"
 import { StoreAuthVkIdStartSchema } from "./store/auth/vk-id/start/route"
 import { enforceVkIdStartOriginAllowlist } from "./store/auth/vk-id/start/origin-guard"
+import { StoreAuthVkIdLinkConflictResolveSchema } from "./store/auth/vk-id/link-conflict-resolve/route"
 import { StoreVkIdStartLinkSchema } from "./store/customers/me/vk-id/start/route"
 import { StoreForgotPasswordSchema } from "./store/customers/forgot-password/route"
 import { StoreResetPasswordSchema } from "./store/customers/reset-password/route"
@@ -213,6 +214,21 @@ export default defineMiddlewares({
       middlewares: [
         enforceVkIdStartOriginAllowlist,
         validateAndTransformBody(StoreAuthVkIdStartSchema),
+      ],
+    },
+    {
+      // Phase 5.3 conflict-resolution endpoint. Unauthenticated like
+      // `/store/auth/vk-id/start` — the caller is a storefront user who
+      // does not yet have a Medusa session. The security envelope is:
+      //   1. Origin/Referer allowlist (same CSRF guard as the login start).
+      //   2. Signed, short-lived `pending_token` carrying the VK identity.
+      //   3. Emailpass password verification before the VK link is persisted.
+      // All three must pass; any single one missing makes the flow a no-op.
+      matcher: "/store/auth/vk-id/link-conflict-resolve",
+      methods: ["POST"],
+      middlewares: [
+        enforceVkIdStartOriginAllowlist,
+        validateAndTransformBody(StoreAuthVkIdLinkConflictResolveSchema),
       ],
     },
     {

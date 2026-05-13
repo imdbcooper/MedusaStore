@@ -357,4 +357,81 @@ describe("createVkIdCustomer (Phase 5.2 hardening)", () => {
 
     expect(authModule.createAuthIdentities).not.toHaveBeenCalled()
   })
+
+  describe("Phase 5.3 email trust policy", () => {
+    it("defaults to `any`: email_verified=true + skipped_reason=vk_registered (regression)", async () => {
+      const authModule = buildAuthModule()
+      const container = buildContainer(authModule)
+
+      await createVkIdCustomer(container, {
+        email: "vkuser@example.com",
+        firstName: "VK",
+        lastName: "User",
+        identity: buildIdentity(),
+        verifiedAt: VERIFIED_AT,
+        linkSource: "vk_id_register",
+      })
+
+      const meta = (mockUpdateCustomersRun.mock.calls[0][0] as any).input.update
+        .metadata
+
+      expect(meta.email_verified).toBe(true)
+      expect(meta.email_verified_at).toBe(VERIFIED_AT)
+      expect(meta.email_verified_for).toBe("vkuser@example.com")
+      expect(meta.email_verification).toEqual(
+        expect.objectContaining({
+          source: "vk_id_register",
+          skipped_reason: "vk_registered",
+        })
+      )
+    })
+
+    it("`any` explicitly: same behaviour as unset (regression)", async () => {
+      const authModule = buildAuthModule()
+      const container = buildContainer(authModule)
+
+      await createVkIdCustomer(container, {
+        email: "vkuser@example.com",
+        firstName: "VK",
+        lastName: "User",
+        identity: buildIdentity(),
+        verifiedAt: VERIFIED_AT,
+        linkSource: "vk_id_register",
+        emailTrustPolicy: "any",
+      })
+
+      const meta = (mockUpdateCustomersRun.mock.calls[0][0] as any).input.update
+        .metadata
+      expect(meta.email_verified).toBe(true)
+      expect(meta.email_verification?.skipped_reason).toBe("vk_registered")
+    })
+
+    it("`require_verification`: email_verified=false and no skipped_reason", async () => {
+      const authModule = buildAuthModule()
+      const container = buildContainer(authModule)
+
+      await createVkIdCustomer(container, {
+        email: "vkuser@example.com",
+        firstName: "VK",
+        lastName: "User",
+        identity: buildIdentity(),
+        verifiedAt: VERIFIED_AT,
+        linkSource: "vk_id_register",
+        emailTrustPolicy: "require_verification",
+      })
+
+      const meta = (mockUpdateCustomersRun.mock.calls[0][0] as any).input.update
+        .metadata
+
+      expect(meta.email_verified).toBe(false)
+      expect(meta.email_verified_at).toBeNull()
+      expect(meta.email_verified_for).toBeNull()
+      expect(meta.email_verification).toBeNull()
+
+      // VK link metadata still lands — the subscriber will just send the
+      // verification email as if it were a classic emailpass registration.
+      expect(meta.vk_link?.link_status).toBe("linked")
+      expect(meta.vk_link?.vk_user_id).toBe("2000000777")
+    })
+  })
 })

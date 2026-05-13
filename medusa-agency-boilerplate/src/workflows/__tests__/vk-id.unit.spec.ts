@@ -854,19 +854,53 @@ describe("VK ID Phase 5.2 register runtime flags", () => {
     expect(runtime.registerEnabled).toBe(false)
   })
 
-  it("requireEmail defaults to true when VK_ID_REQUIRE_EMAIL is unset", () => {
+  it("emailTrustPolicy defaults to \"any\" when VK_ID_EMAIL_TRUST_POLICY is unset", () => {
     applyEnv({
       VK_ID_ENABLED: "true",
       VK_ID_CLIENT_ID: "test_client",
       VK_ID_REDIRECT_URI: "https://studio.slavx.ru/store/vk-id/callback",
-      VK_ID_REQUIRE_EMAIL: undefined,
+      VK_ID_EMAIL_TRUST_POLICY: undefined,
       VK_ID_STOREFRONT_RETURN_ORIGINS: "https://studio.slavx.ru",
     })
 
-    expect(getVkIdRuntime().requireEmail).toBe(true)
+    expect(getVkIdRuntime().emailTrustPolicy).toBe("any")
   })
 
-  it("requireEmail is false only when VK_ID_REQUIRE_EMAIL=\"false\" explicitly", () => {
+  it("emailTrustPolicy falls back to \"any\" for unknown values", () => {
+    applyEnv({
+      VK_ID_ENABLED: "true",
+      VK_ID_CLIENT_ID: "test_client",
+      VK_ID_REDIRECT_URI: "https://studio.slavx.ru/store/vk-id/callback",
+      VK_ID_EMAIL_TRUST_POLICY: "garbage-value",
+      VK_ID_STOREFRONT_RETURN_ORIGINS: "https://studio.slavx.ru",
+    })
+
+    expect(getVkIdRuntime().emailTrustPolicy).toBe("any")
+  })
+
+  it("emailTrustPolicy accepts require_verification and reject", () => {
+    applyEnv({
+      VK_ID_ENABLED: "true",
+      VK_ID_CLIENT_ID: "test_client",
+      VK_ID_REDIRECT_URI: "https://studio.slavx.ru/store/vk-id/callback",
+      VK_ID_EMAIL_TRUST_POLICY: "require_verification",
+      VK_ID_STOREFRONT_RETURN_ORIGINS: "https://studio.slavx.ru",
+    })
+    expect(getVkIdRuntime().emailTrustPolicy).toBe("require_verification")
+
+    applyEnv({
+      VK_ID_ENABLED: "true",
+      VK_ID_CLIENT_ID: "test_client",
+      VK_ID_REDIRECT_URI: "https://studio.slavx.ru/store/vk-id/callback",
+      VK_ID_EMAIL_TRUST_POLICY: "reject",
+      VK_ID_STOREFRONT_RETURN_ORIGINS: "https://studio.slavx.ru",
+    })
+    expect(getVkIdRuntime().emailTrustPolicy).toBe("reject")
+  })
+
+  it("ignores the retired VK_ID_REQUIRE_EMAIL env flag", () => {
+    // Phase 5.3 removed the flag; setting it must not surface a property
+    // nor change the trust policy away from the default.
     applyEnv({
       VK_ID_ENABLED: "true",
       VK_ID_CLIENT_ID: "test_client",
@@ -875,7 +909,9 @@ describe("VK ID Phase 5.2 register runtime flags", () => {
       VK_ID_STOREFRONT_RETURN_ORIGINS: "https://studio.slavx.ru",
     })
 
-    expect(getVkIdRuntime().requireEmail).toBe(false)
+    const runtime = getVkIdRuntime() as Record<string, unknown>
+    expect(runtime.requireEmail).toBeUndefined()
+    expect(runtime.emailTrustPolicy).toBe("any")
   })
 })
 

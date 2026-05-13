@@ -31,10 +31,16 @@ function getVkLoginErrorMessage(error: string | null | undefined) {
     case "email_required":
       return "ВКонтакте не передал ваш email. Зарегистрируйтесь через email и пароль, а затем привяжите VK в профиле."
     // Phase 5.2: the VK email collides with an existing email/password
-    // account. Until Phase 5.3 ships the link-after-login conflict UX,
-    // we guide the user to the classic password path.
+    // account. Phase 5.3 replaces this dead-end banner with a redirect to
+    // the `/ru/account/vk-link-conflict` page, but we keep the copy as a
+    // fallback — the callback falls back to this code only if the pending
+    // token mint fails (e.g. no signing secret configured).
     case "email_exists":
       return "Email, полученный от ВКонтакте, уже используется другим аккаунтом. Войдите по паролю и привяжите VK в профиле."
+    // Phase 5.3: `VK_ID_EMAIL_TRUST_POLICY=reject` is active and refuses
+    // to seed accounts from VK-provided emails.
+    case "email_trust_policy_reject":
+      return "Вход через ВКонтакте временно недоступен. Зарегистрируйтесь по email и паролю."
     // Phase 5.2: internal failures coming back from the register helper.
     case "auth_identity_creation_failed":
     case "customer_account_creation_failed":
