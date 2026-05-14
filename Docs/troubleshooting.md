@@ -534,6 +534,60 @@ order by created_at asc;
 Do not commit emails, vk_user_ids, or other customer PII into logs, tickets,
 or commit messages while diagnosing. Reference them by row id only.
 
+## 12.b. VK ID callback returns `not_allowed` / "Publishable API key required"
+
+### Symptoms
+
+- After a successful VK consent screen the browser lands on
+  `https://<host>/store/vk-id/callback?code=...&state=...` and Medusa
+  responds with HTTP 400 and a JSON body of the shape
+  `{"type":"not_allowed","message":"Publishable API key required in the
+  request header: x-publishable-api-key. ..."}`.
+- Backend logs show the request never reaches
+  `medusa-agency-boilerplate/src/api/store/vk-id/callback/route.ts`; the
+  framework rejects it earlier.
+
+### Cause
+
+Medusa's framework router applies `ensurePublishableApiKeyMiddleware`
+(`medusa-agency-boilerplate/node_modules/@medusajs/framework/dist/http/middlewares/ensure-publishable-api-key.js`)
+to the entire `/store/*` namespace unconditionally — see
+`router.js#applyStorePublishableKeyMiddleware`. The middleware has no
+per-route exemption hook. VK can only redirect to a static URL the
+operator configured in the VK ID admin panel, and a browser direct
+redirect from VK cannot inject the `x-publishable-api-key` header.
+
+### Resolve
+
+VK must redirect the user to the storefront proxy
+[`route.ts`](../medusa-agency-boilerplate-storefront/src/app/api/auth/vk-id/callback/route.ts),
+not the bare Medusa Store API path. The proxy attaches the publishable
+key on the server side and forwards to the backend internally. To
+restore service:
+
+1. Confirm `VK_ID_REDIRECT_URI` points at
+   `https://<storefront-origin>/api/auth/vk-id/callback` in both the
+   GitHub Actions secret/variable used by `Deploy Staging` and the
+   remote `.env` on `som@studio.slavx.ru:/home/som/MedusaStore/.env`.
+2. Update the redirect URL in the VK ID developer admin panel to match.
+3. Redeploy via the `Deploy Staging` workflow so the backend reads the
+   new value (the redirect URI is part of the OAuth `code` exchange and
+   must agree with what VK saw on the authorize step).
+4. Smoke: VK button → consent → return → expect a `_medusa_jwt` cookie
+   on the storefront origin and a redirect to `/ru/account` (login) or
+   `/ru/account/profile` (link).
+
+### Prevent recurrence
+
+- Never set `VK_ID_REDIRECT_URI` to a `/store/*` URL on
+  studio.slavx.ru. The historical pre-proxy value
+  `https://studio.slavx.ru/store/vk-id/callback` will always 400 from
+  the browser.
+- Keep the storefront proxy and backend callback in sync: any change to
+  the backend `StoreVkIdCallbackSchema` accepted query params must be
+  mirrored in
+  [`vk-id-callback-proxy.ts#ALLOWED_VK_PROXY_PARAMS`](../medusa-agency-boilerplate-storefront/src/lib/util/vk-id-callback-proxy.ts).
+
 ## 13. Hydration mismatch on storefront (`NEXT_PUBLIC_*` build-time inlining)
 
 ### Symptoms
