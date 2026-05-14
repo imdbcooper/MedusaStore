@@ -53,6 +53,10 @@ function getVkLoginErrorMessage(error: string | null | undefined) {
       return "VK не вернул идентификатор пользователя. Попробуйте ещё раз."
     case "invalid_or_expired_state":
       return "Сессия VK ID устарела. Попробуйте войти заново."
+    case "access_denied":
+      return "Вы отменили вход через VK. Чтобы продолжить, разрешите доступ или войдите по email и паролю."
+    case "customer_auth_required":
+      return "Для открытия профиля войдите в аккаунт."
     case "missing_callback_params":
       return "Параметры VK ID callback неполные. Попробуйте ещё раз."
     case "token_exchange_failed":

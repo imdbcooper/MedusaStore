@@ -1,5 +1,5 @@
 import { Metadata } from "next"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 
 import { retrieveCustomer } from "@lib/data/customer"
 import { retrieveMarketingPreferences } from "@lib/data/marketing"
@@ -33,6 +33,23 @@ function readSearchParam(
   return typeof value === "string" ? value : null
 }
 
+function buildUnauthenticatedAccountRedirect(
+  countryCode: string,
+  initialResult: string | null,
+  initialReason: string | null
+) {
+  const searchParams = new URLSearchParams()
+
+  if (initialReason) {
+    searchParams.set("vk_login_error", initialReason)
+  } else if (initialResult === "failed") {
+    searchParams.set("vk_login_error", "customer_auth_required")
+  }
+
+  const queryString = searchParams.toString()
+  return `/${countryCode}/account${queryString ? `?${queryString}` : ""}`
+}
+
 type SectionProps = {
   title: string
   description?: string
@@ -52,15 +69,22 @@ const Section = ({ title, description, children }: SectionProps) => (
 )
 
 export default async function Profile(props: ProfilePageProps) {
-  const customer = await retrieveCustomer()
-  const regions = await listRegions()
-  const marketingPreferences = await retrieveMarketingPreferences()
   const { countryCode } = await props.params
   const searchParams = props.searchParams ? await props.searchParams : {}
   const initialResult = readSearchParam(searchParams.vk_id_result)
   const initialReason = readSearchParam(searchParams.vk_id_reason)
+  const customer = await retrieveCustomer()
 
-  if (!customer || !regions) {
+  if (!customer) {
+    redirect(
+      buildUnauthenticatedAccountRedirect(countryCode, initialResult, initialReason)
+    )
+  }
+
+  const regions = await listRegions()
+  const marketingPreferences = await retrieveMarketingPreferences()
+
+  if (!regions) {
     notFound()
   }
 
