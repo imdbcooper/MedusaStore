@@ -15,6 +15,7 @@
   "scripts": {
     "build": "medusa build",
     "seed": "medusa exec ./src/scripts/seed.ts",
+    "seed:products": "npx tsx scripts/seed-products.ts",
     "prepare:checkout-runtime": "medusa exec ./src/scripts/prepare-checkout-runtime.ts",
     "admin:api-key:local": "medusa exec ./src/scripts/create-secret-admin-api-key.ts",
     "start": "medusa start",
