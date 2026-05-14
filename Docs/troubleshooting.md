@@ -329,7 +329,8 @@ Common causes:
 - Docker build out of disk/memory;
 - Payload migrations hanging;
 - healthcheck never becomes healthy;
-- smoke uses HTTPS before Caddy certificate is ready.
+- smoke uses HTTPS before Caddy certificate is ready;
+- interrupted Docker Compose recreate leaving replace-labeled containers, typically visible as `Error response from daemon: Conflict. The container name "/<id>_medusastore-..." is already in use`; the canonical deploy script uses `--force-recreate --remove-orphans`, and the operator-approved manual recovery is to rerun the workflow or, in an incident, run the same compose `up -d --force-recreate --remove-orphans` for app services and then `scripts/staging-container-smoke.sh`.
 
 ## 8. Smoke HTTP/HTTPS mismatch
 

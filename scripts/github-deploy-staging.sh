@@ -63,7 +63,9 @@ app_services=(medusa-backend payload-cms storefront caddy)
 if [[ ${#compose_profiles[@]} -gt 0 ]]; then
   app_services=(ai-assistant "${app_services[@]}")
 fi
-docker compose -p "$project_name" -f "$compose_file" --env-file .env "${compose_profiles[@]}" up -d --remove-orphans "${app_services[@]}"
+# Force recreation keeps staging deploy idempotent after interrupted or partially
+# completed compose recreates, which can leave replace-labeled containers behind.
+docker compose -p "$project_name" -f "$compose_file" --env-file .env "${compose_profiles[@]}" up -d --force-recreate --remove-orphans "${app_services[@]}"
 
 echo "Pruning dangling Docker images..."
 docker image prune -f >/dev/null || true

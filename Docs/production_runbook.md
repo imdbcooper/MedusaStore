@@ -106,7 +106,7 @@ Do not put GitHub-only deploy secrets into the app `.env`; keep `DEPLOY_SSH_PRIV
    - builds images;
    - starts `medusa-db` and `medusa-redis`;
    - optionally runs Payload migrations and seed one-off jobs;
-   - starts `medusa-backend`, `payload-cms`, `storefront`, `caddy`;
+   - starts/recreates `medusa-backend`, `payload-cms`, `storefront`, `caddy`, and enabled profile services with `--force-recreate --remove-orphans` so interrupted compose recreates do not poison the next run;
    - prunes dangling images;
    - runs staging smoke checks.
 
@@ -239,7 +239,7 @@ cd /home/som/MedusaStore
 git fetch origin main
 git reset --hard <known-good-commit>
 docker compose -p medusastore -f docker-compose.prod.yml --env-file .env build
-docker compose -p medusastore -f docker-compose.prod.yml --env-file .env up -d --remove-orphans medusa-backend payload-cms storefront caddy
+docker compose -p medusastore -f docker-compose.prod.yml --env-file .env up -d --force-recreate --remove-orphans medusa-backend payload-cms storefront caddy
 bash ./scripts/staging-container-smoke.sh
 ```
 
