@@ -60,6 +60,8 @@ Before making claims, keep these verified facts in mind:
 - The repository is a Russian-market Medusa template/runtime repository named MedusaStore.
 - Baseline region/currency are `ru` / `rub`.
 - Single staging environment: `studio.slavx.ru` (SSH alias `slavx-store`, IP `171.22.180.206`, deploy path `/home/som/MedusaStore`).
+- Staging admin user: `admin@slavx.ru` (created via `npx medusa user`). Password managed through GitHub Secrets, not committed.
+- Temporary upload user `upload-bot@slavx.ru` exists on staging (created for image upload automation); can be removed via Admin UI.
 - Real production environment is **not provisioned yet**. It will be set up after development is complete. Treat any "production" wording in historical docs as either a technical Node.js build term (`NODE_ENV=production`) or a TBD future environment.
 - Mail VPS is a separate server (`smtpserv` / `77.83.92.194`) with hostname `smtp.slavx.ru`, docker-mailserver with Let's Encrypt TLS, and DKIM/SPF/DMARC for `notify.slavx.ru`.
 - Transactional email sender: `noreply@notify.slavx.ru`.
