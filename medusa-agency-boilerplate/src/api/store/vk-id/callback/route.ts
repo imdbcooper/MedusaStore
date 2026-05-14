@@ -23,6 +23,7 @@ import {
   resolveVkIdentity,
   VkIdCustomerCreationError,
   withVkIdRegisterLock,
+  generatePlaceholderEmail,
   type VkIdAuthIntent,
   type VkIdLinkSessionPayload,
   type VkIdRuntime,
@@ -399,13 +400,11 @@ async function tryVkIdRegisterBranch(
     return { handled: false, fallbackReason: "not_linked" }
   }
 
-  if (!identity.email) {
-    // Phase 5.3: VK ID always returns an email under the configured
-    // `vkid.personal_info + email` scope. If the provider ever drops the
-    // field (scope mismatch, consent revoked), fall back to the classic
-    // `email_required` banner — we never synthesise placeholder emails.
-    return { handled: false, fallbackReason: "email_required" }
-  }
+  // Phase 5.5: VK ID may not return an email (scope mismatch, consent
+  // revoked, or user has no email on VK profile). Instead of blocking
+  // registration, we proceed with a placeholder email and mark onboarding
+  // as pending. The storefront will prompt the user to provide a real email.
+  // If `reject` trust policy is active, we still block registration entirely.
 
   // Phase 5.3: `reject` trust policy disables VK-driven registration entirely
   // even before we try to look up the email. Operators opting into this
@@ -428,23 +427,31 @@ async function tryVkIdRegisterBranch(
   // identity cannot both reach the create branch and race. The second
   // request waits until the first finishes, then observes the created
   // customer via `lookupCustomerByEmail` and takes the conflict branch.
+  //
+  // Phase 5.5: when identity.email is null, we use the deterministic
+  // placeholder email for the lock key and lookup. This ensures the same
+  // VK user always resolves to the same placeholder customer.
+  const emailForLookup = identity.email || generatePlaceholderEmail(identity.vkUserId)
+
   let existing: Awaited<ReturnType<typeof lookupCustomerByEmail>>
   let creation: Awaited<ReturnType<typeof createVkIdCustomer>> | null = null
   try {
     const outcome = await registerLock(
       pgConnection,
-      { vkUserId: identity.vkUserId, email: identity.email || "" },
+      { vkUserId: identity.vkUserId, email: emailForLookup },
       async () => {
-        const lookup = await lookupByEmailFn(pgConnection, identity.email!)
+        const lookup = await lookupByEmailFn(pgConnection, emailForLookup)
 
         if (lookup) {
           return { kind: "existing" as const, existing: lookup }
         }
 
         const created = await createFn(req.scope, {
-          email: identity.email!,
+          email: identity.email,
           firstName: identity.firstName,
           lastName: identity.lastName,
+          phone: identity.phone,
+          avatar: identity.avatar,
           identity,
           verifiedAt: new Date().toISOString(),
           linkSource: session.linkSource || "vk_id_register",
@@ -508,7 +515,12 @@ async function tryVkIdRegisterBranch(
   }
 
   setMedusaJwtCookie(res, issued.token, runtime)
-  res.redirect(302, buildVkIdRegisteredReturnUrl({ returnUrl }).toString())
+  const registeredUrl = buildVkIdRegisteredReturnUrl({ returnUrl })
+  // Phase 5.5: signal onboarding status to storefront via query param
+  if (!identity.email) {
+    registeredUrl.searchParams.set("onboarding", "pending")
+  }
+  res.redirect(302, registeredUrl.toString())
   return { handled: true }
 }
 

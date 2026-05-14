@@ -957,3 +957,83 @@ export async function unsubscribeFromMarketing(options: {
 
   return { ok: true }
 }
+
+// ---------------------------------------------------------------------------
+// Onboarding: submit email/phone after VK registration without email
+// ---------------------------------------------------------------------------
+
+export type SubmitOnboardingInput = {
+  email?: string
+  phone?: string
+}
+
+export type SubmitOnboardingResult = {
+  ok: boolean
+  error?: string
+  code?: string
+}
+
+export async function submitOnboarding(
+  input: SubmitOnboardingInput
+): Promise<SubmitOnboardingResult> {
+  const headers = await getAuthHeaders()
+
+  if (!headers) {
+    return { ok: false, error: "Необходимо войти в аккаунт.", code: "auth_required" }
+  }
+
+  const body: Record<string, string> = {}
+  if (input.email) body.email = input.email
+  if (input.phone) body.phone = input.phone
+
+  try {
+    const response = await fetch(`${MEDUSA_BACKEND_URL}/store/customers/me/onboarding`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        ...buildStorePublishableHeaders(),
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    })
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      const code = data?.code || data?.type || "unknown_error"
+
+      if (response.status === 409) {
+        return {
+          ok: false,
+          error: "Этот email уже используется другим аккаунтом.",
+          code: "email_already_exists",
+        }
+      }
+
+      if (response.status === 400) {
+        return {
+          ok: false,
+          error: data?.message || "Проверьте правильность введённых данных.",
+          code,
+        }
+      }
+
+      return {
+        ok: false,
+        error: data?.message || "Произошла ошибка. Попробуйте позже.",
+        code,
+      }
+    }
+
+    const customerCacheTag = await getCacheTag("customers")
+    revalidateTag(customerCacheTag)
+
+    return { ok: true }
+  } catch {
+    return {
+      ok: false,
+      error: "Не удалось связаться с сервером. Попробуйте позже.",
+      code: "network_error",
+    }
+  }
+}

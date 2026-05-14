@@ -18,7 +18,7 @@ import {
   EMAIL_VERIFICATION_METADATA_KEY,
 } from "./email-verification"
 
-export const DEFAULT_VK_ID_SCOPES = "vkid.personal_info"
+export const DEFAULT_VK_ID_SCOPES = "vkid.personal_info phone"
 export const DEFAULT_VK_ID_AUTHORIZE_URL = "https://id.vk.ru/authorize"
 export const DEFAULT_VK_ID_TOKEN_URL = "https://id.vk.ru/oauth2/auth"
 export const DEFAULT_VK_ID_USER_INFO_URL = "https://id.vk.ru/oauth2/user_info"
@@ -30,6 +30,47 @@ export const DEFAULT_VK_ID_LOGIN_RETURN_PATH = "/ru/account"
 export const DEFAULT_VK_ID_LINK_CONFLICT_PATH = "/ru/account/vk-link-conflict"
 export const DEFAULT_VK_ID_PENDING_TOKEN_TTL_MINUTES = 10
 const DEFAULT_LOCAL_STOREFRONT_ORIGIN = "http://localhost:8000"
+export const PLACEHOLDER_EMAIL_DOMAIN = "placeholder.internal"
+
+/**
+ * Generate a deterministic placeholder email for VK users who don't provide
+ * a real email. The placeholder satisfies Medusa's NOT NULL + unique constraint
+ * while being clearly identifiable as non-deliverable.
+ */
+export function generatePlaceholderEmail(vkUserId: string): string {
+  return `vk_${vkUserId}@${PLACEHOLDER_EMAIL_DOMAIN}`
+}
+
+/**
+ * Check whether an email is a VK onboarding placeholder.
+ * Used by workflow guards to skip email-sending for placeholder addresses.
+ */
+export function isPlaceholderEmail(email: string | null | undefined): boolean {
+  if (!email) return false
+  return email.trim().toLowerCase().endsWith(`@${PLACEHOLDER_EMAIL_DOMAIN}`)
+}
+
+/**
+ * Build the onboarding metadata object for a newly created VK customer.
+ * Tracks which fields are missing so the storefront can prompt the user.
+ */
+export function buildOnboardingMetadata(input: {
+  hasRealEmail: boolean
+  hasPhone: boolean
+  vkPhoneVerified: boolean
+}): Record<string, unknown> {
+  const missingFields: string[] = []
+  if (!input.hasRealEmail) missingFields.push("email")
+  if (!input.hasPhone) missingFields.push("phone")
+
+  return {
+    status: missingFields.length === 0 ? "complete" : "pending",
+    missing_fields: missingFields,
+    placeholder_email: !input.hasRealEmail,
+    vk_phone_verified: input.vkPhoneVerified,
+    created_at: new Date().toISOString(),
+  }
+}
 
 /**
  * Phase 5.3: VK ID email trust policy.
@@ -175,6 +216,16 @@ export type VkResolvedIdentity = {
   emailVerified: boolean
   firstName: string | null
   lastName: string | null
+  /**
+   * Phone number returned by VK ID when `phone` scope is granted.
+   * VK only releases the phone after VK-side confirmation, so we treat
+   * it as verified.
+   */
+  phone: string | null
+  /**
+   * Avatar URL from VK profile (userInfo.user.avatar).
+   */
+  avatar: string | null
 }
 
 export type VkLinkableCustomerRecord = {
@@ -654,6 +705,8 @@ export function identityFromPendingLinkTokenPayload(
     emailVerified: Boolean(payload.email),
     firstName: payload.firstName,
     lastName: payload.lastName,
+    phone: null,
+    avatar: null,
   }
 }
 
@@ -1026,6 +1079,8 @@ export function resolveVkIdentity(input: {
     emailVerified,
     firstName: normalizeIdentityString(user?.first_name),
     lastName: normalizeIdentityString(user?.last_name),
+    phone: normalizeIdentityString(user?.phone),
+    avatar: normalizeIdentityString(user?.avatar),
   } satisfies VkResolvedIdentity
 }
 
@@ -1811,19 +1866,27 @@ function describeVkIdInternalError(error: unknown): {
 export async function createVkIdCustomer(
   container: MedusaContainer,
   input: {
-    email: string
+    email: string | null
     firstName?: string | null
     lastName?: string | null
+    phone?: string | null
+    avatar?: string | null
     identity: VkResolvedIdentity
     verifiedAt: string
     linkSource: string
     emailTrustPolicy?: VkIdEmailTrustPolicy
   }
 ): Promise<VkIdCustomerCreationResult> {
+  // Determine whether we have a real email or need a placeholder.
+  const hasRealEmail = Boolean(input.email)
+  const emailToUse = hasRealEmail
+    ? input.email!
+    : generatePlaceholderEmail(input.identity.vkUserId)
+
   // Fix #6: normalize the email exactly once. Medusa stores emails verbatim
   // but our lookups / forgot-password flows all use `lower(email)`, so any
   // mismatch here silently breaks flows for customers registered via VK.
-  const normalizedEmail = normalizeNotificationRecipient(input.email)
+  const normalizedEmail = normalizeNotificationRecipient(emailToUse)
 
   if (!normalizedEmail) {
     throw new VkIdCustomerCreationError("email_required")
@@ -1895,6 +1958,7 @@ export async function createVkIdCustomer(
           email: normalizedEmail,
           first_name: input.firstName || undefined,
           last_name: input.lastName || undefined,
+          phone: input.phone || undefined,
         },
       },
     })
@@ -1939,12 +2003,22 @@ export async function createVkIdCustomer(
     linkSource: input.linkSource,
   })
 
+  // Enrich vk_link with phone/avatar from VK identity
+  const vkLinkEnriched = {
+    ...(linkMetadata.vk_link as Record<string, unknown>),
+    phone: input.identity.phone || null,
+    avatar: input.identity.avatar || null,
+    phone_verified: Boolean(input.identity.phone),
+  }
+  linkMetadata.vk_link = vkLinkEnriched
+
   // Phase 5.3: the email trust policy decides whether we mark the email as
   // verified and skip the transactional verification email. `any` keeps the
   // Phase 5.2 shortcut; `require_verification` forces the subscriber to send
   // the verification email so a VK-provided email still has to be confirmed.
+  // For placeholder emails, we never mark as verified and never send verification.
   const trustPolicy: VkIdEmailTrustPolicy = input.emailTrustPolicy ?? "any"
-  const emailVerifiedFlag = trustPolicy !== "require_verification"
+  const emailVerifiedFlag = hasRealEmail && trustPolicy !== "require_verification"
 
   const verifiedMetadata: Record<string, unknown> = {
     ...linkMetadata,
@@ -1963,6 +2037,12 @@ export async function createVkIdCustomer(
           skipped_reason: "vk_registered",
         }
       : null,
+    // Onboarding metadata: tracks missing fields for the storefront
+    onboarding: buildOnboardingMetadata({
+      hasRealEmail,
+      hasPhone: Boolean(input.identity.phone),
+      vkPhoneVerified: Boolean(input.identity.phone),
+    }),
   }
 
   await persistVkIdCustomerMetadata(container, customerId, verifiedMetadata)

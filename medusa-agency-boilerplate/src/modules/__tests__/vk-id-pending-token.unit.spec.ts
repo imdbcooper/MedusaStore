@@ -38,6 +38,8 @@ function buildIdentity(
     emailVerified: true,
     firstName: "VK",
     lastName: "User",
+    phone: null,
+    avatar: null,
     ...overrides,
   }
 }

@@ -1,10 +1,13 @@
 import { Metadata } from "next"
 
 import Overview from "@modules/account/components/overview"
+import OnboardingBanner from "@modules/account/components/onboarding-banner"
 import LoginTemplate from "@modules/account/templates/login-template"
 import { retrieveCustomer } from "@lib/data/customer"
 import { listOrders } from "@lib/data/orders"
 import { getMetadataTitle, storefrontConfig } from "@lib/storefront-config"
+import { isOnboardingPending } from "@lib/util/onboarding"
+import { redirect } from "next/navigation"
 
 type AccountPageProps = {
   params?: Promise<{ countryCode: string }>
@@ -60,10 +63,20 @@ export default async function AccountPage(props: AccountPageProps) {
   const passwordResetStatus = readSearchParam(searchParams.password_reset)
   const vkRegistered = readSearchParam(searchParams.vk_registered)
   const vkLinked = readSearchParam(searchParams.vk_linked)
+  const onboardingParam = readSearchParam(searchParams.onboarding)
   const countryCode = params?.countryCode || null
+
+  // If ?onboarding=pending or customer has pending onboarding, redirect to onboarding page
+  const customerNeedsOnboarding = isOnboardingPending(customer)
+  if (onboardingParam === "pending" && customerNeedsOnboarding && countryCode) {
+    redirect(`/${countryCode}/account/onboarding`)
+  }
 
   return (
     <div className="flex w-full flex-col gap-y-4">
+      {customerNeedsOnboarding && countryCode ? (
+        <OnboardingBanner countryCode={countryCode} />
+      ) : null}
       {passwordResetStatus === "success" ? (
         <div
           className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"

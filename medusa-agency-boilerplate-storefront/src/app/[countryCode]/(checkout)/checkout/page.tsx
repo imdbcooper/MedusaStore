@@ -1,6 +1,8 @@
 import { retrieveCart } from "@lib/data/cart"
 import { retrieveCustomer } from "@lib/data/customer"
 import { getMetadataTitle, storefrontConfig } from "@lib/storefront-config"
+import { isCheckoutBlocked } from "@lib/util/onboarding"
+import CheckoutOnboardingGate from "@modules/checkout/components/checkout-onboarding-gate"
 import PaymentWrapper from "@modules/checkout/components/payment-wrapper"
 import CheckoutForm from "@modules/checkout/templates/checkout-form"
 import CheckoutSummary from "@modules/checkout/templates/checkout-summary"
@@ -27,6 +29,25 @@ export default async function Checkout(props: Props) {
   const searchParams = (await props.searchParams) || {}
   const yookassaStatus =
     typeof searchParams.yookassa === "string" ? searchParams.yookassa : null
+
+  // Block checkout if customer has placeholder email (onboarding not completed)
+  if (isCheckoutBlocked(customer)) {
+    return (
+      <main className="content-container py-14 small:py-24">
+        <div className="mx-auto max-w-5xl">
+          <LocalizedClientLink
+            className="mb-6 inline-flex items-center gap-2 text-sm font-bold uppercase tracking-[0.16em] text-[var(--theme-accent)] transition hover:text-[var(--theme-accent-strong)]"
+            href="/store"
+          >
+            ← Вернуться в каталог
+          </LocalizedClientLink>
+          <div className="rounded-[var(--theme-radius-shell)] border border-[var(--theme-border)] bg-[var(--theme-surface)] p-6 shadow-[var(--theme-shadow-card)] small:p-8">
+            <CheckoutOnboardingGate />
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   return (
     <main className="content-container py-14 small:py-24">

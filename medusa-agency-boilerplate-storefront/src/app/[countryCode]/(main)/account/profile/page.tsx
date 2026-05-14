@@ -5,6 +5,8 @@ import { retrieveCustomer } from "@lib/data/customer"
 import { retrieveMarketingPreferences } from "@lib/data/marketing"
 import { listRegions } from "@lib/data/regions"
 import { getMetadataTitle, storefrontConfig } from "@lib/storefront-config"
+import { isOnboardingPending } from "@lib/util/onboarding"
+import OnboardingBanner from "@modules/account/components/onboarding-banner"
 import ProfileBillingAddress from "@modules/account/components/profile-billing-address"
 import ProfileEmail from "@modules/account/components/profile-email"
 import ProfileMarketingPreferences from "@modules/account/components/profile-marketing-preferences"
@@ -90,6 +92,11 @@ export default async function Profile(props: ProfilePageProps) {
 
   return (
     <div className="w-full" data-testid="profile-page-wrapper">
+      {isOnboardingPending(customer) ? (
+        <div className="mb-6">
+          <OnboardingBanner countryCode={countryCode} />
+        </div>
+      ) : null}
       <div className="mb-8 flex flex-col gap-y-2">
         <h1 className="text-2xl-semi">
           {storefrontConfig.copy.account.profile}

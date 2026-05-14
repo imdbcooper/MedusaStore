@@ -132,6 +132,8 @@ function buildLoginDeps(
     emailVerified: false,
     firstName: null,
     lastName: null,
+    phone: null,
+    avatar: null,
   }
 
   return {
@@ -173,6 +175,8 @@ function buildLinkDeps(
     emailVerified: false,
     firstName: null,
     lastName: null,
+    phone: null,
+    avatar: null,
   }
 
   return {
@@ -573,6 +577,8 @@ describe("handleVkIdLoginIntent Phase 5.2 register branch", () => {
       emailVerified: true,
       firstName: "VK",
       lastName: "User",
+      phone: null,
+      avatar: null,
       ...overrides,
     }
   }
@@ -611,9 +617,12 @@ describe("handleVkIdLoginIntent Phase 5.2 register branch", () => {
     expect(createFn).not.toHaveBeenCalled()
   })
 
-  it("redirects with vk_login_error=email_required when VK did not return email (scope drop fallback)", async () => {
+  it("creates customer with placeholder email and onboarding=pending when VK did not return email (Phase 5.5)", async () => {
     const { res, recorder } = buildResponse()
-    const createFn = jest.fn()
+    const createFn = jest.fn(async () => ({
+      customerId: "cust_placeholder",
+      authIdentityId: "auth_placeholder",
+    }))
     const deps = buildLoginDeps({
       resolveIdentity: jest.fn(() =>
         buildRegisterIdentity({ email: null, emailVerified: false })
@@ -624,6 +633,10 @@ describe("handleVkIdLoginIntent Phase 5.2 register branch", () => {
       })) as any,
       lookupCustomerByEmail: jest.fn(async () => null) as any,
       createVkIdCustomer: createFn as any,
+      issueCustomerJwt: jest.fn(async () => ({
+        ok: true,
+        token: "jwt_placeholder",
+      })) as any,
     })
 
     await handleVkIdLoginIntent(
@@ -640,11 +653,13 @@ describe("handleVkIdLoginIntent Phase 5.2 register branch", () => {
       deps
     )
 
-    expect(recorder.redirected?.url).toContain(
-      "vk_login_error=email_required"
-    )
-    expect(recorder.setCookies).toHaveLength(0)
-    expect(createFn).not.toHaveBeenCalled()
+    // Should proceed with registration using placeholder email
+    expect(createFn).toHaveBeenCalledTimes(1)
+    expect((createFn.mock.calls as any)[0][1].email).toBeNull()
+    // Should redirect with success + onboarding=pending
+    expect(recorder.redirected?.url).toContain("vk_registered=success")
+    expect(recorder.redirected?.url).toContain("onboarding=pending")
+    expect(recorder.setCookies).toHaveLength(1)
   })
 
   it("redirects to vk-link-conflict page with pending_token when email already belongs to another customer", async () => {

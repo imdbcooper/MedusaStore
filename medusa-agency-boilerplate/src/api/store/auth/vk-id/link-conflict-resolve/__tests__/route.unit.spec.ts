@@ -209,6 +209,8 @@ function mintValidToken(overrides: {
       emailVerified: true,
       firstName: overrides.firstName ?? "VK",
       lastName: overrides.lastName ?? "User",
+      phone: null,
+      avatar: null,
     },
     ttlMinutes: 10,
   })
@@ -281,6 +283,8 @@ describe("POST /store/auth/vk-id/link-conflict-resolve (Phase 5.3)", () => {
         emailVerified: true,
         firstName: null,
         lastName: null,
+        phone: null,
+        avatar: null,
       },
       ttlMinutes: 1,
       now: new Date(Date.now() - 1000 * 60 * 60),

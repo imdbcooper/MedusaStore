@@ -15,6 +15,7 @@ import {
   enforceApishipOrderFulfillmentCreateExecutionGuard,
 } from "../modules/apiship-shipment-execution-guard"
 import { enforceDeliveryHubRuntimeQuarantine } from "../modules/delivery-hub-runtime-quarantine"
+import { enforceOnboardingEmailForCheckout } from "../modules/onboarding-checkout-gate"
 import {
   publicRateLimit,
   VK_ID_PUBLIC_RATE_LIMIT,
@@ -44,6 +45,7 @@ import { StoreVerifyEmailSchema } from "./store/customers/verify-email/route"
 import { StoreYooKassaPaymentStatusSchema } from "./store/payment/yookassa/route"
 import { StoreYooKassaReturnSchema } from "./store/payment/yookassa/return/route"
 import { StoreVkIdCallbackSchema } from "./store/vk-id/callback/route"
+import { StoreOnboardingSchema } from "./store/customers/me/onboarding/route"
 
 const adminAuth = authenticate("user", ["session", "bearer", "api-key"])
 
@@ -300,6 +302,14 @@ export default defineMiddlewares({
       ],
     },
     {
+      matcher: "/store/customers/me/onboarding",
+      methods: ["POST"],
+      middlewares: [
+        authenticate("customer", ["session", "bearer"]),
+        validateAndTransformBody(StoreOnboardingSchema),
+      ],
+    },
+    {
       matcher: "/admin/customers/:id/send-password-reset",
       methods: ["POST"],
       middlewares: [adminAuth],
@@ -382,7 +392,7 @@ export default defineMiddlewares({
     {
       matcher: "/store/carts/:id/complete",
       methods: ["POST"],
-      middlewares: [enforceApishipCheckoutReadinessForCartCompletion],
+      middlewares: [enforceOnboardingEmailForCheckout, enforceApishipCheckoutReadinessForCartCompletion],
     },
     {
       matcher: "/store/payment/yookassa",

@@ -36,6 +36,8 @@ function buildIdentity(
     emailVerified: false,
     firstName: null,
     lastName: null,
+    phone: null,
+    avatar: null,
     ...overrides,
   }
 }
@@ -485,6 +487,8 @@ describe("VK ID login lookup helpers", () => {
       emailVerified: false,
       firstName: null,
       lastName: null,
+      phone: null,
+      avatar: null,
     }
   }
 
@@ -614,6 +618,8 @@ describe("VK ID login lookup helpers", () => {
       emailVerified: false,
       firstName: null,
       lastName: null,
+      phone: null,
+      avatar: null,
     })
 
     expect(rows).toHaveLength(1)
