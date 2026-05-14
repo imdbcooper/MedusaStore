@@ -410,6 +410,35 @@ describe("VK ID auth intent state semantics", () => {
     expect(getVkIdSessionIntent(parsed)).toBe("login")
   })
 
+  it("mints VK-safe state without punctuation stripped by id.vk.ru authorize", () => {
+    const session = createVkIdLoginSession({
+      returnUrl: "http://localhost:8000/ru/account",
+    })
+
+    expect(session.state).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect(session.state).not.toContain(".")
+    expect(readVkIdLinkSession(session.state)?.intent).toBe("login")
+  })
+
+  it("still reads legacy dot-separated state minted before the VK-safe compact format", () => {
+    const session = createVkIdLoginSession({
+      returnUrl: "http://localhost:8000/ru/account",
+    })
+    const legacyState = `${session.state.slice(0, -43)}.${session.state.slice(-43)}`
+
+    expect(readVkIdLinkSession(legacyState)?.intent).toBe("login")
+  })
+
+  it("rejects compact state if VK or any proxy strips a character from it", () => {
+    const session = createVkIdLoginSession({
+      returnUrl: "http://localhost:8000/ru/account",
+    })
+    const tampered = `${session.state.slice(0, 20)}${session.state.slice(21)}`
+
+    expect(tampered).not.toBe(session.state)
+    expect(readVkIdLinkSession(tampered)).toBeNull()
+  })
+
   it("getVkIdSessionIntent returns 'link' for legacy sessions without intent field", () => {
     expect(getVkIdSessionIntent(null)).toBe("link")
     expect(

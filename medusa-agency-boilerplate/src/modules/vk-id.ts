@@ -433,15 +433,33 @@ function signPayload(payload: string) {
   )
 }
 
+const VK_ID_STATE_SIGNATURE_LENGTH = 43
+
 function buildSignedState(payload: VkIdLinkSessionPayload) {
   const encodedPayload = base64UrlEncode(JSON.stringify(payload))
   const signature = signPayload(encodedPayload)
 
-  return `${encodedPayload}.${signature}`
+  // VK ID's `/authorize` bridge rewrites `state` into `redirect_state` and
+  // strips punctuation such as `.`, `~`, `:`, and `*` before the final auth
+  // page. Keep the state alphabet to base64url alphanumerics plus `-` / `_`,
+  // which VK preserves, by concatenating payload + fixed-length SHA-256 HMAC
+  // signature instead of using a punctuation separator.
+  return `${encodedPayload}${signature}`
 }
 
 function verifySignedState(state: string) {
-  const [encodedPayload, providedSignature] = state.split(".")
+  let encodedPayload: string | undefined
+  let providedSignature: string | undefined
+
+  if (state.includes(".")) {
+    // Backward-compatible reader for states minted before the VK-safe compact
+    // format. This path is useful for local/direct smokes and harmless because
+    // VK itself strips the dot before a real callback.
+    ;[encodedPayload, providedSignature] = state.split(".")
+  } else if (state.length > VK_ID_STATE_SIGNATURE_LENGTH) {
+    encodedPayload = state.slice(0, -VK_ID_STATE_SIGNATURE_LENGTH)
+    providedSignature = state.slice(-VK_ID_STATE_SIGNATURE_LENGTH)
+  }
 
   if (!encodedPayload || !providedSignature) {
     return null
