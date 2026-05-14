@@ -1,9 +1,9 @@
 "use client"
 
 import { storefrontConfig } from "@lib/storefront-config"
-import Back from "@modules/common/icons/back"
 import FastDelivery from "@modules/common/icons/fast-delivery"
 import Refresh from "@modules/common/icons/refresh"
+import Back from "@modules/common/icons/back"
 
 import Accordion from "./accordion"
 import { HttpTypes } from "@medusajs/types"
@@ -22,7 +22,7 @@ const ProductTabs = ({ product }: ProductTabsProps) => {
     },
     {
       label: productCopy.shippingAndReturns,
-      component: <ShippingInfoTab />,
+      component: <ServiceTermsTab product={product} />,
     },
   ]
 
@@ -34,7 +34,7 @@ const ProductTabs = ({ product }: ProductTabsProps) => {
             Детали предложения
           </h2>
           <p className="text-lg leading-8 text-[var(--theme-muted)]">
-            Реальные параметры товара, доставка и возвраты сохранены из Medusa storefront logic.
+            Подробное описание услуги, условия работы и гарантии.
           </p>
         </div>
         <div className="rounded-[var(--theme-radius-card)] border border-[var(--theme-border)] bg-[var(--theme-canvas)] p-2">
@@ -58,30 +58,49 @@ const ProductTabs = ({ product }: ProductTabsProps) => {
 
 const ProductInfoTab = ({ product }: ProductTabsProps) => {
   const productCopy = storefrontConfig.copy.product
+  const metadata = (product.metadata || {}) as Record<string, unknown>
+
+  // Extract relevant metadata fields for IT services
+  const metadataFields: { label: string; value: string }[] = []
+
+  if (metadata["срок"] || metadata["deadline"]) {
+    metadataFields.push({
+      label: productCopy.metadataDeadline,
+      value: String(metadata["срок"] || metadata["deadline"]),
+    })
+  }
+
+  if (metadata["результат"] || metadata["result"]) {
+    metadataFields.push({
+      label: productCopy.metadataResult,
+      value: String(metadata["результат"] || metadata["result"]),
+    })
+  }
+
+  if (metadata["формат"] || metadata["format"]) {
+    metadataFields.push({
+      label: productCopy.metadataFormat,
+      value: String(metadata["формат"] || metadata["format"]),
+    })
+  }
 
   return (
     <div className="py-8 text-sm leading-6 text-[var(--theme-muted)]">
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="flex flex-col gap-4">
-          <SpecRow label={productCopy.material} value={product.material ? product.material : "-"} />
-          <SpecRow
-            label={productCopy.countryOfOrigin}
-            value={product.origin_country ? product.origin_country : "-"}
-          />
-          <SpecRow label={productCopy.type} value={product.type ? product.type.value : "-"} />
+      {/* Full description */}
+      {product.description && (
+        <div className="mb-6 whitespace-pre-line text-base leading-7 text-[var(--theme-muted)]">
+          {product.description}
         </div>
-        <div className="flex flex-col gap-4">
-          <SpecRow label={productCopy.weight} value={product.weight ? `${product.weight} g` : "-"} />
-          <SpecRow
-            label={productCopy.dimensions}
-            value={
-              product.length && product.width && product.height
-                ? `${product.length} × ${product.width} × ${product.height}`
-                : "-"
-            }
-          />
+      )}
+
+      {/* Metadata specs for IT services */}
+      {metadataFields.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {metadataFields.map((field) => (
+            <SpecRow key={field.label} label={field.label} value={field.value} />
+          ))}
         </div>
-      </div>
+      )}
     </div>
   )
 }
@@ -93,8 +112,26 @@ const SpecRow = ({ label, value }: Readonly<{ label: string; value: string }>) =
   </div>
 )
 
-const ShippingInfoTab = () => {
+type ServiceTermsTabProps = {
+  product: HttpTypes.StoreProduct
+}
+
+const ServiceTermsTab = ({ product }: ServiceTermsTabProps) => {
   const productCopy = storefrontConfig.copy.product
+  const metadata = (product.metadata || {}) as Record<string, unknown>
+
+  // Use metadata values if available, otherwise fall back to generic copy
+  const termsDescription = metadata["условия_сроки"]
+    ? String(metadata["условия_сроки"])
+    : productCopy.serviceTermsDescription
+
+  const guaranteeDescription = metadata["гарантии"]
+    ? String(metadata["гарантии"])
+    : productCopy.serviceGuaranteeDescription
+
+  const supportDescription = metadata["поддержка"]
+    ? String(metadata["поддержка"])
+    : productCopy.serviceSupportDescription
 
   return (
     <div className="py-8">
@@ -102,22 +139,34 @@ const ShippingInfoTab = () => {
         <div className="flex items-start gap-4 rounded-[8px] border border-[var(--theme-border)] bg-[var(--theme-surface)] p-4">
           <FastDelivery />
           <div>
-            <span className="font-semibold text-[var(--theme-foreground)]">{productCopy.shippingTitle}</span>
-            <p className="max-w-sm pt-1 text-sm leading-6 text-[var(--theme-muted)]">{productCopy.shippingDescription}</p>
+            <span className="font-semibold text-[var(--theme-foreground)]">
+              {productCopy.serviceTermsTitle}
+            </span>
+            <p className="max-w-sm pt-1 text-sm leading-6 text-[var(--theme-muted)]">
+              {termsDescription}
+            </p>
           </div>
         </div>
         <div className="flex items-start gap-4 rounded-[8px] border border-[var(--theme-border)] bg-[var(--theme-surface)] p-4">
           <Refresh />
           <div>
-            <span className="font-semibold text-[var(--theme-foreground)]">{productCopy.exchangeTitle}</span>
-            <p className="max-w-sm pt-1 text-sm leading-6 text-[var(--theme-muted)]">{productCopy.exchangeDescription}</p>
+            <span className="font-semibold text-[var(--theme-foreground)]">
+              {productCopy.serviceGuaranteeTitle}
+            </span>
+            <p className="max-w-sm pt-1 text-sm leading-6 text-[var(--theme-muted)]">
+              {guaranteeDescription}
+            </p>
           </div>
         </div>
         <div className="flex items-start gap-4 rounded-[8px] border border-[var(--theme-border)] bg-[var(--theme-surface)] p-4">
           <Back />
           <div>
-            <span className="font-semibold text-[var(--theme-foreground)]">{productCopy.returnsTitle}</span>
-            <p className="max-w-sm pt-1 text-sm leading-6 text-[var(--theme-muted)]">{productCopy.returnsDescription}</p>
+            <span className="font-semibold text-[var(--theme-foreground)]">
+              {productCopy.serviceSupportTitle}
+            </span>
+            <p className="max-w-sm pt-1 text-sm leading-6 text-[var(--theme-muted)]">
+              {supportDescription}
+            </p>
           </div>
         </div>
       </div>

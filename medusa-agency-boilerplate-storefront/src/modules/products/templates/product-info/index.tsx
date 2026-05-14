@@ -22,11 +22,6 @@ const ProductInfo = ({ product }: ProductInfoProps) => {
               {product.collection.title}
             </LocalizedClientLink>
           )}
-          {product.type?.value ? (
-            <span className="rounded-full border border-[var(--theme-border)] bg-[rgba(255,255,255,0.48)] px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] text-[var(--theme-muted)]">
-              {product.type.value}
-            </span>
-          ) : null}
         </div>
         <Heading
           level="h1"
@@ -36,13 +31,14 @@ const ProductInfo = ({ product }: ProductInfoProps) => {
           {product.title}
         </Heading>
 
-        <Text
-          className="max-w-[560px] whitespace-pre-line text-lg leading-8 text-[var(--theme-muted)]"
-          data-testid="product-description"
-        >
-          {product.description ||
-            "Comprehensive digital storefront development with tailored commerce flows, premium presentation, and production-ready integration."}
-        </Text>
+        {product.subtitle && (
+          <Text
+            className="max-w-[560px] whitespace-pre-line text-lg leading-8 text-[var(--theme-muted)]"
+            data-testid="product-subtitle"
+          >
+            {product.subtitle}
+          </Text>
+        )}
       </div>
     </div>
   )

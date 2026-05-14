@@ -195,22 +195,26 @@ export const storefrontConfig = {
       returnsAndExchanges: "Возвраты и обмен",
     },
     product: {
-      details: "Характеристики",
-      shippingAndReturns: "Доставка и возврат",
+      details: "Описание",
+      shippingAndReturns: "Условия оказания услуг",
       material: "Материал",
       countryOfOrigin: "Страна происхождения",
       type: "Тип",
       weight: "Вес",
       dimensions: "Габариты",
-      shippingTitle: "Доставка по доступным тарифам",
-      shippingDescription:
-        "Сроки и стоимость доставки рассчитываются на этапе оформления заказа в зависимости от региона и выбранного способа получения.",
-      exchangeTitle: "Обмен и корректировки",
-      exchangeDescription:
-        "Если условия магазина предусматривают обмен или корректировку заказа, детали уточняются через службу поддержки после оформления.",
-      returnsTitle: "Возврат",
-      returnsDescription:
-        "Условия возврата и порядок обработки обращений определяются правилами конкретного магазина.",
+      /** IT-services specific labels */
+      metadataDeadline: "Сроки выполнения",
+      metadataResult: "Результат",
+      metadataFormat: "Формат работы",
+      serviceTermsTitle: "Сроки и формат",
+      serviceTermsDescription:
+        "Сроки выполнения и формат работы обсуждаются индивидуально на этапе консультации и фиксируются в договоре.",
+      serviceGuaranteeTitle: "Гарантии",
+      serviceGuaranteeDescription:
+        "Мы гарантируем качество выполненных работ и бесплатные корректировки в рамках согласованного ТЗ в течение 30 дней после сдачи проекта.",
+      serviceSupportTitle: "Поддержка",
+      serviceSupportDescription:
+        "После завершения проекта предоставляется техническая поддержка и консультации по эксплуатации решения.",
     },
     freeShipping: {
       unlocked: "Бесплатная доставка доступна",

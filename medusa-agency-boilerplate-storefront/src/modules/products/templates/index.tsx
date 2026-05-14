@@ -42,7 +42,7 @@ const ProductTemplate: React.FC<ProductTemplateProps> = ({
           <ProductInfo product={product} />
           <div className="rounded-[var(--theme-radius-card)] border border-[var(--theme-border)] bg-[var(--theme-surface)] p-6 shadow-[0_4px_24px_rgba(23,26,31,0.04)] small:p-8">
             <h2 className="mb-6 text-2xl font-semibold leading-tight text-[var(--theme-foreground)]">
-              Request Consultation
+              Запросить консультацию
             </h2>
             <Suspense
               fallback={
@@ -61,13 +61,13 @@ const ProductTemplate: React.FC<ProductTemplateProps> = ({
         <div className="flex flex-col gap-6 lg:col-span-7">
           <ImageGallery images={images} productTitle={product.title} />
           <ProductNicheSelector product={product} />
-          <ProductOfferBenefits />
+          <ProductOfferBenefits product={product} />
         </div>
       </section>
       <ProductTabs product={product} />
       <StitchProductTechSpecs
         title="Описание и характеристики"
-        description={`Detailed insights into the technical foundation and functional scope of ${product.title}.`}
+        description={`Подробная информация о технической основе и функциональных возможностях ${product.title}.`}
       />
       <Suspense fallback={<SkeletonRelatedProducts />}>
         <RelatedProducts product={product} countryCode={countryCode} />
