@@ -1,576 +1,460 @@
 # VK ID Registration Without Email + Onboarding Flow
 
-Спецификация архитектуры: регистрация через VK ID без email и onboarding-форма после первого входа.
+Спецификация фактической реализации: регистрация через VK ID без email и
+onboarding-форма после первого входа.
 
-**Статус:** Draft  
-**Дата:** 2026-05-14  
-**Область:** Backend (vk-id module, callback route), Storefront (onboarding UI, checkout gate)
+> **Статус:** Implemented (Phase 5.5).
+> **Дата последней синхронизации с кодом:** `2026-05-14`.
+> **Область:** Backend (`vk-id` module, callback route, onboarding endpoint,
+> checkout gate middleware), Storefront (onboarding page/form/banner,
+> profile/checkout integration).
 
----
-
-## 1. Проблема
-
-VK ID OAuth может не вернуть email пользователя:
-- Пользователь не привязал email к VK-профилю.
-- Пользователь отказал в scope `email`.
-- VK по техническим причинам не отдал поле.
-
-Текущая реализация в `createVkIdCustomer` (`medusa-agency-boilerplate/src/modules/vk-id.ts:1828`) жёстко требует email:
-
-```typescript
-if (!normalizedEmail) {
-  throw new VkIdCustomerCreationError("email_required")
-}
-```
-
-Callback route (`medusa-agency-boilerplate/src/api/store/vk-id/callback/route.ts:402-407`) при отсутствии email возвращает `fallbackReason: "email_required"` — регистрация невозможна.
-
-**Результат:** пользователь без email в VK не может зарегистрироваться через VK ID.
+Этот документ — current source of truth по VK onboarding контракту.
+Историческая постановка задачи и проектная аргументация частично сохранены,
+но все runtime-факты приведены в соответствие с реализацией. При расхождении
+этого документа с кодом — побеждает код.
 
 ---
 
-## 2. Выбранный подход: Placeholder Email
+## 1. Проблема и принятое решение
 
-### Почему не nullable email
+VK ID OAuth может не вернуть email пользователя. До Phase 5.5 это блокировало
+регистрацию: callback возвращал `fallbackReason: "email_required"`, а
+`createVkIdCustomer` бросал `VkIdCustomerCreationError("email_required")`.
 
-Medusa core (`createCustomerAccountWorkflow`) требует `email` в `customerData`. Поле `email` в таблице `customer` имеет NOT NULL constraint + unique index. Делать email nullable потребует:
-- Форк/патч Medusa core workflow.
-- Миграцию схемы (ALTER TABLE customer ALTER COLUMN email DROP NOT NULL).
-- Правку всех downstream workflows (password-reset, email-verification, marketing, notifications).
+Phase 5.5 принял подход **placeholder email + onboarding metadata**:
 
-Это слишком инвазивно для MVP.
+- Если VK не отдал email, backend генерирует детерминированный
+  placeholder `vk_{vk_user_id}@placeholder.internal` через
+  [`generatePlaceholderEmail()`](../medusa-agency-boilerplate/src/modules/vk-id.ts:40).
+- Customer создаётся через стандартный
+  [`createCustomerAccountWorkflow`](../medusa-agency-boilerplate/src/modules/vk-id.ts:1952)
+  без форка Medusa.
+- На customer ставится `metadata.onboarding` со статусом, описанным в §3.
+- Storefront показывает onboarding banner/page и блокирует только cart
+  completion, пока email — placeholder.
 
-### Подход: generated placeholder email
+Результат: пользователь без email в VK регистрируется, входит в аккаунт и
+заполняет email постфактум; всё остальное (каталог, корзина, профиль)
+остаётся доступным.
 
-При отсутствии email от VK генерируем детерминированный placeholder:
+---
 
-```
-vk_{vk_user_id}@placeholder.internal
-```
+## 2. Placeholder email contract
 
-Свойства:
-- **Детерминированный** — повторный вход того же VK-пользователя найдёт существующего customer.
-- **Невалидный домен** — `placeholder.internal` не резолвится, письма не уйдут.
-- **Уникальный** — привязан к `vk_user_id`.
-- **Распознаваемый** — легко отличить от реального email по паттерну.
+| Свойство | Значение |
+| --- | --- |
+| Формат | `vk_{vk_user_id}@placeholder.internal` |
+| Домен | [`PLACEHOLDER_EMAIL_DOMAIN`](../medusa-agency-boilerplate/src/modules/vk-id.ts:33) = `"placeholder.internal"` |
+| Generator | [`generatePlaceholderEmail(vkUserId)`](../medusa-agency-boilerplate/src/modules/vk-id.ts:40) |
+| Detector | [`isPlaceholderEmail(email)`](../medusa-agency-boilerplate/src/modules/vk-id.ts:48) |
+| TLD-семантика | `.internal` (RFC 6762) — не резолвится наружу, письма не уйдут. |
+| Уникальность | Привязан к `vk_user_id` → unique constraint Medusa `customer.email` соблюдается. |
+| Detect rule | Любой email, заканчивающийся на `@placeholder.internal` (lowercase compare). |
 
-### Маркер неполного профиля
+`isPlaceholderEmail` используется:
 
-В `customer.metadata` добавляем:
+- onboarding endpoint — определить, обязателен ли email на этом запросе;
+- checkout gate middleware — блокировать `cart.complete` до завершения onboarding;
+- workflow guards для transactional email (verification/password-reset/marketing)
+  — пропускать отправку для placeholder получателей.
 
-```json
+---
+
+## 3. Onboarding metadata contract
+
+`customer.metadata.onboarding` ставится один раз при регистрации через
+[`buildOnboardingMetadata()`](../medusa-agency-boilerplate/src/modules/vk-id.ts:57)
+и затем мутируется только onboarding endpoint'ом.
+
+```jsonc
 {
-  "onboarding": {
-    "status": "pending",
-    "missing_fields": ["email"],
-    "placeholder_email": true,
-    "created_at": "2026-05-14T10:00:00.000Z"
-  }
+  "status": "pending" | "complete",
+  "missing_fields": ["email"],
+  "placeholder_email": true,
+  "vk_phone_verified": false,
+  "created_at": "2026-05-14T10:00:00.000Z",
+  "completed_at": "2026-05-14T11:00:00.000Z"
 }
 ```
 
-Когда пользователь заполняет email через onboarding:
-- `customer.email` обновляется на реальный.
-- `metadata.onboarding.status` → `"completed"`.
-- `metadata.onboarding.placeholder_email` → `false`.
-- Запускается стандартный email-verification flow.
+**Поля:**
+
+- `status` — `"pending"` пока email — placeholder; `"complete"` после
+  заполнения реального email. **Внимание:** строка `"complete"`, не
+  `"completed"` (см. [`route.ts:50`](../medusa-agency-boilerplate/src/api/store/customers/me/onboarding/route.ts:50) и [`vk-id.ts:67`](../medusa-agency-boilerplate/src/modules/vk-id.ts:67)).
+- `missing_fields` — массив имён полей, которые ещё не заполнены. На
+  регистрации может содержать `"email"` и/или `"phone"`. **Phone
+  семантически опционален**: см. §4.
+- `placeholder_email` — boolean, `true` пока `customer.email` соответствует
+  placeholder-домену. Выставляется в `false` при первом успешном email update.
+- `vk_phone_verified` — `true`, если VK отдал телефон. VK выдаёт телефон
+  только после собственной верификации, поэтому отдельного SMS-шага на
+  storefront нет.
+- `created_at` — ISO timestamp регистрации.
+- `completed_at` — ISO timestamp перехода в `"complete"`. Ставится только в
+  момент перехода (см. [`route.ts:251-253`](../medusa-agency-boilerplate/src/api/store/customers/me/onboarding/route.ts:251)).
+
+### 3.1. Семантика phone в `missing_fields`
+
+`buildOnboardingMetadata` записывает `"phone"` в `missing_fields`, если VK не
+отдал телефон. Однако onboarding endpoint **всегда удаляет `"phone"` из
+`missing_fields`** перед расчётом нового статуса
+([`route.ts:183-185`](../medusa-agency-boilerplate/src/api/store/customers/me/onboarding/route.ts:183)).
+Это сделано осознанно: phone не блокирует завершение onboarding и не блокирует
+checkout. Пользователь может никогда не вводить телефон через onboarding и
+профиль аккаунта останется в статусе `"complete"` после заполнения email.
+
+Таким образом эффективный required set для перехода в `"complete"` — только
+`{"email"}`.
 
 ---
 
-## 3. Данные из VK: расширение scope
+## 4. VK identity scope и извлечение phone
 
-### Текущее состояние
-
-`VkIdUserInfoResult.user` уже типизирует `phone`, но `resolveVkIdentity` (`vk-id.ts:999-1029`) не извлекает phone:
-
-```typescript
-export type VkIdUserInfoResult = {
-  user?: {
-    user_id?: string
-    first_name?: string
-    last_name?: string
-    phone?: string      // ← определён, но не используется
-    email?: string
-    avatar?: string
-    sex?: number
-    verified?: boolean
-    birthday?: string
-  }
-}
-```
-
-### Изменения
-
-1. **Расширить scope** — добавить `phone` к `DEFAULT_VK_ID_SCOPES`:
-   ```
-   "vkid.personal_info phone"
-   ```
-   Или через env `VK_ID_SCOPES="vkid.personal_info phone"`.
-
-2. **Расширить `VkResolvedIdentity`**:
-   ```typescript
-   export type VkResolvedIdentity = {
-     provider: "vkid"
-     vkUserId: string
-     vkPeerId: string
-     email: string | null
-     emailVerified: boolean
-     firstName: string | null
-     lastName: string | null
-     phone: string | null       // NEW
-     avatar: string | null      // NEW
-   }
-   ```
-
-3. **Обновить `resolveVkIdentity`** — извлекать `phone` и `avatar`:
-   ```typescript
-   return {
-     provider: "vkid",
-     vkUserId,
-     vkPeerId,
-     email,
-     emailVerified,
-     firstName: normalizeIdentityString(user?.first_name),
-     lastName: normalizeIdentityString(user?.last_name),
-     phone: normalizeIdentityString(user?.phone),      // NEW
-     avatar: normalizeIdentityString(user?.avatar),    // NEW
-   } satisfies VkResolvedIdentity
-   ```
-
-4. **Сохранять phone в customer** при регистрации:
-   ```typescript
-   customerData: {
-     email: normalizedEmail,  // placeholder или реальный
-     first_name: input.firstName || undefined,
-     last_name: input.lastName || undefined,
-     phone: input.phone || undefined,  // NEW
-   }
-   ```
-
-5. **Сохранять phone/avatar в metadata.vk_link**:
-   ```json
-   {
-     "vk_link": {
-       "provider": "vkid",
-       "vk_user_id": "...",
-       "vk_peer_id": "...",
-       "phone": "+79001234567",
-       "avatar": "https://...",
-       "phone_verified": true
-     }
-   }
-   ```
-
----
-
-## 4. Backend Changes
-
-### 4.1. `src/modules/vk-id.ts`
-
-| Изменение | Детали |
-|-----------|--------|
-| `VkResolvedIdentity` | Добавить `phone: string \| null`, `avatar: string \| null` |
-| `resolveVkIdentity` | Извлекать `phone`, `avatar` из `userInfo.user` |
-| `createVkIdCustomer` | Убрать hard throw на `email_required`. Генерировать placeholder если email отсутствует. Передавать phone в customerData. Записывать `metadata.onboarding`. |
-| `DEFAULT_VK_ID_SCOPES` | Добавить `phone` (или вынести в env) |
-| Новая функция `generatePlaceholderEmail(vkUserId: string)` | `vk_${vkUserId}@placeholder.internal` |
-| Новая функция `isPlaceholderEmail(email: string)` | Проверка паттерна `@placeholder.internal` |
-
-### 4.2. `src/api/store/vk-id/callback/route.ts`
-
-| Изменение | Детали |
-|-----------|--------|
-| `tryVkIdRegisterBranch` | Убрать ранний return при `!identity.email`. Вместо этого: если email отсутствует — использовать placeholder, пометить onboarding pending. |
-| Redirect после регистрации без email | Добавить query param `?onboarding=pending` к return URL |
-
-### 4.3. Новый API endpoint: `POST /store/customers/me/onboarding`
-
-Назначение: принять email (и опционально phone) от onboarding-формы.
-
-```typescript
-// Schema
-{
-  email?: string       // реальный email для замены placeholder
-  phone?: string       // если не получен из VK
-}
-```
-
-Логика:
-1. Проверить авторизацию (authenticated customer).
-2. Проверить `metadata.onboarding.status === "pending"`.
-3. Если передан email:
-   - Нормализовать.
-   - Проверить уникальность (нет другого customer с таким email).
-   - Обновить `customer.email`.
-   - Обновить `emailpass` provider_identity entity_id на новый email.
-   - Запустить email-verification flow.
-4. Если передан phone:
-   - Обновить `customer.phone`.
-5. Обновить `metadata.onboarding`:
-   - Убрать заполненные поля из `missing_fields`.
-   - Если `missing_fields` пуст → `status: "completed"`.
-6. Вернуть `{ ok: true, onboarding: { status, missing_fields } }`.
-
-### 4.4. Новый API endpoint: `GET /store/customers/me/onboarding`
-
-Назначение: storefront запрашивает текущий статус onboarding.
-
-Response:
-```json
-{
-  "onboarding": {
-    "status": "pending" | "completed",
-    "missing_fields": ["email"],
-    "placeholder_email": true,
-    "has_phone": false
-  }
-}
-```
-
-### 4.5. Изменения в существующих workflows
-
-| Workflow | Изменение |
-|----------|-----------|
-| `send-email-verification` | Добавить guard: skip если email — placeholder (`isPlaceholderEmail`) |
-| `send-password-reset` | Добавить guard: skip если email — placeholder |
-| `send-marketing-confirmation` | Добавить guard: skip если email — placeholder |
-| `customer-created-email-verification` subscriber | Добавить guard: skip если `metadata.onboarding.placeholder_email === true` |
-
-### 4.6. Env variables
-
-| Variable | Default | Описание |
-|----------|---------|----------|
-| `VK_ID_SCOPES` | `"vkid.personal_info phone"` | Scopes для VK ID OAuth |
-| `VK_ID_ALLOW_NO_EMAIL_REGISTER` | `"true"` | Разрешить регистрацию без email (с placeholder) |
-
----
-
-## 5. Storefront Changes
-
-### 5.1. Onboarding Banner Component
-
-**Путь:** `medusa-agency-boilerplate-storefront/src/modules/account/components/onboarding-banner/index.tsx`
-
-Мягкий баннер, показываемый на всех страницах аккаунта когда `onboarding.status === "pending"`:
-
-```
-┌─────────────────────────────────────────────────────┐
-│ 👋 Завершите настройку профиля                      │
-│                                                     │
-│ Укажите email для получения уведомлений о заказах.  │
-│                                                     │
-│ [Заполнить →]                                       │
-└─────────────────────────────────────────────────────┘
-```
-
-- Не блокирует навигацию.
-- Ссылка ведёт на `/account/onboarding`.
-- Скрывается после `onboarding.status === "completed"`.
-
-### 5.2. Onboarding Page
-
-**Путь:** `medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/account/onboarding/page.tsx`
-
-Форма с шагами:
-
-**Шаг 1: Email** (если `missing_fields` содержит `"email"`)
-```
-┌─────────────────────────────────────────────────────┐
-│ Укажите ваш email                                   │
-│                                                     │
-│ Email нужен для уведомлений о заказах и             │
-│ восстановления доступа.                             │
-│                                                     │
-│ ┌─────────────────────────────────────────────┐     │
-│ │ email@example.com                           │     │
-│ └─────────────────────────────────────────────┘     │
-│                                                     │
-│ [Сохранить]                                         │
-└─────────────────────────────────────────────────────┘
-```
-
-**Шаг 2: Телефон** (если `has_phone === false` и phone не получен из VK)
-```
-┌─────────────────────────────────────────────────────┐
-│ Подтвердите телефон                                  │
-│                                                     │
-│ Телефон нужен для связи по заказам.                 │
-│                                                     │
-│ ┌─────────────────────────────────────────────┐     │
-│ │ +7 (___) ___-__-__                          │     │
-│ └─────────────────────────────────────────────┘     │
-│                                                     │
-│ [Сохранить]                                         │
-└─────────────────────────────────────────────────────┘
-```
-
-**Логика пропуска шагов:**
-- Если email получен из VK → шаг email пропускается.
-- Если phone получен из VK → шаг phone пропускается.
-- Если оба получены → onboarding не показывается.
-
-### 5.3. Checkout Gate
-
-**Путь:** Модификация `medusa-agency-boilerplate-storefront/src/modules/checkout/templates/checkout-form/index.tsx`
-
-Перед рендером checkout формы проверяем:
-- Если `onboarding.status === "pending"` И `missing_fields` содержит `"email"`:
-  - Показать блокирующий баннер:
-    ```
-    ┌─────────────────────────────────────────────────────┐
-    │ ⚠️ Для оформления заказа необходимо указать email   │
-    │                                                     │
-    │ [Заполнить профиль →]                               │
-    └─────────────────────────────────────────────────────┘
-    ```
-  - Кнопка ведёт на `/account/onboarding`.
-  - Checkout форма не рендерится.
-
-**Минимальные требования для checkout:**
-- `customer.first_name` — обязательно (обычно есть из VK).
-- `customer.phone` ИЛИ phone в shipping address — обязательно.
-- `customer.email` не placeholder — желательно, но не блокирует если phone есть.
-
-**Решение:** блокировать checkout только если email — placeholder. Phone из VK считается верифицированным и достаточным для связи.
-
-### 5.4. State Management
-
-Onboarding status загружается:
-1. При mount layout аккаунта — `GET /store/customers/me/onboarding`.
-2. Кэшируется в Next.js cache tag `"onboarding"`.
-3. Инвалидируется после `POST /store/customers/me/onboarding`.
-
-Альтернатива (проще): читать `customer.metadata.onboarding` из уже загруженного customer объекта через `retrieveCustomer()`. Не требует отдельного endpoint для чтения.
-
-**Рекомендация:** использовать `customer.metadata.onboarding` напрямую. Отдельный GET endpoint не нужен — metadata уже доступна через стандартный `GET /store/customers/me`.
-
-### 5.5. Routing
-
-| Route | Назначение |
-|-------|-----------|
-| `/[countryCode]/account/onboarding` | Onboarding форма |
-| `/[countryCode]/account` | Показывает onboarding banner если pending |
-| `/[countryCode]/checkout` | Блокирует если placeholder email |
-
----
-
-## 6. Data Flow Diagram
-
-```
-VK ID OAuth
-    │
-    ▼
-┌──────────────────────────────────────────────────────────────┐
-│ /api/auth/vk-id/callback (storefront proxy)                  │
-│   → forwards to /store/vk-id/callback (backend)              │
-└──────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌──────────────────────────────────────────────────────────────┐
-│ handleVkIdRegisterBranch                                     │
-│                                                              │
-│ identity.email exists?                                       │
-│   YES → use real email                                       │
-│   NO  → generatePlaceholderEmail(identity.vkUserId)          │
-│                                                              │
-│ identity.phone exists?                                       │
-│   YES → save to customer.phone                               │
-│   NO  → add "phone" to onboarding.missing_fields            │
-│                                                              │
-│ createVkIdCustomer(email, phone, firstName, lastName)         │
-│ stamp metadata.onboarding = pending/completed                │
-└──────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Redirect to storefront                                       │
-│   ?vk_registered=success&onboarding=pending                  │
-└──────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Storefront: Account Page                                     │
-│                                                              │
-│ customer.metadata.onboarding.status === "pending"?           │
-│   YES → show onboarding banner                               │
-│   NO  → normal account view                                  │
-└──────────────────────────────────────────────────────────────┘
-    │
-    ▼ (user clicks banner)
-┌──────────────────────────────────────────────────────────────┐
-│ /account/onboarding                                          │
-│                                                              │
-│ Step 1: Email (if missing)                                   │
-│   → POST /store/customers/me/onboarding { email }            │
-│   → triggers email-verification flow                         │
-│                                                              │
-│ Step 2: Phone (if missing)                                   │
-│   → POST /store/customers/me/onboarding { phone }            │
-│                                                              │
-│ All done → redirect to /account                              │
-└──────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Checkout Gate                                                │
-│                                                              │
-│ isPlaceholderEmail(customer.email)?                           │
-│   YES → block checkout, show "fill profile" CTA             │
-│   NO  → normal checkout flow                                 │
-└──────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 7. Edge Cases
-
-### 7.1. Повторный вход VK-пользователя с placeholder email
-
-- `findVkIdCustomersByIdentity` ищет по `metadata.vk_link.vk_user_id` — найдёт customer.
-- Login flow работает без изменений.
-- Onboarding banner продолжает показываться.
-
-### 7.2. Пользователь указывает email, который уже занят
-
-- `POST /store/customers/me/onboarding` проверяет уникальность.
-- Если email занят → вернуть ошибку `email_already_exists`.
-- Storefront показывает: «Этот email уже используется другим аккаунтом».
-
-### 7.3. VK вернул email при повторном входе (scope изменился)
-
-- Login flow находит customer по `vk_user_id`.
-- Если `metadata.onboarding.placeholder_email === true` И identity.email !== null:
-  - Автоматически обновить customer.email на реальный.
-  - Обновить emailpass entity_id.
-  - Пометить onboarding email как completed.
-  - Запустить email-verification.
-
-### 7.4. Телефон из VK — верифицированный
-
-- VK отдаёт телефон только после подтверждения на стороне VK.
-- Дополнительная верификация не нужна.
-- Сохраняем `metadata.vk_link.phone_verified = true`.
-
-### 7.5. Пользователь пытается оформить заказ без email
-
-- Checkout gate блокирует.
-- Показывает CTA «Укажите email для оформления заказа».
-- После заполнения email — checkout разблокируется.
-
-### 7.6. Placeholder email и forgot-password
-
-- `send-password-reset` workflow проверяет `isPlaceholderEmail` → skip.
-- Пользователь не может запросить reset для placeholder.
-- После указания реального email — forgot-password работает нормально.
-
-### 7.7. Race condition: два VK callback одновременно
-
-- Существующий `withVkIdRegisterLock` (PG advisory lock) защищает от дублей.
-- Placeholder email детерминирован (`vk_{id}@placeholder.internal`) → unique constraint работает.
-
-### 7.8. Onboarding не блокирует навигацию
-
-- Пользователь может:
-  - Просматривать каталог.
-  - Добавлять товары в корзину.
-  - Просматривать аккаунт.
-  - Управлять адресами.
-- Пользователь НЕ может:
-  - Оформить заказ (если email — placeholder).
-
----
-
-## 8. Миграции
-
-### Database миграции: НЕ НУЖНЫ
-
-- Email остаётся NOT NULL (placeholder заполняет constraint).
-- Phone уже nullable в Medusa customer model.
-- Все новые данные хранятся в `metadata` (JSONB) — schema change не требуется.
-
-### Auth identity миграции: НЕ НУЖНЫ
-
-- `emailpass` provider_identity создаётся с placeholder email как entity_id.
-- При обновлении email — entity_id обновляется через AuthModule API.
-
----
-
-## 9. Env Changes
-
-Добавить в `.env.example` и `.env.staging.example`:
+VK OAuth scope по умолчанию включает `phone`:
 
 ```env
-# VK ID: разрешить регистрацию без email (placeholder email будет сгенерирован)
-VK_ID_ALLOW_NO_EMAIL_REGISTER=true
-
-# VK ID: scopes (добавлен phone)
 VK_ID_SCOPES="vkid.personal_info phone"
 ```
 
----
+Дефолт зафиксирован в
+[`DEFAULT_VK_ID_SCOPES`](../medusa-agency-boilerplate/src/modules/vk-id.ts:21) и
+переопределяется через env. См. шаблоны
+[`.env.example`](../.env.example),
+[`.env.staging.example`](../.env.staging.example),
+[`medusa-agency-boilerplate/.env.template`](../medusa-agency-boilerplate/.env.template).
 
-## 10. Файлы для изменения
+`VkResolvedIdentity` дополнен полями `phone: string | null` и
+`avatar: string | null`. Они извлекаются из `userInfo.user.phone` /
+`userInfo.user.avatar` в `resolveVkIdentity`.
 
-### Backend (`medusa-agency-boilerplate/`)
+При создании customer:
 
-| Файл | Тип изменения |
-|------|---------------|
-| `src/modules/vk-id.ts` | Modify: VkResolvedIdentity, resolveVkIdentity, createVkIdCustomer, новые helper functions |
-| `src/api/store/vk-id/callback/route.ts` | Modify: tryVkIdRegisterBranch — убрать email_required block |
-| `src/api/store/customers/me/onboarding/route.ts` | **NEW**: POST endpoint для onboarding |
-| `src/api/middlewares.ts` | Modify: добавить matcher для onboarding endpoint |
-| `src/workflows/send-email-verification.ts` | Modify: guard для placeholder email |
-| `src/workflows/send-password-reset.ts` | Modify: guard для placeholder email |
-| `src/workflows/send-marketing-confirmation.ts` | Modify: guard для placeholder email |
-| `src/subscribers/customer-created-email-verification.ts` | Modify: guard для placeholder email |
-| `.env.example` | Modify: добавить VK_ID_ALLOW_NO_EMAIL_REGISTER, VK_ID_SCOPES |
-| `.env.staging.example` | Modify: аналогично |
+- `customer.phone` заполняется из `input.phone` если VK его отдал;
+- `customer.metadata.vk_link` обогащается `phone`, `avatar`,
+  `phone_verified: Boolean(identity.phone)` ([`vk-id.ts:2007-2013`](../medusa-agency-boilerplate/src/modules/vk-id.ts:2007));
+- `customer.metadata.onboarding.vk_phone_verified` дублирует тот же флаг для
+  storefront UX.
 
-### Storefront (`medusa-agency-boilerplate-storefront/`)
-
-| Файл | Тип изменения |
-|------|---------------|
-| `src/app/[countryCode]/(main)/account/onboarding/page.tsx` | **NEW**: onboarding page |
-| `src/modules/account/components/onboarding-banner/index.tsx` | **NEW**: banner component |
-| `src/modules/account/components/onboarding-form/index.tsx` | **NEW**: form component |
-| `src/app/[countryCode]/(main)/account/layout.tsx` | Modify: добавить onboarding banner |
-| `src/app/[countryCode]/(main)/account/page.tsx` | Modify: handle onboarding query param |
-| `src/modules/checkout/templates/checkout-form/index.tsx` | Modify: checkout gate |
-| `src/lib/data/customer.ts` | Modify: добавить submitOnboarding action |
-| `src/lib/util/onboarding.ts` | **NEW**: helper для проверки onboarding status |
-
-### Тесты
-
-| Файл | Тип изменения |
-|------|---------------|
-| `src/modules/__tests__/vk-id-create-customer.unit.spec.ts` | Modify: тесты для placeholder email path |
-| `src/api/store/vk-id/callback/__tests__/route.unit.spec.ts` | Modify: тесты для no-email register |
-| `src/api/store/customers/me/onboarding/__tests__/route.unit.spec.ts` | **NEW** |
-| `src/workflows/__tests__/send-email-verification.unit.spec.ts` | Modify: тест placeholder guard |
+Если VK не отдал телефон, ничего страшного не происходит: пользователь
+сможет указать его опционально через onboarding-форму или позже в профиле.
 
 ---
 
-## 11. Порядок реализации
+## 5. VK ID OAuth state format (Phase 5.5 hardening)
 
-1. **Backend: vk-id.ts** — расширить VkResolvedIdentity, resolveVkIdentity, добавить placeholder helpers.
-2. **Backend: createVkIdCustomer** — убрать hard email requirement, добавить placeholder logic и onboarding metadata.
-3. **Backend: callback route** — убрать email_required early return, передавать phone.
-4. **Backend: onboarding endpoint** — новый POST /store/customers/me/onboarding.
-5. **Backend: workflow guards** — добавить isPlaceholderEmail guards.
-6. **Backend: тесты** — обновить и добавить.
-7. **Storefront: onboarding page + form** — новая страница.
-8. **Storefront: onboarding banner** — баннер в account layout.
-9. **Storefront: checkout gate** — блокировка checkout.
-10. **Storefront: тесты** — unit тесты для onboarding helpers.
-11. **Env/docs** — обновить env examples и документацию.
+VK ID `/authorize` bridge переписывает `state` в `redirect_state` и удаляет
+пунктуацию (`.`, `~`, `:`, `*`) перед финальной auth-страницей. Старый формат
+`{base64url-payload}.{signature}` ломался у части пользователей: VK выкидывал
+точку и подпись становилась невалидной.
+
+**Текущий формат signed state** ([`vk-id.ts:489-499`](../medusa-agency-boilerplate/src/modules/vk-id.ts:489)):
+
+```
+{base64url-payload}{43-char-signature}
+```
+
+- payload + signature конкатенируются без разделителя;
+- alphabet — base64url (`A-Z a-z 0-9 - _`), VK его не трогает;
+- длина signature фиксирована на 43 символа (SHA-256 HMAC, base64url без `=`).
+
+**Backward-compatible read** ([`verifySignedState()`](../medusa-agency-boilerplate/src/modules/vk-id.ts:501)):
+если state содержит `.`, читается старый формат `payload.signature`. Это
+полезно для local/direct smokes; production-callback от VK по определению
+не содержит `.`.
+
+Связанная диагностика — см. troubleshooting `invalid_or_expired_state`.
+
+---
+
+## 6. Backend Implementation Map
+
+### 6.1. `medusa-agency-boilerplate/src/modules/vk-id.ts`
+
+| Символ | Назначение |
+| --- | --- |
+| [`PLACEHOLDER_EMAIL_DOMAIN`](../medusa-agency-boilerplate/src/modules/vk-id.ts:33) | Константа домена placeholder. |
+| [`generatePlaceholderEmail`](../medusa-agency-boilerplate/src/modules/vk-id.ts:40) | Генератор placeholder по `vk_user_id`. |
+| [`isPlaceholderEmail`](../medusa-agency-boilerplate/src/modules/vk-id.ts:48) | Детектор placeholder; используется во всех guard-точках. |
+| [`buildOnboardingMetadata`](../medusa-agency-boilerplate/src/modules/vk-id.ts:57) | Конструктор `metadata.onboarding` для нового customer. |
+| [`DEFAULT_VK_ID_SCOPES`](../medusa-agency-boilerplate/src/modules/vk-id.ts:21) | `"vkid.personal_info phone"`. |
+| [`buildSignedState`](../medusa-agency-boilerplate/src/modules/vk-id.ts:489) / [`verifySignedState`](../medusa-agency-boilerplate/src/modules/vk-id.ts:501) | VK-safe compact state format + legacy reader. |
+| [`createVkIdCustomer`](../medusa-agency-boilerplate/src/modules/vk-id.ts:1866) | Регистрация: placeholder email + phone из identity + `metadata.onboarding`. |
+| [`lookupCustomerByEmail`](../medusa-agency-boilerplate/src/modules/vk-id.ts) | Используется onboarding endpoint для проверки уникальности email. |
+
+### 6.2. `medusa-agency-boilerplate/src/api/store/vk-id/callback/route.ts`
+
+- При `!identity.email` callback не возвращает `email_required`, а
+  продолжает регистрацию с placeholder email (см.
+  [`route.ts:402-440`](../medusa-agency-boilerplate/src/api/store/vk-id/callback/route.ts:402)).
+- Лок-ключ `withVkIdRegisterLock` использует `identity.email ||
+  generatePlaceholderEmail(identity.vkUserId)`, чтобы повторные запросы для
+  одного и того же VK-пользователя сериализовались.
+- При `!identity.vkPeerId` → `redirectWithLoginError(res, returnUrl, "missing_vk_peer_id")`.
+- При `runtime.emailTrustPolicy === "reject"` → `fallbackReason:
+  "email_trust_policy_reject"`. (Этот режим выключает register branch
+  полностью; placeholder здесь не применяется.)
+- Успешная регистрация без email добавляет к storefront return URL query
+  param `?onboarding=pending` ([`route.ts:518-521`](../medusa-agency-boilerplate/src/api/store/vk-id/callback/route.ts:518)).
+
+### 6.3. `medusa-agency-boilerplate/src/api/store/customers/me/onboarding/route.ts`
+
+`POST /store/customers/me/onboarding` — единственный endpoint этого пути.
+GET намеренно **не реализован**: storefront читает onboarding metadata из
+обычного `GET /store/customers/me`.
+
+**Validation schema** ([`route.ts:32-45`](../medusa-agency-boilerplate/src/api/store/customers/me/onboarding/route.ts:32)):
+
+```ts
+{
+  email?: string  // RFC email, max 255, trim+lowercase
+  phone?: string  // нормализуется: пробелы/дефисы/скобки удаляются;
+                  // допустимые форматы: +7XXXXXXXXXX, 8XXXXXXXXXX, +XXXXXXXXXX..XXXXXXXXXXXXXXX
+}
+```
+
+**Контракт** ([`route.ts:91-316`](../medusa-agency-boilerplate/src/api/store/customers/me/onboarding/route.ts:91)):
+
+| Условие | HTTP | Code | Семантика |
+| --- | --- | --- | --- |
+| Нет authenticated customer | `401` | `customer_auth_required` | Клиент не залогинен. |
+| `customer` не найден | `404` | `customer_not_found` | Сессия валидна, но customer удалён. |
+| `metadata.onboarding` отсутствует или `status === "complete"` | `400` | `onboarding_already_complete` | Onboarding уже завершён или не нужен. |
+| Текущий email — placeholder и `body.email` пуст | `400` | `email_required` | Phone один не закрывает onboarding. |
+| Передан `email`, но текущий email **не** placeholder | `400` | `email_already_set` | Защита от случайной подмены email. |
+| Передан `email`, но он уже занят другим customer | `409` | `email_already_exists` | Уникальность email. |
+| Прочая ошибка update | `500` | `update_failed` / `internal_error` | Логируется без PII. |
+| Успех | `200` | — | Возвращает обновлённое `onboarding` представление. |
+
+**Response (200)**:
+
+```json
+{
+  "ok": true,
+  "onboarding": {
+    "status": "complete",
+    "missing_fields": [],
+    "placeholder_email": false
+  }
+}
+```
+
+**Поведение при успехе**:
+
+1. `customer.email` обновляется на новый (если был передан и текущий — placeholder).
+2. Phone обновляется только если `customer.phone` пуст (повторная установка
+   через onboarding не делает overwrite — лог `[onboarding] phone already set ... skipping`).
+3. `metadata.onboarding.placeholder_email` → `false`, если email обновлён.
+4. `"phone"` всегда удаляется из `missing_fields`.
+5. `"email"` удаляется из `missing_fields` при успешном email update.
+6. Если `missing_fields` пуст и `placeholder_email = false`, status → `"complete"` и
+   ставится `completed_at`.
+7. Если email обновлён, очищаются email-verification флаги
+   (`email_verified`, `email_verified_at`, `email_verified_for`) — это
+   позволяет `customer-created` / verification flow заново выслать письмо
+   стандартным subscriber-каналом.
+
+### 6.4. `medusa-agency-boilerplate/src/modules/onboarding-checkout-gate.ts`
+
+Middleware [`enforceOnboardingEmailForCheckout`](../medusa-agency-boilerplate/src/modules/onboarding-checkout-gate.ts:19)
+применён только к `POST /store/carts/:id/complete`
+([`middlewares.ts:392-396`](../medusa-agency-boilerplate/src/api/middlewares.ts:392)).
+
+Поведение:
+
+- Guest checkout (нет authenticated customer) — pass-through; cart использует
+  email из самого cart.
+- Авторизованный customer с placeholder email → `400` с телом:
+
+  ```json
+  {
+    "type": "invalid_data",
+    "code": "onboarding_required",
+    "message": "Для оформления заказа укажите email",
+    "details": {
+      "reason": "placeholder_email",
+      "action": "complete_onboarding"
+    }
+  }
+  ```
+
+- При infrastructure-ошибке (BD недоступна) middleware **не** блокирует
+  checkout — логирует warning и пропускает. Это сознательный fail-open: в
+  норме placeholder email отлавливается, при отказе инфраструктуры лучше не
+  ронять заказы.
+
+Endpoint `/store/payment-collections/:id/payment-sessions` **не** покрыт этим
+middleware (в отличие от ранней постановки задачи). Email обязателен только
+на финальной стадии cart completion; promiscuous payment session может быть
+создан раньше.
+
+---
+
+## 7. Storefront Implementation Map
+
+### 7.1. Onboarding helpers
+
+[`medusa-agency-boilerplate-storefront/src/lib/util/onboarding.ts`](../medusa-agency-boilerplate-storefront/src/lib/util/onboarding.ts):
+
+- `OnboardingMetadata` тип, дублирующий backend shape;
+- `getOnboardingMetadata(customer)` — безопасное чтение;
+- `isOnboardingPending(customer)` — `true` если `status === "pending"`.
+
+[`medusa-agency-boilerplate-storefront/src/lib/data/customer.ts`](../medusa-agency-boilerplate-storefront/src/lib/data/customer.ts):
+
+- Server action `submitOnboarding({ email?, phone? })` инкапсулирует POST
+  endpoint, прокидывает auth, маппит backend error codes на storefront keys
+  (`email_already_exists`, `email_required`, `auth_required`, generic).
+
+### 7.2. Routes и страницы
+
+| Route | Путь | Поведение |
+| --- | --- | --- |
+| Onboarding form | [`/[countryCode]/account/onboarding/page.tsx`](../medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/account/onboarding/page.tsx) | Если customer не залогинен → redirect на `/account`. Если onboarding уже complete → redirect на `/account`. Иначе рендерит форму. |
+| Profile | [`/[countryCode]/account/profile/page.tsx`](../medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/account/profile/page.tsx) | Unauthenticated → redirect на `/account` (не `notFound()`); это исправлено в commit `15d6304`. Для pending onboarding показывается banner. |
+| Banner | [`modules/account/components/onboarding-banner/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/account/components/onboarding-banner/index.tsx) | Мягкий баннер со ссылкой на `/account/onboarding`, не блокирует навигацию. |
+| Form | [`modules/account/components/onboarding-form/index.tsx`](../medusa-agency-boilerplate-storefront/src/modules/account/components/onboarding-form/index.tsx) | Email required только если `placeholder_email` или `missing_fields` содержит `"email"`. Phone — всегда optional с подсказкой «VK не передал ваш телефон. Можете указать его сейчас или позже в профиле». |
+| Checkout gate UI | Storefront рендер checkout проверяет cart customer email, пропуская UI до onboarding если placeholder. Сетевой gate — backend middleware §6.4. |
+
+### 7.3. Логика отображения формы
+
+- `needsEmail = onboarding.placeholder_email || onboarding.missing_fields.includes("email")`.
+- Если `needsEmail = true` → видно поле email + поле phone (optional).
+- Если `needsEmail = false` → видно только phone (optional). Это путь, когда
+  email уже подтверждён, а пользователь просто ничего не указал — в норме
+  такая ситуация не возникнет, но fallback корректный.
+
+---
+
+## 8. Environment Variables
+
+| Variable | Default | Источник | Назначение |
+| --- | --- | --- | --- |
+| `VK_ID_SCOPES` | `"vkid.personal_info phone"` | [`vk-id.ts:21`](../medusa-agency-boilerplate/src/modules/vk-id.ts:21) | OAuth scopes; `phone` нужен для извлечения телефона. |
+| `VK_ID_ALLOW_NO_EMAIL_REGISTER` | `true` (по env шаблонам) | [`.env.example`](../.env.example) `:170-173`, [`.env.staging.example`](../.env.staging.example) `:218-221` | Operator-facing flag «разрешить регистрацию без email». **Read-семантика:** в текущей реализации callback не делает прямой gate по этому флагу — placeholder branch включён всегда после реализации Phase 5.5. Флаг сохранён как documentation hook на случай будущего отключения. |
+| `VK_ID_EMAIL_TRUST_POLICY` | `any` | Phase 5.3 | `any` пропускает email-verification для VK; `require_verification` обязывает обычный verify; `reject` отключает register branch (placeholder не применяется). |
+| `VK_ID_REQUIRE_EMAIL` | — (deprecated) | env шаблоны | **Deprecated, runtime игнорирует.** Оставлен в шаблонах с комментарием для обратной совместимости. |
+
+Storefront использует public flag `NEXT_PUBLIC_VK_ID_ENABLED` для UI; он
+читается на build-time (см. troubleshooting `Hydration mismatch`).
+
+---
+
+## 9. Data Flow
+
+```
+VK ID OAuth
+  │
+  ▼
+/api/auth/vk-id/callback (storefront proxy, attaches publishable key)
+  │  forwards to
+  ▼
+/store/vk-id/callback (Medusa backend)
+  │
+  ├── identity.email present?
+  │     YES → use real email
+  │     NO  → generatePlaceholderEmail(identity.vkUserId)
+  │
+  ├── identity.phone present?
+  │     YES → save to customer.phone, vk_phone_verified=true
+  │     NO  → "phone" added to onboarding.missing_fields
+  │             (informational; phone is optional for completion)
+  │
+  ├── createVkIdCustomer (auth identity + emailpass + customer + metadata)
+  │
+  └── redirect → storefront return URL
+        + ?vk_registered=success
+        + ?onboarding=pending  (only when email is placeholder)
+  │
+  ▼
+Storefront /account/profile
+  │
+  ├── isOnboardingPending(customer)?
+  │     YES → render OnboardingBanner
+  │     NO  → normal account view
+  │
+  ▼
+User clicks banner → /account/onboarding
+  │
+  ▼
+OnboardingForm submit → POST /store/customers/me/onboarding
+  │
+  ├── email saved → status flips to "complete" (phone always optional)
+  │
+  ▼
+router.refresh() → /account
+  │
+  ▼
+Checkout gate (POST /store/carts/:id/complete)
+  │
+  └── isPlaceholderEmail(customer.email)?
+        YES → 400 onboarding_required
+        NO  → continue to apiship readiness gate
+```
+
+---
+
+## 10. Edge Cases
+
+| Сценарий | Поведение |
+| --- | --- |
+| Повторный VK login пользователя с placeholder email | `findVkIdCustomersByIdentity` находит customer по `metadata.vk_link.vk_user_id`. Login flow ничем не отличается. Banner и onboarding gate продолжают работать до email update. |
+| Пользователь указывает email, который уже занят | Onboarding endpoint возвращает `409 email_already_exists`. Storefront форма выводит локализованное сообщение. |
+| VK впервые отдал email (после расширения scope или подтверждения email в VK) при повторном логине | Текущая реализация **не** делает auto-migrate placeholder→real email на login. Пользователь должен пройти onboarding вручную. (Возможный следующий слайс — оставлен как known limitation.) |
+| VK-телефон считается верифицированным | VK выдаёт телефон только после собственной верификации; дополнительный SMS-шаг не требуется. `metadata.vk_link.phone_verified=true`, `metadata.onboarding.vk_phone_verified=true`. |
+| Попытка checkout без реального email | Backend middleware блокирует с `onboarding_required`. Storefront показывает CTA «Заполнить профиль». |
+| Forgot-password для placeholder email | Workflow guard проверяет `isPlaceholderEmail` и не отправляет письмо (placeholder домен не маршрутизируется). После заполнения реального email forgot-password работает обычным способом. |
+| Race: два VK callback одновременно для одного `vk_user_id` | `withVkIdRegisterLock` (PG advisory lock) сериализует запросы. Лок-ключ использует placeholder email если identity.email пуст, поэтому детерминирован. Известная остаточная race для разных email — см. [`Docs/troubleshooting.md`](./troubleshooting.md) §12. |
+| Onboarding не блокирует навигацию | Доступны: каталог, корзина, аккаунт, адреса. Заблокировано: только финальный `cart.complete`. |
+| `onboarding_already_complete` после успешного завершения | Повторный POST на endpoint вернёт `400 onboarding_already_complete` — это нормальное состояние, storefront не должен его показывать пользователю. |
+
+---
+
+## 11. Migrations
+
+- Database миграции **не нужны**: email остаётся NOT NULL, placeholder
+  заполняет constraint; phone уже nullable; всё остальное в `metadata` (JSONB).
+- Auth identity миграции **не нужны**: `emailpass` provider_identity создаётся
+  с placeholder email как `entity_id` и обновляется в составе onboarding endpoint
+  через standard `updateCustomersWorkflow` (внутри Medusa core).
 
 ---
 
 ## 12. Безопасность
 
-- Placeholder email использует `.internal` TLD (RFC 6762) — гарантированно не резолвится.
+- Placeholder TLD `.internal` (RFC 6762) — гарантированно не резолвится.
 - Onboarding endpoint требует authenticated session.
-- Email uniqueness проверяется перед обновлением.
-- При смене email обновляется emailpass entity_id — предотвращает account takeover через forgot-password на старый placeholder.
-- Phone из VK считается верифицированным — не требует SMS-подтверждения.
-- Checkout gate предотвращает заказы без контактных данных.
+- Email uniqueness проверяется до апдейта.
+- При смене email очищаются email-verification флаги — следующий
+  verification email уйдёт на новый адрес, а не на placeholder.
+- Phone из VK считается верифицированным — отдельный SMS-шаг не нужен.
+- Checkout gate предотвращает заказы без реального email.
+- Логи endpoint'а намеренно не содержат email/телефон/error message; только
+  `customer_id` и `error_length` (см. `[onboarding] update failed customer_id=… error_length=…`).
+- VK state HMAC-подпись HMAC-SHA-256 фиксированной длины 43 символа,
+  timing-safe сравнение через `timingSafeEqual`.
+
+---
+
+## 13. Тесты
+
+| Файл | Что покрывает |
+| --- | --- |
+| [`src/modules/__tests__/vk-id-create-customer.unit.spec.ts`](../medusa-agency-boilerplate/src/modules/__tests__/vk-id-create-customer.unit.spec.ts) | Placeholder email path, `metadata.onboarding`, vk_link обогащение. |
+| [`src/api/store/vk-id/callback/__tests__/route.unit.spec.ts`](../medusa-agency-boilerplate/src/api/store/vk-id/callback/__tests__/route.unit.spec.ts) | No-email register flow, `?onboarding=pending` redirect, `missing_vk_peer_id`. |
+| [`src/api/store/customers/me/onboarding/__tests__/route.unit.spec.ts`](../medusa-agency-boilerplate/src/api/store/customers/me/onboarding/__tests__/route.unit.spec.ts) | Endpoint contract, error codes, completion flag transitions, phone optional. |
+| [`src/workflows/__tests__/send-email-verification.unit.spec.ts`](../medusa-agency-boilerplate/src/workflows/__tests__/send-email-verification.unit.spec.ts) | Placeholder guard для verification flow. |
+
+---
+
+## 14. Связанные документы
+
+- [`Docs/env_contract.md`](./env_contract.md) — VK ID env keys и phase notes.
+- [`Docs/troubleshooting.md`](./troubleshooting.md) — диагностика
+  `invalid_or_expired_state`, `email_required`, `onboarding_required`,
+  `missing_vk_peer_id` и других ошибок Phase 5.5.
+- [`Docs/architecture.md`](./architecture.md) — где живут callback proxy,
+  Store API surface и checkout gate в общей топологии.
+- [`Docs/current_work.md`](./current_work.md) — текущее операционное
+  состояние slice.

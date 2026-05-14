@@ -114,6 +114,37 @@ Documentation-only or env-example-only changes do not require a staging deploy u
 
 Deploying by any other method (direct SSH + docker build) is **not** the canonical path. If used in an emergency, document the reason in [`troubleshooting.md`](./troubleshooting.md).
 
+### 4.1. SSH heartbeat during long Docker builds
+
+`scripts/github-deploy-staging.sh` wraps the long `docker compose ... build`
+step with [`run_with_heartbeat`](../scripts/github-deploy-staging.sh:11) — a
+small helper that prints `"Docker image build still running at <ISO>..."`
+once a minute while the build runs and then cleans the heartbeat process up
+on completion.
+
+Why it exists:
+
+- `Deploy Staging` runs over an SSH connection from the GitHub runner. Long
+  silent builds (multi-stage Next.js + Medusa + Payload images) can let the
+  SSH connection idle long enough for the network path to drop the session
+  with `Write failed: Broken pipe`, killing the deploy mid-build even though
+  the docker daemon is still working remotely.
+- The heartbeat keeps continuous output on stdout, which keeps the SSH
+  channel and the GitHub Actions step active.
+
+Operational notes:
+
+- The heartbeat is implemented entirely with `bash` background process plus
+  `trap`-free cleanup; no extra dependencies.
+- The helper preserves the wrapped command's exit status, so build failures
+  still propagate normally.
+- This protection landed alongside the VK ID Phase 5.5 deploy series
+  (commit `0577dcb`). Older copies of the script without it are vulnerable
+  to mid-build SSH drop on slow runners.
+- If you re-implement the deploy script in another language or split it,
+  keep an equivalent heartbeat for any step longer than ~5 minutes that
+  does not produce continuous output.
+
 ## 5. Container names
 
 | Service | Container |

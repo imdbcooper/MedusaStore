@@ -61,7 +61,7 @@ Guardrails:
 | `POSTGRES_USER`, `POSTGRES_DB`, `POSTGRES_PORT`, `REDIS_PORT`, `MEDUSA_BACKEND_PORT`, `STOREFRONT_PORT`, `PAYLOAD_PORT` | Optional | Generic local defaults допустимы и не считаются client-specific residue. |
 | `HOST_UID`, `HOST_GID` | Optional | Local workstation mapping; менять только при необходимости. |
 | `NOTIFICATION_EMAIL_PROVIDER`, `NOTIFICATION_EMAIL_FROM` | Optional | Baseline-safe defaults допустимы; provider rollout остаётся opt-in. |
-| `UNISENDER_*`, `NOTIFICATION_SMS_PROVIDER`, `MTS_EXOLVE_*`, `NOTIFICATION_VK_PROVIDER`, `VK_COMMUNITY_*`, `VK_ID_*`, legacy provider env variables removed from the template, `YOOKASSA_*` | Optional | Все integration/env switches остаются opt-in и не являются baseline requirement. |
+| `UNISENDER_*`, `NOTIFICATION_SMS_PROVIDER`, `MTS_EXOLVE_*`, `NOTIFICATION_VK_PROVIDER`, `VK_COMMUNITY_*`, `VK_ID_*` (включая `VK_ID_SCOPES`, `VK_ID_ALLOW_NO_EMAIL_REGISTER`, `VK_ID_EMAIL_TRUST_POLICY`), legacy provider env variables removed from the template, `YOOKASSA_*` | Optional | Все integration/env switches остаются opt-in и не являются baseline requirement. VK ID Phase 5.5 фиксирует `VK_ID_SCOPES="vkid.personal_info phone"` и `VK_ID_ALLOW_NO_EMAIL_REGISTER=true` как defaults в env шаблонах; runtime activation требует полного набора `VK_ID_*` credentials. |
 | `PAYLOAD_ENABLED`, `PAYLOAD_CMS_URL` | Optional | Content layer по умолчанию disabled. |
 | `PAYLOAD_CONTENT_PREVIEW_TOKEN`, `PAYLOAD_PREVIEW_SECRET`, `PAYLOAD_REVALIDATE_SECRET` | Optional | Заполнять только если включается content preview/revalidate path. |
 | `MEDUSA_BACKEND_URL`, `STORE_CORS`, `ADMIN_CORS`, `AUTH_CORS`, `NOTIFICATION_SMOKE_*` | Optional | Имеют safe local defaults и не считаются обязательными client-specific replacements. |

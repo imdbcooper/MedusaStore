@@ -82,6 +82,7 @@ Storefront server runtime explicitly prefers `MEDUSA_BACKEND_URL` before `NEXT_P
 - Registers optional providers such as YooKassa, UniSender, SMTP email, VK, SMS, and ApiShip/Gorgo according to env/runtime readiness.
 - Uses PostgreSQL and Redis.
 - Does not own editorial marketing pages.
+- Owns VK ID auth surface: `/store/vk-id/callback`, authenticated `/store/customers/me/vk-id/*` link/start/unlink endpoints, and the onboarding completion endpoint `POST /store/customers/me/onboarding`. The checkout gate middleware [`enforceOnboardingEmailForCheckout`](../medusa-agency-boilerplate/src/modules/onboarding-checkout-gate.ts:19) is mounted on `POST /store/carts/:id/complete` and rejects authenticated customers whose email is still a VK placeholder. Full contract — [`vk-onboarding-spec.md`](./vk-onboarding-spec.md).
 
 ### Storefront
 
@@ -90,6 +91,8 @@ Storefront server runtime explicitly prefers `MEDUSA_BACKEND_URL` before `NEXT_P
 - Uses Payload content APIs only when `PAYLOAD_ENABLED=true` and `PAYLOAD_CMS_URL` is configured.
 - Product detail route at [`page.tsx`](../medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/products/[handle]/page.tsx) is dynamic at runtime. Static params generation may return an empty list if Store API is unavailable during build; runtime page smoke is still required.
 - Owns `/api/content/preview`, `/api/content/preview/exit`, and `/api/content/revalidate` endpoints.
+- Owns the VK ID OAuth callback proxy at [`/api/auth/vk-id/callback`](../medusa-agency-boilerplate-storefront/src/app/api/auth/vk-id/callback/route.ts), which attaches the publishable API key on the server side before forwarding to the Medusa backend `/store/vk-id/callback`. VK redirect URI must point at this storefront route, not the bare `/store/*` URL.
+- Owns the post-VK onboarding UX: [`/account/onboarding`](../medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/account/onboarding/page.tsx), the [`OnboardingBanner`](../medusa-agency-boilerplate-storefront/src/modules/account/components/onboarding-banner/index.tsx) on `/account/profile`, and the [`OnboardingForm`](../medusa-agency-boilerplate-storefront/src/modules/account/components/onboarding-form/index.tsx) that calls `POST /store/customers/me/onboarding`.
 
 ### Payload CMS
 

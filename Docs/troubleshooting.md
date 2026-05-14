@@ -664,3 +664,189 @@ curl -s https://studio.slavx.ru/ru/account | grep -o 'data-testid="vk-login-butt
 
 In a private browser window the element must remain visible after first
 render and the console must be free of React error #418.
+
+## 14. VK ID onboarding flow (Phase 5.5)
+
+> Полный контракт — [`Docs/vk-onboarding-spec.md`](./vk-onboarding-spec.md).
+> Этот раздел перечисляет только operational failure modes.
+
+### 14.1. `invalid_or_expired_state` после VK consent
+
+Symptoms:
+
+- После VK consent storefront редиректит на `/account` с
+  `?vk_login_error=invalid_or_expired_state` или `?vk_id_reason=invalid_or_expired_state`.
+- Backend log показывает `verifySignedState() returned null`.
+- Воспроизводится в части браузеров/мобильных VK app, не у всех пользователей.
+
+Root cause:
+
+- VK ID `/authorize` bridge переписывает `state` в `redirect_state` и удаляет
+  пунктуацию (`.`, `~`, `:`, `*`) перед финальной auth-страницей. Старый
+  формат `{base64url-payload}.{signature}` ломался: точка пропадала и подпись
+  становилась невалидной.
+- Phase 5.5 переключила signed state на VK-safe compact формат без
+  разделителя: `{payload}{43-char-signature}` (см.
+  [`vk-id.ts#buildSignedState`](../medusa-agency-boilerplate/src/modules/vk-id.ts:489)).
+- [`verifySignedState`](../medusa-agency-boilerplate/src/modules/vk-id.ts:501) умеет читать оба формата:
+  legacy `payload.signature` и новый compact. Если оба не валидируются — это
+  настоящая подделка/протухание, отдаём `invalid_or_expired_state`.
+
+Diagnosis:
+
+```bash
+# Проверить версию backend на staging
+ssh slavx-store 'cd /home/som/MedusaStore && git log --oneline -5 -- medusa-agency-boilerplate/src/modules/vk-id.ts'
+```
+
+Ожидаемые коммиты в истории файла: `562a45c`, `0577dcb` (compact state +
+legacy reader). Если их нет — backend старее Phase 5.5.
+
+```bash
+# Подтянуть лог callback-а
+ssh slavx-store 'docker logs --tail=100 medusastore-backend 2>&1 | grep "vk-id"'
+```
+
+Resolve:
+
+1. Подтвердить, что `Deploy Staging` отработал последний релиз с Phase 5.5
+   (после commit `0577dcb`).
+2. Проверить, что `VK_ID_SESSION_SECRET` не менялся между mint state и
+   callback (миграция секрета инвалидирует уже выпущенные state-токены —
+   ожидаемо до 10 минут протухания).
+3. Если симптом сохранился после деплоя — собрать конкретный пример state
+   из VK redirect (без секретов в тикете) и проверить локально, не содержит ли
+   он недопустимый символ помимо удаляемой VK пунктуации.
+
+Prevent recurrence:
+
+- Не передавать VK ID state через cookies/headers, которые могут быть обрезаны
+  прокси.
+- Не менять `VK_ID_SESSION_SECRET` без одновременной перевыпуска всех уже
+  открытых VK-сессий (ожидаемая инвалидация).
+
+### 14.2. `missing_vk_peer_id` от callback
+
+Symptoms:
+
+- Storefront получает `?vk_login_error=missing_vk_peer_id` или
+  `?vk_id_reason=missing_vk_peer_id` после consent.
+- В backend log видно
+  `redirectWithLoginError(res, returnUrl, "missing_vk_peer_id")`.
+
+Root cause:
+
+- VK userInfo не вернул `user.user_id` ИЛИ derived `vkPeerId` пустой. Без
+  `vkPeerId` нельзя адресовать VK Community Messaging, поэтому регистрация и
+  link отказываются принимать identity ([`route.ts:295-297`](../medusa-agency-boilerplate/src/api/store/vk-id/callback/route.ts:295)).
+
+Resolve:
+
+- Проверить scope: `VK_ID_SCOPES` обязан содержать `vkid.personal_info`.
+  Без него VK не отдаёт `user_id`.
+- Проверить, что VK ID приложение настроено корректно: домен совпадает,
+  redirect URI указывает на storefront proxy, а не на bare `/store/vk-id/callback`.
+- Если ошибка случилась один раз и больше не воспроизводится — VK мог
+  временно вернуть пустое тело userInfo; это transient.
+
+### 14.3. Onboarding endpoint: `email_required` / `email_already_set` / `email_already_exists` / `onboarding_already_complete`
+
+Endpoint: `POST /store/customers/me/onboarding`. Контракт описан в
+[`Docs/vk-onboarding-spec.md` §6.3](./vk-onboarding-spec.md).
+
+| HTTP | Code | Когда | Что делать |
+| --- | --- | --- | --- |
+| `400` | `email_required` | Текущий `customer.email` — placeholder, в body не передан `email`. | Storefront форма обязана требовать email если `placeholder_email=true`. Если ошибка пришла на корректную форму — проверить, что `submitOnboarding({email})` действительно сериализует поле. |
+| `400` | `email_already_set` | Текущий email уже реальный, но в body передан новый. | Эндпоинт намеренно не позволяет менять email через onboarding (для смены email есть отдельный flow в профиле). |
+| `409` | `email_already_exists` | Email занят другим customer. | Storefront показывает локализованное сообщение. Пользователь может ввести другой email или объединить аккаунт через VK link conflict flow (см. §12.b и Phase 5.3 контракт). |
+| `400` | `onboarding_already_complete` | `metadata.onboarding.status === "complete"` или метаданных нет. | Не показывать форму, перевести пользователя на `/account`. Это не баг — повторный POST. |
+| `401` | `customer_auth_required` | Сессия не аутентифицирована. | Перелогин. |
+| `404` | `customer_not_found` | Сессия валидна, но customer удалён. | Очистить сессию, заставить перелогин. |
+| `500` | `update_failed` / `internal_error` | DB / workflow-ошибка. | Лог содержит `customer_id` и `error_length`; проверить backend log. |
+
+Phone в endpoint всегда optional. Pole `phone: ""` валиден (схема trim+strip).
+Логика «phone уже заполнен — пропустить» отражена в логах
+`[onboarding] phone already set for customer_id=… skipping` и не является ошибкой.
+
+Diagnosis:
+
+```bash
+# Backend log по конкретному customer (не выводить email в тикет)
+ssh slavx-store 'docker logs --tail=200 medusastore-backend 2>&1 | grep "\[onboarding\]"'
+```
+
+Resolve specifically for `email_already_exists`:
+
+1. Подтвердить дубль через SQL (см. §12 — там описан запрос для дублей по
+   `lower(email)`).
+2. Если у второго аккаунта реально нет VK link — пользователь должен
+   зайти через email/пароль и привязать VK, а не пытаться создать второй
+   аккаунт через VK onboarding.
+3. Если требуется merge — это manual operator job, не автоматизировано.
+
+### 14.4. Checkout gate: `onboarding_required`
+
+Symptoms:
+
+- `POST /store/carts/:id/complete` → `400` с телом
+  `{"type":"invalid_data","code":"onboarding_required","details":{"reason":"placeholder_email","action":"complete_onboarding"}}`.
+- Storefront показывает CTA «Заполнить профиль».
+
+Root cause:
+
+- Customer аутентифицирован, но `customer.email` соответствует
+  `@placeholder.internal`. Middleware
+  [`enforceOnboardingEmailForCheckout`](../medusa-agency-boilerplate/src/modules/onboarding-checkout-gate.ts:19)
+  блокирует cart completion до завершения onboarding.
+
+Resolve:
+
+1. Передать пользователя на `/{countryCode}/account/onboarding`.
+2. После успешного email update — повторить попытку checkout. Сессия
+   остаётся валидной, отдельного логина не требуется.
+
+Edge case — guest checkout:
+
+- Если `auth_context.actor_id` пуст, middleware **пропускает** (cart
+  использует email из самого cart). Это поведение by design: гостям
+  onboarding не нужен.
+
+Edge case — DB unreachable:
+
+- Middleware fail-open: при ошибке lookup-а лог пишет
+  `[onboarding-gate] failed to check customer email customer_id=…` и
+  пропускает запрос. Это сознательный выбор: лучше пропустить заказ, чем
+  заблокировать его при инфраструктурной ошибке. Если `cart.complete`
+  доходит до Medusa core с placeholder email — заказ всё равно создастся,
+  но email в order.email будет placeholder. Operator должен понимать этот
+  fallback при разборе инцидентов.
+
+### 14.5. Регистрация прошла, но `customer.phone` пуст
+
+Это **не ошибка** в большинстве случаев. VK отдаёт `phone` только когда
+пользователь явно дал согласие в VK (scope `phone`) и в его профиле телефон
+вообще есть. У части пользователей телефон не отдаётся даже с правильным scope.
+
+Что увидит storefront:
+
+- `customer.metadata.onboarding.status === "pending"` если email тоже
+  placeholder; иначе `"complete"` (phone не блокирует завершение).
+- `metadata.vk_link.phone === null`, `metadata.vk_link.phone_verified === false`.
+- Onboarding-форма покажет поле phone с подсказкой «VK не передал ваш
+  телефон. Можете указать его сейчас или позже в профиле.»
+
+Resolve:
+
+- Если operator ожидает гарантированный phone — это проблема постановки
+  задачи, а не runtime ошибка.
+- Если пользователь хочет указать phone — он может сделать это через
+  onboarding-форму или раздел профиля «Контакты».
+
+### 14.6. Storefront `/account/profile` редиректит anonymous на `/account` (а не 404)
+
+Phase 5.5 includes a storefront fix (commit `15d6304`): unauthenticated
+visitor on `/account/profile` теперь редиректится на `/{countryCode}/account`
+вместо `notFound()`. Это нормальное поведение, **не баг**.
+
+Если в логах появился ранее `404` от `/account/profile` для anonymous — это
+старая сборка storefront. Достаточно redeploy через `Deploy Staging`.

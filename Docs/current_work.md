@@ -1,6 +1,6 @@
 # Current Work
 
-> Status updated: `2026-05-11`.
+> Status updated: `2026-05-14`.
 >
 > Purpose: this is the short operational source of truth for agents entering the repository with no context. It answers what is current, what is already closed, and what must not be reopened without new evidence.
 
@@ -13,6 +13,17 @@ The active delivery baseline is ApiShip/Gorgo via `@gorgo/medusa-fulfillment-api
 Direct plugin-specific `/store/apiship/*` endpoints are the canonical Store API contract for normal checkout. `/store/delivery/*` is not a current canonical facade.
 
 The active storefront visual baseline is the StudioPro/Stitch integration recorded in [stitch_frontend_gap_log.md](./stitch_frontend_gap_log.md). Header, catalog, product/offer, contacts, checkout shell, home and editorial surfaces have been aligned to Stitch references while keeping Medusa cart/catalog/product/checkout/account logic intact. Product detail pages are dynamic runtime pages and require a runtime product smoke for known handles.
+
+VK ID auth surface now covers no-email registration through the **Phase 5.5** onboarding flow. Full contract — [vk-onboarding-spec.md](./vk-onboarding-spec.md). Highlights:
+
+- `DEFAULT_VK_ID_SCOPES = "vkid.personal_info phone"`; new operator-facing flag `VK_ID_ALLOW_NO_EMAIL_REGISTER=true` in `.env.example` / `.env.staging.example`.
+- Backend creates customers with placeholder email `vk_{vk_user_id}@placeholder.internal` when VK does not return an email; `customer.metadata.onboarding` tracks `status` (`"pending"` / `"complete"`), `missing_fields`, `placeholder_email`, `vk_phone_verified`, `created_at`.
+- New endpoint `POST /store/customers/me/onboarding` in [`route.ts`](../medusa-agency-boilerplate/src/api/store/customers/me/onboarding/route.ts); phone is optional and never blocks completion.
+- Checkout gate middleware [`enforceOnboardingEmailForCheckout`](../medusa-agency-boilerplate/src/modules/onboarding-checkout-gate.ts) rejects `POST /store/carts/:id/complete` for authenticated customers with placeholder email.
+- VK ID OAuth state switched to VK-safe compact format `{payload}{signature}` (no separator); legacy dot-form is still readable for local smokes.
+- Storefront ships `/account/onboarding`, profile banner, checkout-gate UX, and `submitOnboarding` server action; anonymous `/account/profile` now redirects instead of `notFound()`.
+- Deploy hardening: `scripts/github-deploy-staging.sh` wraps the docker build with a heartbeat printer to keep the GitHub Actions SSH session alive during long builds (commit `0577dcb`).
+- Deployed to staging via the `Deploy Staging` workflow across commits `15d6304`, `562a45c`, `0577dcb`, `8243dc1`, `48f510d`. All deploys succeeded.
 
 Production packaging/deploy now exists: [`docker-compose.prod.yml`](../docker-compose.prod.yml) defines backend, storefront, Payload, Caddy, PostgreSQL and Redis; Caddy is the only public reverse proxy; manual GitHub Actions deploy is documented in [production_runbook.md](./production_runbook.md). A separate concrete staging host is not currently provisioned; [staging_runbook.md](./staging_runbook.md) documents that boundary.
 

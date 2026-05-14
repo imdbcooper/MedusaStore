@@ -80,6 +80,7 @@ Start with these current docs:
 5. [`Docs/troubleshooting.md`](Docs/troubleshooting.md) — known failure modes and commands.
 6. [`Docs/payload_cms_runbook.md`](Docs/payload_cms_runbook.md) — Payload CMS operations.
 7. [`Docs/env_contract.md`](Docs/env_contract.md) and [`Docs/client_init_contract.md`](Docs/client_init_contract.md) — env/init contracts.
+8. [`Docs/vk-onboarding-spec.md`](Docs/vk-onboarding-spec.md) — VK ID no-email registration + onboarding flow contract (Phase 5.5).
 
 ## Docs governance rule
 

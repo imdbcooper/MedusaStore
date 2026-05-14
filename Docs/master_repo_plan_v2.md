@@ -502,6 +502,7 @@ Commerce-flow не должен переписываться для типово
 Текущий следующий трек:
 - `storefront core baseline v1` уже закрыт как предыдущий repo-level шаг коммитом `6f9a5499e2c9fcf08e2e6d1fffa75f350e82f5bb`;
 - `VK ID v1` уже закрыт как optional identity/linking track поверх реализованного VK transport коммитом `f48a02658d116a04afd794c1134ac72e0ab00bc8`;
+- `VK ID Phase 5.5` (no-email registration + onboarding flow) уже закрыт как продолжающий sub-track поверх Phase 5.x: backend поддерживает регистрацию через VK без email с placeholder email, customer.metadata.onboarding контрактом, новым `POST /store/customers/me/onboarding` endpoint, checkout gate middleware на `POST /store/carts/:id/complete`, расширенным VK ID scope `vkid.personal_info phone` и VK-safe compact OAuth state форматом; storefront добавил `/account/onboarding` page, banner и checkout-gate UX. Полный контракт — [vk-onboarding-spec.md](./vk-onboarding-spec.md). Деплои на staging — `15d6304`, `562a45c`, `0577dcb`, `8243dc1`, `48f510d`;
 - `MTS Exolve` уже закрыт как optional SMS track коммитом `b13f6fa93473bb8bc0320566a75d264d60739784` `feat(notification): add MTS Exolve SMS workstream`;
 - `marketing layer v1` уже закрыт коммитом `a4711906b16523dcf03da9601ccf1a914702ca7d` `feat(marketing-layer): add marketing preferences and campaign workflows`:
   - metadata-first consent/preferences truth живет в [`MarketingPreferences`](../medusa-agency-boilerplate/src/modules/marketing-preferences.ts:37) внутри `customer.metadata.marketing`;
