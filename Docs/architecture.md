@@ -12,15 +12,23 @@ Internet
   | HTTPS/HTTP
   v
 Caddy container: medusastore-caddy
-  |-- /admin/*  ----------> medusastore-backend:9000
-  |-- /store/*  ----------> medusastore-backend:9000
-  |-- /auth/*   ----------> medusastore-backend:9000
-  |-- /payload/* ---------> medusastore-payload:3100
-  |-- /api/content/* -----> medusastore-storefront:8000
-  `-- all other paths ----> medusastore-storefront:8000
+  |
+  |-- studio.slavx.ru (legacy path-based routing, backward compat)
+  |     |-- /admin/*  ----------> medusastore-backend:9000
+  |     |-- /store/*  ----------> medusastore-backend:9000
+  |     |-- /auth/*   ----------> medusastore-backend:9000
+  |     |-- /payload/* ---------> medusastore-payload:3100
+  |     |-- /api/content/* -----> medusastore-storefront:8000
+  |     `-- all other paths ----> medusastore-storefront:8000
+  |
+  |-- api.slavx.ru ------------> medusastore-backend:9000 (Store + Admin + Auth API)
+  |-- admin.slavx.ru ----------> medusastore-backend:9000 (Admin Dashboard)
+  |-- cms.slavx.ru ------------> medusastore-payload:3100 (Payload CMS)
+  |-- media.slavx.ru ----------> S3 proxy (s3.itecocloud.online/slavx-media-ddfd0e31)
 
 medusastore-backend  ---> medusastore-db:5432
 medusastore-backend  ---> medusastore-redis:6379
+medusastore-backend  ---> S3 (s3.itecocloud.online) for file uploads
 medusastore-payload  ---> medusastore-db:5432 / database payload_cms
 medusastore-storefront ---> medusastore-backend:9000 server-side
 medusastore-storefront ---> medusastore-payload:3100 server-side when Payload is enabled
@@ -44,6 +52,17 @@ There is no Nginx layer in the current production topology. Caddy is the only re
 All services are attached to the `medusastore` Docker bridge network in [`docker-compose.prod.yml`](../docker-compose.prod.yml).
 
 ## 3. Public routes
+
+### 3.1. Subdomain-based routing (new)
+
+| Subdomain | Upstream | Runtime owner | Notes |
+| --- | --- | --- | --- |
+| `api.slavx.ru` | `medusa-backend:9000` | Medusa | Full Store/Admin/Auth API. `/healthz` returns `ok`. |
+| `admin.slavx.ru` | `medusa-backend:9000` | Medusa | Admin Dashboard (serves `/admin/*` UI and API). |
+| `cms.slavx.ru` | `payload-cms:3100` | Payload CMS | Direct Payload CMS admin/API access. |
+| `media.slavx.ru` | S3 proxy → `s3.itecocloud.online` | Caddy reverse proxy | Proxies to S3 bucket with caching headers. Path rewrite prepends bucket name. |
+
+### 3.2. Path-based routing on studio.slavx.ru (legacy, backward compat)
 
 | Public route | Upstream | Runtime owner | Notes |
 | --- | --- | --- | --- |

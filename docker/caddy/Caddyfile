@@ -9,6 +9,83 @@ http://127.0.0.1 {
     }
 }
 
+# --- api.slavx.ru: Medusa Backend API (Store + Admin + Auth) ---
+api.slavx.ru {
+    encode gzip zstd
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    handle /healthz {
+        header Content-Type text/plain
+        respond "ok" 200
+    }
+
+    handle {
+        reverse_proxy medusa-backend:9000
+    }
+}
+
+# --- admin.slavx.ru: Medusa Admin Dashboard ---
+admin.slavx.ru {
+    encode gzip zstd
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    handle {
+        reverse_proxy medusa-backend:9000
+    }
+}
+
+# --- cms.slavx.ru: Payload CMS Admin ---
+cms.slavx.ru {
+    encode gzip zstd
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    handle {
+        reverse_proxy payload-cms:3100
+    }
+}
+
+# --- media.slavx.ru: S3 media proxy ---
+media.slavx.ru {
+    encode gzip zstd
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Cache-Control "public, max-age=31536000, immutable"
+    }
+
+    handle {
+        rewrite * /slavx-media-ddfd0e31{uri}
+        reverse_proxy https://s3.itecocloud.online {
+            header_up Host s3.itecocloud.online
+            header_down -Server
+            transport http {
+                tls
+                tls_server_name s3.itecocloud.online
+            }
+        }
+    }
+}
+
+# --- studio.slavx.ru: Legacy path-based routing (backward compatibility) ---
 {$DEPLOY_DOMAIN} {
     encode gzip zstd
 

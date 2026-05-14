@@ -142,6 +142,12 @@ upsert_env_value "$backend_env" "YOOKASSA_STOREFRONT_RETURN_ORIGINS" "${YOOKASSA
 upsert_env_value "$backend_env" "YOOKASSA_WEBHOOK_URL" "${YOOKASSA_WEBHOOK_URL:-}"
 upsert_env_value "$backend_env" "YOOKASSA_WEBHOOK_SECRET" "${YOOKASSA_WEBHOOK_SECRET:-}"
 upsert_env_value "$backend_env" "YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS" "${YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS:-false}"
+upsert_env_value "$backend_env" "S3_FILE_URL" "${S3_FILE_URL:-}"
+upsert_env_value "$backend_env" "S3_ACCESS_KEY_ID" "${S3_ACCESS_KEY_ID:-}"
+upsert_env_value "$backend_env" "S3_SECRET_ACCESS_KEY" "${S3_SECRET_ACCESS_KEY:-}"
+upsert_env_value "$backend_env" "S3_REGION" "${S3_REGION:-us-east-1}"
+upsert_env_value "$backend_env" "S3_BUCKET" "${S3_BUCKET:-}"
+upsert_env_value "$backend_env" "S3_ENDPOINT" "${S3_ENDPOINT:-}"
 
 ensure_storefront_env_exists
 

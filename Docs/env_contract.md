@@ -118,6 +118,12 @@
 - `NOTIFICATION_SMOKE_SUBJECT`
 - `NOTIFICATION_SMOKE_MESSAGE`
 - `APISHIP_SHIPMENT_EXECUTION_ENABLED`
+- `S3_FILE_URL`
+- `S3_ACCESS_KEY_ID`
+- `S3_SECRET_ACCESS_KEY`
+- `S3_REGION`
+- `S3_BUCKET`
+- `S3_ENDPOINT`
 - `NOTIFICATION_SMS_PROVIDER`
 - `MTS_EXOLVE_API_KEY`
 - `MTS_EXOLVE_SENDER`
@@ -454,6 +460,16 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 #### Payments
 
 - `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY` и `YOOKASSA_RETURN_URL` включают YooKassa payment initiation только когда реально заданы как согласованный opt-in комплект.
+
+#### File Storage (S3)
+
+- `S3_FILE_URL`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`, `S3_BUCKET`, `S3_ENDPOINT` — opt-in S3-compatible file storage для product images и media uploads.
+- Когда все S3 переменные заданы, Medusa backend использует `@medusajs/medusa/file-s3` provider с `forcePathStyle: true` (необходимо для S3-compatible endpoints вроде itecocloud).
+- `S3_FILE_URL` определяет публичный URL для доступа к файлам (формат: `https://<endpoint>/<bucket>`).
+- `S3_ENDPOINT` — endpoint S3-compatible хранилища (без trailing slash).
+- Пустые `S3_*` — валидный baseline-state для local development; backend будет использовать default local file provider.
+- Real S3 credentials (access key, secret key) являются secrets и живут только в GitHub Secrets / remote `.env`; в `.env.example` используются placeholders.
+- Storefront `next.config.js` включает `s3.itecocloud.online` и `media.slavx.ru` в `images.remotePatterns` для Next.js Image optimization.
 - `YOOKASSA_STOREFRONT_RETURN_ORIGINS` — backend-controlled comma-separated allowlist, которую читает [`buildStorefrontCheckoutReturnUrl()`](../medusa-agency-boilerplate/src/api/store/payment/yookassa/return/route.ts:49): query-параметр `storefront_origin` можно использовать только если его normalised origin входит в allowlist; иначе route падает обратно на первый allowlisted origin или первый origin из `STORE_CORS`, а localhost fallback допустим только в development/test.
 - `YOOKASSA_WEBHOOK_SECRET` проверяется в [`verifyYooKassaWebhook()`](../medusa-agency-boilerplate/src/api/yookassa/webhook/shared.ts:91) по `x-yookassa-webhook-secret`, `x-yookassa-secret` или `Authorization: Bearer ...`.
 - Пустой `YOOKASSA_WEBHOOK_SECRET` остается baseline-safe только в модели reject-by-default: unsigned webhook должен получать `401`, если не включен явный development/test override `YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS=true`.

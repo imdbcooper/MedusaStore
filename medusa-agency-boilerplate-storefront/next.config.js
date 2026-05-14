@@ -80,6 +80,14 @@ const nextConfig = {
             },
           ]
         : []),
+      {
+        protocol: "https",
+        hostname: "s3.itecocloud.online",
+      },
+      {
+        protocol: "https",
+        hostname: "media.slavx.ru",
+      },
       ...payloadRemotePatterns,
     ],
   },
