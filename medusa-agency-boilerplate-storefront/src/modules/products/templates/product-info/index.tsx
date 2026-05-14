@@ -1,6 +1,7 @@
 import { HttpTypes } from "@medusajs/types"
 import { Heading, Text } from "@medusajs/ui"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
+import ProductRatingBadge from "@modules/products/components/product-rating-badge"
 
 type ProductInfoProps = {
   product: HttpTypes.StoreProduct
@@ -30,6 +31,15 @@ const ProductInfo = ({ product }: ProductInfoProps) => {
         >
           {product.title}
         </Heading>
+
+        {/*
+          Phase 1 / step 7 — compact rating badge under the title (plan §6.2).
+          The badge is a server component, fetches via the same cache-tagged
+          server fetch used by `ProductReviewsSummary`; Next.js dedupes the
+          two within a render. Empty-state ("Нет отзывов") is owned by the
+          badge itself — no condition needed here.
+        */}
+        <ProductRatingBadge productId={product.id} variant="product-info" />
 
         {product.subtitle && (
           <Text

@@ -216,6 +216,86 @@ export const storefrontConfig = {
       serviceSupportDescription:
         "После завершения проекта предоставляется техническая поддержка и консультации по эксплуатации решения.",
     },
+    reviews: {
+      tabTitle: "Отзывы",
+      summary: {
+        // `{rating}` and `{count}` are placeholders the storefront substitutes
+        // before render. The plural-form for `count` is picked client-side via
+        // `pluralizeRu` from `lib/util/pluralize-ru.ts`. Plan §6.7.
+        average: "★ {rating} · {count} {countPlural}",
+        empty: "Пока никто не оставил отзыв",
+        // Compact suffix used by `ProductRatingBadge` next to the average
+        // rating, e.g. «★ 4.7 (23 отзыва)». Same `{count}` / `{countPlural}`
+        // placeholder contract as `summary.average`. Plan §6.2 / §7.
+        shortCountTemplate: "({count} {countPlural})",
+      },
+      empty: {
+        shortLabel: "Нет отзывов",
+      },
+      badge: {
+        // Aria-label for the linked rating badge in `ProductInfo`.
+        // Placeholders mirror `summary.average` / `summary.shortCountTemplate`.
+        ariaLabel:
+          "Перейти к отзывам, средний рейтинг {rating} из 5, {count} {countPlural}",
+      },
+      cta: {
+        write: "Написать отзыв",
+        helpful: "Полезно",
+        helpfulVoted: "Спасибо!",
+      },
+      form: {
+        title: "Написать отзыв",
+        submitSuccess: "Спасибо! Ваш отзыв отправлен на модерацию.",
+        alreadyExists: "Вы уже оставили отзыв на этот товар",
+        requirePurchase: "Отзыв можно оставить только после покупки",
+        authRequired: "Войдите, чтобы оставить отзыв",
+        rateLimited: "Слишком много отзывов. Попробуйте позже.",
+        error: "Не удалось отправить отзыв",
+        // `{current}` and `{max}` are substituted client-side by the form
+        // component (`product-review-form/index.tsx`).
+        fields: {
+          rating: "Ваша оценка",
+          title: "Заголовок (необязательно)",
+          text: "Текст отзыва",
+          pros: "Достоинства (необязательно)",
+          cons: "Недостатки (необязательно)",
+          charCounter: "{current}/{max}",
+        },
+        // `{min}` / `{max}` are substituted client-side; the limits mirror
+        // the backend Zod schema (plan §10.2 / §6.4).
+        errors: {
+          ratingRequired: "Поставьте оценку",
+          textTooShort: "Минимум {min} символов",
+          textTooLong: "Максимум {max} символов",
+          titleTooLong: "Максимум {max} символов",
+          prosTooLong: "Максимум {max} символов",
+          consTooLong: "Максимум {max} символов",
+        },
+        actions: {
+          submit: "Отправить отзыв",
+          cancel: "Отмена",
+          submitting: "Отправляем…",
+        },
+      },
+      status: {
+        pending: "На модерации",
+        approved: "Опубликован",
+        rejected: "Отклонён",
+      },
+      verified: "Проверенная покупка",
+      list: {
+        sortNewest: "Новые",
+        sortHelpful: "Сначала полезные",
+        loadMore: "Показать ещё",
+        loading: "Загружаем…",
+        error: "Не удалось загрузить отзывы",
+        retry: "Попробовать снова",
+      },
+      // Plural forms used together with `summary.average` and the count badge
+      // in catalog/info surfaces. Order is [one, few, many] — see
+      // `pluralizeRu` doc.
+      reviewWordForms: ["отзыв", "отзыва", "отзывов"],
+    },
     freeShipping: {
       unlocked: "Бесплатная доставка доступна",
       unlock: "Откройте бесплатную доставку",
