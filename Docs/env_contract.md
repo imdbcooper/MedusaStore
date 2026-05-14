@@ -468,6 +468,7 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - `S3_FILE_URL` определяет публичный URL для доступа к файлам (формат: `https://<endpoint>/<bucket>`).
 - `S3_ENDPOINT` — endpoint S3-compatible хранилища (без trailing slash).
 - Пустые `S3_*` — валидный baseline-state для local development; backend будет использовать default local file provider.
+- **Secrets management**: S3 credentials управляются исключительно через GitHub Secrets. Deploy workflow автоматически синхронизирует их в remote `.env` при каждом деплое (шаг «Sync S3 secrets to remote .env»). Ручное редактирование S3 переменных на сервере не требуется и будет перезаписано при следующем деплое.
 - Real S3 credentials (access key, secret key) являются secrets и живут только в GitHub Secrets / remote `.env`; в `.env.example` используются placeholders.
 - Storefront `next.config.js` включает `s3.itecocloud.online` и `media.slavx.ru` в `images.remotePatterns` для Next.js Image optimization.
 - `YOOKASSA_STOREFRONT_RETURN_ORIGINS` — backend-controlled comma-separated allowlist, которую читает [`buildStorefrontCheckoutReturnUrl()`](../medusa-agency-boilerplate/src/api/store/payment/yookassa/return/route.ts:49): query-параметр `storefront_origin` можно использовать только если его normalised origin входит в allowlist; иначе route падает обратно на первый allowlisted origin или первый origin из `STORE_CORS`, а localhost fallback допустим только в development/test.

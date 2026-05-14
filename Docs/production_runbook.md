@@ -35,8 +35,18 @@ Configure these in the GitHub repository. Real secret values go into GitHub Secr
 | `DEPLOY_SSH_PRIVATE_KEY` | Private key used by workflow SSH agent | Private key authorized for `som` on the staging host. |
 | `AI_ASSISTANT_API_TOKEN` | Optional assistant service privileged API token | Strong generated secret; also put into the real remote `.env` if the assistant is enabled. |
 | `AI_ASSISTANT_SERVER_TOKEN` | Optional Medusa-to-assistant adapter token | Strong generated backend-only secret; must never be exposed as `NEXT_PUBLIC_*`. |
+| `S3_ACCESS_KEY_ID` | S3-compatible storage access key | Access key for itecocloud S3 bucket. |
+| `S3_SECRET_ACCESS_KEY` | S3-compatible storage secret key | Secret key for itecocloud S3 bucket. |
+| `S3_ENDPOINT` | S3-compatible endpoint URL | `https://s3.itecocloud.online`. |
+| `S3_BUCKET` | S3 bucket name | `slavx-media-ddfd0e31`. |
+| `S3_REGION` | S3 region | `us-east-1` (default for S3-compatible). |
+| `S3_FILE_URL` | Public URL for serving uploaded files | `https://media.slavx.ru`. |
 
 The workflow also has a manual `branch` input, defaulting to `main`.
+
+### S3 secrets sync
+
+The deploy workflow includes a step **"Sync S3 secrets to remote .env"** that writes S3 credentials from GitHub Secrets into the remote `.env` file before running the deploy script. This ensures S3 credentials are never manually managed on the server — they are always sourced from GitHub Secrets and overwritten on each deploy.
 
 ## 2.1. External mailserver follow-ups
 
