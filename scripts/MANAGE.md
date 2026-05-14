@@ -153,7 +153,7 @@ services:
 | Управление | `logs` | follow логи выбранного сервиса |
 | Управление | `shell` | `bash` внутри backend контейнера |
 | Управление | `psql` | psql в `medusa-db` |
-| Управление | `smoke` | выбор: backend / storefront / browser / notification / delivery-hub cutover |
+| Управление | `smoke` | выбор: backend / storefront / browser / notification |
 | Остановка | `stop` | `docker compose stop` + остановка host-процесса storefront на `:STOREFRONT_PORT` (тома живы) |
 | Остановка | `down` | `docker compose down` + остановка storefront (тома живы) |
 | Остановка | `nuke` | `docker compose down -v` + остановка storefront — **удаляет БД**, два подтверждения |

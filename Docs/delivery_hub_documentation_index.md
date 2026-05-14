@@ -47,30 +47,9 @@ These documents are previous-baseline references and are not the current product
 
 ---
 
-## Execution Ledger Evidence Docs
+## Removed Completed Prompt And Execution-Ledger Artifacts
 
-The execution-ledger docs remain historical evidence for the previous Delivery Hub contour and external evidence handling. They do not imply runtime activation by themselves.
-
-Use this entry point first:
-
-- [delivery_hub_execution_ledger_release_handoff_index.md](./delivery_hub_execution_ledger_release_handoff_index.md)
-
-Supporting docs:
-
-- [delivery_hub_execution_ledger_operator_reviewer_quickstart.md](./delivery_hub_execution_ledger_operator_reviewer_quickstart.md)
-- [delivery_hub_execution_ledger_manual_runbook.md](./delivery_hub_execution_ledger_manual_runbook.md)
-- [delivery_hub_execution_ledger_manual_evidence_template.md](./delivery_hub_execution_ledger_manual_evidence_template.md)
-- [delivery_hub_execution_ledger_evidence_submission_checklist.md](./delivery_hub_execution_ledger_evidence_submission_checklist.md)
-- [delivery_hub_execution_ledger_evidence_bundle_packaging_convention.md](./delivery_hub_execution_ledger_evidence_bundle_packaging_convention.md)
-- [delivery_hub_execution_ledger_snapshot_fixture_contract.md](./delivery_hub_execution_ledger_snapshot_fixture_contract.md)
-
-Current posture remains: evidence and verification support only; no automatic database activation or production shipment execution.
-
----
-
-## Removed Completed Prompt Artifacts
-
-One-off agent prompt files for completed Delivery Hub phases were removed during documentation cleanup. They were useful while executing earlier phases, but they duplicated completed status and caused agents to treat historical instructions as current work.
+One-off agent prompt files for completed Delivery Hub phases and the execution-ledger evidence/runbook docs were removed during documentation cleanup. They referenced runtime code that no longer exists after the ApiShip/Gorgo baseline migration and the physical cleanup recorded in [delivery_hub_physical_cleanup_manifest.md](./delivery_hub_physical_cleanup_manifest.md).
 
 Removed prompt artifacts:
 
@@ -80,6 +59,16 @@ Removed prompt artifacts:
 - `Docs/delivery_hub_rework_phase3_agent_prompt.md`
 - `Docs/delivery_hub_rework_phase4_agent_prompt.md`
 - `Docs/delivery_hub_rework_phase5_agent_prompt.md`
+
+Removed execution-ledger evidence artifacts (described an activation contour for code that no longer exists):
+
+- `Docs/delivery_hub_execution_ledger_release_handoff_index.md`
+- `Docs/delivery_hub_execution_ledger_operator_reviewer_quickstart.md`
+- `Docs/delivery_hub_execution_ledger_manual_runbook.md`
+- `Docs/delivery_hub_execution_ledger_manual_evidence_template.md`
+- `Docs/delivery_hub_execution_ledger_evidence_submission_checklist.md`
+- `Docs/delivery_hub_execution_ledger_evidence_bundle_packaging_convention.md`
+- `Docs/delivery_hub_execution_ledger_snapshot_fixture_contract.md`
 
 Future prompts should be short-lived conversation artifacts unless the operator explicitly asks to commit a reusable planning document.
 

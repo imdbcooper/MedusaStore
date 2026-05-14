@@ -502,14 +502,12 @@ cmd_smoke() {
   echo "2) storefront"
   echo "3) browser"
   echo "4) notification"
-  echo "5) delivery-hub cutover (browser)"
-  read -r -p "Выбор [1-5]: " ans
+  read -r -p "Выбор [1-4]: " ans
   case "$ans" in
     1) ( cd "$ROOT_DIR" && run npm run smoke:backend ) ;;
     2) ( cd "$ROOT_DIR" && run npm run smoke:storefront ) ;;
     3) ( cd "$ROOT_DIR" && run npm run smoke:browser ) ;;
     4) ( cd "$ROOT_DIR" && run npm run smoke:notification ) ;;
-    5) ( cd "$ROOT_DIR" && run npm run smoke:delivery-hub-cutover:browser ) ;;
     *) warn "Неизвестный выбор" ;;
   esac
 }
