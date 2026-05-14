@@ -976,31 +976,51 @@ export type SubmitOnboardingResult = {
 export async function submitOnboarding(
   input: SubmitOnboardingInput
 ): Promise<SubmitOnboardingResult> {
-  const headers = await getAuthHeaders()
+  const authHeaders = await getAuthHeaders()
 
-  if (!headers) {
-    return { ok: false, error: "Необходимо войти в аккаунт.", code: "auth_required" }
+  if (!hasAuthorizationHeader(authHeaders)) {
+    return {
+      ok: false,
+      error: "Необходимо войти в аккаунт.",
+      code: "auth_required",
+    }
   }
 
+  // Build a clean JSON body. Drop empty/whitespace-only values so we never
+  // submit a literal "" that the backend Zod schema would treat as a present
+  // (and invalid) field. Phone is optional — when blank it must be absent
+  // from the payload entirely.
   const body: Record<string, string> = {}
-  if (input.email) body.email = input.email
-  if (input.phone) body.phone = input.phone
+  const email = input.email?.trim()
+  const phone = input.phone?.trim()
+  if (email) body.email = email
+  if (phone) body.phone = phone
 
   try {
-    const response = await fetch(`${MEDUSA_BACKEND_URL}/store/customers/me/onboarding`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...headers,
-        ...buildStorePublishableHeaders(),
-      },
-      body: JSON.stringify(body),
-      cache: "no-store",
-    })
+    const response = await fetch(
+      `${MEDUSA_BACKEND_URL}/store/customers/me/onboarding`,
+      {
+        method: "POST",
+        headers: {
+          ...buildStorePublishableHeaders(),
+          authorization: authHeaders.authorization,
+        },
+        body: JSON.stringify(body),
+        cache: "no-store",
+      }
+    )
 
     if (!response.ok) {
-      const data = await response.json().catch(() => ({}))
-      const code = data?.code || data?.type || "unknown_error"
+      const data = (await response.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >
+      const code =
+        (typeof data?.code === "string" && data.code) ||
+        (typeof data?.type === "string" && data.type) ||
+        "unknown_error"
+      const messageFromBackend =
+        typeof data?.message === "string" ? data.message : null
 
       if (response.status === 409) {
         return {
@@ -1010,23 +1030,34 @@ export async function submitOnboarding(
         }
       }
 
+      if (response.status === 401) {
+        return {
+          ok: false,
+          error: "Необходимо войти в аккаунт.",
+          code: "auth_required",
+        }
+      }
+
       if (response.status === 400) {
         return {
           ok: false,
-          error: data?.message || "Проверьте правильность введённых данных.",
+          error:
+            messageFromBackend || "Проверьте правильность введённых данных.",
           code,
         }
       }
 
       return {
         ok: false,
-        error: data?.message || "Произошла ошибка. Попробуйте позже.",
+        error: messageFromBackend || "Произошла ошибка. Попробуйте позже.",
         code,
       }
     }
 
     const customerCacheTag = await getCacheTag("customers")
-    revalidateTag(customerCacheTag)
+    if (customerCacheTag) {
+      revalidateTag(customerCacheTag)
+    }
 
     return { ok: true }
   } catch {

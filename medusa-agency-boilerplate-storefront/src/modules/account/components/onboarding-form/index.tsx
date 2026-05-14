@@ -27,8 +27,13 @@ export default function OnboardingForm({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
-  const needsEmail = onboarding.missing_fields.includes("email")
-  const needsPhone = onboarding.missing_fields.includes("phone")
+  // Email is required when the customer's current email is a VK placeholder.
+  // Phone is always optional — VK may not return it (scope `phone` denied) and
+  // we don't want to block onboarding on it. The user can add a phone later
+  // in their profile or at checkout.
+  const needsEmail =
+    onboarding.placeholder_email ||
+    onboarding.missing_fields.includes("email")
 
   const [email, setEmail] = useState("")
   const [phone, setPhone] = useState("")
@@ -36,40 +41,47 @@ export default function OnboardingForm({
   const [phoneError, setPhoneError] = useState<string | null>(null)
   const [generalError, setGeneralError] = useState<string | null>(null)
 
+  const trimmedEmail = email.trim()
+  const trimmedPhone = phone.trim()
+  const submitDisabled =
+    isPending ||
+    (needsEmail && (!trimmedEmail || !isValidEmail(trimmedEmail)))
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setEmailError(null)
     setPhoneError(null)
     setGeneralError(null)
 
-    // Client-side validation
-    if (needsEmail && !email.trim()) {
+    // Client-side validation: email required only when needed; phone always
+    // optional but format-validated when present.
+    if (needsEmail && !trimmedEmail) {
       setEmailError("Укажите email.")
       return
     }
-    if (needsEmail && !isValidEmail(email.trim())) {
+    if (needsEmail && !isValidEmail(trimmedEmail)) {
       setEmailError("Введите корректный email.")
       return
     }
-    if (needsPhone && !phone.trim()) {
-      setPhoneError("Укажите телефон.")
-      return
-    }
-    if (needsPhone && !isValidPhone(phone.trim())) {
+    if (trimmedPhone && !isValidPhone(trimmedPhone)) {
       setPhoneError("Введите корректный номер телефона.")
       return
     }
 
     startTransition(async () => {
       const input: { email?: string; phone?: string } = {}
-      if (needsEmail && email.trim()) input.email = email.trim()
-      if (needsPhone && phone.trim()) input.phone = phone.trim()
+      if (needsEmail && trimmedEmail) input.email = trimmedEmail
+      if (trimmedPhone) input.phone = trimmedPhone
 
       const result = await submitOnboarding(input)
 
       if (!result.ok) {
         if (result.code === "email_already_exists") {
-          setEmailError(result.error || "Этот email уже используется другим аккаунтом.")
+          setEmailError(
+            result.error || "Этот email уже используется другим аккаунтом."
+          )
+        } else if (result.code === "email_required") {
+          setEmailError(result.error || "Укажите email.")
         } else if (result.code === "auth_required") {
           setGeneralError(result.error || "Необходимо войти в аккаунт.")
         } else {
@@ -126,45 +138,43 @@ export default function OnboardingForm({
         </div>
       )}
 
-      {needsPhone && (
-        <div className="flex flex-col gap-y-2">
-          <label
-            htmlFor="onboarding-phone"
-            className="text-base-semi text-ui-fg-base"
+      <div className="flex flex-col gap-y-2">
+        <label
+          htmlFor="onboarding-phone"
+          className="text-base-semi text-ui-fg-base"
+        >
+          Телефон (опционально)
+        </label>
+        <p className="text-small-regular text-ui-fg-subtle">
+          VK не передал ваш телефон. Можете указать его сейчас или позже в
+          профиле.
+        </p>
+        <input
+          id="onboarding-phone"
+          name="phone"
+          type="tel"
+          autoComplete="tel"
+          value={phone}
+          onChange={(e) => {
+            setPhone(e.target.value)
+            if (phoneError) setPhoneError(null)
+          }}
+          placeholder="+7 (900) 123-45-67"
+          aria-invalid={!!phoneError}
+          aria-describedby={phoneError ? "onboarding-phone-error" : undefined}
+          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-base text-ui-fg-base placeholder:text-ui-fg-muted focus:border-ui-fg-interactive focus:outline-none focus:ring-1 focus:ring-ui-fg-interactive disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isPending}
+        />
+        {phoneError && (
+          <p
+            id="onboarding-phone-error"
+            className="text-small-regular text-red-600"
+            role="alert"
           >
-            Телефон
-          </label>
-          <p className="text-small-regular text-ui-fg-subtle">
-            Телефон нужен для связи по заказам.
+            {phoneError}
           </p>
-          <input
-            id="onboarding-phone"
-            name="phone"
-            type="tel"
-            autoComplete="tel"
-            required
-            value={phone}
-            onChange={(e) => {
-              setPhone(e.target.value)
-              if (phoneError) setPhoneError(null)
-            }}
-            placeholder="+7 (900) 123-45-67"
-            aria-invalid={!!phoneError}
-            aria-describedby={phoneError ? "onboarding-phone-error" : undefined}
-            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-base text-ui-fg-base placeholder:text-ui-fg-muted focus:border-ui-fg-interactive focus:outline-none focus:ring-1 focus:ring-ui-fg-interactive disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isPending}
-          />
-          {phoneError && (
-            <p
-              id="onboarding-phone-error"
-              className="text-small-regular text-red-600"
-              role="alert"
-            >
-              {phoneError}
-            </p>
-          )}
-        </div>
-      )}
+        )}
+      </div>
 
       {generalError && (
         <div
@@ -177,8 +187,8 @@ export default function OnboardingForm({
 
       <button
         type="submit"
-        disabled={isPending}
-        aria-disabled={isPending}
+        disabled={submitDisabled}
+        aria-disabled={submitDisabled}
         className="inline-flex w-full items-center justify-center rounded-lg bg-ui-fg-base px-6 py-3 text-base font-semibold text-white transition-colors hover:bg-ui-fg-base/90 disabled:cursor-not-allowed disabled:opacity-60 small:w-auto"
       >
         {isPending ? "Сохраняем..." : "Сохранить и продолжить"}

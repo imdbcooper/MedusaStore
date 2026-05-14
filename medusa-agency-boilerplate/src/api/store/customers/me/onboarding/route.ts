@@ -12,22 +12,37 @@ import {
 
 /**
  * Validation schema for the onboarding endpoint.
- * Accepts optional email and phone — at least one should be provided.
+ *
+ * - `email` is REQUIRED for completion when the customer's current email is a
+ *   VK placeholder (handler enforces this; schema keeps it optional for the
+ *   forward-compatible "phone-only update" path on customers who already have
+ *   a real email — currently rejected by handler with `email_already_set`).
+ * - `phone` is OPTIONAL. The customer can leave it blank and complete
+ *   onboarding with email only; phone can be added later in profile or at
+ *   checkout.
+ *
+ * Phone normalization: we accept user-friendly inputs like
+ * "+7 (900) 123-45-67" or "8 900 123-45-67" by stripping spaces, dashes and
+ * parentheses BEFORE regex validation, so the form's placeholder format and
+ * realistic clipboard pastes pass.
  */
-export const StoreOnboardingSchema = z.object({
-  email: z
-    .string()
-    .email("Invalid email format")
-    .max(255)
-    .optional(),
-  phone: z
-    .string()
-    .regex(
-      /^(\+7|8)\d{10}$|^\+\d{10,15}$/,
-      "Invalid phone format. Use E.164 or Russian format (+7XXXXXXXXXX or 8XXXXXXXXXX)"
-    )
-    .optional(),
-})
+const PHONE_NORMALIZE_RE = /[\s\-()]/g
+const PHONE_VALIDATE_RE = /^(?:\+7\d{10}|8\d{10}|\+\d{10,15})$/
+
+export const StoreOnboardingSchema = z
+  .object({
+    email: z.string().trim().email("Invalid email format").max(255).optional(),
+    phone: z
+      .string()
+      .trim()
+      .transform((v) => v.replace(PHONE_NORMALIZE_RE, ""))
+      .refine((v) => v === "" || PHONE_VALIDATE_RE.test(v), {
+        message:
+          "Invalid phone format. Use E.164 or Russian format (+7XXXXXXXXXX or 8XXXXXXXXXX)",
+      })
+      .optional(),
+  })
+  .strict()
 
 export type StoreOnboardingRequestBody = z.infer<typeof StoreOnboardingSchema>
 
@@ -63,8 +78,13 @@ function readOnboardingMetadata(metadata: unknown): OnboardingMetadata | null {
 /**
  * POST /store/customers/me/onboarding
  *
- * Accepts email and/or phone from the onboarding form after VK ID registration
- * without email. Updates the customer record and onboarding metadata.
+ * Completes VK ID post-registration onboarding.
+ *
+ * Contract:
+ * - `email` is required for completion if current customer email is a VK
+ *   placeholder. Phone is optional; when not provided onboarding still
+ *   completes with email only.
+ * - When both fields are provided, both are saved.
  *
  * Requires authenticated customer session.
  */
@@ -86,16 +106,12 @@ export async function POST(
 
   const validatedBody = (req.validatedBody || {}) as Partial<StoreOnboardingRequestBody>
   const emailInput = validatedBody.email?.trim().toLowerCase() || null
-  const phoneInput = validatedBody.phone?.trim() || null
-
-  if (!emailInput && !phoneInput) {
-    res.status(400).json({
-      ok: false,
-      code: "no_fields_provided",
-      message: "At least one of email or phone must be provided",
-    })
-    return
-  }
+  // Phone is already trimmed + normalized (spaces/dashes/parens stripped) by
+  // the Zod transform; the schema allows the resulting empty string.
+  const phoneInput =
+    typeof validatedBody.phone === "string" && validatedBody.phone.length > 0
+      ? validatedBody.phone
+      : null
 
   // Fetch current customer
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
@@ -148,13 +164,30 @@ export async function POST(
     return
   }
 
+  // Email is required when current email is still a VK placeholder. Without
+  // a real email we cannot complete onboarding (email is needed for order
+  // confirmations, password reset, etc).
+  const currentEmailIsPlaceholder = isPlaceholderEmail(customer.email)
+  if (currentEmailIsPlaceholder && !emailInput) {
+    res.status(400).json({
+      ok: false,
+      code: "email_required",
+      message: "Email is required to complete onboarding",
+    })
+    return
+  }
+
   const updateData: Record<string, unknown> = {}
-  const updatedMissingFields = [...onboarding.missing_fields]
+  // Phone is optional and never blocks completion — drop it from
+  // missing_fields up front. Email is removed once a real email is saved.
+  const updatedMissingFields = onboarding.missing_fields.filter(
+    (field) => field !== "phone"
+  )
   let updatedPlaceholderEmail = onboarding.placeholder_email
 
   // Handle email update
   if (emailInput) {
-    if (!isPlaceholderEmail(customer.email)) {
+    if (!currentEmailIsPlaceholder) {
       res.status(400).json({
         ok: false,
         code: "email_already_set",
@@ -191,7 +224,7 @@ export async function POST(
     }
   }
 
-  // Handle phone update
+  // Handle phone update (optional)
   if (phoneInput) {
     if (customer.phone) {
       // Phone already set — skip but don't error
@@ -200,18 +233,15 @@ export async function POST(
       )
     } else {
       updateData.phone = phoneInput
-
-      // Remove "phone" from missing_fields
-      const phoneIdx = updatedMissingFields.indexOf("phone")
-      if (phoneIdx !== -1) {
-        updatedMissingFields.splice(phoneIdx, 1)
-      }
     }
   }
 
-  // Determine new onboarding status
+  // Determine new onboarding status. Phone is intentionally excluded from
+  // the completion gate: as long as the email is real, onboarding is done.
   const newStatus =
-    updatedMissingFields.length === 0 ? "complete" : "pending"
+    updatedMissingFields.length === 0 && !updatedPlaceholderEmail
+      ? "complete"
+      : "pending"
 
   const updatedOnboarding: OnboardingMetadata = {
     ...onboarding,
@@ -235,6 +265,21 @@ export async function POST(
     updatedMetadata.email_verified = false
     updatedMetadata.email_verified_at = null
     updatedMetadata.email_verified_for = null
+  }
+
+  // Nothing to update? This is a no-op only if email was not required.
+  // (We already 400'd above when current email is a placeholder and no
+  // email was provided.)
+  if (Object.keys(updateData).length === 0) {
+    res.status(200).json({
+      ok: true,
+      onboarding: {
+        status: updatedOnboarding.status,
+        missing_fields: updatedOnboarding.missing_fields,
+        placeholder_email: updatedOnboarding.placeholder_email,
+      },
+    })
+    return
   }
 
   try {
