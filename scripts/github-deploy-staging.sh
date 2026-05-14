@@ -8,6 +8,30 @@ project_name="${COMPOSE_PROJECT_NAME:-medusastore}"
 
 cd "$repo_dir"
 
+run_with_heartbeat() {
+  local label="$1"
+  shift
+  local heartbeat_pid=""
+
+  (
+    while true; do
+      sleep 60
+      echo "${label} still running at $(date -Is)..."
+    done
+  ) &
+  heartbeat_pid="$!"
+
+  set +e
+  "$@"
+  local status="$?"
+  set -e
+
+  kill "$heartbeat_pid" 2>/dev/null || true
+  wait "$heartbeat_pid" 2>/dev/null || true
+
+  return "$status"
+}
+
 echo "Fetching ${branch}..."
 git fetch origin "$branch"
 git checkout "$branch"
@@ -19,7 +43,8 @@ if [[ ! -f .env ]]; then
 fi
 
 echo "Building production images..."
-docker compose -p "$project_name" -f "$compose_file" --env-file .env build
+run_with_heartbeat "Docker image build" \
+  docker compose -p "$project_name" -f "$compose_file" --env-file .env build
 
 echo "Starting database and redis..."
 docker compose -p "$project_name" -f "$compose_file" --env-file .env up -d medusa-db medusa-redis
