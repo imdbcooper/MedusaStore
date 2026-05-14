@@ -50,3 +50,19 @@ export const PAYLOAD_PREVIEW_SECRET =
 
 export const PAYLOAD_REVALIDATE_SECRET =
   process.env.PAYLOAD_REVALIDATE_SECRET || ""
+
+/**
+ * Generic on-demand revalidate hook secret. Currently consumed by
+ * [`api/revalidate/route.ts`](medusa-agency-boilerplate-storefront/src/app/api/revalidate/route.ts:1)
+ * — Medusa admin (approve/reject/delete review) calls that endpoint to
+ * invalidate `product-rating-${id}` / `product-reviews-${id}` /
+ * `customer-reviews-${id}` cache tags.
+ *
+ * Distinct from `PAYLOAD_REVALIDATE_SECRET` because the Payload webhook is
+ * scoped to its own collection/path contract; sharing one secret would
+ * couple two unrelated trust boundaries.
+ *
+ * Empty string ⇒ feature disabled — the route returns 500 to make the
+ * misconfiguration visible. See `.env.local.example` for the contract.
+ */
+export const REVALIDATE_SECRET = process.env.REVALIDATE_SECRET || ""
