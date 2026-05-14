@@ -339,7 +339,13 @@ export async function startVkIdLink(countryCode: string) {
 export async function startVkLogin(countryCode: string) {
   const response = await fetch(`${MEDUSA_BACKEND_URL}/store/auth/vk-id/start`, {
     method: "POST",
-    headers: buildStorePublishableHeaders(),
+    headers: {
+      ...buildStorePublishableHeaders(),
+      // SSR Server Action does not forward an Origin header by default, but the
+      // backend route is protected by the VK ID origin allowlist (CSRF guard),
+      // so we set it explicitly to the public storefront base URL.
+      origin: STOREFRONT_BASE_URL,
+    },
     body: JSON.stringify({
       return_url: buildVkIdLoginReturnUrl(countryCode),
       login_source: "storefront.account.login",
@@ -436,7 +442,12 @@ export async function resolveVkLinkConflict(input: {
       `${MEDUSA_BACKEND_URL}/store/auth/vk-id/link-conflict-resolve`,
       {
         method: "POST",
-        headers: buildStorePublishableHeaders(),
+        headers: {
+          ...buildStorePublishableHeaders(),
+          // Backend route is protected by the VK ID origin allowlist; SSR
+          // Server Actions do not send Origin automatically, so we set it.
+          origin: STOREFRONT_BASE_URL,
+        },
         body: JSON.stringify({
           email,
           password: input.password,
