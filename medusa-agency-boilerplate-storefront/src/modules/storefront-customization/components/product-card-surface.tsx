@@ -1,12 +1,14 @@
 import { HttpTypes } from "@medusajs/types"
 import { clx } from "@medusajs/ui"
 
+import type { ProductReviewSummary } from "@lib/data/product-reviews"
 import type {
   StorefrontListingCardAspectRatio,
   StorefrontListingCardSurface,
 } from "@lib/storefront-client-config"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import PreviewPrice from "@modules/products/components/product-preview/price"
+import ProductRatingBadge from "@modules/products/components/product-rating-badge"
 import Thumbnail from "@modules/products/components/thumbnail"
 import type { VariantPrice } from "types/global"
 
@@ -14,6 +16,17 @@ export type ProductCardSurfaceProps = {
   product: HttpTypes.StoreProduct
   price: VariantPrice | null
   surface: StorefrontListingCardSurface
+  /**
+   * Phase 2 / step 4 (plan §6.3) — pre-fetched rating summary for this
+   * product, batched at the catalog/page level (see
+   * [`getProductRatingSummariesByIds`](medusa-agency-boilerplate-storefront/src/lib/data/product-reviews.ts:1)).
+   * `null` means "fetched, no rating yet" → badge renders nothing
+   * (visual cleanliness on catalog grids).
+   * `undefined` means "not pre-fetched" → the badge falls back to its own
+   * server fetch (kept for callers that haven't been migrated to batch
+   * pre-fetch).
+   */
+  summary?: ProductReviewSummary | null
 }
 
 export const getProductCardImageFrameClassName = (
@@ -59,7 +72,12 @@ const getProductEyebrow = (product: HttpTypes.StoreProduct) =>
 
 const CATALOG_CARD_HEIGHT_CLASS = "h-[520px]"
 
-const FeaturedProductCard = ({ product, price, surface }: ProductCardSurfaceProps) => (
+const FeaturedProductCard = ({
+  product,
+  price,
+  surface,
+  summary,
+}: ProductCardSurfaceProps) => (
   <LocalizedClientLink href={`/products/${product.handle}`} className="group block">
     <article className={clx("grid overflow-hidden rounded-xl border border-[var(--theme-border)] bg-[var(--theme-surface)] shadow-[0_4px_12px_rgba(23,26,31,0.04)] transition-transform duration-300 hover:-translate-y-1 hover:shadow-[0_8px_24px_rgba(23,26,31,0.08)] md:grid-cols-2", CATALOG_CARD_HEIGHT_CLASS)}>
       <div className="relative h-[220px] shrink-0 overflow-hidden bg-[var(--theme-surface-muted)] md:h-full md:min-h-0">
@@ -90,13 +108,21 @@ const FeaturedProductCard = ({ product, price, surface }: ProductCardSurfaceProp
           ) : null}
         </div>
         <div className="mt-6 flex shrink-0 flex-col gap-4 small:flex-row small:items-center small:justify-between">
-          <div className="flex items-center gap-2 text-[20px] font-medium leading-none text-[#171A1F]">
+          <div className="flex items-center gap-3 text-[20px] font-medium leading-none text-[#171A1F]">
             {price ? (
-              <>
+              <span className="inline-flex items-center gap-2">
                 <span>от</span>
                 <PreviewPrice price={price} className="!text-[20px] !font-medium !leading-none !text-[#171A1F]" />
-              </>
+              </span>
             ) : null}
+            {/* Plan §6.3 — compact ★ rating badge under price. Returns null
+                when the product has no approved reviews yet, so the layout
+                stays clean on cold catalog. */}
+            <ProductRatingBadge
+              productId={product.id}
+              variant="thumbnail"
+              summary={summary}
+            />
           </div>
           <span className="inline-flex items-center justify-center rounded-lg bg-[var(--theme-accent)] px-5 py-2.5 text-base font-bold text-[var(--theme-accent-contrast)] transition-colors group-hover:bg-[var(--theme-accent-strong)]">
             Смотреть детали
@@ -107,7 +133,12 @@ const FeaturedProductCard = ({ product, price, surface }: ProductCardSurfaceProp
   </LocalizedClientLink>
 )
 
-const CompactProductCard = ({ product, price, surface }: ProductCardSurfaceProps) => (
+const CompactProductCard = ({
+  product,
+  price,
+  surface,
+  summary,
+}: ProductCardSurfaceProps) => (
   <LocalizedClientLink href={`/products/${product.handle}`} className="group block">
     <article className={clx("flex overflow-hidden rounded-xl border border-[var(--theme-border)] bg-[var(--theme-surface)] transition-transform duration-300 hover:-translate-y-1 hover:shadow-[0_8px_24px_rgba(23,26,31,0.08)] md:flex-col", CATALOG_CARD_HEIGHT_CLASS)}>
       <div className="relative h-[220px] w-2/5 shrink-0 overflow-hidden bg-[var(--theme-surface-muted)] md:h-[248px] md:w-full">
@@ -133,13 +164,20 @@ const CompactProductCard = ({ product, price, surface }: ProductCardSurfaceProps
           </p>
         ) : null}
         <div className="mt-auto flex shrink-0 flex-col gap-3 pt-5">
-          <div className="flex items-center gap-2 text-[20px] font-medium leading-none text-[#171A1F]">
+          <div className="flex items-center gap-3 text-[20px] font-medium leading-none text-[#171A1F]">
             {price ? (
-              <>
+              <span className="inline-flex items-center gap-2">
                 <span>от</span>
                 <PreviewPrice price={price} className="!text-[20px] !font-medium !leading-none !text-[#171A1F]" />
-              </>
+              </span>
             ) : null}
+            {/* Plan §6.3 — compact ★ rating badge inline with price.
+                Returns null when no approved reviews yet. */}
+            <ProductRatingBadge
+              productId={product.id}
+              variant="thumbnail"
+              summary={summary}
+            />
           </div>
           <span className="inline-flex w-full items-center justify-center rounded-lg border border-[var(--theme-border)] px-4 py-2 text-base text-[#171A1F] transition-colors group-hover:border-[#171A1F]">
             Подробнее
@@ -154,10 +192,25 @@ export default function ProductCardSurface({
   product,
   price,
   surface,
+  summary,
 }: ProductCardSurfaceProps) {
   if (surface.image.aspectRatio === "feature") {
-    return <FeaturedProductCard product={product} price={price} surface={surface} />
+    return (
+      <FeaturedProductCard
+        product={product}
+        price={price}
+        surface={surface}
+        summary={summary}
+      />
+    )
   }
 
-  return <CompactProductCard product={product} price={price} surface={surface} />
+  return (
+    <CompactProductCard
+      product={product}
+      price={price}
+      surface={surface}
+      summary={summary}
+    />
+  )
 }

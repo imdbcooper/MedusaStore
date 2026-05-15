@@ -1,3 +1,4 @@
+import { getProductRatingSummariesByIds } from "@lib/data/product-reviews"
 import { listProducts } from "@lib/data/products"
 import { getRegion } from "@lib/data/regions"
 import { HttpTypes } from "@medusajs/types"
@@ -50,11 +51,22 @@ export default async function RelatedProducts({
 
   const railSurface = resolveRelatedProductsRailSurface()
 
+  // Plan §6.3 / step 4 — batch rating summaries for related-products rail
+  // so each card's thumbnail badge renders from the prop instead of firing
+  // its own server fetch.
+  const ratingSummaries = await getProductRatingSummariesByIds(
+    products.map((product) => product.id)
+  )
+
   return (
     <RelatedProductsRailSurface surface={railSurface}>
       {products.map((product) => (
         <li key={product.id}>
-          <Product region={region} product={product} />
+          <Product
+            region={region}
+            product={product}
+            ratingSummary={ratingSummaries[product.id] ?? null}
+          />
         </li>
       ))}
     </RelatedProductsRailSurface>

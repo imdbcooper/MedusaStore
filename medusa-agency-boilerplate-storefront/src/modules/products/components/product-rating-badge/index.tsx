@@ -1,7 +1,10 @@
 import * as React from "react"
 
 import { storefrontConfig } from "@lib/storefront-config"
-import { getProductRatingSummary } from "@lib/data/product-reviews"
+import {
+  getProductRatingSummary,
+  type ProductReviewSummary,
+} from "@lib/data/product-reviews"
 import { pluralizeRu } from "@lib/util/pluralize-ru"
 
 /**
@@ -38,6 +41,19 @@ export type ProductRatingBadgeVariant = "product-info" | "thumbnail"
 type ProductRatingBadgeProps = {
   productId: string
   variant?: ProductRatingBadgeVariant
+  /**
+   * Phase 2 / step 4 (plan §6.3) — pre-fetched summary supplied by a parent
+   * server component (e.g. `paginated-products.tsx`) that batched
+   * `getProductRatingSummariesByIds` for every card in the grid. When
+   * provided, the badge skips its own server fetch and renders directly from
+   * the prop. When omitted, behaviour falls back to the Phase 1 contract
+   * (per-component server fetch) — used by `ProductInfo` on PDP.
+   *
+   * `null` is an explicit "no rating known" signal: the parent fetched but
+   * got nothing for this productId. The badge then renders the same
+   * empty-state branch as a transport failure would.
+   */
+  summary?: ProductReviewSummary | null
 }
 
 const RATING_FORMATTER = new Intl.NumberFormat("ru-RU", {
@@ -50,9 +66,17 @@ const COUNT_FORMATTER = new Intl.NumberFormat("ru-RU")
 const ProductRatingBadge = async ({
   productId,
   variant = "product-info",
+  summary: summaryProp,
 }: ProductRatingBadgeProps) => {
   const reviewsCopy = storefrontConfig.copy.reviews
-  const summary = await getProductRatingSummary(productId)
+  // Plan §6.3 / step 4 — when a parent server component pre-fetched the
+  // summary for the whole grid, reuse it (avoids N independent HTTP requests
+  // on catalog pages). `summaryProp === null` is a deliberate "fetched but
+  // empty" marker; we still skip the per-component fetch in that case.
+  const summary =
+    summaryProp !== undefined
+      ? summaryProp
+      : await getProductRatingSummary(productId)
 
   const total = summary?.total_reviews ?? 0
   const average = summary?.average_rating ?? null

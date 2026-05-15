@@ -1,3 +1,4 @@
+import { getProductRatingSummariesByIds } from "@lib/data/product-reviews"
 import { listProducts } from "@lib/data/products"
 import { storefrontConfig } from "@lib/storefront-config"
 import { HttpTypes } from "@medusajs/types"
@@ -39,6 +40,13 @@ export default async function ProductRail({
 
   const shellSurface = resolveFeaturedRailCatalogShellSurface()
 
+  // Plan §6.3 / step 4 — batch rating summaries for every card on the rail
+  // (see also `paginated-products.tsx`). Cheap, parallelised; no extra
+  // cache layer.
+  const ratingSummaries = await getProductRatingSummariesByIds(
+    resolvedProducts.map((product) => product.id)
+  )
+
   return (
     <FeaturedRailCatalogShellSurface
       surface={shellSurface}
@@ -50,7 +58,12 @@ export default async function ProductRail({
         {resolvedProducts &&
           resolvedProducts.map((product) => (
             <li key={product.id}>
-              <ProductPreview product={product} region={region} isFeatured />
+              <ProductPreview
+                product={product}
+                region={region}
+                isFeatured
+                ratingSummary={ratingSummaries[product.id] ?? null}
+              />
             </li>
           ))}
       </ul>

@@ -104,6 +104,60 @@ export async function getProductRatingSummary(
 }
 
 /**
+ * Phase 2 / step 4 — batch helper used by catalog server pages
+ * (`paginated-products`, `product-rail`, `related-products`) to pre-fetch
+ * rating summaries for every card in one render pass and pass them as a prop
+ * into [`ProductRatingBadge`](medusa-agency-boilerplate-storefront/src/modules/products/components/product-rating-badge/index.tsx:1)
+ * (`variant="thumbnail"`).
+ *
+ * Implementation notes:
+ *   - Each entry is a separate HTTP request; Next.js cannot dedupe across
+ *     different productIds. We parallelise via `Promise.allSettled` so a
+ *     single failing fetch does not bring the whole grid down.
+ *   - The underlying `getProductRatingSummary` keeps its
+ *     `product-rating-${productId}` cache tag (plan §6.6) — so when admin
+ *     approves a review, only the affected product's badge re-fetches on the
+ *     next visit. We deliberately do NOT add a higher-level cache on top.
+ *   - On any per-product transport failure (or empty summary) the productId
+ *     is simply omitted from the returned record. Consumers must treat a
+ *     missing key as "no rating yet" — the badge then renders `null`
+ *     (plan §6.3 empty-state).
+ */
+export async function getProductRatingSummariesByIds(
+  productIds: string[]
+): Promise<Record<string, ProductReviewSummary>> {
+  if (!Array.isArray(productIds) || productIds.length === 0) {
+    return {}
+  }
+
+  const uniqueIds = Array.from(
+    new Set(
+      productIds.filter(
+        (id): id is string => typeof id === "string" && id.trim().length > 0
+      )
+    )
+  )
+
+  if (uniqueIds.length === 0) {
+    return {}
+  }
+
+  const results = await Promise.allSettled(
+    uniqueIds.map((id) => getProductRatingSummary(id))
+  )
+
+  const record: Record<string, ProductReviewSummary> = {}
+  for (let index = 0; index < uniqueIds.length; index += 1) {
+    const result = results[index]
+    if (result.status === "fulfilled" && result.value !== null) {
+      record[uniqueIds[index]] = result.value
+    }
+  }
+
+  return record
+}
+
+/**
  * List approved reviews for a product. Server-side fetch with cache tag for
  * `revalidateTag('product-reviews-${productId}')` (plan §6.6).
  */
@@ -425,3 +479,4 @@ export async function submitProductReview(
     return { ok: false, code: "unknown", status: status || 500 }
   }
 }
+
