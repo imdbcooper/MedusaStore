@@ -113,6 +113,17 @@ export async function DELETE(
       reviewId,
     })
 
+    // Phase 3 / step 5 — surface the best-effort image cleanup outcome
+    // as a warn-level log so operators can spot orphaned S3 objects in
+    // staging/prod without having to grep the file module's own logs.
+    // The DELETE itself is idempotent (`204`) regardless: cleanup
+    // failures must not cancel a moderation decision.
+    if (result.imagesCleanup && !result.imagesCleanup.ok) {
+      logger.warn(
+        `[product-reviews] admin delete cleanup failed review_id=${reviewId} attempted=${result.imagesCleanup.attempted} deleted=${result.imagesCleanup.deleted} error=${result.imagesCleanup.error || "unknown"}`
+      )
+    }
+
     // Plan §6.6 + §9 Phase 2 шаг 6: invalidate only when the deleted row
     // was previously `approved` and the summary was actually rebuilt.
     // Deleting a pending/rejected review does not touch the aggregates,

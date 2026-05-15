@@ -277,6 +277,26 @@ export const storefrontConfig = {
           cancel: "Отмена",
           submitting: "Отправляем…",
         },
+        // Phase 3 / step 5 — image attachments. Limits mirror the backend
+        // upload route (max 5 photos / 5 MiB each / jpeg|png|webp). The
+        // `{count}` / `{max}` / `{size}` tokens are substituted client-side.
+        images: {
+          label: "Фотографии (необязательно)",
+          hint: "До {max} фото, JPEG/PNG/WEBP, до {size} МБ каждое",
+          add: "Добавить фото",
+          uploading: "Загружаем…",
+          remove: "Удалить",
+          counter: "{count} из {max}",
+          previewAlt: "Превью загруженного фото",
+          errors: {
+            tooMany: "Можно добавить максимум {max} фото",
+            tooLarge: "Файл больше {size} МБ",
+            invalidType: "Поддерживаются только JPEG, PNG и WEBP",
+            uploadFailed: "Не удалось загрузить фото",
+            authRequired: "Войдите, чтобы прикреплять фото",
+            rateLimited: "Слишком много загрузок. Попробуйте позже.",
+          },
+        },
       },
       status: {
         pending: "На модерации",

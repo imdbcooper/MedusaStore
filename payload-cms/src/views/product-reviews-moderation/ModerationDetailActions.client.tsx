@@ -33,6 +33,13 @@ type Props = {
    * component re-resolves and feeds the next snapshot back in.
    */
   reply?: ReplySnapshot
+  /**
+   * Phase 3 / step 5 — moderator gets a heads-up «фото будут удалены
+   * из хранилища» on the delete confirm dialog whenever the row has
+   * at least one image attachment. Driven by the server component
+   * (`Page.tsx`) which inspects the row's `images` jsonb.
+   */
+  hasImages?: boolean
 }
 
 const RU_DATE_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
@@ -60,6 +67,7 @@ export function ModerationDetailActions({
   status,
   backHref,
   reply,
+  hasImages = false,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -123,8 +131,11 @@ export function ModerationDetailActions({
 
   const handleDelete = useCallback(() => {
     if (typeof window === 'undefined') return
+    const confirmBody = hasImages
+      ? `${moderationCopy.detail.deleteConfirm.body}\n\n${moderationCopy.detail.deleteConfirm.bodyWithImages}`
+      : moderationCopy.detail.deleteConfirm.body
     const confirmed = window.confirm(
-      `${moderationCopy.detail.deleteConfirm.heading}\n\n${moderationCopy.detail.deleteConfirm.body}`,
+      `${moderationCopy.detail.deleteConfirm.heading}\n\n${confirmBody}`,
     )
     if (!confirmed) return
     setBusy('delete')
@@ -138,7 +149,7 @@ export function ModerationDetailActions({
         toast.error(mapErrorToCopy(result.error))
       }
     })
-  }, [reviewId, router, backHref])
+  }, [reviewId, router, backHref, hasImages])
 
   const handleReplySubmit = useCallback(
     (event: React.FormEvent<HTMLFormElement>) => {

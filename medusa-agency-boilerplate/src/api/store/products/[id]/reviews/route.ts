@@ -162,13 +162,41 @@ const ListReviewsQuerySchema = z
   )
 
 /**
+ * Phase 3 / step 5 — strict subschema for image attachments uploaded earlier
+ * via `POST /store/products/:id/reviews/upload`. Each entry must be a
+ * `{ id, url }` object echoed back by that route. The route also validates
+ * `url` is `https://`-only — `http://` is rejected with HTTP 400 because
+ * the storefront contract guarantees CDN-delivered, transport-secure
+ * thumbnails (plan §10.2).
+ *
+ * The cap of 5 attachments mirrors the upload UI in
+ * [`product-review-form/index.tsx`](medusa-agency-boilerplate-storefront/src/modules/products/components/product-review-form/index.tsx:1).
+ */
+const PRODUCT_REVIEW_IMAGES_MAX = 5
+
+const ProductReviewImageSchema = z
+  .object({
+    id: z.string().trim().min(1).max(512),
+    url: z
+      .string()
+      .trim()
+      .url()
+      .max(2048)
+      .regex(/^https:\/\//i, "must be https"),
+  })
+  .strict()
+
+/**
  * Strict Zod schema for review creation (plan §10.2).
  *
- * - `.strict()` rejects unknown fields with HTTP 400 — this is how Phase 1
- *   gets rid of `images`: it is intentionally NOT in the schema.
+ * - `.strict()` rejects unknown fields with HTTP 400.
  * - `website` is the honeypot (plan §10.1 / §6.4). It is accepted as
  *   `optional()` so legitimate clients (which do not send it) pass; if it is
  *   present and non-empty the handler silently drops the submission.
+ * - `images` (Phase 3 / step 5): optional `Array<{id,url}>`, max 5, https
+ *   urls only. Empty array is treated as "no images" by the create
+ *   handler. The Phase 1 contract that *unknown keys* (e.g. `foo: 1`) are
+ *   still rejected is preserved by `.strict()`.
  */
 export const StoreCreateProductReviewSchema = z
   .object({
@@ -182,6 +210,7 @@ export const StoreCreateProductReviewSchema = z
     pros: z.string().trim().max(1000).optional(),
     cons: z.string().trim().max(1000).optional(),
     website: z.string().max(2000).optional(),
+    images: z.array(ProductReviewImageSchema).max(PRODUCT_REVIEW_IMAGES_MAX).optional(),
   })
   .strict()
 
@@ -364,6 +393,12 @@ export async function POST(
         title: body.title ?? null,
         pros: body.pros ?? null,
         cons: body.cons ?? null,
+        // Phase 3 / step 5 — `images` is optional at the wire layer
+        // (legacy clients still POST without it). When present, the
+        // route forwards the validated `Array<{id,url}>` straight to
+        // the module; the module's `sanitizeReviewImagesForInsert` is
+        // a defence-in-depth normaliser, not a primary validator.
+        images: body.images ?? null,
       },
       autoApprove: isAutoApproveEnabled(),
     })

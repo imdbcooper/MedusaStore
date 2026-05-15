@@ -83,6 +83,46 @@ const ProductReviewCard: React.FC<ProductReviewCardProps> = ({ review }) => {
         {review.text}
       </p>
 
+      {/* ----------------------------------------------------------------
+          Phase 3 / step 5 — image attachments. Renders a 2-5 thumbnail
+          grid; clicking a thumbnail opens the full-size image in a new
+          tab (Phase 3 ships the simplest viewer; lightbox modal is on
+          the backlog if/when product asks for it). Plain `<img>` over
+          `next/image` because the URLs come from a per-deployment CDN
+          (S3 endpoint configured via `S3_ENDPOINT`) — adding it to
+          `images.remotePatterns` of the storefront for every review is
+          unnecessary friction for a server-rendered card.
+          ---------------------------------------------------------------- */}
+      {review.images && review.images.length > 0 ? (
+        <ul
+          className="grid grid-cols-3 gap-2 sm:grid-cols-5"
+          data-testid="product-review-card-images"
+        >
+          {review.images.map((src, idx) => (
+            <li
+              key={`${review.id}-image-${idx}`}
+              className="aspect-square overflow-hidden rounded-md border border-[var(--theme-border)] bg-[var(--theme-surface)]"
+            >
+              <a
+                href={src}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Открыть фото ${idx + 1}`}
+                className="block h-full w-full"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={src}
+                  alt={`Фото отзыва ${idx + 1}`}
+                  loading="lazy"
+                  className="h-full w-full object-cover transition-transform duration-200 hover:scale-105"
+                />
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
       {review.pros ? (
         <p className="whitespace-pre-line text-sm leading-6 text-[var(--theme-muted)]">
           <span className="font-semibold text-[var(--theme-foreground)]">

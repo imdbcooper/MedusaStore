@@ -5,6 +5,12 @@ import { revalidateTag } from "next/cache"
 import { sdk } from "@lib/config"
 import { getAuthHeaders } from "./cookies"
 import { retrieveCustomer } from "./customer"
+import {
+  PRODUCT_REVIEW_IMAGE_ALLOWED_MIME_TYPES,
+  PRODUCT_REVIEW_IMAGE_MAX_BYTES,
+  type ProductReviewImageRef,
+  type ProductReviewUploadResult,
+} from "./product-reviews-images-constants"
 
 /**
  * Phase 1 / step 6 — storefront data layer for product reviews.
@@ -572,6 +578,12 @@ export type SubmitProductReviewInput = {
    * accepts the request without writing to the DB.
    */
   website?: string
+  /**
+   * Phase 3 / step 5 — attached images uploaded earlier through
+   * {@link uploadProductReviewImage}. Empty array / `undefined` skip
+   * the field entirely (legacy clients keep working).
+   */
+  images?: ProductReviewImageRef[]
 }
 
 /**
@@ -618,6 +630,12 @@ export async function submitProductReview(
   }
   if (typeof input.cons === "string" && input.cons.trim().length > 0) {
     body.cons = input.cons.trim()
+  }
+  if (Array.isArray(input.images) && input.images.length > 0) {
+    body.images = input.images.map((image) => ({
+      id: image.id,
+      url: image.url,
+    }))
   }
 
   try {
@@ -882,6 +900,121 @@ export async function deleteMyProductReview(
     // eslint-disable-next-line no-console
     console.error(
       "[product-reviews] deleteMyProductReview failed",
+      error instanceof Error ? error.message : error
+    )
+    return { ok: false, code: "unknown", status: status || 500 }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 / step 5 — image attachment upload
+// ---------------------------------------------------------------------------
+
+// `ProductReviewUploadCode` / `ProductReviewUploadResult` types live in
+// [`product-reviews-images-constants.ts`](medusa-agency-boilerplate-storefront/src/lib/data/product-reviews-images-constants.ts:1)
+// because Next.js `"use server"` files can only export `async`
+// functions — exporting types alongside async actions would still be
+// allowed by TypeScript, but the project keeps ALL non-async exports
+// out of this module to make the rule explicit. The constants file is
+// the single source of truth for image limits.
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  // Server actions run in Node — `Buffer` is available. We avoid pulling
+  // it through ESM import to keep the file isomorphic with the rest of
+  // the data layer (everything else uses the SDK fetch helper).
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const buf = Buffer.from(buffer)
+  return buf.toString("base64")
+}
+
+/**
+ * Server action: upload a single image to
+ * `POST /store/products/:id/reviews/upload`. Returns the `{id, url}`
+ * pair the form keeps in client state until the customer hits «Отправить
+ * отзыв». No cache tags are revalidated — the file is private until the
+ * review row that references it is approved by an admin.
+ *
+ * The wire format is JSON `{filename, mime_type, content_base64}` —
+ * the same format the upload route expects (multipart is intentionally
+ * not introduced).
+ */
+export async function uploadProductReviewImage(input: {
+  productId: string
+  filename: string
+  mimeType: string
+  content: ArrayBuffer
+}): Promise<ProductReviewUploadResult> {
+  const productId = input.productId?.trim() ?? ""
+  if (!productId) {
+    return { ok: false, code: "validation_error", status: 400 }
+  }
+
+  const authHeaders = await getAuthHeaders()
+  const hasAuth =
+    typeof (authHeaders as { authorization?: string }).authorization === "string"
+  if (!hasAuth) {
+    return { ok: false, code: "auth_required", status: 401 }
+  }
+
+  if (input.content.byteLength > PRODUCT_REVIEW_IMAGE_MAX_BYTES) {
+    return { ok: false, code: "payload_too_large", status: 413 }
+  }
+
+  const allowed = (
+    PRODUCT_REVIEW_IMAGE_ALLOWED_MIME_TYPES as readonly string[]
+  ).includes(input.mimeType)
+  if (!allowed) {
+    return { ok: false, code: "validation_error", status: 400 }
+  }
+
+  const filename = input.filename.trim()
+  if (!filename || filename.includes("/") || filename.includes("\\")) {
+    return { ok: false, code: "validation_error", status: 400 }
+  }
+
+  const contentBase64 = arrayBufferToBase64(input.content)
+
+  try {
+    const response = await sdk.client.fetch<{ id: string; url: string }>(
+      `/store/products/${encodeURIComponent(productId)}/reviews/upload`,
+      {
+        method: "POST",
+        headers: { ...authHeaders },
+        body: {
+          filename,
+          mime_type: input.mimeType,
+          content_base64: contentBase64,
+        },
+        cache: "no-store",
+      }
+    )
+
+    if (!response?.id || !response?.url) {
+      return { ok: false, code: "unknown", status: 0 }
+    }
+
+    return {
+      ok: true,
+      image: { id: response.id, url: response.url },
+    }
+  } catch (error) {
+    const candidate = error as { status?: number; statusCode?: number }
+    const status = candidate?.status ?? candidate?.statusCode ?? 0
+    if (status === 401) {
+      return { ok: false, code: "auth_required", status: 401 }
+    }
+    if (status === 400) {
+      return { ok: false, code: "validation_error", status: 400 }
+    }
+    if (status === 413) {
+      return { ok: false, code: "payload_too_large", status: 413 }
+    }
+    if (status === 429) {
+      return { ok: false, code: "rate_limited", status: 429 }
+    }
+    // eslint-disable-next-line no-console
+    console.error(
+      "[product-reviews] uploadProductReviewImage failed",
       error instanceof Error ? error.message : error
     )
     return { ok: false, code: "unknown", status: status || 500 }

@@ -82,6 +82,8 @@ export const moderationCopy = {
       review: 'Отзыв',
       meta: 'Метаданные',
       customer: 'Покупатель',
+      // Phase 3 / step 5 — image attachments shown as a thumbnail grid.
+      images: 'Фотографии',
     },
     fields: {
       title: 'Заголовок',
@@ -103,6 +105,10 @@ export const moderationCopy = {
       none: '—',
       yes: 'Да',
       no: 'Нет',
+      // Phase 3 / step 5 — alt text used for screen readers on the
+      // moderation thumbnail grid. `{index}` is substituted client-side.
+      imageAltLabel: 'Фото №{index}',
+      imageOpenLabel: 'Открыть в новой вкладке',
     },
     actions: {
       approve: 'Одобрить',
@@ -152,6 +158,12 @@ export const moderationCopy = {
     deleteConfirm: {
       heading: 'Удалить отзыв?',
       body: 'Действие необратимо. Если отзыв был опубликован, рейтинг товара будет пересчитан.',
+      // Phase 3 / step 5 — extra warning appended to the body when the
+      // review has at least one image attached. Surfaced on top of the
+      // existing `body` copy so a moderator deleting a photo-bearing
+      // review knows S3 cleanup will run.
+      bodyWithImages:
+        'У отзыва прикреплены фотографии — они также будут удалены из хранилища.',
       confirm: 'Удалить',
       cancel: 'Отмена',
     },

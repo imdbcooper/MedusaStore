@@ -47,6 +47,7 @@ import { StoreYooKassaReturnSchema } from "./store/payment/yookassa/return/route
 import { StoreVkIdCallbackSchema } from "./store/vk-id/callback/route"
 import { StoreOnboardingSchema } from "./store/customers/me/onboarding/route"
 import { StoreCreateProductReviewSchema } from "./store/products/[id]/reviews/route"
+import { StoreUploadProductReviewImageSchema } from "./store/products/[id]/reviews/upload/route"
 import { AdminRejectProductReviewSchema } from "./admin/reviews/[id]/reject/route"
 import { AdminProductReviewReplySchema } from "./admin/reviews/[id]/reply/route"
 
@@ -381,6 +382,30 @@ export default defineMiddlewares({
         }),
         authenticate("customer", ["session", "bearer"]),
         validateAndTransformBody(StoreCreateProductReviewSchema),
+      ],
+    },
+    {
+      // Phase 3 / step 5 — upload endpoint for image attachments. Reuses
+      // the same per-IP rate buckets as create + adds a tighter
+      // per-minute upload bucket so even one customer cannot burn S3
+      // budget by holding the form open and re-uploading. JSON body
+      // (`{filename, mime_type, content_base64}`) — multipart is
+      // intentionally not introduced.
+      matcher: "/store/products/:id/reviews/upload",
+      methods: ["POST"],
+      middlewares: [
+        publicRateLimit({
+          bucketKey: "product-reviews-upload-minute",
+          limit: 20,
+          windowMs: 60_000,
+        }),
+        publicRateLimit({
+          bucketKey: "product-reviews-upload-hour",
+          limit: 100,
+          windowMs: 60 * 60_000,
+        }),
+        authenticate("customer", ["session", "bearer"]),
+        validateAndTransformBody(StoreUploadProductReviewImageSchema),
       ],
     },
     {

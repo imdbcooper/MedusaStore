@@ -41,10 +41,18 @@ export default async function productDeletedProductReviewsHandler({
     const result = await deleteAllProductReviewsForProduct({
       pgConnection,
       productId,
+      // Phase 3 / step 5 — pass the container so the helper can hand
+      // any `images` arrays to the Medusa file module for best-effort
+      // S3 / local cleanup. Failure of the file module does not roll
+      // back the DELETE — the helper logs a warning internally.
+      container,
     })
 
+    const cleanupSummary = result.imagesCleanup
+      ? ` images_attempted=${result.imagesCleanup.attempted} images_deleted=${result.imagesCleanup.deleted} images_ok=${result.imagesCleanup.ok}`
+      : ""
     logger.info(
-      `[product-reviews-on-product-deleted] deleted product_id=${productId} reviews_deleted=${result.reviewsDeleted}`
+      `[product-reviews-on-product-deleted] deleted product_id=${productId} reviews_deleted=${result.reviewsDeleted}${cleanupSummary}`
     )
   } catch (error) {
     const message =

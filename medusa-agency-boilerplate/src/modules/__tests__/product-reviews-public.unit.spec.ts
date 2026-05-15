@@ -138,20 +138,45 @@ describe("toPublicReview", () => {
     expect(out.updated_at).toBe("2026-01-02T00:00:00.000Z")
   })
 
-  it("normalises images: array of strings → kept; non-array → null", () => {
+  it("projects internal `{id,url}[]` images to public string[] of urls", () => {
     expect(toPublicReview(buildRow({ images: null })).images).toBeNull()
     expect(toPublicReview(buildRow({ images: undefined as never })).images).toBeNull()
     expect(toPublicReview(buildRow({ images: "not-an-array" as never })).images).toBeNull()
+
+    // New canonical shape — `{id,url}` objects (Phase 3 step 5).
     expect(
       toPublicReview(
-        buildRow({ images: ["https://cdn/a.jpg", "https://cdn/b.jpg"] })
+        buildRow({
+          images: [
+            { id: "review-img-a", url: "https://cdn/a.jpg" },
+            { id: "review-img-b", url: "https://cdn/b.jpg" },
+          ] as never,
+        })
       ).images
     ).toEqual(["https://cdn/a.jpg", "https://cdn/b.jpg"])
+
+    // Backward-compat: a row created with the legacy plain-URL shape
+    // is still accepted by the normaliser (id := url) and surfaces as
+    // a clean URL list.
+    expect(
+      toPublicReview(
+        buildRow({
+          images: ["https://cdn/legacy.jpg", "https://cdn/legacy-2.jpg"] as never,
+        })
+      ).images
+    ).toEqual(["https://cdn/legacy.jpg", "https://cdn/legacy-2.jpg"])
+
     // Empty array → null (treated as «no images»).
-    expect(toPublicReview(buildRow({ images: [] })).images).toBeNull()
-    // Non-string entries are filtered; if nothing remains → null.
+    expect(toPublicReview(buildRow({ images: [] as never })).images).toBeNull()
+
+    // Garbage entries are filtered out; if nothing remains → null.
     expect(
       toPublicReview(buildRow({ images: [123, false] as never })).images
+    ).toBeNull()
+    expect(
+      toPublicReview(
+        buildRow({ images: [{ id: "" }, { url: "" }] as never })
+      ).images
     ).toBeNull()
   })
 

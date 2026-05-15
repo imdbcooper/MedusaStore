@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 
 /**
  * Product reviews module — pure SQL access layer over Medusa's pg connection,
@@ -86,6 +86,30 @@ export type ProductReviewListSort = (typeof PRODUCT_REVIEW_LIST_SORTS)[number]
 
 export const ANONYMIZED_CUSTOMER_NAME = "Покупатель"
 
+/**
+ * Phase 3 / step 5 — image attachments.
+ *
+ * Each image stored in `product_review.images` is a `{ id, url }` pair:
+ *   - `id`  → identifier returned by the Medusa file module
+ *     (`fileModuleService.createFiles({...}).id`); this is what we hand to
+ *     `fileModuleService.deleteFiles([id, ...])` on review delete /
+ *     product cascade. Local provider returns the relative file path; S3
+ *     provider returns the bucket key — both are opaque tokens we never
+ *     parse on this side.
+ *   - `url` → public CDN URL (also returned by the file module, e.g.
+ *     `${S3_FILE_URL}/<key>` for S3 or `http://localhost:9000/static/<file>`
+ *     for local). Surfaced to the storefront via {@link toPublicReview}.
+ *
+ * The wire format that crosses the public storefront contract
+ * ({@link ProductReviewPublic.images}) is intentionally a flat
+ * `string[]` of URLs — the internal `{id,url}` shape stays inside the
+ * server boundary so admin operations can map URL→id for cleanup.
+ */
+export type ProductReviewImage = {
+  id: string
+  url: string
+}
+
 export type ProductReviewRow = {
   id: string
   product_id: string
@@ -102,7 +126,12 @@ export type ProductReviewRow = {
   rejection_reason: string | null
   verified_purchase: boolean
   helpful_count: number
-  images: unknown
+  /**
+   * Phase 3 / step 5 — see {@link ProductReviewImage}. `null` when the
+   * row has no images (the column is also `null` for legacy rows
+   * created before step 5 because the POST schema rejected `images`).
+   */
+  images: ProductReviewImage[] | null
   customer_name: string
   /**
    * Phase 3 / step 4 — admin reply («Ответ магазина»). Three nullable
@@ -211,14 +240,60 @@ export type ProductReviewMine = ProductReviewPublic & {
   rejection_reason: string | null
 }
 
-function normalizeImagesForPublic(value: unknown): string[] | null {
+/**
+ * Internal image normalizer. Reads whatever is in the jsonb column —
+ * either the new `Array<{id,url}>` shape (Phase 3 step 5) or, for forward
+ * compatibility, a plain `string[]` of urls — and returns a clean
+ * `ProductReviewImage[]` or `null`.
+ *
+ * Defensive against malformed jsonb rows: anything that does not satisfy
+ * the schema is silently dropped instead of throwing — a poisoned row
+ * must not break the public list endpoint or the admin moderation UI.
+ */
+function normalizeReviewImages(value: unknown): ProductReviewImage[] | null {
   if (!Array.isArray(value)) {
     return null
   }
-  const strings = value.filter(
-    (item): item is string => typeof item === "string" && item.length > 0
-  )
-  return strings.length > 0 ? strings : null
+  const result: ProductReviewImage[] = []
+  for (const entry of value) {
+    if (typeof entry === "string" && entry.length > 0) {
+      // Legacy / loose shape: just a URL with no id. We still surface it
+      // to the storefront via `toPublicReview` (URLs only), but cleanup
+      // cannot delete it because the file module needs an id. The id
+      // field is filled with the URL itself so callers that only look at
+      // `id` get a stable, non-empty token.
+      result.push({ id: entry, url: entry })
+      continue
+    }
+    if (entry && typeof entry === "object") {
+      const candidate = entry as { id?: unknown; url?: unknown }
+      if (
+        typeof candidate.id === "string" &&
+        candidate.id.length > 0 &&
+        typeof candidate.url === "string" &&
+        candidate.url.length > 0
+      ) {
+        result.push({ id: candidate.id, url: candidate.url })
+      }
+    }
+  }
+  return result.length > 0 ? result : null
+}
+
+/**
+ * Project the internal `Array<{id,url}>` to the public, URL-only `string[]`
+ * shape that the storefront contract advertises (`ProductReviewPublic.images`
+ * / `ProductReviewItem.images`). Internal ids never leak through public or
+ * customer-facing endpoints — they are only used inside admin operations
+ * (delete / cascade / moderation preview).
+ */
+function projectImagesAsPublicUrls(
+  images: ProductReviewImage[] | null
+): string[] | null {
+  if (!images || images.length === 0) {
+    return null
+  }
+  return images.map((image) => image.url)
 }
 
 /**
@@ -239,7 +314,13 @@ export function toPublicReview(row: ProductReviewRow): ProductReviewPublic {
     cons: row.cons,
     verified_purchase: row.verified_purchase,
     helpful_count: row.helpful_count,
-    images: normalizeImagesForPublic(row.images),
+    // Defensive: `row.images` should already be the normalised
+    // `ProductReviewImage[] | null` produced by `normalizeReviewRow`,
+    // but `toPublicReview` is also called on synthetic rows in tests
+    // and may be reused by future code paths that bypass the
+    // normaliser. Re-running `normalizeReviewImages` makes the
+    // boundary idempotent and tolerates either shape.
+    images: projectImagesAsPublicUrls(normalizeReviewImages(row.images)),
     merchant_reply:
       row.merchant_reply_text && row.merchant_reply_at
         ? {
@@ -271,6 +352,19 @@ export type ProductReviewCreateInput = {
   title?: string | null
   pros?: string | null
   cons?: string | null
+  /**
+   * Phase 3 / step 5 — image attachments uploaded earlier through
+   * `POST /store/products/:id/reviews/upload`. Each entry is a
+   * `{ id, url }` pair returned by that endpoint (which itself wraps the
+   * Medusa file module — see {@link uploadProductReviewImage}). The
+   * route layer is the only producer of this field; the module trusts
+   * that pre-validation on the route side already enforced
+   *   - max length 5,
+   *   - https url,
+   *   - non-empty id.
+   * Empty array / `undefined` / `null` all map to a stored `null`.
+   */
+  images?: ProductReviewImage[] | null
 }
 
 export type ProductReviewAdminFilters = {
@@ -463,7 +557,7 @@ function normalizeReviewRow(value: Record<string, unknown>): ProductReviewRow {
         : null,
     verified_purchase: asBoolean(value.verified_purchase, false),
     helpful_count: asInteger(value.helpful_count, 0),
-    images: value.images ?? null,
+    images: normalizeReviewImages(value.images),
     customer_name: customerName,
     merchant_reply_text:
       typeof value.merchant_reply_text === "string" &&
@@ -784,9 +878,44 @@ async function fetchCustomerForReview(
 // ---------------------------------------------------------------------------
 
 /**
+ * Sanitize the route-supplied `images` payload before persisting it.
+ *
+ * The route schema already enforces shape (max 5, https url, non-empty id),
+ * but the module stays defensively resilient: it drops anything that does
+ * not satisfy the contract and returns `null` for empty arrays so the jsonb
+ * column ends up with `null` instead of `[]`. `null` keeps the storefront
+ * empty-state branch (`images === null`) consistent with reviews that have
+ * never had attachments at all.
+ */
+function sanitizeReviewImagesForInsert(
+  value: ProductReviewImage[] | null | undefined
+): ProductReviewImage[] | null {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null
+  }
+  const sanitized: ProductReviewImage[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") {
+      continue
+    }
+    const id = typeof entry.id === "string" ? entry.id.trim() : ""
+    const url = typeof entry.url === "string" ? entry.url.trim() : ""
+    if (id && url) {
+      sanitized.push({ id, url })
+    }
+  }
+  return sanitized.length > 0 ? sanitized : null
+}
+
+/**
  * Create a new review. The payload is expected to be already validated by Zod
- * at the route layer (`images` is dropped at the route per Phase 1 §13 and is
- * not present in this type at all).
+ * at the route layer.
+ *
+ * Phase 3 / step 5 — `payload.images` is now an opt-in `ProductReviewImage[]`
+ * (`{id, url}[]`) populated from the customer's earlier
+ * `POST /store/products/:id/reviews/upload` calls. The route is responsible
+ * for capping at 5 entries and asserting `https://` URLs; the module
+ * `sanitizeReviewImagesForInsert` keeps the boundary resilient regardless.
  *
  * Wraps the verified-purchase lookup, the INSERT, and the optional
  * auto-approve recalc in a single pg transaction so a parallel writer cannot
@@ -854,6 +983,9 @@ export async function createProductReview({
     productId: trimmedProductId,
   })
 
+  const sanitizedImages = sanitizeReviewImagesForInsert(payload.images)
+  const imagesJson = sanitizedImages ? JSON.stringify(sanitizedImages) : null
+
   return await pgConnection.transaction(async (trx) => {
     let insertedRow: ProductReviewRow
 
@@ -873,9 +1005,10 @@ export async function createProductReview({
             status,
             verified_purchase,
             helpful_count,
-            customer_name
+            customer_name,
+            images
           )
-          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?::jsonb)
           returning *
         `,
         [
@@ -891,6 +1024,7 @@ export async function createProductReview({
           status,
           verified,
           customerName,
+          imagesJson,
         ]
       )
 
@@ -918,6 +1052,163 @@ export async function createProductReview({
 
     return insertedRow
   })
+}
+
+// ---------------------------------------------------------------------------
+// 2.3.1 Image attachments — Medusa file module bridge (Phase 3 step 5)
+//
+// The module never imports `@medusajs/medusa/file` runtime — instead it
+// resolves `Modules.FILE` from the request-scoped container exactly the
+// same way other modules do (e.g. notifications). This keeps the module
+// testable: unit tests can hand it a fake container that resolves to a
+// stub file service.
+// ---------------------------------------------------------------------------
+
+type FileModuleServiceLike = {
+  createFiles: (
+    data: { filename: string; mimeType: string; content: string; access?: string }
+  ) => Promise<{ id: string; url: string }>
+  deleteFiles: (ids: string[]) => Promise<void>
+}
+
+function resolveFileModuleService(container: any): FileModuleServiceLike | null {
+  if (!container || typeof container.resolve !== "function") {
+    return null
+  }
+  try {
+    const service = container.resolve(Modules.FILE)
+    if (
+      service &&
+      typeof service.createFiles === "function" &&
+      typeof service.deleteFiles === "function"
+    ) {
+      return service as FileModuleServiceLike
+    }
+  } catch (error) {
+    // The file module is mandatory in `medusa-config.ts`, but if it is
+    // missing for any reason (e.g. tests without a fully wired
+    // container) we surface `null` so callers can decide whether to
+    // 503 (upload) or just skip cleanup (delete paths).
+    return null
+  }
+  return null
+}
+
+/**
+ * Phase 3 / step 5 — upload a single image attachment via the Medusa file
+ * module. Used by the `POST /store/products/:id/reviews/upload` route.
+ *
+ * Returns the `{id, url}` pair the route then echoes back to the
+ * storefront. The storefront accumulates them in client state and posts
+ * the array as `images` when the customer finally submits the review
+ * (see `createProductReview` / route Zod schema).
+ *
+ * Thin wrapper — the module does no validation of `mime_type` or size:
+ * those are the route's responsibility (plan §10.1) and they do not
+ * belong inside the SQL access layer.
+ */
+export async function uploadProductReviewImage({
+  container,
+  filename,
+  mimeType,
+  contentBase64,
+}: {
+  container: any
+  filename: string
+  mimeType: string
+  contentBase64: string
+}): Promise<ProductReviewImage> {
+  const fileService = resolveFileModuleService(container)
+  if (!fileService) {
+    throw new ProductReviewError(
+      "not_found",
+      "File module is not available; cannot upload review image"
+    )
+  }
+  const created = await fileService.createFiles({
+    filename,
+    mimeType,
+    content: contentBase64,
+    access: "public",
+  })
+  return { id: created.id, url: created.url }
+}
+
+/**
+ * Best-effort cleanup of S3/local file objects when a review row is
+ * deleted (admin DELETE / product cascade) or anonymized.
+ *
+ * Failures of the file module **do not** propagate — review deletion
+ * must succeed even if S3 is temporarily unreachable, otherwise an
+ * orphaned database row is worse than an orphaned object. The caller
+ * receives `{ ok, attempted, deleted, error? }` so admin routes /
+ * subscribers can log a structured warning and continue.
+ *
+ * Only entries whose `id !== url` are sent to the file module — legacy
+ * URL-only rows (created during early Phase 3 step 5 testing or by
+ * direct DB inserts) cannot be deleted because the file module needs
+ * an opaque id, and the URL is not reversible to one. Those are
+ * reported as `deleted: 0`.
+ */
+export async function deleteReviewImagesViaFileModule({
+  container,
+  images,
+  logger,
+}: {
+  container: any
+  images: ProductReviewImage[] | null
+  logger?: { warn: (message: string) => void }
+}): Promise<{
+  ok: boolean
+  attempted: number
+  deleted: number
+  error?: string
+}> {
+  if (!Array.isArray(images) || images.length === 0) {
+    return { ok: true, attempted: 0, deleted: 0 }
+  }
+
+  const deletableIds = images
+    .filter((image) => image.id && image.id !== image.url)
+    .map((image) => image.id)
+
+  if (deletableIds.length === 0) {
+    return { ok: true, attempted: 0, deleted: 0 }
+  }
+
+  const fileService = resolveFileModuleService(container)
+  if (!fileService) {
+    logger?.warn(
+      `[product-reviews] file module unavailable; skipping image cleanup for ${deletableIds.length} object(s)`
+    )
+    return {
+      ok: false,
+      attempted: deletableIds.length,
+      deleted: 0,
+      error: "file_module_unavailable",
+    }
+  }
+
+  try {
+    await fileService.deleteFiles(deletableIds)
+    return {
+      ok: true,
+      attempted: deletableIds.length,
+      deleted: deletableIds.length,
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "unknown_file_delete_error"
+    logger?.warn(
+      `[product-reviews] image cleanup failed attempted=${deletableIds.length} error=${message}`
+    )
+    return {
+      ok: false,
+      attempted: deletableIds.length,
+      deleted: 0,
+      error: message,
+    }
+  }
 }
 
 /**
@@ -1180,6 +1471,19 @@ export type ProductReviewAdminDeleteResult = {
    */
   customerId: string | null
   recalculated: boolean
+  /**
+   * Phase 3 / step 5 — best-effort S3/file-module cleanup outcome. The
+   * route logs a structured warning but does NOT fail the DELETE if
+   * `imagesCleanup.ok` is `false` — uniform contract: cleanup must not
+   * block core operations (plan §10.3 / step 5 instructions).
+   * `imagesCleanup` is `null` when the row had no images at all.
+   */
+  imagesCleanup: {
+    ok: boolean
+    attempted: number
+    deleted: number
+    error?: string
+  } | null
 }
 
 export async function deleteProductReviewAsAdmin({
@@ -1192,7 +1496,21 @@ export async function deleteProductReviewAsAdmin({
   const pgConnection = getProductReviewsPgConnection(container)
   await ensureProductReviewsTables(pgConnection)
 
-  return await pgConnection.transaction(async (trx) => {
+  let logger: { warn: (m: string) => void } | undefined
+  try {
+    if (container && typeof container.resolve === "function") {
+      logger = container.resolve(ContainerRegistrationKeys.LOGGER) as
+        | { warn: (m: string) => void }
+        | undefined
+    }
+  } catch {
+    logger = undefined
+  }
+
+  // Step 1: delete the DB row inside a transaction. The image objects
+  // are kept on disk/S3 until step 2 — the transaction is short and we
+  // do not want a slow S3 round-trip holding the row lock.
+  const txResult = await pgConnection.transaction(async (trx) => {
     const lockResult = await trx.raw<Record<string, unknown>>(
       `
         select *
@@ -1215,6 +1533,7 @@ export async function deleteProductReviewAsAdmin({
     const productId = lockedRow.product_id
     const customerId = lockedRow.customer_id
     const prevStatus = lockedRow.status
+    const images = lockedRow.images
 
     await trx.raw(
       `
@@ -1234,12 +1553,43 @@ export async function deleteProductReviewAsAdmin({
       productId,
       customerId,
       recalculated,
+      images,
     }
   })
+
+  // Step 2: best-effort cleanup of the file objects. Failure is logged
+  // by the helper but does not roll back the DB delete — orphaned S3
+  // objects are recoverable, an undeleted row is not.
+  const imagesCleanup =
+    txResult.images && txResult.images.length > 0
+      ? await deleteReviewImagesViaFileModule({
+          container,
+          images: txResult.images,
+          logger,
+        })
+      : null
+
+  return {
+    productId: txResult.productId,
+    customerId: txResult.customerId,
+    recalculated: txResult.recalculated,
+    imagesCleanup,
+  }
 }
 
 export type ProductReviewCustomerDeleteResult = {
   productId: string
+  /**
+   * Phase 3 / step 5 — best-effort image cleanup outcome, same shape as
+   * {@link ProductReviewAdminDeleteResult.imagesCleanup}. `null` for
+   * rows without images.
+   */
+  imagesCleanup: {
+    ok: boolean
+    attempted: number
+    deleted: number
+    error?: string
+  } | null
 }
 
 export async function deleteOwnPendingProductReview({
@@ -1254,7 +1604,18 @@ export async function deleteOwnPendingProductReview({
   const pgConnection = getProductReviewsPgConnection(container)
   await ensureProductReviewsTables(pgConnection)
 
-  return await pgConnection.transaction(async (trx) => {
+  let logger: { warn: (m: string) => void } | undefined
+  try {
+    if (container && typeof container.resolve === "function") {
+      logger = container.resolve(ContainerRegistrationKeys.LOGGER) as
+        | { warn: (m: string) => void }
+        | undefined
+    }
+  } catch {
+    logger = undefined
+  }
+
+  const txResult = await pgConnection.transaction(async (trx) => {
     const lockResult = await trx.raw<Record<string, unknown>>(
       `
         select *
@@ -1301,8 +1662,23 @@ export async function deleteOwnPendingProductReview({
     // and neither contributes to product_rating_summary aggregates.
     return {
       productId: lockedRow.product_id,
+      images: lockedRow.images,
     }
   })
+
+  const imagesCleanup =
+    txResult.images && txResult.images.length > 0
+      ? await deleteReviewImagesViaFileModule({
+          container,
+          images: txResult.images,
+          logger,
+        })
+      : null
+
+  return {
+    productId: txResult.productId,
+    imagesCleanup,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2102,16 +2478,65 @@ export async function anonymizeCustomerInProductReviews({
 
 export type DeleteAllProductReviewsForProductResult = {
   reviewsDeleted: number
+  /**
+   * Phase 3 / step 5 — best-effort image cleanup outcome aggregated
+   * across all deleted rows. `null` when no review had attachments OR
+   * when the caller did not pass a `container` (the cascade still runs,
+   * S3 objects just get orphaned — same uniform contract as
+   * {@link deleteProductReviewAsAdmin}).
+   */
+  imagesCleanup: {
+    ok: boolean
+    attempted: number
+    deleted: number
+    error?: string
+  } | null
 }
 
 export async function deleteAllProductReviewsForProduct({
   pgConnection,
   productId,
+  container,
 }: {
   pgConnection: PgConnectionLike
   productId: string
+  /**
+   * Phase 3 / step 5 — optional Medusa container. When supplied, the
+   * function gathers all `images` arrays before the DELETE and forwards
+   * them to {@link deleteReviewImagesViaFileModule} after the row delete
+   * commits. The subscriber in
+   * [`product-deleted-product-reviews.ts`](medusa-agency-boilerplate/src/subscribers/product-deleted-product-reviews.ts:1)
+   * passes the container; direct callers (e.g. tests) can omit it.
+   */
+  container?: any
 }): Promise<DeleteAllProductReviewsForProductResult> {
   await ensureProductReviewsTables(pgConnection)
+
+  // Phase 3 / step 5 — collect image references before the DELETE so we
+  // can hand them off to the file module for best-effort cleanup. We
+  // intentionally do this in a separate SELECT (instead of a `RETURNING
+  // images` on the DELETE) because the result set is bounded by the
+  // number of reviews on a single product (typically <100) and a plain
+  // SELECT keeps the SQL legible.
+  let collectedImages: ProductReviewImage[] = []
+  if (container) {
+    const imagesResult = await pgConnection.raw<{ images: unknown }>(
+      `
+        select images
+        from product_review
+        where product_id = ?
+          and images is not null
+      `,
+      [productId]
+    )
+    const imageRows = getRawRows<{ images: unknown }>(imagesResult)
+    for (const row of imageRows) {
+      const normalized = normalizeReviewImages(row.images)
+      if (normalized) {
+        collectedImages = collectedImages.concat(normalized)
+      }
+    }
+  }
 
   const reviewsResult = await pgConnection.raw(
     `
@@ -2130,7 +2555,28 @@ export async function deleteAllProductReviewsForProduct({
     [productId]
   )
 
+  let logger: { warn: (m: string) => void } | undefined
+  if (container && typeof container.resolve === "function") {
+    try {
+      logger = container.resolve(ContainerRegistrationKeys.LOGGER) as
+        | { warn: (m: string) => void }
+        | undefined
+    } catch {
+      logger = undefined
+    }
+  }
+
+  const imagesCleanup =
+    container && collectedImages.length > 0
+      ? await deleteReviewImagesViaFileModule({
+          container,
+          images: collectedImages,
+          logger,
+        })
+      : null
+
   return {
     reviewsDeleted,
+    imagesCleanup,
   }
 }

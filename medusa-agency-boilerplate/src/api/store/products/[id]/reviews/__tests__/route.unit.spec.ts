@@ -227,13 +227,109 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("StoreCreateProductReviewSchema (strict)", () => {
-  it("rejects unknown keys including `images` (Phase 1 §13)", () => {
+  it("rejects unknown keys (.strict)", () => {
     const parse = StoreCreateProductReviewSchema.safeParse({
       rating: 5,
       text: "x".repeat(50),
-      images: [],
+      hacker_field: 1,
     })
     expect(parse.success).toBe(false)
+  })
+
+  // Phase 3 / step 5 — `images` is now a recognised optional field.
+  describe("images (Phase 3 step 5)", () => {
+    const validImage = {
+      id: "review-img-abc",
+      url: "https://cdn.example/photo.jpg",
+    }
+
+    it("accepts an empty images array", () => {
+      const parse = StoreCreateProductReviewSchema.safeParse({
+        rating: 5,
+        text: "x".repeat(50),
+        images: [],
+      })
+      expect(parse.success).toBe(true)
+    })
+
+    it("accepts up to 5 images", () => {
+      const parse = StoreCreateProductReviewSchema.safeParse({
+        rating: 5,
+        text: "x".repeat(50),
+        images: [validImage, validImage, validImage, validImage, validImage],
+      })
+      expect(parse.success).toBe(true)
+    })
+
+    it("rejects more than 5 images", () => {
+      const parse = StoreCreateProductReviewSchema.safeParse({
+        rating: 5,
+        text: "x".repeat(50),
+        images: Array.from({ length: 6 }, () => validImage),
+      })
+      expect(parse.success).toBe(false)
+    })
+
+    it("rejects http (non-https) urls", () => {
+      const parse = StoreCreateProductReviewSchema.safeParse({
+        rating: 5,
+        text: "x".repeat(50),
+        images: [{ id: "x", url: "http://cdn.example/photo.jpg" }],
+      })
+      expect(parse.success).toBe(false)
+    })
+
+    it("rejects malformed urls", () => {
+      const parse = StoreCreateProductReviewSchema.safeParse({
+        rating: 5,
+        text: "x".repeat(50),
+        images: [{ id: "x", url: "not-a-url" }],
+      })
+      expect(parse.success).toBe(false)
+    })
+
+    it("rejects entries missing `id` or `url`", () => {
+      expect(
+        StoreCreateProductReviewSchema.safeParse({
+          rating: 5,
+          text: "x".repeat(50),
+          images: [{ url: "https://cdn.example/photo.jpg" }],
+        }).success
+      ).toBe(false)
+      expect(
+        StoreCreateProductReviewSchema.safeParse({
+          rating: 5,
+          text: "x".repeat(50),
+          images: [{ id: "x" }],
+        }).success
+      ).toBe(false)
+    })
+
+    it("rejects non-array `images`", () => {
+      expect(
+        StoreCreateProductReviewSchema.safeParse({
+          rating: 5,
+          text: "x".repeat(50),
+          images: "not-an-array",
+        }).success
+      ).toBe(false)
+      expect(
+        StoreCreateProductReviewSchema.safeParse({
+          rating: 5,
+          text: "x".repeat(50),
+          images: { id: "x", url: "https://cdn/" },
+        }).success
+      ).toBe(false)
+    })
+
+    it("rejects entries with extra keys (.strict on subschema)", () => {
+      const parse = StoreCreateProductReviewSchema.safeParse({
+        rating: 5,
+        text: "x".repeat(50),
+        images: [{ ...validImage, foo: 1 }],
+      })
+      expect(parse.success).toBe(false)
+    })
   })
 
   it("accepts the minimal valid payload", () => {
@@ -438,6 +534,51 @@ describe("POST /store/products/:id/reviews", () => {
     expect(recorder.status).toBe(201)
     expect(mockVerifyCustomerPurchasedProduct).not.toHaveBeenCalled()
     expect(mockCreateProductReview).toHaveBeenCalledTimes(1)
+  })
+
+  it("forwards `images` payload to createProductReview when present", async () => {
+    const images = [
+      { id: "review-img-1", url: "https://cdn.example/a.jpg" },
+      { id: "review-img-2", url: "https://cdn.example/b.jpg" },
+    ]
+    const { res, recorder } = buildResponse()
+    const req = buildReq({
+      productId: "prod_1",
+      customerId: "cus_1",
+      validatedBody: { rating: 5, text: "x".repeat(50), images },
+    })
+
+    await POST(req, res)
+
+    expect(recorder.status).toBe(201)
+    expect(mockCreateProductReview).toHaveBeenCalledTimes(1)
+    expect(mockCreateProductReview.mock.calls[0][0]).toMatchObject({
+      productId: "prod_1",
+      customerId: "cus_1",
+      payload: {
+        rating: 5,
+        images,
+      },
+    })
+  })
+
+  it("missing `images` → forwards `null` to module (legacy clients)", async () => {
+    const { res, recorder } = buildResponse()
+    const req = buildReq({
+      productId: "prod_1",
+      customerId: "cus_1",
+      validatedBody: { rating: 5, text: "x".repeat(50) },
+    })
+
+    await POST(req, res)
+
+    expect(recorder.status).toBe(201)
+    expect(mockCreateProductReview).toHaveBeenCalledTimes(1)
+    expect(mockCreateProductReview.mock.calls[0][0]).toMatchObject({
+      payload: {
+        images: null,
+      },
+    })
   })
 
   it("REVIEWS_REQUIRE_PURCHASE='false' → verify NOT called", async () => {
