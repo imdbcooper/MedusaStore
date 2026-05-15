@@ -94,7 +94,18 @@ function get(map, key) {
 
 function effective(map, key, fallback = "") {
   const value = get(map, key)
-  return present(value) && !isPlaceholder(value) ? value : fallback
+  return present(value) ? value : fallback
+}
+
+function effectiveForSource(map, sources, key, fallback = "") {
+  const value = get(map, key)
+  if (!present(value)) {
+    return fallback
+  }
+  if (sources.get(key) === "env" || !isPlaceholder(value)) {
+    return value
+  }
+  return fallback
 }
 
 function putDefault(map, key, value) {
@@ -106,20 +117,27 @@ function putDefault(map, key, value) {
 function contractValues(contractPath, { useProcessEnv = false } = {}) {
   const contract = parseEnvFile(contractPath)
   const map = new Map()
+  const sources = new Map()
 
   for (const { key, value } of contract.entries) {
     const envValue = process.env[key]
-    map.set(key, useProcessEnv && present(envValue) ? envValue : value)
+    if (useProcessEnv && present(envValue)) {
+      map.set(key, envValue)
+      sources.set(key, "env")
+    } else {
+      map.set(key, value)
+      sources.set(key, "contract")
+    }
   }
 
-  return { contract, map }
+  return { contract, map, sources }
 }
 
-function deriveStaging(map) {
-  const deployDomain = effective(map, "DEPLOY_DOMAIN", "studio.slavx.ru")
-  const postgresUser = effective(map, "POSTGRES_USER", "postgres")
-  const postgresPassword = effective(map, "POSTGRES_PASSWORD")
-  const postgresDb = effective(map, "POSTGRES_DB", "medusa")
+function deriveStaging(map, sources = new Map()) {
+  const deployDomain = effectiveForSource(map, sources, "DEPLOY_DOMAIN", "studio.slavx.ru")
+  const postgresUser = effectiveForSource(map, sources, "POSTGRES_USER", "postgres")
+  const postgresPassword = effectiveForSource(map, sources, "POSTGRES_PASSWORD")
+  const postgresDb = effectiveForSource(map, sources, "POSTGRES_DB", "medusa")
   const publicBaseUrl = `https://${deployDomain}`
   const medusaDbUrl = `postgresql://${postgresUser}:${postgresPassword}@medusa-db:5432/${postgresDb}?sslmode=disable`
   const payloadDbUrl = `postgresql://${postgresUser}:${postgresPassword}@medusa-db:5432/payload_cms?sslmode=disable`
@@ -136,6 +154,16 @@ function deriveStaging(map) {
   putDefault(map, "DATABASE_URL", medusaDbUrl)
   putDefault(map, "DOCKER_PAYLOAD_DATABASE_URL", payloadDbUrl)
   putDefault(map, "PAYLOAD_DATABASE_URL", payloadDbUrl)
+  if (sources.get("POSTGRES_PASSWORD") === "env") {
+    for (const key of [
+      "DOCKER_DATABASE_URL",
+      "DATABASE_URL",
+      "DOCKER_PAYLOAD_DATABASE_URL",
+      "PAYLOAD_DATABASE_URL",
+    ]) {
+      sources.set(key, "env")
+    }
+  }
   putDefault(map, "DOCKER_REDIS_URL", "redis://medusa-redis:6379")
   putDefault(map, "REDIS_URL", "redis://medusa-redis:6379")
   putDefault(map, "MEDUSA_BACKEND_URL", "http://medusa-backend:9000")
@@ -171,15 +199,27 @@ function deriveStaging(map) {
   putDefault(map, "AI_ASSISTANT_CORS_ORIGINS", publicBaseUrl)
   putDefault(map, "NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT", "/store/assistant/chat")
 
-  if (!present(effective(map, "REVALIDATE_SECRET")) && present(effective(map, "STOREFRONT_REVALIDATE_SECRET"))) {
-    put(map, "REVALIDATE_SECRET", effective(map, "STOREFRONT_REVALIDATE_SECRET"))
+  if (
+    !present(effectiveForSource(map, sources, "REVALIDATE_SECRET")) &&
+    present(effectiveForSource(map, sources, "STOREFRONT_REVALIDATE_SECRET"))
+  ) {
+    put(map, "REVALIDATE_SECRET", effectiveForSource(map, sources, "STOREFRONT_REVALIDATE_SECRET"))
+    if (sources.get("STOREFRONT_REVALIDATE_SECRET") === "env") {
+      sources.set("REVALIDATE_SECRET", "env")
+    }
   }
-  if (!present(effective(map, "STOREFRONT_REVALIDATE_SECRET")) && present(effective(map, "REVALIDATE_SECRET"))) {
-    put(map, "STOREFRONT_REVALIDATE_SECRET", effective(map, "REVALIDATE_SECRET"))
+  if (
+    !present(effectiveForSource(map, sources, "STOREFRONT_REVALIDATE_SECRET")) &&
+    present(effectiveForSource(map, sources, "REVALIDATE_SECRET"))
+  ) {
+    put(map, "STOREFRONT_REVALIDATE_SECRET", effectiveForSource(map, sources, "REVALIDATE_SECRET"))
+    if (sources.get("REVALIDATE_SECRET") === "env") {
+      sources.set("STOREFRONT_REVALIDATE_SECRET", "env")
+    }
   }
 
   for (const [key, value] of [...map.entries()]) {
-    if (isPlaceholder(value)) {
+    if (sources.get(key) !== "env" && isPlaceholder(value)) {
       put(map, key, "")
     }
   }
@@ -218,7 +258,7 @@ function deriveLocal(map) {
   }
 }
 
-function validate(map, mode, contract) {
+function validate(map, mode, contract, sources = new Map()) {
   const errors = []
   const warnings = []
   const required = new Set(
@@ -316,7 +356,7 @@ function validate(map, mode, contract) {
     const value = get(map, key)
     if (!present(value)) {
       errors.push(`${key} is required`)
-    } else if (isPlaceholder(value)) {
+    } else if (sources.get(key) !== "env" && isPlaceholder(value)) {
       errors.push(`${key} still contains a placeholder`)
     }
   }
@@ -346,7 +386,7 @@ function validate(map, mode, contract) {
 
   if (mode === "staging") {
     for (const [key, value] of map.entries()) {
-      if (isPlaceholder(value)) {
+      if (sources.get(key) !== "env" && isPlaceholder(value)) {
         errors.push(`${key} still contains a placeholder`)
       }
     }
@@ -407,9 +447,9 @@ function checkLocal() {
 function renderStaging() {
   const contractPath = option("--contract", path.join(rootDir, ".env.staging.example"))
   const outputPath = option("--output", path.join(rootDir, ".env.staging.generated"))
-  const { contract, map } = contractValues(contractPath, { useProcessEnv: true })
-  deriveStaging(map)
-  const result = validate(map, "staging", contract)
+  const { contract, map, sources } = contractValues(contractPath, { useProcessEnv: true })
+  deriveStaging(map, sources)
+  const result = validate(map, "staging", contract, sources)
   printResult(result)
 
   const seen = new Set()
