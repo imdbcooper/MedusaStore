@@ -75,6 +75,14 @@ export type ProductReviewItem = {
    * «no images».
    */
   images: string[] | null
+  /**
+   * Phase 3 / step 4 — admin reply («Ответ магазина»). The backend
+   * `toPublicReview` mapper exposes `{ text, created_at }` when the
+   * moderator has saved a reply, otherwise `null`. The admin actor id
+   * (backend `merchant_reply_by`) is intentionally NOT exposed to the
+   * storefront.
+   */
+  merchant_reply: { text: string; created_at: string } | null
   created_at: string
   updated_at: string
 }

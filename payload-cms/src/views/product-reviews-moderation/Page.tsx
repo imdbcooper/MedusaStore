@@ -714,6 +714,26 @@ function ReviewSidebar({
         reviewId={review.id}
         status={review.status as ProductReviewStatus}
         backHref={adminBase}
+        reply={{
+          // Phase 3 / step 4 — feed the persisted reply snapshot into the
+          // client island so the «Ответ магазина» section renders the
+          // current value on first paint without a client-side fetch.
+          text:
+            typeof review.merchant_reply_text === 'string' &&
+            review.merchant_reply_text.length > 0
+              ? review.merchant_reply_text
+              : null,
+          by:
+            typeof review.merchant_reply_by === 'string' &&
+            review.merchant_reply_by.length > 0
+              ? review.merchant_reply_by
+              : null,
+          at:
+            typeof review.merchant_reply_at === 'string' &&
+            review.merchant_reply_at.length > 0
+              ? review.merchant_reply_at
+              : null,
+        }}
       />
     </aside>
   )

@@ -104,6 +104,26 @@ export type ProductReviewRow = {
   helpful_count: number
   images: unknown
   customer_name: string
+  /**
+   * Phase 3 / step 4 — admin reply («Ответ магазина»). Three nullable
+   * columns are added to `product_review` via an idempotent
+   * `ALTER TABLE … ADD COLUMN IF NOT EXISTS` in
+   * {@link ensureProductReviewsTables}. The shape is intentionally
+   * column-level (not a separate table) because there is at most one
+   * reply per review and we never need history (plan §9 Phase 3 п.3).
+   *
+   * - `merchant_reply_text` — plain text, 1..1000 chars after trim;
+   *   `null` when no reply has been written yet.
+   * - `merchant_reply_by`   — admin actor id of the moderator who saved
+   *   the reply. Internal-only — NEVER surfaces in the public
+   *   `ProductReviewPublic` shape (see {@link toPublicReview}).
+   * - `merchant_reply_at`   — ISO timestamp of the last reply
+   *   create/update; cleared together with `*_text` / `*_by` on
+   *   {@link clearProductReviewMerchantReply}.
+   */
+  merchant_reply_text: string | null
+  merchant_reply_by: string | null
+  merchant_reply_at: string | null
   created_at: string
   updated_at: string
 }
@@ -173,6 +193,15 @@ export type ProductReviewPublic = {
    * shape collapses to `null`.
    */
   images: string[] | null
+  /**
+   * Phase 3 / step 4 — admin reply («Ответ магазина»). `null` when the
+   * moderator has not posted a reply, or has cleared a previous one. The
+   * admin actor id (`merchant_reply_by`) is intentionally OMITTED from
+   * the public shape — it is internal moderation metadata, on par with
+   * `moderated_by` (plan §9 Phase 3 п.3 «admin id остаётся серверным
+   * полем»).
+   */
+  merchant_reply: { text: string; created_at: string } | null
   created_at: string
   updated_at: string
 }
@@ -211,6 +240,13 @@ export function toPublicReview(row: ProductReviewRow): ProductReviewPublic {
     verified_purchase: row.verified_purchase,
     helpful_count: row.helpful_count,
     images: normalizeImagesForPublic(row.images),
+    merchant_reply:
+      row.merchant_reply_text && row.merchant_reply_at
+        ? {
+            text: row.merchant_reply_text,
+            created_at: row.merchant_reply_at,
+          }
+        : null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   }
@@ -261,6 +297,8 @@ export const PRODUCT_REVIEW_ERROR_CODES = [
   "not_owner",
   "cannot_delete_published",
   "not_found_or_not_approved",
+  "reply_text_required",
+  "reply_text_too_long",
 ] as const
 
 export type ProductReviewErrorCode = (typeof PRODUCT_REVIEW_ERROR_CODES)[number]
@@ -427,6 +465,17 @@ function normalizeReviewRow(value: Record<string, unknown>): ProductReviewRow {
     helpful_count: asInteger(value.helpful_count, 0),
     images: value.images ?? null,
     customer_name: customerName,
+    merchant_reply_text:
+      typeof value.merchant_reply_text === "string" &&
+      value.merchant_reply_text.length
+        ? value.merchant_reply_text
+        : null,
+    merchant_reply_by:
+      typeof value.merchant_reply_by === "string" &&
+      value.merchant_reply_by.length
+        ? value.merchant_reply_by
+        : null,
+    merchant_reply_at: normalizeIsoDate(value.merchant_reply_at),
     created_at: normalizeIsoDate(value.created_at) || new Date(0).toISOString(),
     updated_at: normalizeIsoDate(value.updated_at) || new Date(0).toISOString(),
   }
@@ -527,6 +576,29 @@ export async function ensureProductReviewsTables(pgConnection: PgConnectionLike)
   await pgConnection.raw(`
     create index if not exists product_review_order
       on product_review (order_id)
+  `)
+
+  // -------------------------------------------------------------------------
+  // Phase 3 / step 4 — admin reply («Ответ магазина»).
+  //
+  // Pattern (plan §1.1 п.15 + §3.2): three nullable columns added in place
+  // via `ALTER TABLE … ADD COLUMN IF NOT EXISTS` rather than a separate
+  // `product_review_reply` table — there is at most one reply per review
+  // and history is not required (plan §9 Phase 3 п.3).
+  //
+  // Idempotent: `ADD COLUMN IF NOT EXISTS` is a no-op on subsequent runs
+  // (Postgres ≥ 9.6 — predates Medusa's minimum supported version) so the
+  // lazy-ensure pattern keeps working without a one-shot migration step.
+  //
+  // No new index — the columns are written/read from the single locked
+  // row by id during the admin POST/DELETE, so an index would only add
+  // write overhead.
+  // -------------------------------------------------------------------------
+  await pgConnection.raw(`
+    alter table product_review
+      add column if not exists merchant_reply_text text null,
+      add column if not exists merchant_reply_by   text null,
+      add column if not exists merchant_reply_at   timestamptz null
   `)
 }
 
@@ -1234,6 +1306,207 @@ export async function deleteOwnPendingProductReview({
 }
 
 // ---------------------------------------------------------------------------
+// 2.3.1 Admin merchant reply («Ответ магазина»)
+//
+// Plan §9 Phase 3 п.3: моёодератор может оставить один краткий ответ под
+// отзывом покупателя. Реализовано через nullable-колонки на самом ряде
+// (см. {@link ensureProductReviewsTables}); отдельная таблица
+// `product_review_reply` сознательно НЕ создаётся — нужна максимум одна
+// запись на отзыв и историю не ведём.
+//
+// Reply разрешён для отзыва в любом статусе (pending / approved / rejected).
+// `recalculated` всегда `false` — текст ответа не влияет на рейтинг товара,
+// и `statusChanged` всегда `false` — статус самого отзыва не меняется.
+// ---------------------------------------------------------------------------
+
+/** Hard cap on the merchant reply text length (chars after trim). Enforced
+ *  by the Zod schema at the route layer and re-checked here as defence in
+ *  depth so the module is honest when called directly. */
+export const PRODUCT_REVIEW_MERCHANT_REPLY_MAX = 1000
+
+export interface SetProductReviewMerchantReplyArgs {
+  container: any
+  reviewId: string
+  /** 1..1000 chars after `normalizeReviewText` (trim + collapse whitespace). */
+  text: string
+  /**
+   * Admin actor id of the moderator (`auth_context.actor_id` upstream).
+   * Stored in `merchant_reply_by` for audit purposes — never echoed to the
+   * public `ProductReviewPublic` shape.
+   */
+  authorId: string | null
+}
+
+export interface ClearProductReviewMerchantReplyArgs {
+  container: any
+  reviewId: string
+}
+
+/**
+ * Result of {@link setProductReviewMerchantReply} /
+ * {@link clearProductReviewMerchantReply}. The shape mirrors
+ * {@link ProductReviewModerationResult} so the admin route can reuse the
+ * same revalidation helper, but `recalculated` and `statusChanged` are
+ * always literally `false` — admin reply touches neither the rating
+ * aggregate nor the moderation status.
+ */
+export type SetMerchantReplyResult = {
+  review: ProductReviewRow
+  productId: string
+  recalculated: false
+  statusChanged: false
+}
+
+/**
+ * Persist or update the moderator's reply on the given review.
+ *
+ * Wrapped in a single pg transaction with `SELECT … FOR UPDATE` so the
+ * UPDATE cannot race with concurrent admin moderation actions on the same
+ * row. `text` is trimmed/whitespace-collapsed via `normalizeReviewText`
+ * before length checks — the route's Zod schema already enforces the
+ * 1..1000 bound, but the module re-validates so it is safe to call from
+ * subscribers/scripts directly.
+ */
+export async function setProductReviewMerchantReply({
+  container,
+  reviewId,
+  text,
+  authorId,
+}: SetProductReviewMerchantReplyArgs): Promise<SetMerchantReplyResult> {
+  const pgConnection = getProductReviewsPgConnection(container)
+  await ensureProductReviewsTables(pgConnection)
+
+  const normalizedText = normalizeReviewText(text)
+  if (!normalizedText) {
+    throw new ProductReviewError(
+      "reply_text_required",
+      "merchant reply text is required"
+    )
+  }
+  if (normalizedText.length > PRODUCT_REVIEW_MERCHANT_REPLY_MAX) {
+    throw new ProductReviewError(
+      "reply_text_too_long",
+      `merchant reply text must be at most ${PRODUCT_REVIEW_MERCHANT_REPLY_MAX} chars`
+    )
+  }
+
+  const trimmedAuthor =
+    typeof authorId === "string" && authorId.trim() ? authorId.trim() : null
+
+  return await pgConnection.transaction(async (trx) => {
+    const lockResult = await trx.raw<Record<string, unknown>>(
+      `
+        select *
+        from product_review
+        where id = ?
+        for update
+      `,
+      [reviewId]
+    )
+
+    const lockedRows = getRawRows<Record<string, unknown>>(lockResult)
+    if (!lockedRows.length) {
+      throw new ProductReviewError(
+        "not_found",
+        `Review with id '${reviewId}' was not found`
+      )
+    }
+
+    const updateResult = await trx.raw<Record<string, unknown>>(
+      `
+        update product_review
+        set merchant_reply_text = ?,
+            merchant_reply_by = ?,
+            merchant_reply_at = now(),
+            updated_at = now()
+        where id = ?
+        returning *
+      `,
+      [normalizedText, trimmedAuthor, reviewId]
+    )
+
+    const updatedRows = getRawRows<Record<string, unknown>>(updateResult)
+    if (!updatedRows.length) {
+      throw new ProductReviewError(
+        "not_found",
+        `Review with id '${reviewId}' disappeared during update`
+      )
+    }
+    const updatedReview = normalizeReviewRow(updatedRows[0])
+
+    return {
+      review: updatedReview,
+      productId: updatedReview.product_id,
+      recalculated: false,
+      statusChanged: false,
+    }
+  })
+}
+
+/**
+ * Clear an existing merchant reply (sets all three columns back to NULL).
+ * Idempotent on the SQL layer — the `update` runs unconditionally, so a
+ * call against an already-empty row is a no-op write that bumps
+ * `updated_at`. We accept that to keep the path symmetric with `set`.
+ */
+export async function clearProductReviewMerchantReply({
+  container,
+  reviewId,
+}: ClearProductReviewMerchantReplyArgs): Promise<SetMerchantReplyResult> {
+  const pgConnection = getProductReviewsPgConnection(container)
+  await ensureProductReviewsTables(pgConnection)
+
+  return await pgConnection.transaction(async (trx) => {
+    const lockResult = await trx.raw<Record<string, unknown>>(
+      `
+        select *
+        from product_review
+        where id = ?
+        for update
+      `,
+      [reviewId]
+    )
+
+    const lockedRows = getRawRows<Record<string, unknown>>(lockResult)
+    if (!lockedRows.length) {
+      throw new ProductReviewError(
+        "not_found",
+        `Review with id '${reviewId}' was not found`
+      )
+    }
+
+    const updateResult = await trx.raw<Record<string, unknown>>(
+      `
+        update product_review
+        set merchant_reply_text = null,
+            merchant_reply_by = null,
+            merchant_reply_at = null,
+            updated_at = now()
+        where id = ?
+        returning *
+      `,
+      [reviewId]
+    )
+
+    const updatedRows = getRawRows<Record<string, unknown>>(updateResult)
+    if (!updatedRows.length) {
+      throw new ProductReviewError(
+        "not_found",
+        `Review with id '${reviewId}' disappeared during update`
+      )
+    }
+    const updatedReview = normalizeReviewRow(updatedRows[0])
+
+    return {
+      review: updatedReview,
+      productId: updatedReview.product_id,
+      recalculated: false,
+      statusChanged: false,
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
 // 2.4 Reads
 // ---------------------------------------------------------------------------
 
@@ -1471,6 +1744,7 @@ export async function listTopApprovedProductReviewsAcrossCatalog({
       select id, product_id, customer_id, customer_name, rating, title, text,
              pros, cons, status, moderated_by, moderated_at, rejection_reason,
              verified_purchase, helpful_count, images, order_id,
+             merchant_reply_text, merchant_reply_by, merchant_reply_at,
              created_at, updated_at
       from product_review
       where status = 'approved'

@@ -284,6 +284,11 @@ export const storefrontConfig = {
         rejected: "Отклонён",
       },
       verified: "Проверенная покупка",
+      // Phase 3 / step 4 — admin reply («Ответ магазина»). Rendered under
+      // each review card on the public product detail page. The label is
+      // a static string; date formatting reuses the same `Intl.DateTimeFormat`
+      // configured in the card component.
+      merchantReplyLabel: "Ответ магазина",
       // Phase 2 / step 5 — copy used by the «Мои отзывы» account page
       // (`/account/reviews`). Lives under `copy.reviews.account.*` because
       // the entire review domain is centralised here, not split across

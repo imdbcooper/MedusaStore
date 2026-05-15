@@ -101,6 +101,36 @@ const ProductReviewCard: React.FC<ProductReviewCardProps> = ({ review }) => {
         </p>
       ) : null}
 
+      {/* ----------------------------------------------------------------
+          Phase 3 / step 4 — «Ответ магазина».
+          Rendered immediately after the customer's text/pros/cons but
+          before the helpful-button footer so the reply is visually
+          attached to the review it answers. Quote-style left border via
+          existing theme tokens; date format reuses the same `ru-RU`
+          DateTimeFormat as the review header (consistency).
+          ---------------------------------------------------------------- */}
+      {review.merchant_reply ? (
+        <aside
+          className="rounded-[var(--theme-radius-card)] border-l-2 border-[var(--theme-accent,#1f5fae)] bg-[var(--theme-accent-soft,rgba(31,95,174,0.06))] px-4 py-3"
+          data-testid="product-review-card-merchant-reply"
+        >
+          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--theme-accent,#1f5fae)]">
+            {reviewsCopy.merchantReplyLabel}
+          </div>
+          <p className="mt-1 whitespace-pre-line text-sm leading-6 text-[var(--theme-foreground)]">
+            {review.merchant_reply.text}
+          </p>
+          {review.merchant_reply.created_at ? (
+            <time
+              className="mt-1 block text-xs text-[var(--theme-muted)]"
+              dateTime={review.merchant_reply.created_at}
+            >
+              {formatDateLong(review.merchant_reply.created_at)}
+            </time>
+          ) : null}
+        </aside>
+      ) : null}
+
       <footer className="flex justify-end">
         <HelpfulButton
           reviewId={review.id}

@@ -48,6 +48,7 @@ import { StoreVkIdCallbackSchema } from "./store/vk-id/callback/route"
 import { StoreOnboardingSchema } from "./store/customers/me/onboarding/route"
 import { StoreCreateProductReviewSchema } from "./store/products/[id]/reviews/route"
 import { AdminRejectProductReviewSchema } from "./admin/reviews/[id]/reject/route"
+import { AdminProductReviewReplySchema } from "./admin/reviews/[id]/reply/route"
 
 const adminAuth = authenticate("user", ["session", "bearer", "api-key"])
 
@@ -186,6 +187,23 @@ export default defineMiddlewares({
         adminAuth,
         validateAndTransformBody(AdminRejectProductReviewSchema),
       ],
+    },
+    {
+      // Phase 3 / step 4 — admin reply («Ответ магазина»). POST validates
+      // a strict `{ text }` body via the schema in the route file; DELETE
+      // has no body but still goes through `adminAuth` so the Payload
+      // basic-auth path keeps working.
+      matcher: "/admin/reviews/:id/reply",
+      methods: ["POST"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformBody(AdminProductReviewReplySchema),
+      ],
+    },
+    {
+      matcher: "/admin/reviews/:id/reply",
+      methods: ["DELETE"],
+      middlewares: [adminAuth],
     },
     {
       matcher: "/admin/notifications/smoke",

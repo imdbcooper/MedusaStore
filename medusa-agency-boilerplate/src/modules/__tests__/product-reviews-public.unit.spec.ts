@@ -39,6 +39,7 @@ const ALLOWED_PUBLIC_KEYS = [
   "verified_purchase",
   "helpful_count",
   "images",
+  "merchant_reply",
   "created_at",
   "updated_at",
 ] as const
@@ -54,6 +55,9 @@ const FORBIDDEN_MINE_KEYS = [
   "order_id",
   "moderated_by",
   "moderated_at",
+  "merchant_reply_text",
+  "merchant_reply_by",
+  "merchant_reply_at",
 ] as const
 
 function buildRow(overrides: Partial<ProductReviewRow> = {}): ProductReviewRow {
@@ -75,6 +79,9 @@ function buildRow(overrides: Partial<ProductReviewRow> = {}): ProductReviewRow {
     helpful_count: 7,
     images: null,
     customer_name: "Иван И.",
+    merchant_reply_text: null,
+    merchant_reply_by: null,
+    merchant_reply_at: null,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-02T00:00:00.000Z",
     ...overrides,
@@ -156,6 +163,61 @@ describe("toPublicReview", () => {
     expect(out.pros).toBeNull()
     expect(out.cons).toBeNull()
   })
+
+  // -------------------------------------------------------------------------
+  // Phase 3 / step 4 — admin reply contract.
+  // -------------------------------------------------------------------------
+  describe("merchant_reply", () => {
+    it("emits { text, created_at } when both columns are populated", () => {
+      const out = toPublicReview(
+        buildRow({
+          merchant_reply_text: "Спасибо за отзыв!",
+          merchant_reply_by: "usr_admin",
+          merchant_reply_at: "2026-05-14T12:00:00.000Z",
+        })
+      )
+      expect(out.merchant_reply).toEqual({
+        text: "Спасибо за отзыв!",
+        created_at: "2026-05-14T12:00:00.000Z",
+      })
+    })
+
+    it("collapses to null when text or timestamp is missing", () => {
+      expect(
+        toPublicReview(
+          buildRow({
+            merchant_reply_text: null,
+            merchant_reply_at: "2026-05-14T12:00:00.000Z",
+          })
+        ).merchant_reply
+      ).toBeNull()
+      expect(
+        toPublicReview(
+          buildRow({
+            merchant_reply_text: "Привет",
+            merchant_reply_at: null,
+          })
+        ).merchant_reply
+      ).toBeNull()
+      expect(toPublicReview(buildRow()).merchant_reply).toBeNull()
+    })
+
+    it("never leaks merchant_reply_by (admin actor id) into the public shape", () => {
+      const out = toPublicReview(
+        buildRow({
+          merchant_reply_text: "thanks",
+          merchant_reply_by: "usr_secret_admin",
+          merchant_reply_at: "2026-05-14T12:00:00.000Z",
+        })
+      ) as Record<string, unknown>
+
+      expect(out).not.toHaveProperty("merchant_reply_by")
+      expect(out).not.toHaveProperty("merchant_reply_text")
+      expect(out).not.toHaveProperty("merchant_reply_at")
+      // The nested object also must not carry the admin id under any name.
+      expect(JSON.stringify(out)).not.toContain("usr_secret_admin")
+    })
+  })
 })
 
 describe("toMineReview", () => {
@@ -190,5 +252,23 @@ describe("toMineReview", () => {
     expect(toMineReview(buildRow({ status: "rejected" })).status).toBe(
       "rejected"
     )
+  })
+
+  it("inherits merchant_reply from the public shape and still hides merchant_reply_by", () => {
+    const out = toMineReview(
+      buildRow({
+        merchant_reply_text: "Привет!",
+        merchant_reply_by: "usr_secret",
+        merchant_reply_at: "2026-05-14T12:00:00.000Z",
+      })
+    ) as Record<string, unknown>
+
+    expect(out.merchant_reply).toEqual({
+      text: "Привет!",
+      created_at: "2026-05-14T12:00:00.000Z",
+    })
+    expect(out).not.toHaveProperty("merchant_reply_by")
+    expect(out).not.toHaveProperty("merchant_reply_text")
+    expect(out).not.toHaveProperty("merchant_reply_at")
   })
 })

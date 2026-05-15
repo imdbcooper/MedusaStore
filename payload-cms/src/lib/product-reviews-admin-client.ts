@@ -54,6 +54,16 @@ export type ProductReviewAdminItem = {
   helpful_count: number
   images: unknown
   customer_name: string
+  /**
+   * Phase 3 / step 4 — admin reply («Ответ магазина»). Three nullable
+   * columns surface verbatim on admin endpoints (only the public
+   * `/store/*` mappers strip `merchant_reply_by`). The Payload moderation
+   * detail view reads them to render the «Ответ магазина» section and
+   * the «Изменить / Удалить» actions.
+   */
+  merchant_reply_text: string | null
+  merchant_reply_by: string | null
+  merchant_reply_at: string | null
   created_at: string
   updated_at: string
   /** Be tolerant to additive backend fields. */
@@ -75,6 +85,16 @@ export type ProductReviewModerationResult = {
   review: ProductReviewAdminItem
   productId: string
   recalculated: boolean
+}
+
+/**
+ * Wire shape returned by `/admin/reviews/:id/reply` (POST + DELETE). The
+ * backend deliberately omits the `recalculated` flag here because admin
+ * reply never affects the rating summary (plan §9 Phase 3 п.3).
+ */
+export type ProductReviewReplyResult = {
+  review: ProductReviewAdminItem
+  productId: string
 }
 
 export type ProductReviewListFilters = {
@@ -165,6 +185,41 @@ export function deleteProductReviewAdmin(
 ): Promise<MedusaAdminFetchResult<null>> {
   return medusaAdminFetch<null>(
     `/admin/reviews/${encodeURIComponent(id)}`,
+    { method: 'DELETE', signal: options.signal },
+  )
+}
+
+/**
+ * Phase 3 / step 4 — POST `/admin/reviews/:id/reply` body: `{ text }`.
+ * The backend Zod schema enforces 1..1000 chars after trim; this helper
+ * forwards the text as-is. Authenticate as the Payload admin secret API
+ * key (handled by `medusaAdminFetch`). The route invalidates
+ * `product-reviews-${productId}` and `top-reviews` on success — Payload
+ * server actions then revalidate the `/admin/product-reviews/moderation`
+ * paths so the next visit re-fetches the updated row.
+ */
+export function submitReplyAdmin(
+  id: string,
+  text: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<MedusaAdminFetchResult<ProductReviewReplyResult>> {
+  return medusaAdminFetch<ProductReviewReplyResult>(
+    `/admin/reviews/${encodeURIComponent(id)}/reply`,
+    { method: 'POST', body: { text }, signal: options.signal },
+  )
+}
+
+/**
+ * Phase 3 / step 4 — DELETE `/admin/reviews/:id/reply`. Clears all three
+ * `merchant_reply_*` columns. Returns the (now-cleared) row so Payload
+ * UI can show the empty state without an extra GET.
+ */
+export function clearReplyAdmin(
+  id: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<MedusaAdminFetchResult<ProductReviewReplyResult>> {
+  return medusaAdminFetch<ProductReviewReplyResult>(
+    `/admin/reviews/${encodeURIComponent(id)}/reply`,
     { method: 'DELETE', signal: options.signal },
   )
 }
