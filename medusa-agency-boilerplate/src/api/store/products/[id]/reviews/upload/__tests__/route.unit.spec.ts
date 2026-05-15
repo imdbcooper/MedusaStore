@@ -179,6 +179,83 @@ describe("StoreUploadProductReviewImageSchema (strict)", () => {
     })
     expect(parse.success).toBe(false)
   })
+
+  // -------------------------------------------------------------------------
+  // Phase 3 / step 5 hotfix (P1.1) — filename sanitization
+  // -------------------------------------------------------------------------
+
+  it("rejects filenames containing NUL byte (\\x00)", () => {
+    const parse = StoreUploadProductReviewImageSchema.safeParse({
+      filename: "ok\x00evil.jpg",
+      mime_type: "image/jpeg",
+      content_base64: TINY_PNG_BASE64,
+    })
+    expect(parse.success).toBe(false)
+  })
+
+  it("rejects filenames with control characters (e.g. CR/LF)", () => {
+    expect(
+      StoreUploadProductReviewImageSchema.safeParse({
+        filename: "ok\nevil.jpg",
+        mime_type: "image/jpeg",
+        content_base64: TINY_PNG_BASE64,
+      }).success
+    ).toBe(false)
+    expect(
+      StoreUploadProductReviewImageSchema.safeParse({
+        filename: "ok\revil.jpg",
+        mime_type: "image/jpeg",
+        content_base64: TINY_PNG_BASE64,
+      }).success
+    ).toBe(false)
+    expect(
+      StoreUploadProductReviewImageSchema.safeParse({
+        filename: "ok\tevil.jpg",
+        mime_type: "image/jpeg",
+        content_base64: TINY_PNG_BASE64,
+      }).success
+    ).toBe(false)
+  })
+
+  it("rejects unicode hijack characters (RTL override / zero-width)", () => {
+    expect(
+      StoreUploadProductReviewImageSchema.safeParse({
+        // U+202E RIGHT-TO-LEFT OVERRIDE — classic filename hijack.
+        filename: "photo\u202Egpj.jpg",
+        mime_type: "image/jpeg",
+        content_base64: TINY_PNG_BASE64,
+      }).success
+    ).toBe(false)
+    expect(
+      StoreUploadProductReviewImageSchema.safeParse({
+        // U+200B ZERO WIDTH SPACE.
+        filename: "photo\u200B.jpg",
+        mime_type: "image/jpeg",
+        content_base64: TINY_PNG_BASE64,
+      }).success
+    ).toBe(false)
+  })
+
+  it("rejects very long filenames (>200 chars)", () => {
+    const longName = "a".repeat(250) + ".jpg"
+    expect(
+      StoreUploadProductReviewImageSchema.safeParse({
+        filename: longName,
+        mime_type: "image/jpeg",
+        content_base64: TINY_PNG_BASE64,
+      }).success
+    ).toBe(false)
+  })
+
+  it("accepts safe ASCII filenames with dot/dash/underscore/space", () => {
+    expect(
+      StoreUploadProductReviewImageSchema.safeParse({
+        filename: "my_photo-01 v2.jpg",
+        mime_type: "image/jpeg",
+        content_base64: TINY_PNG_BASE64,
+      }).success
+    ).toBe(true)
+  })
 })
 
 describe("POST /store/products/:id/reviews/upload", () => {
@@ -293,5 +370,42 @@ describe("POST /store/products/:id/reviews/upload", () => {
 
     expect(recorder.status).toBe(500)
     expect(recorder.body).toMatchObject({ code: "internal_error" })
+  })
+
+  // -------------------------------------------------------------------------
+  // Phase 3 / step 5 hotfix (P0.1) — magic-bytes mismatch path
+  // -------------------------------------------------------------------------
+
+  it("400 image_mime_mismatch when uploadProductReviewImage throws ProductReviewError('image_mime_mismatch')", async () => {
+    const { ProductReviewError } = jest.requireActual(
+      "../../../../../../../modules/product-reviews"
+    ) as typeof import("../../../../../../../modules/product-reviews")
+
+    mockUpload.mockImplementation(async () => {
+      throw new ProductReviewError(
+        "image_mime_mismatch",
+        "Image content does not match the declared mime_type"
+      )
+    })
+
+    const { res, recorder } = buildResponse()
+    const req = buildReq({
+      productId: "prod_1",
+      customerId: "cus_1",
+      validatedBody: {
+        filename: "exploit.jpg",
+        mime_type: "image/jpeg",
+        // Note: schema does not validate magic bytes — that's a module
+        // concern (the route delegates the actual decode/sniff to the
+        // module which is mocked here). We just want to confirm the
+        // error mapping is correct.
+        content_base64: TINY_PNG_BASE64,
+      },
+    })
+
+    await POST(req, res)
+
+    expect(recorder.status).toBe(400)
+    expect(recorder.body).toMatchObject({ code: "image_mime_mismatch" })
   })
 })

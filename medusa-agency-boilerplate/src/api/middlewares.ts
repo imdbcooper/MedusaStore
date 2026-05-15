@@ -391,8 +391,18 @@ export default defineMiddlewares({
       // budget by holding the form open and re-uploading. JSON body
       // (`{filename, mime_type, content_base64}`) — multipart is
       // intentionally not introduced.
+      //
+      // Phase 3 / step 5 hotfix (P0.2) — Medusa's default body-parser
+      // limit is `100kb`, but a 5 MiB raw image base64-encodes to
+      // ~6.7 MiB. Without an explicit `bodyParser.sizeLimit` the request
+      // is rejected with 413 *before* the route handler runs and the
+      // feature is functionally broken. We allow 8 MiB to leave headroom
+      // for the base64 33% inflation plus a small JSON envelope; the
+      // route's own `MAX_BYTES = 5 MiB` cap on the *decoded* size is
+      // unaffected (it runs after parsing).
       matcher: "/store/products/:id/reviews/upload",
       methods: ["POST"],
+      bodyParser: { sizeLimit: "8mb" },
       middlewares: [
         publicRateLimit({
           bucketKey: "product-reviews-upload-minute",

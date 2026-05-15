@@ -393,6 +393,10 @@ export const PRODUCT_REVIEW_ERROR_CODES = [
   "not_found_or_not_approved",
   "reply_text_required",
   "reply_text_too_long",
+  // Phase 3 / step 5 hotfix — magic-bytes sniff in
+  // {@link uploadProductReviewImage} mismatched the client-declared
+  // `mime_type`. The route maps this to HTTP 400.
+  "image_mime_mismatch",
 ] as const
 
 export type ProductReviewErrorCode = (typeof PRODUCT_REVIEW_ERROR_CODES)[number]
@@ -1095,6 +1099,61 @@ function resolveFileModuleService(container: any): FileModuleServiceLike | null 
 }
 
 /**
+ * Phase 3 / step 5 hotfix — supported magic-byte signatures for the image
+ * MIME types accepted by the upload route. Used by
+ * {@link detectImageMime}. Implemented manually (no `file-type` dep).
+ *
+ * - JPEG: `FF D8 FF` (covers JFIF, EXIF, SPIFF — first 3 bytes are stable
+ *   across all JPEG variants we care about).
+ * - PNG: `89 50 4E 47 0D 0A 1A 0A` (8-byte fixed signature).
+ * - WebP: `RIFF....WEBP` — bytes 0..3 are `RIFF`, bytes 8..11 are `WEBP`.
+ *   The 4-byte little-endian length at 4..7 is intentionally NOT checked
+ *   (we do not trust client-declared length anyway).
+ */
+export type DetectedImageMime = "image/jpeg" | "image/png" | "image/webp"
+
+export function detectImageMime(buffer: Buffer): DetectedImageMime | null {
+  if (!buffer || buffer.length < 12) {
+    return null
+  }
+  // JPEG: FF D8 FF
+  if (
+    buffer[0] === 0xff &&
+    buffer[1] === 0xd8 &&
+    buffer[2] === 0xff
+  ) {
+    return "image/jpeg"
+  }
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return "image/png"
+  }
+  // WebP: 'RIFF' (52 49 46 46) at 0..3 and 'WEBP' (57 45 42 50) at 8..11.
+  if (
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50
+  ) {
+    return "image/webp"
+  }
+  return null
+}
+
+/**
  * Phase 3 / step 5 — upload a single image attachment via the Medusa file
  * module. Used by the `POST /store/products/:id/reviews/upload` route.
  *
@@ -1103,9 +1162,27 @@ function resolveFileModuleService(container: any): FileModuleServiceLike | null 
  * the array as `images` when the customer finally submits the review
  * (see `createProductReview` / route Zod schema).
  *
- * Thin wrapper — the module does no validation of `mime_type` or size:
- * those are the route's responsibility (plan §10.1) and they do not
- * belong inside the SQL access layer.
+ * Phase 3 / step 5 hotfix — MIME spoofing defence: the function decodes
+ * the base64 payload and runs {@link detectImageMime} against the magic
+ * bytes. If the detected MIME does not match the client-declared
+ * `mimeType`, we throw `ProductReviewError("image_mime_mismatch")` (the
+ * route maps it to HTTP 400). Without this check a customer could upload
+ * HTML+JS with `mime_type: image/jpeg`; S3 would store it with
+ * `Content-Type: image/jpeg`, but a direct browser hit on the public CDN
+ * URL would still render the file inline because some object storage
+ * providers / browsers ignore the stored Content-Type when sniffing. The
+ * detected MIME is then forwarded to `fileService.createFiles({mimeType})`
+ * so the bucket object is stored with a sanitized Content-Type — even if
+ * the bucket is misconfigured later, we never propagate a client-supplied
+ * value.
+ *
+ * TODO (defence-in-depth — out of scope for this hotfix, infra-side):
+ * configure the S3 bucket lifecycle / response-policy to add
+ * `Content-Disposition: attachment` for keys under the
+ * `review-uploads/` prefix. That fully closes the inline-render risk
+ * regardless of the stored `Content-Type`. The Medusa S3 file provider
+ * does not expose `Content-Disposition` per upload, so we cannot do it
+ * here without forking the provider.
  */
 export async function uploadProductReviewImage({
   container,
@@ -1125,9 +1202,27 @@ export async function uploadProductReviewImage({
       "File module is not available; cannot upload review image"
     )
   }
+
+  // Decode once and sniff magic bytes BEFORE handing the payload to the
+  // file module. Note: we still pass the original base64 string to
+  // `createFiles` (the file module expects base64); the buffer is only
+  // used for the sniff.
+  const decoded = Buffer.from(contentBase64, "base64")
+  const detectedMime = detectImageMime(decoded)
+  if (!detectedMime || detectedMime !== mimeType) {
+    throw new ProductReviewError(
+      "image_mime_mismatch",
+      "Image content does not match the declared mime_type"
+    )
+  }
+
   const created = await fileService.createFiles({
     filename,
-    mimeType,
+    // Forward the *detected* MIME (not the client-declared one). At this
+    // point we know declared === detected, but using the detected value
+    // documents the intent: the file module / S3 receive a value the
+    // backend itself confirmed by inspecting the bytes.
+    mimeType: detectedMime,
     content: contentBase64,
     access: "public",
   })
@@ -2438,6 +2533,31 @@ export type AnonymizeCustomerResult = {
   helpfulVotesDeleted: number
 }
 
+/**
+ * Анонимизация customer (GDPR right-to-erasure).
+ *
+ * Делает две вещи в рамках текущего соединения (без транзакции — обе
+ * команды идемпотентны и независимы):
+ *  1) `update product_review set customer_id = null, customer_name = 'Покупатель'`
+ *     — отвязываем review-rows от удалённого customer-а;
+ *  2) `delete from product_review_helpful where customer_id = ?` —
+ *     убираем personal voting trail.
+ *
+ * IMAGES TRADE-OFF: фото-вложения отзыва НЕ удаляются.
+ * - PRO: текст и фото остаются как content за анонимизированным
+ *   "Покупатель" — UX consistency, рейтинг товара не «прыгает», другие
+ *   покупатели по-прежнему видят опубликованный отзыв.
+ * - CONTRA: фото с лицом / номером машины / иными identifying данными —
+ *   это PII. С точки зрения GDPR Art. 17 (right to erasure) такая фотка
+ *   после анонимизации формально остаётся в S3 и достижима по публичному
+ *   CDN-URL, что создаёт юридический риск.
+ *
+ * Если по compliance потребуется жёсткое удаление, ввести env-flag
+ * `REVIEWS_ANONYMIZE_DELETES_IMAGES` (default `false`) и при `true` —
+ * собрать `images` массивы по customer_id ДО UPDATE и вызвать
+ * {@link deleteReviewImagesViaFileModule} перед коммитом. Сейчас
+ * сознательно не реализуем — оставляем за будущим compliance-тикетом.
+ */
 export async function anonymizeCustomerInProductReviews({
   pgConnection,
   customerId,
@@ -2512,49 +2632,6 @@ export async function deleteAllProductReviewsForProduct({
 }): Promise<DeleteAllProductReviewsForProductResult> {
   await ensureProductReviewsTables(pgConnection)
 
-  // Phase 3 / step 5 — collect image references before the DELETE so we
-  // can hand them off to the file module for best-effort cleanup. We
-  // intentionally do this in a separate SELECT (instead of a `RETURNING
-  // images` on the DELETE) because the result set is bounded by the
-  // number of reviews on a single product (typically <100) and a plain
-  // SELECT keeps the SQL legible.
-  let collectedImages: ProductReviewImage[] = []
-  if (container) {
-    const imagesResult = await pgConnection.raw<{ images: unknown }>(
-      `
-        select images
-        from product_review
-        where product_id = ?
-          and images is not null
-      `,
-      [productId]
-    )
-    const imageRows = getRawRows<{ images: unknown }>(imagesResult)
-    for (const row of imageRows) {
-      const normalized = normalizeReviewImages(row.images)
-      if (normalized) {
-        collectedImages = collectedImages.concat(normalized)
-      }
-    }
-  }
-
-  const reviewsResult = await pgConnection.raw(
-    `
-      delete from product_review
-      where product_id = ?
-    `,
-    [productId]
-  )
-  const reviewsDeleted = getRawRowCount(reviewsResult)
-
-  await pgConnection.raw(
-    `
-      delete from product_rating_summary
-      where product_id = ?
-    `,
-    [productId]
-  )
-
   let logger: { warn: (m: string) => void } | undefined
   if (container && typeof container.resolve === "function") {
     try {
@@ -2566,17 +2643,79 @@ export async function deleteAllProductReviewsForProduct({
     }
   }
 
+  // Phase 3 / step 5 hotfix (P1.3) — DB cleanup runs inside a single
+  // transaction (mirrors {@link deleteProductReviewAsAdmin}). All three
+  // statements (SELECT images / DELETE product_review / DELETE
+  // product_rating_summary) succeed or none do. The S3 cleanup is
+  // deliberately performed AFTER commit — orphaned objects are
+  // recoverable, but a partial DB state where reviews are gone yet the
+  // rating summary lingers is not.
+  const txResult = await pgConnection.transaction(async (trx) => {
+    // Step 1: collect image references before the DELETE so we can hand
+    // them off to the file module for best-effort cleanup. We
+    // intentionally do this in a separate SELECT (instead of a
+    // `RETURNING images` on the DELETE) because the result set is
+    // bounded by the number of reviews on a single product (typically
+    // <100) and a plain SELECT keeps the SQL legible.
+    let collected: ProductReviewImage[] = []
+    if (container) {
+      const imagesResult = await trx.raw<{ images: unknown }>(
+        `
+          select images
+          from product_review
+          where product_id = ?
+            and images is not null
+        `,
+        [productId]
+      )
+      const imageRows = getRawRows<{ images: unknown }>(imagesResult)
+      for (const row of imageRows) {
+        const normalized = normalizeReviewImages(row.images)
+        if (normalized) {
+          collected = collected.concat(normalized)
+        }
+      }
+    }
+
+    const reviewsResult = await trx.raw(
+      `
+        delete from product_review
+        where product_id = ?
+      `,
+      [productId]
+    )
+    const reviewsDeleted = getRawRowCount(reviewsResult)
+
+    await trx.raw(
+      `
+        delete from product_rating_summary
+        where product_id = ?
+      `,
+      [productId]
+    )
+
+    return {
+      reviewsDeleted,
+      collectedImages: collected,
+    }
+  })
+
+  // Step 2: best-effort S3/local cleanup AFTER the DB transaction has
+  // committed. Failure here is logged by the helper and surfaces in the
+  // returned `imagesCleanup` shape but does not roll back the DB
+  // delete — orphaned S3 objects can be reaped later, an undeleted row
+  // is permanent.
   const imagesCleanup =
-    container && collectedImages.length > 0
+    container && txResult.collectedImages.length > 0
       ? await deleteReviewImagesViaFileModule({
           container,
-          images: collectedImages,
+          images: txResult.collectedImages,
           logger,
         })
       : null
 
   return {
-    reviewsDeleted,
+    reviewsDeleted: txResult.reviewsDeleted,
     imagesCleanup,
   }
 }

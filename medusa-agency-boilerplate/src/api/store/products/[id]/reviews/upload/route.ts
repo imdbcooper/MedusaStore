@@ -4,7 +4,10 @@ import type {
 } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import { z } from "@medusajs/framework/zod"
-import { uploadProductReviewImage } from "../../../../../../modules/product-reviews"
+import {
+  ProductReviewError,
+  uploadProductReviewImage,
+} from "../../../../../../modules/product-reviews"
 
 /**
  * Phase 3 / step 5 — `POST /store/products/:id/reviews/upload`.
@@ -56,6 +59,19 @@ const ALLOWED_MIME_TYPES = new Set<string>([
   "image/webp",
 ])
 const ALLOWED_EXTENSIONS = /\.(jpe?g|png|webp)$/i
+/**
+ * Phase 3 / step 5 hotfix (P1.1) — strict charset for filenames. Limits
+ * the name to ASCII letters, digits, dot, dash, underscore and a single
+ * space; total length 1..200 chars including the extension. This rejects:
+ *   - NUL (`\x00`) and other control bytes (header injection on logs / S3),
+ *   - unicode hijack chars (RTL override, zero-width joiners),
+ *   - extremely long names (filesystem / log noise).
+ *
+ * The extension whitelist (jpe?g|png|webp) is enforced inside the same
+ * regex — `ALLOWED_EXTENSIONS` above is kept as a defence-in-depth
+ * fallback in case anyone relaxes the main regex later.
+ */
+const FILENAME_SAFE = /^[A-Za-z0-9_\-. ]{1,200}\.(jpe?g|png|webp)$/i
 
 export const StoreUploadProductReviewImageSchema = z
   .object({
@@ -63,9 +79,13 @@ export const StoreUploadProductReviewImageSchema = z
       .string()
       .trim()
       .min(1)
-      .max(255)
+      .max(200)
       .refine((value) => !value.includes("/") && !value.includes("\\"), {
         message: "filename must not contain path separators",
+      })
+      .refine((value) => FILENAME_SAFE.test(value), {
+        message:
+          "filename must contain only ASCII letters, digits, dot, dash, underscore or space and end with .jpg/.jpeg/.png/.webp",
       })
       .refine((value) => ALLOWED_EXTENSIONS.test(value), {
         message: "filename extension is not allowed",
@@ -163,6 +183,19 @@ export async function POST(
     })
     return
   } catch (error) {
+    // Phase 3 / step 5 hotfix — magic-bytes mismatch surfaces as
+    // ProductReviewError("image_mime_mismatch") and must be a 400, not
+    // a generic 500 (the storefront shows a user-friendly message).
+    if (
+      error instanceof ProductReviewError &&
+      error.code === "image_mime_mismatch"
+    ) {
+      res.status(400).json({
+        code: "image_mime_mismatch",
+        message: "Image content does not match the declared mime_type",
+      })
+      return
+    }
     const message =
       error instanceof Error ? error.message : "unknown_upload_error"
     logger.error(
