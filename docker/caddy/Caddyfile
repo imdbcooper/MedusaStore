@@ -97,7 +97,8 @@ media.slavx.ru {
     }
 }
 
-# --- studio.slavx.ru: Legacy path-based routing (backward compatibility) ---
+# --- studio.slavx.ru: Storefront plus API compatibility routes ---
+# Canonical manual admin/CMS URLs are admin.slavx.ru and cms.slavx.ru.
 {$DEPLOY_DOMAIN} {
     encode gzip zstd
 

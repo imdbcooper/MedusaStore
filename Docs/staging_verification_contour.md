@@ -34,8 +34,8 @@
 
 1. `https://studio.slavx.ru/healthz` отвечает `200` и `ok`.
 2. `https://studio.slavx.ru/ru/about`, `/ru/promotions`, `/ru/delivery-and-payment` отвечают `200` при включенном и заполненном Payload/content baseline.
-3. `https://studio.slavx.ru/admin/` отвечает `200`, `301`, `302` или `401`, но не connection/proxy error.
-4. `https://studio.slavx.ru/payload/api/pages?limit=1` отвечает `200`.
+3. `https://admin.slavx.ru/app` отвечает `200` как Medusa Admin UI.
+4. `https://cms.slavx.ru/api/pages` отвечает `200` как Payload API.
 5. Runtime product smoke обязателен для dynamic product route: `https://studio.slavx.ru/ru/products/<known-product-handle>` должен отвечать `200` для существующего товара; `404` допустим только если handle/region/data отсутствуют, а `500` считается regression signal.
 
 ## Минимальная конфигурация

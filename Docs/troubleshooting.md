@@ -70,7 +70,7 @@ docker exec medusastore-storefront printenv PAYLOAD_CMS_URL
 ```
 
 ```bash
-curl -sS https://studio.slavx.ru/payload/api/pages?limit=10 | head
+curl -sS https://cms.slavx.ru/api/pages | head
 ```
 
 ```bash
@@ -90,7 +90,7 @@ Common causes:
 Symptoms:
 
 - Payload admin works, but expected pages/globals are missing.
-- Production smoke `/payload/api/pages?limit=1` returns empty results unexpectedly.
+- Production smoke for `https://cms.slavx.ru/api/pages` returns empty results unexpectedly.
 
 Checks:
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-base_url="${SMOKE_BASE_URL:-http://127.0.0.1}"
-backend_url="${SMOKE_BACKEND_URL:-http://127.0.0.1/admin/}"
-payload_url="${SMOKE_PAYLOAD_URL:-http://127.0.0.1/payload/api/pages?limit=1}"
+base_url="${SMOKE_BASE_URL:-https://studio.slavx.ru}"
+backend_url="${SMOKE_BACKEND_URL:-https://admin.slavx.ru/app}"
+payload_url="${SMOKE_PAYLOAD_URL:-https://cms.slavx.ru/api/pages}"
 
 check_url() {
   local name="$1"

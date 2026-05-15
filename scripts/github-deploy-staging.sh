@@ -32,6 +32,35 @@ run_with_heartbeat() {
   return "$status"
 }
 
+env_file_value() {
+  local key="$1"
+  local value=""
+
+  value="$(grep -E "^${key}=" .env | tail -1 | cut -d= -f2- || true)"
+  value="${value%$'\r'}"
+
+  if [[ ${#value} -ge 2 && "$value" == \"*\" && "$value" == *\" ]]; then
+    value="${value:1:${#value}-2}"
+    value="${value//\\\"/\"}"
+    value="${value//\\\\/\\}"
+  elif [[ ${#value} -ge 2 && "$value" == \'*\' && "$value" == *\' ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+
+  printf '%s' "$value"
+}
+
+sibling_origin() {
+  local label="$1"
+  local deploy_domain="$2"
+
+  if [[ "$deploy_domain" == *.*.* ]]; then
+    printf 'https://%s.%s' "$label" "${deploy_domain#*.}"
+  else
+    printf 'https://%s.%s' "$label" "$deploy_domain"
+  fi
+}
+
 echo "Fetching ${branch}..."
 git fetch origin "$branch"
 git checkout "$branch"
@@ -96,27 +125,29 @@ echo "Pruning dangling Docker images..."
 docker image prune -f >/dev/null || true
 
 echo "Running production smoke checks..."
-smoke_base_url="$(grep -E '^SMOKE_BASE_URL=' .env | tail -1 | cut -d= -f2- || true)"
-smoke_backend_url="$(grep -E '^SMOKE_BACKEND_URL=' .env | tail -1 | cut -d= -f2- || true)"
-smoke_payload_url="$(grep -E '^SMOKE_PAYLOAD_URL=' .env | tail -1 | cut -d= -f2- || true)"
+smoke_base_url="$(env_file_value SMOKE_BASE_URL)"
+smoke_backend_url="$(env_file_value SMOKE_BACKEND_URL)"
+smoke_payload_url="$(env_file_value SMOKE_PAYLOAD_URL)"
 
 deploy_domain="${DEPLOY_DOMAIN:-}"
 if [[ -z "$deploy_domain" ]]; then
-  deploy_domain="$(grep -E '^DEPLOY_DOMAIN=' .env | tail -1 | cut -d= -f2- || true)"
+  deploy_domain="$(env_file_value DEPLOY_DOMAIN)"
 fi
 if [[ -z "$deploy_domain" ]]; then
   deploy_domain="studio.slavx.ru"
 fi
 public_base_url="https://${deploy_domain}"
+admin_base_url="$(sibling_origin admin "$deploy_domain")"
+payload_base_url="$(sibling_origin cms "$deploy_domain")"
 
 if [[ -z "${SMOKE_BASE_URL:-}" ]]; then
   export SMOKE_BASE_URL="${smoke_base_url:-$public_base_url}"
 fi
 if [[ -z "${SMOKE_BACKEND_URL:-}" ]]; then
-  export SMOKE_BACKEND_URL="${smoke_backend_url:-$public_base_url/admin/}"
+  export SMOKE_BACKEND_URL="${smoke_backend_url:-$admin_base_url/app}"
 fi
 if [[ -z "${SMOKE_PAYLOAD_URL:-}" ]]; then
-  export SMOKE_PAYLOAD_URL="${smoke_payload_url:-$public_base_url/payload/api/pages?limit=1}"
+  export SMOKE_PAYLOAD_URL="${smoke_payload_url:-$payload_base_url/api/pages}"
 fi
 
 bash ./scripts/staging-container-smoke.sh

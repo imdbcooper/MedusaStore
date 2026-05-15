@@ -10,7 +10,10 @@
 
 | Item | Value |
 | --- | --- |
-| Domain | `studio.slavx.ru` |
+| Storefront domain | `studio.slavx.ru` |
+| Medusa Admin domain | `admin.slavx.ru` (`/app`) |
+| Payload CMS domain | `cms.slavx.ru` (`/admin`, `/api/*`) |
+| Medusa API domain | `api.slavx.ru` |
 | SSH alias | `slavx-store` |
 | IP | `171.22.180.206` |
 | SSH user | `som` |
@@ -88,6 +91,7 @@ Canonical source of the real remote `.env`: GitHub Secrets/Variables injected du
 - Medusa publishable key for storefront build/runtime.
 - `DEPLOY_DOMAIN=studio.slavx.ru` and ACME email.
 - Docker internal URLs for server-side runtime: `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000`, `DOCKER_PAYLOAD_CMS_URL=http://payload-cms:3100`.
+- Public admin/CMS URLs: `SMOKE_BACKEND_URL=https://admin.slavx.ru/app`, `PAYLOAD_PUBLIC_SERVER_URL=https://cms.slavx.ru`, `SMOKE_PAYLOAD_URL=https://cms.slavx.ru/api/pages`.
 - Payload secrets and `DOCKER_PAYLOAD_DATABASE_URL=postgresql://...@medusa-db:5432/payload_cms?sslmode=disable`.
 - Migration/seed toggles: `RUN_MEDUSA_MIGRATIONS`, `RUN_PAYLOAD_MIGRATIONS`, `RUN_PAYLOAD_SEED`.
 - Optional smoke overrides only when default public HTTPS checks are not appropriate.
@@ -182,14 +186,14 @@ The staging smoke script checks these defaults:
 | `about` | `${SMOKE_BASE_URL}/ru/about` | `200` |
 | `promotions` | `${SMOKE_BASE_URL}/ru/promotions` | `200` |
 | `delivery` | `${SMOKE_BASE_URL}/ru/delivery-and-payment` | `200` |
-| `backend_admin` | `${SMOKE_BACKEND_URL}` | `200`, `301`, `302`, or `401` |
+| `backend_admin` | `${SMOKE_BACKEND_URL}` | `200` |
 | `payload_pages` | `${SMOKE_PAYLOAD_URL}` | `200` |
 
 Default remote values are derived as:
 
 - `SMOKE_BASE_URL=https://studio.slavx.ru`;
-- `SMOKE_BACKEND_URL=https://studio.slavx.ru/admin/`;
-- `SMOKE_PAYLOAD_URL=https://studio.slavx.ru/payload/api/pages?limit=1`.
+- `SMOKE_BACKEND_URL=https://admin.slavx.ru/app`;
+- `SMOKE_PAYLOAD_URL=https://cms.slavx.ru/api/pages`.
 
 Manual product page smoke is required after changes touching product rendering, backend URL precedence, Caddy routing, publishable key, or catalog data:
 

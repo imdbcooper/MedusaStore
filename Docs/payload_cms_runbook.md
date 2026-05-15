@@ -2,7 +2,7 @@
 
 > Status updated: `2026-05-11`.
 >
-> Current production truth: Payload CMS is a separate app and a production Docker service `payload-cms` / container `medusastore-payload` in [`docker-compose.prod.yml`](../docker-compose.prod.yml). Public access is through Caddy at `/payload/*`; server-side storefront access uses the internal Docker URL `http://payload-cms:3100` when Payload is enabled.
+> Current production truth: Payload CMS is a separate app and a production Docker service `payload-cms` / container `medusastore-payload` in [`docker-compose.prod.yml`](../docker-compose.prod.yml). Canonical public access is through Caddy at `https://cms.slavx.ru`; server-side storefront access uses the internal Docker URL `http://payload-cms:3100` when Payload is enabled.
 
 ## 1. Architecture baseline
 
@@ -24,14 +24,14 @@ Production compose includes Payload:
 
 | Service | Container | Internal URL | Public route |
 | --- | --- | --- | --- |
-| `payload-cms` | `medusastore-payload` | `http://payload-cms:3100` | `https://studio.slavx.ru/payload/*` |
+| `payload-cms` | `medusastore-payload` | `http://payload-cms:3100` | `https://cms.slavx.ru` |
 
-Caddy uses `handle_path /payload/*` in [`docker/caddy/Caddyfile`](../docker/caddy/Caddyfile), so requests under `/payload/*` are proxied to Payload with the prefix stripped.
+Caddy exposes Payload through the canonical `cms.slavx.ru` site in [`docker/caddy/Caddyfile`](../docker/caddy/Caddyfile). The storefront still talks to Payload over Docker networking; do not point production containers at public HTTPS for server-side Payload fetches.
 
 Expected production env split:
 
 - `PAYLOAD_CMS_URL=http://payload-cms:3100` / `DOCKER_PAYLOAD_CMS_URL=http://payload-cms:3100` for server-side container communication.
-- `PAYLOAD_PUBLIC_SERVER_URL=https://studio.slavx.ru/payload` for public/admin URL semantics.
+- `PAYLOAD_PUBLIC_SERVER_URL=https://cms.slavx.ru` for public/admin URL semantics.
 - `PAYLOAD_DATABASE_URL` or `DOCKER_PAYLOAD_DATABASE_URL` points to the dedicated `payload_cms` database on `medusa-db`.
 - `PAYLOAD_ENABLED=true` in storefront enables content fetching. `false` means storefront content routes should not render Payload pages.
 
@@ -116,7 +116,7 @@ Do not commit real secrets. Keep committed env examples as placeholders or safe 
 | --- | --- | --- |
 | `PAYLOAD_ENABLED` | Storefront/root env | Enables storefront content reads. `false` means content routes are disabled/fallback. |
 | `PAYLOAD_CMS_URL` | Storefront server runtime | Internal production value should be `http://payload-cms:3100`; local value is usually `http://localhost:3100`. |
-| `PAYLOAD_PUBLIC_SERVER_URL` | Payload runtime | Public/admin URL, e.g. `https://studio.slavx.ru/payload` in production. |
+| `PAYLOAD_PUBLIC_SERVER_URL` | Payload runtime | Public/admin URL, e.g. `https://cms.slavx.ru` in staging. |
 | `PAYLOAD_DATABASE_URL` | Payload runtime | Dedicated Payload database. Production should use `payload_cms`, not Medusa commerce DB. |
 | `PAYLOAD_SECRET` | Payload runtime | Required Payload secret. Never commit real production value. |
 | `PAYLOAD_CONTENT_PREVIEW_TOKEN` | Preview | Optional preview token. |
@@ -143,13 +143,13 @@ npm run payload:clean
 npm run payload:dev
 ```
 
-### 8.2. Production `/payload/api/pages?limit=1` is empty
+### 8.2. Production Payload pages API is empty
 
 Check database and seed state:
 
 ```bash
 docker exec medusastore-payload printenv PAYLOAD_DATABASE_URL
-curl -sS https://studio.slavx.ru/payload/api/pages?limit=10 | head
+curl -sS https://cms.slavx.ru/api/pages | head
 ```
 
 If DB is correct but empty, run an intentional seed by setting `RUN_PAYLOAD_SEED=true` for one deploy or by running an approved one-off seed job.
@@ -161,7 +161,7 @@ Check:
 ```bash
 docker exec medusastore-storefront printenv PAYLOAD_ENABLED
 docker exec medusastore-storefront printenv PAYLOAD_CMS_URL
-curl -sS https://studio.slavx.ru/payload/api/pages?where[slug][equals]=about | head
+curl -sS "https://cms.slavx.ru/api/pages?where[slug][equals]=about" | head
 ```
 
 Remember `/ru/contacts` is static and should be diagnosed separately from Payload-rendered pages.

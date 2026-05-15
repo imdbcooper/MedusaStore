@@ -201,21 +201,21 @@ export NEXT_PUBLIC_MEDUSA_PUBLISHABLE_API_KEY=pk_xxx_from_staging_env
 export ADMIN_BASIC="Authorization: Basic $(printf '%s:' "$MEDUSA_ADMIN_SECRET_API_KEY" | base64 -w0)"
 
 # 1. Список pending отзывов (admin queue)
-curl -sS -X GET "https://studio.slavx.ru/admin/reviews?status=pending&pageSize=5" \
+curl -sS -X GET "https://api.slavx.ru/admin/reviews?status=pending&pageSize=5" \
   -H "$ADMIN_BASIC" | jq
 
 # 2. Approve конкретного отзыва
-curl -sS -X POST "https://studio.slavx.ru/admin/reviews/<REVIEW_ID>/approve" \
+curl -sS -X POST "https://api.slavx.ru/admin/reviews/<REVIEW_ID>/approve" \
   -H "$ADMIN_BASIC" | jq
 
 # 3. Reject с причиной
-curl -sS -X POST "https://studio.slavx.ru/admin/reviews/<REVIEW_ID>/reject" \
+curl -sS -X POST "https://api.slavx.ru/admin/reviews/<REVIEW_ID>/reject" \
   -H "$ADMIN_BASIC" \
   -H "Content-Type: application/json" \
   -d '{"reason":"spam"}' | jq
 
 # 4. Delete отзыва (admin)
-curl -sS -X DELETE "https://studio.slavx.ru/admin/reviews/<REVIEW_ID>" \
+curl -sS -X DELETE "https://api.slavx.ru/admin/reviews/<REVIEW_ID>" \
   -H "$ADMIN_BASIC" | jq
 
 # 5. Public summary (rating + распределение) — без auth, только publishable key

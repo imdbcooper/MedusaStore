@@ -13,17 +13,16 @@ Internet
   v
 Caddy container: medusastore-caddy
   |
-  |-- studio.slavx.ru (legacy path-based routing, backward compat)
-  |     |-- /admin/*  ----------> medusastore-backend:9000
-  |     |-- /store/*  ----------> medusastore-backend:9000
-  |     |-- /auth/*   ----------> medusastore-backend:9000
-  |     |-- /payload/* ---------> medusastore-payload:3100
-  |     |-- /api/content/* -----> medusastore-storefront:8000
-  |     `-- all other paths ----> medusastore-storefront:8000
+  |-- studio.slavx.ru ---------> medusastore-storefront:8000 (Storefront)
+  |     |-- /store/* -----------> medusastore-backend:9000 (Store API compatibility)
+  |     |-- /auth/*  -----------> medusastore-backend:9000 (Auth API compatibility)
+  |     |-- /admin/* -----------> medusastore-backend:9000 (Admin API compatibility only)
+  |     |-- /payload/* --------> medusastore-payload:3100 (Payload compatibility only)
+  |     `-- /api/content/* ----> medusastore-storefront:8000
   |
   |-- api.slavx.ru ------------> medusastore-backend:9000 (Store + Admin + Auth API)
-  |-- admin.slavx.ru ----------> medusastore-backend:9000 (Admin Dashboard)
-  |-- cms.slavx.ru ------------> medusastore-payload:3100 (Payload CMS)
+  |-- admin.slavx.ru ----------> medusastore-backend:9000 (Medusa Admin UI at /app)
+  |-- cms.slavx.ru ------------> medusastore-payload:3100 (Payload CMS Admin/API)
   |-- media.slavx.ru ----------> S3 proxy (s3.itecocloud.online/slavx-media-ddfd0e31)
 
 medusastore-backend  ---> medusastore-db:5432
@@ -44,7 +43,7 @@ There is no Nginx layer in the current production topology. Caddy is the only re
 | `medusa-db` | `medusastore-db` | `postgres:15-alpine` | PostgreSQL data store for Medusa and Payload databases. | `pg_isready` against `${POSTGRES_DB:-medusa}`. |
 | `medusa-redis` | `medusastore-redis` | `redis:7-alpine` | Redis runtime dependency. | `redis-cli ping`. |
 | `medusa-backend` | `medusastore-backend` | built from [`docker/medusa-backend/Dockerfile`](../docker/medusa-backend/Dockerfile) | Medusa Admin/API, commerce truth, catalog/cart/checkout/orders/fulfillment/payments/notifications. | Compose healthcheck from image/runtime plus Caddy/admin smoke. |
-| `payload-cms` | `medusastore-payload` | built from [`docker/payload/Dockerfile`](../docker/payload/Dockerfile) | Payload CMS API/admin/content runtime. | Compose healthcheck and `/payload/api/pages?limit=1` smoke. |
+| `payload-cms` | `medusastore-payload` | built from [`docker/payload/Dockerfile`](../docker/payload/Dockerfile) | Payload CMS API/admin/content runtime. | Compose healthcheck and `https://cms.slavx.ru/api/pages` smoke. |
 | `storefront` | `medusastore-storefront` | built from [`docker/storefront/Dockerfile`](../docker/storefront/Dockerfile) | Next.js storefront, product pages, content page rendering, content preview/revalidate endpoints. | `GET /ru/about` inside container. |
 | `caddy` | `medusastore-caddy` | `caddy:2-alpine` | Public HTTP/HTTPS ingress, ACME certificates, route dispatch. | Public `GET /healthz` returns `ok`; Docker healthcheck uses local `http://127.0.0.1/healthz` to avoid internal HTTPS/SNI mismatch. |
 | `ai-assistant` | `medusastore-ai-assistant` | built from [`ai-assistant/Dockerfile`](../ai-assistant/Dockerfile) when profile `ai-assistant` is enabled | Optional FastAPI shopping assistant for Markdown/vector answers, Medusa live checks, feedback, and ingestion/admin endpoints. | `GET /api/v1/health` inside the container. |
@@ -58,17 +57,19 @@ All services are attached to the `medusastore` Docker bridge network in [`docker
 | Subdomain | Upstream | Runtime owner | Notes |
 | --- | --- | --- | --- |
 | `api.slavx.ru` | `medusa-backend:9000` | Medusa | Full Store/Admin/Auth API. `/healthz` returns `ok`. |
-| `admin.slavx.ru` | `medusa-backend:9000` | Medusa | Admin Dashboard (serves `/admin/*` UI and API). |
-| `cms.slavx.ru` | `payload-cms:3100` | Payload CMS | Direct Payload CMS admin/API access. |
+| `admin.slavx.ru` | `medusa-backend:9000` | Medusa | Canonical Medusa Admin UI. `/` and `/admin` redirect to `/app`; `/admin/*` remains the Medusa Admin API namespace. |
+| `cms.slavx.ru` | `payload-cms:3100` | Payload CMS | Canonical Payload CMS admin/API access (`/admin`, `/api/*`). |
 | `media.slavx.ru` | S3 proxy → `s3.itecocloud.online` | Caddy reverse proxy | Proxies to S3 bucket with caching headers. Path rewrite prepends bucket name. |
 
-### 3.2. Path-based routing on studio.slavx.ru (legacy, backward compat)
+### 3.2. Compatibility routing on studio.slavx.ru
+
+These routes exist so older storefront/browser integrations keep working, but they are not canonical manual admin/CMS URLs. Use `admin.slavx.ru` for Medusa Admin and `cms.slavx.ru` for Payload.
 
 | Public route | Upstream | Runtime owner | Notes |
 | --- | --- | --- | --- |
 | `/healthz` | Caddy local response | Caddy | Public smoke endpoint. |
-| `/payload/*` | `payload-cms:3100` | Payload CMS | `handle_path` strips `/payload` before proxying. |
-| `/admin/*` | `medusa-backend:9000` | Medusa | Admin/API routes. |
+| `/payload/*` | `payload-cms:3100` | Payload CMS | Compatibility route only; canonical public Payload URL is `https://cms.slavx.ru`. |
+| `/admin/*` | `medusa-backend:9000` | Medusa | Admin API compatibility route only; canonical Medusa Admin UI is `https://admin.slavx.ru/app`. |
 | `/store/*` | `medusa-backend:9000` | Medusa | Store API routes used by storefront/browser, including optional `/store/assistant/chat` and `/store/assistant/history` proxies when the assistant adapter is configured. |
 | `/auth/*` | `medusa-backend:9000` | Medusa | Auth routes. |
 | `/api/content/*` | `storefront:8000` | Storefront | Preview/revalidate endpoints implemented in Next.js. |
@@ -84,7 +85,7 @@ Production containers use internal Docker-network URLs for server-side calls:
 | Purpose | Production internal value | Public/browser value |
 | --- | --- | --- |
 | Medusa backend server-side storefront calls | `MEDUSA_BACKEND_URL=http://medusa-backend:9000` or `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000` | `NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://studio.slavx.ru` or proxy-relative public origin when used by browser code. |
-| Payload server-side storefront calls | `PAYLOAD_CMS_URL=http://payload-cms:3100` or `DOCKER_PAYLOAD_CMS_URL=http://payload-cms:3100` | `/payload/*` through Caddy for admin/API access. |
+| Payload server-side storefront calls | `PAYLOAD_CMS_URL=http://payload-cms:3100` or `DOCKER_PAYLOAD_CMS_URL=http://payload-cms:3100` | `https://cms.slavx.ru` for public admin/API access. |
 | Storefront base URL | `NEXT_PUBLIC_BASE_URL=https://studio.slavx.ru` in public semantics; compose build args may use the deploy domain. | `https://studio.slavx.ru`. |
 | Database | `postgresql://...@medusa-db:5432/medusa` | Not public. |
 | Payload database | `postgresql://...@medusa-db:5432/payload_cms` | Not public. |

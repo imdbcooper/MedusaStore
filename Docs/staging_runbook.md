@@ -18,6 +18,9 @@
 | Item | Value |
 | --- | --- |
 | Domain | `studio.slavx.ru` |
+| Medusa Admin domain | `admin.slavx.ru` (`/app`) |
+| Payload CMS domain | `cms.slavx.ru` (`/admin`, `/api/*`) |
+| Medusa API domain | `api.slavx.ru` |
 | SSH alias | `slavx-store` |
 | IP | `171.22.180.206` |
 | SSH user | `som` |
@@ -64,6 +67,9 @@ Use [`.env.staging.example`](../.env.staging.example) as the runtime contract. K
 - `DOCKER_NEXT_PUBLIC_BASE_URL=https://studio.slavx.ru`;
 - `NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://studio.slavx.ru` (public Caddy origin);
 - `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000` (internal Docker network);
+- `PAYLOAD_PUBLIC_SERVER_URL=https://cms.slavx.ru`;
+- `SMOKE_BACKEND_URL=https://admin.slavx.ru/app`;
+- `SMOKE_PAYLOAD_URL=https://cms.slavx.ru/api/pages`;
 - staging-only JWT/cookie/Payload secrets;
 - staging-specific CORS origins;
 - staging smoke overrides as needed.
@@ -81,11 +87,11 @@ ROOT_ENV_FILE=./staging.env npm run staging:verify
 Recommended checks:
 
 - `GET /healthz` through Caddy returns `200` / `ok`;
-- backend admin reachable (`200`, `301`, `302`, or `401`, not connection error);
+- Medusa Admin UI reachable at `https://admin.slavx.ru/app` (`200`);
 - storefront root renders;
 - `GET /ru/about` and `GET /ru/promotions` render when Payload is enabled;
 - `GET /ru/products/<known-product-handle>` returns `200` for an existing handle;
-- `GET /payload/api/pages?limit=1` returns `200` when Payload is enabled;
+- `GET https://cms.slavx.ru/api/pages` returns `200` when Payload is enabled;
 - optional `/ru/account` browser smoke;
 - optional notification smoke when admin key/data-plane path is intentionally configured.
 

@@ -108,6 +108,20 @@ function effectiveForSource(map, sources, key, fallback = "") {
   return fallback
 }
 
+function siblingOrigin(label, deployDomain) {
+  const parts = String(deployDomain || "").split(".").filter(Boolean)
+  const host = parts.length >= 3 ? `${label}.${parts.slice(1).join(".")}` : `${label}.${deployDomain}`
+  return `https://${host}`
+}
+
+function parseUrl(value) {
+  try {
+    return present(value) ? new URL(value) : null
+  } catch {
+    return null
+  }
+}
+
 function putDefault(map, key, value) {
   if (!present(get(map, key)) || isPlaceholder(get(map, key))) {
     put(map, key, value)
@@ -139,6 +153,8 @@ function deriveStaging(map, sources = new Map()) {
   const postgresPassword = effectiveForSource(map, sources, "POSTGRES_PASSWORD")
   const postgresDb = effectiveForSource(map, sources, "POSTGRES_DB", "medusa")
   const publicBaseUrl = `https://${deployDomain}`
+  const adminBaseUrl = siblingOrigin("admin", deployDomain)
+  const payloadPublicUrl = siblingOrigin("cms", deployDomain)
   const medusaDbUrl = `postgresql://${postgresUser}:${postgresPassword}@medusa-db:5432/${postgresDb}?sslmode=disable`
   const payloadDbUrl = `postgresql://${postgresUser}:${postgresPassword}@medusa-db:5432/payload_cms?sslmode=disable`
 
@@ -173,19 +189,22 @@ function deriveStaging(map, sources = new Map()) {
   putDefault(map, "NEXT_PUBLIC_BASE_URL", publicBaseUrl)
   putDefault(map, "DOCKER_NEXT_PUBLIC_BASE_URL", publicBaseUrl)
   putDefault(map, "NEXT_PUBLIC_DEFAULT_REGION", "ru")
-  putDefault(map, "STORE_CORS", publicBaseUrl)
-  putDefault(map, "ADMIN_CORS", publicBaseUrl)
-  putDefault(map, "AUTH_CORS", publicBaseUrl)
+  putDefault(map, "STORE_CORS", `${publicBaseUrl},${adminBaseUrl}`)
+  putDefault(map, "ADMIN_CORS", `${publicBaseUrl},${adminBaseUrl}`)
+  putDefault(map, "AUTH_CORS", `${publicBaseUrl},${adminBaseUrl}`)
   putDefault(map, "STOREFRONT_URL", publicBaseUrl)
   putDefault(map, "PAYLOAD_PORT", "3100")
   putDefault(map, "PAYLOAD_CMS_URL", "http://payload-cms:3100")
   putDefault(map, "DOCKER_PAYLOAD_CMS_URL", "http://payload-cms:3100")
-  putDefault(map, "PAYLOAD_PUBLIC_SERVER_URL", `${publicBaseUrl}/payload`)
+  putDefault(map, "PAYLOAD_PUBLIC_SERVER_URL", payloadPublicUrl)
   putDefault(map, "STOREFRONT_PREVIEW_URL", publicBaseUrl)
   putDefault(map, "STOREFRONT_PREVIEW_LOCALE", "ru")
   putDefault(map, "STOREFRONT_REVALIDATE_URL", "http://storefront:8000/api/content/revalidate")
-  putDefault(map, "PAYLOAD_CORS", publicBaseUrl)
-  putDefault(map, "PAYLOAD_CSRF", `${publicBaseUrl},${publicBaseUrl}/payload`)
+  putDefault(map, "PAYLOAD_CORS", `${payloadPublicUrl},${publicBaseUrl}`)
+  putDefault(map, "PAYLOAD_CSRF", `${payloadPublicUrl},${publicBaseUrl}`)
+  putDefault(map, "SMOKE_BASE_URL", publicBaseUrl)
+  putDefault(map, "SMOKE_BACKEND_URL", `${adminBaseUrl}/app`)
+  putDefault(map, "SMOKE_PAYLOAD_URL", `${payloadPublicUrl}/api/pages`)
   putDefault(map, "RUN_MEDUSA_MIGRATIONS", "true")
   putDefault(map, "RUN_PAYLOAD_MIGRATIONS", "false")
   putDefault(map, "RUN_PAYLOAD_SEED", "false")
@@ -388,6 +407,32 @@ function validate(map, mode, contract, sources = new Map()) {
     for (const [key, value] of map.entries()) {
       if (sources.get(key) !== "env" && isPlaceholder(value)) {
         errors.push(`${key} still contains a placeholder`)
+      }
+    }
+
+    const deployDomain = effective(map, "DEPLOY_DOMAIN", "studio.slavx.ru")
+    const publicBaseUrl = `https://${deployDomain}`
+    const payloadPublicUrl = parseUrl(get(map, "PAYLOAD_PUBLIC_SERVER_URL"))
+    const smokeBackendUrl = parseUrl(get(map, "SMOKE_BACKEND_URL"))
+    const smokePayloadUrl = parseUrl(get(map, "SMOKE_PAYLOAD_URL"))
+
+    if (!payloadPublicUrl) {
+      errors.push("PAYLOAD_PUBLIC_SERVER_URL must be an absolute public URL")
+    } else if (["localhost", "127.0.0.1"].includes(payloadPublicUrl.hostname)) {
+      errors.push("PAYLOAD_PUBLIC_SERVER_URL must not point at localhost in staging")
+    } else if (payloadPublicUrl.origin === publicBaseUrl && payloadPublicUrl.pathname.startsWith("/payload")) {
+      errors.push("PAYLOAD_PUBLIC_SERVER_URL must use the Payload CMS subdomain, not legacy studio /payload routing")
+    }
+
+    if (smokeBackendUrl?.origin === publicBaseUrl && smokeBackendUrl.pathname.startsWith("/admin")) {
+      errors.push("SMOKE_BACKEND_URL must target the admin subdomain, not legacy studio /admin routing")
+    }
+    if (smokePayloadUrl?.origin === publicBaseUrl && smokePayloadUrl.pathname.startsWith("/payload")) {
+      errors.push("SMOKE_PAYLOAD_URL must target the CMS subdomain, not legacy studio /payload routing")
+    }
+    for (const key of ["PAYLOAD_CORS", "PAYLOAD_CSRF"]) {
+      if (get(map, key).includes(`${publicBaseUrl}/payload`)) {
+        errors.push(`${key} must not include legacy studio /payload routing`)
       }
     }
   }
