@@ -5,6 +5,7 @@ import ProductActions from "@modules/products/components/product-actions"
 import ProductNicheSelector from "@modules/products/components/product-niche-selector"
 import ProductOfferBenefits from "@modules/products/components/product-offer-benefits"
 import ProductTabs from "@modules/products/components/product-tabs"
+import ProductJsonLd from "@modules/products/components/product-json-ld"
 import ProductReviewsSummary from "@modules/products/components/product-reviews-summary"
 import ProductReviewsList from "@modules/products/components/product-reviews-list"
 import RelatedProducts from "@modules/products/components/related-products"
@@ -61,6 +62,18 @@ const ProductTemplate = async ({
 
   return (
     <>
+      {/*
+        Phase 3 / step 1 — Schema.org `Product` JSON-LD with
+        `aggregateRating` + sample of latest approved `review[]` (plan §9
+        Phase 3 item 4). Server component, fetches via the shared
+        cache-tagged data layer (`product-rating-${id}` /
+        `product-reviews-${id}` — plan §6.6) so the structured data is
+        revalidated together with the UI when admins approve / reject a
+        review. Empty-state is owned by the component itself: a product
+        with zero approved reviews emits a valid `Product` without
+        `aggregateRating` and without `review[]`.
+      */}
+      <ProductJsonLd product={product} countryCode={countryCode} />
       <section
         className="content-container grid gap-12 py-16 lg:grid-cols-12 lg:items-start small:py-[120px]"
         data-testid="product-container"
