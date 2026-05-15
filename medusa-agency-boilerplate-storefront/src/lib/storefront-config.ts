@@ -347,6 +347,16 @@ export const storefrontConfig = {
       // in catalog/info surfaces. Order is [one, few, many] — see
       // `pluralizeRu` doc.
       reviewWordForms: ["отзыв", "отзыва", "отзывов"],
+      // Phase 3 / step 3 — homepage «Лучшие отзывы» widget. Singleton
+      // section, rendered after the existing home sections. Empty state
+      // hides the section entirely (the widget returns `null`), so
+      // `empty` here is a stored fallback in case future variants want
+      // to surface the placeholder.
+      topWidget: {
+        title: "Что говорят покупатели",
+        subtitle: "Отзывы клиентов о товарах",
+        empty: "Будьте первыми!",
+      },
     },
     freeShipping: {
       unlocked: "Бесплатная доставка доступна",

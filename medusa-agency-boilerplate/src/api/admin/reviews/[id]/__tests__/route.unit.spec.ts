@@ -204,10 +204,11 @@ describe("DELETE /admin/reviews/:id", () => {
       "product-rating-prod_42",
       "product-reviews-prod_42",
       "customer-reviews-cust_42",
+      "top-reviews",
     ])
   })
 
-  it("success with recalculated:true and anonymized customerId:null → only product tags", async () => {
+  it("success with recalculated:true and anonymized customerId:null → product tags + top-reviews", async () => {
     mockDeleteProductReviewAsAdmin.mockImplementation(async () => ({
       productId: "prod_42",
       customerId: null,
@@ -225,6 +226,7 @@ describe("DELETE /admin/reviews/:id", () => {
     expect(tagsArg).toEqual([
       "product-rating-prod_42",
       "product-reviews-prod_42",
+      "top-reviews",
     ])
   })
 

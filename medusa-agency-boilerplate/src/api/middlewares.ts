@@ -379,6 +379,22 @@ export default defineMiddlewares({
       ],
     },
     {
+      // Phase 3 / step 3 — public homepage «Top reviews» widget.
+      // Public, GET-only, no auth. `publicRateLimit` 60/min/IP guards the
+      // backend from runaway clients (plan §9 Phase 3 п.5). The widget on
+      // the storefront caches with `revalidate: 300`, so steady-state load
+      // hits cache, not this rate limit.
+      matcher: "/store/reviews/top",
+      methods: ["GET"],
+      middlewares: [
+        publicRateLimit({
+          bucketKey: "product-reviews-top-minute",
+          limit: 60,
+          windowMs: 60_000,
+        }),
+      ],
+    },
+    {
       // GET my reviews — customer-only, no rate-limit (plan §10.1).
       matcher: "/store/customers/me/reviews",
       methods: ["GET"],

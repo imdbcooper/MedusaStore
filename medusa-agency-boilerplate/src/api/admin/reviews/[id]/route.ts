@@ -136,6 +136,12 @@ export async function DELETE(
         tags.push(`customer-reviews-${result.customerId}`)
       }
 
+      // Plan §9 Phase 3 п.5 — invalidate the homepage «Лучшие отзывы»
+      // widget too. We only enter this branch when an approved row was
+      // hard-deleted (`recalculated === true`); a deleted approved review
+      // can be visible in the top widget cache and must be flushed.
+      tags.push("top-reviews")
+
       await revalidateStorefrontTags(tags, { logger })
     }
 

@@ -244,6 +244,7 @@ describe("POST /admin/reviews/:id/reject", () => {
     expect(tagsArg).toEqual([
       "product-rating-prod_42",
       "product-reviews-prod_42",
+      "top-reviews",
       "customer-reviews-cust_42",
     ])
   })
@@ -296,6 +297,7 @@ describe("POST /admin/reviews/:id/reject", () => {
     expect(tagsArg).toEqual([
       "product-rating-prod_42",
       "product-reviews-prod_42",
+      "top-reviews",
     ])
   })
 

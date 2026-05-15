@@ -10,6 +10,7 @@ import {
 } from "@lib/storefront-client-config"
 import { resolveHomeLandingSurface } from "../landing-surface-resolver"
 import ProductRail from "@modules/home/components/featured-products/product-rail"
+import TopReviewsWidget from "@modules/home/components/top-reviews-widget"
 import StorefrontActionLinkButton from "../action-link"
 import {
   StitchArchitecturePanel,
@@ -234,45 +235,64 @@ export default function HomeSectionRenderer({
   collections: HttpTypes.StoreCollection[]
   region: HttpTypes.StoreRegion
 }) {
-  return resolveHomeLandingSurface().sections.map((section, index) => {
-    const key = `${section.type}-${index}`
+  const sections = resolveHomeLandingSurface().sections.map(
+    (section, index) => {
+      const key = `${section.type}-${index}`
 
-    if (section.type === "hero") {
-      return <HeroSection key={key} section={section} />
+      if (section.type === "hero") {
+        return <HeroSection key={key} section={section} />
+      }
+
+      if (section.type === "trustGrid") {
+        return <TrustGridSection key={key} section={section} />
+      }
+
+      if (section.type === "featuredCollections") {
+        return (
+          <FeaturedCollectionsSection
+            key={key}
+            section={section}
+            collections={collections}
+            region={region}
+          />
+        )
+      }
+
+      if (section.type === "imageText") {
+        return <ImageTextSection key={key} section={section} />
+      }
+
+      if (section.type === "faq") {
+        return (
+          <div key={key}>
+            <StitchProcessTimeline />
+            <FaqSection section={section} />
+          </div>
+        )
+      }
+
+      if (section.type === "cta") {
+        return <CtaSection key={key} section={section} />
+      }
+
+      return null
     }
+  )
 
-    if (section.type === "trustGrid") {
-      return <TrustGridSection key={key} section={section} />
-    }
-
-    if (section.type === "featuredCollections") {
-      return (
-        <FeaturedCollectionsSection
-          key={key}
-          section={section}
-          collections={collections}
-          region={region}
-        />
-      )
-    }
-
-    if (section.type === "imageText") {
-      return <ImageTextSection key={key} section={section} />
-    }
-
-    if (section.type === "faq") {
-      return (
-        <div key={key}>
-          <StitchProcessTimeline />
-          <FaqSection section={section} />
-        </div>
-      )
-    }
-
-    if (section.type === "cta") {
-      return <CtaSection key={key} section={section} />
-    }
-
-    return null
-  })
+  return (
+    <>
+      {sections}
+      {/*
+        Phase 3 / step 3 — homepage «Лучшие отзывы» widget. Rendered as a
+        sibling server component after the configured landing sections.
+        Next.js parallelises sibling server fetches automatically, so the
+        widget's own server fetch (`getTopApprovedProductReviews`) runs in
+        parallel with `listProducts`/`getProductRatingSummariesByIds` from
+        the rails above and does not block the page (plan §9 Phase 3 п.5
+        / 3.7). When there are no qualifying reviews the component returns
+        `null` and the section is hidden completely.
+      */}
+      <TopReviewsWidget />
+    </>
+  )
 }

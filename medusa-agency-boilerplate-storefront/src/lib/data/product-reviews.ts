@@ -73,6 +73,13 @@ const RATING_CACHE_TAG = (productId: string) => `product-rating-${productId}`
 const REVIEWS_CACHE_TAG = (productId: string) => `product-reviews-${productId}`
 const CUSTOMER_REVIEWS_CACHE_TAG = (customerId: string) =>
   `customer-reviews-${customerId}`
+/**
+ * Phase 3 / step 3 — homepage «Лучшие отзывы» widget. The widget shares a
+ * single, catalog-wide cache, so the tag is a singleton (no per-id suffix).
+ * Backend admin routes invalidate it on every approve/reject of an approved
+ * row and on admin DELETE of a previously-approved row (plan §9 Phase 3 п.5).
+ */
+const TOP_REVIEWS_CACHE_TAG = "top-reviews"
 
 /**
  * Fetch the public rating summary for a product. Returns deterministic empty
@@ -269,6 +276,87 @@ export async function listApprovedProductReviews(input: {
     )
   } catch {
     return empty
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 / step 3 — homepage «Лучшие отзывы» widget data layer
+// ---------------------------------------------------------------------------
+
+export type GetTopApprovedProductReviewsArgs = {
+  /** Default 8 — fits a 4-col, 2-row grid on desktop. Backend caps at 50. */
+  limit?: number
+  /** Default 4 — only ★4 and above qualify as «top». Backend caps 1..5. */
+  minRating?: number
+  /**
+   * Optional time window in days. Omitted by default so older approved
+   * reviews still surface on a low-traffic catalog. `0` is forwarded
+   * verbatim to disable the date filter on the backend.
+   */
+  daysWindow?: number
+}
+
+/**
+ * Fetch the top approved reviews across the whole catalog. Used by the
+ * homepage `<TopReviewsWidget>` (plan §9 Phase 3 п.5).
+ *
+ * Cache contract:
+ *   - tag `top-reviews` (singleton, catalog-wide). Admin approve/reject/delete
+ *     of an approved row triggers `revalidateStorefrontTags(["top-reviews"])`
+ *     on the backend.
+ *   - `revalidate: 300` (5 minutes) as a safety net so the widget refreshes
+ *     even when the webhook misses (env not configured, transport error).
+ *
+ * Defensive on transport failure — returns an empty array so the widget can
+ * decide to render `null` instead of breaking the homepage.
+ */
+export async function getTopApprovedProductReviews(
+  args: GetTopApprovedProductReviewsArgs = {}
+): Promise<ProductReviewItem[]> {
+  const limit =
+    args.limit && args.limit > 0 ? Math.min(50, Math.floor(args.limit)) : 8
+  const minRating =
+    args.minRating !== undefined &&
+    Number.isFinite(args.minRating) &&
+    args.minRating >= 1 &&
+    args.minRating <= 5
+      ? Math.floor(args.minRating)
+      : 4
+
+  const query: Record<string, string | number | boolean> = {
+    limit,
+    min_rating: minRating,
+  }
+  if (
+    args.daysWindow !== undefined &&
+    Number.isFinite(args.daysWindow) &&
+    args.daysWindow >= 0 &&
+    args.daysWindow <= 365
+  ) {
+    query.days_window = Math.floor(args.daysWindow)
+  }
+
+  try {
+    const response = await sdk.client.fetch<{ items: ProductReviewItem[] }>(
+      `/store/reviews/top`,
+      {
+        method: "GET",
+        query,
+        next: {
+          tags: [TOP_REVIEWS_CACHE_TAG],
+          revalidate: 300,
+        },
+        cache: "force-cache",
+      }
+    )
+    return Array.isArray(response?.items) ? response.items : []
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error(
+      "[product-reviews] getTopApprovedProductReviews failed",
+      error instanceof Error ? error.message : error
+    )
+    return []
   }
 }
 

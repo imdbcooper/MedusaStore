@@ -181,10 +181,11 @@ describe("POST /admin/reviews/:id/approve", () => {
       "product-rating-prod_42",
       "product-reviews-prod_42",
       "customer-reviews-cust_42",
+      "top-reviews",
     ])
   })
 
-  it("recalculated:true with anonymized customer_id:null → only product tags, no customer-reviews tag", async () => {
+  it("recalculated:true with anonymized customer_id:null → only product tags + top-reviews, no customer-reviews tag", async () => {
     mockApproveProductReview.mockImplementation(async () => ({
       review: {
         id: "pr_1",
@@ -207,6 +208,7 @@ describe("POST /admin/reviews/:id/approve", () => {
     expect(tagsArg).toEqual([
       "product-rating-prod_42",
       "product-reviews-prod_42",
+      "top-reviews",
     ])
     expect(tagsArg).not.toContain("customer-reviews-null")
   })

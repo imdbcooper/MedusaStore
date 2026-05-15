@@ -1313,6 +1313,87 @@ export async function listApprovedProductReviews({
   }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 3 / step 3 — top approved reviews across the whole catalog (homepage
+// «Лучшие отзывы» widget). Aggregation is over all products; no `product_id`
+// filter. The query is intentionally simple: full scan + sort under the tiny
+// approved-review volume of staging/early-prod (plan §9 Phase 3 п.5,
+// «никаких новых индексов на этом шаге»).
+// ---------------------------------------------------------------------------
+
+export interface ListTopApprovedProductReviewsArgs {
+  pgConnection: PgConnectionLike
+  /** 1..50, default 10. Out-of-range values are clamped, not rejected. */
+  limit?: number
+  /** 1..5, default 4 — only ★4 and above qualify as «top». */
+  minRating?: number
+  /**
+   * Window in days to look back from `now()`. Default 90.
+   * `0` / `undefined` / negative → no date filter (i.e. lifetime top).
+   */
+  daysWindow?: number
+}
+
+/**
+ * List the top approved product reviews across the whole catalog. Used by the
+ * storefront homepage «Что говорят покупатели» widget (plan §9 Phase 3 п.5).
+ *
+ * Sorting is `helpful_count DESC, rating DESC, created_at DESC` — social
+ * proof first (most-helpful wins), then rating, then recency as a stable
+ * tie-breaker. The contract intentionally mirrors the per-product `helpful`
+ * sort but adds `rating DESC` as a secondary key so a 5-star review with the
+ * same `helpful_count` outranks a 4-star one.
+ *
+ * Filtering uses the same `($N::int IS NULL OR ...)` guard pattern as
+ * [`listApprovedProductReviews`](medusa-agency-boilerplate/src/modules/product-reviews.ts:1232)
+ * so the SQL plan stays stable when filters are off.
+ */
+export async function listTopApprovedProductReviewsAcrossCatalog({
+  pgConnection,
+  limit,
+  minRating,
+  daysWindow,
+}: ListTopApprovedProductReviewsArgs): Promise<ProductReviewRow[]> {
+  await ensureProductReviewsTables(pgConnection)
+
+  const safeLimit = Math.min(
+    50,
+    Math.max(1, asInteger(limit ?? 10, 10) || 10)
+  )
+
+  const minRatingParam = normalizeRatingBound(minRating ?? 4) ?? 4
+  const daysWindowRaw = asInteger(daysWindow ?? 90, 90)
+  // 0 (or any non-positive) disables the date filter — passed as NULL.
+  const daysWindowParam = daysWindowRaw > 0 ? daysWindowRaw : null
+
+  const result = await pgConnection.raw<Record<string, unknown>>(
+    `
+      select id, product_id, customer_id, customer_name, rating, title, text,
+             pros, cons, status, moderated_by, moderated_at, rejection_reason,
+             verified_purchase, helpful_count, images, order_id,
+             created_at, updated_at
+      from product_review
+      where status = 'approved'
+        and (?::int is null or rating >= ?::int)
+        and (
+          ?::int is null
+          or created_at >= now() - (?::int || ' days')::interval
+        )
+      order by helpful_count desc, rating desc, created_at desc, id desc
+      limit ?
+    `,
+    [
+      minRatingParam,
+      minRatingParam,
+      daysWindowParam,
+      daysWindowParam,
+      safeLimit,
+    ]
+  )
+  const rows = getRawRows<Record<string, unknown>>(result)
+  return rows.map((row) => normalizeReviewRow(row))
+}
+
 export async function getProductRatingSummary({
   pgConnection,
   productId,
