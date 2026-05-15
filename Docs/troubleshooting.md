@@ -127,7 +127,8 @@ Implementation fact:
 Production expectation:
 
 - `MEDUSA_BACKEND_URL` / `DOCKER_MEDUSA_BACKEND_URL`: `http://medusa-backend:9000`.
-- `NEXT_PUBLIC_MEDUSA_BACKEND_URL`: public/proxy origin, usually `https://studio.slavx.ru`, for browser-visible usage.
+- `NEXT_PUBLIC_MEDUSA_BACKEND_URL`: public/proxy origin, usually `https://studio.slavx.ru`, for storefront browser-visible usage.
+- `MEDUSA_ADMIN_BACKEND_URL`: `/` for the Medusa Admin browser bundle, so Admin auth/API calls stay same-origin behind `https://admin.slavx.ru` and never call retired domains or public `:9000` URLs.
 
 Checks:
 
@@ -145,8 +146,9 @@ docker exec medusastore-storefront wget -qO- http://medusa-backend:9000/health |
 
 Fix direction:
 
-- Set `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000` in remote `.env`.
-- Rebuild/restart storefront because build args also receive backend/public URL values.
+- Set `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000` through GitHub Secrets/Variables and the `Deploy Staging` workflow-rendered `.env`.
+- Rebuild/restart storefront through `Deploy Staging` because build args also receive backend/public URL values.
+- If Medusa Admin login requests a wrong absolute origin, set `MEDUSA_ADMIN_BACKEND_URL=/` through GitHub Secrets/Variables and redeploy through `Deploy Staging`; verify the generated Admin asset no longer contains the bad origin.
 
 ## 5. Publishable key missing or placeholder
 

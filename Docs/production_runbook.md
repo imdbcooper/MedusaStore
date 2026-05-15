@@ -87,10 +87,11 @@ Canonical source of the real remote `.env`: GitHub Secrets/Variables injected du
 
 - PostgreSQL identity/password and database names.
 - JWT/cookie secrets.
-- CORS/auth origins for `https://studio.slavx.ru`.
+- CORS/auth origins for `https://studio.slavx.ru` and `https://admin.slavx.ru`.
 - Medusa publishable key for storefront build/runtime.
 - `DEPLOY_DOMAIN=studio.slavx.ru` and ACME email.
 - Docker internal URLs for server-side runtime: `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000`, `DOCKER_PAYLOAD_CMS_URL=http://payload-cms:3100`.
+- Medusa Admin browser API base: `MEDUSA_ADMIN_BACKEND_URL=/` so the Admin JS bundle stays same-origin behind `https://admin.slavx.ru` and never bakes retired domains or public `:9000` URLs.
 - Public admin/CMS URLs: `SMOKE_BACKEND_URL=https://admin.slavx.ru/app`, `PAYLOAD_PUBLIC_SERVER_URL=https://cms.slavx.ru`, `SMOKE_PAYLOAD_URL=https://cms.slavx.ru/api/pages`.
 - Payload secrets and `DOCKER_PAYLOAD_DATABASE_URL=postgresql://...@medusa-db:5432/payload_cms?sslmode=disable`.
 - Migration/seed toggles: `RUN_MEDUSA_MIGRATIONS`, `RUN_PAYLOAD_MIGRATIONS`, `RUN_PAYLOAD_SEED`.

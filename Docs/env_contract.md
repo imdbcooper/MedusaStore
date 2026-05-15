@@ -253,6 +253,7 @@ Customers, созданные до Phase 4 (без `customer.metadata.marketing.
 - `MARKETING_DEFAULT_COUNTRY_CODE`
 - `NOTIFICATION_DEFAULT_COUNTRY_CODE`
 - `MEDUSA_BACKEND_URL`
+- `MEDUSA_ADMIN_BACKEND_URL`
 - `NOTIFICATION_SMOKE_TO`
 - `NOTIFICATION_SMOKE_SUBJECT`
 - `NOTIFICATION_SMOKE_MESSAGE`
@@ -568,6 +569,7 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - publishable key хранится здесь и остается единственным storefront env, который preflight действительно hard-require'ит через [`check-env-variables.js`](../medusa-agency-boilerplate-storefront/check-env-variables.js:3);
 - `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_BASE_URL` и `NEXT_PUBLIC_DEFAULT_REGION` — truthful optional storefront runtime inputs для tranche 1 baseline: [`env.ts`](../medusa-agency-boilerplate-storefront/src/lib/env.ts:7) подставляет safe fallback'и, но backend URL precedence строго такая: `MEDUSA_BACKEND_URL` → `NEXT_PUBLIC_MEDUSA_BACKEND_URL` → `http://localhost:${NEXT_PUBLIC_MEDUSA_BACKEND_PORT || MEDUSA_BACKEND_PORT || 9000}`;
 - в production container `MEDUSA_BACKEND_URL`/`DOCKER_MEDUSA_BACKEND_URL` должен указывать на Docker-network backend `http://medusa-backend:9000`, а `NEXT_PUBLIC_MEDUSA_BACKEND_URL` может указывать на public Caddy origin `https://studio.slavx.ru`;
+- `MEDUSA_ADMIN_BACKEND_URL` управляет `admin.backendUrl` в Medusa Admin browser bundle через [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts:149); staging значение должно быть `/`, чтобы Admin работал same-origin за `https://admin.slavx.ru` и не вшивал retired/public `:9000` origins в JS;
 - root-level скрипты могут подставлять `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_MEDUSA_BACKEND_URL` и `NEXT_PUBLIC_BASE_URL` сверху, если запуск идет через корневые команды;
 - `NEXT_PUBLIC_STOREFRONT_PRESET` остается optional public config: при отсутствии или невалидном значении storefront безопасно откатывается к preset `atelier`, а sanctioned client-specific divergence должна оформляться через preset/config layer, typed landing-surface registry, adjacent product surfaces, typed listing/card contract, typed global shell contract [`StorefrontShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:74), typed catalog shell contract [`StorefrontCatalogShellConfig`](../medusa-agency-boilerplate-storefront/src/lib/storefront-client-config.ts:298) и sanctioned resolver boundaries, а не через форк shared templates;
 - `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` намеренно остается placeholder-only в template baseline и должен materialize'иться только успешным [`bootstrap.sh`](../scripts/bootstrap.sh:1) после seed, а не ручным копированием из старого клиента;

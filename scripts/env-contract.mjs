@@ -184,6 +184,7 @@ function deriveStaging(map, sources = new Map()) {
   putDefault(map, "REDIS_URL", "redis://medusa-redis:6379")
   putDefault(map, "MEDUSA_BACKEND_URL", "http://medusa-backend:9000")
   putDefault(map, "DOCKER_MEDUSA_BACKEND_URL", "http://medusa-backend:9000")
+  putDefault(map, "MEDUSA_ADMIN_BACKEND_URL", "/")
   putDefault(map, "NEXT_PUBLIC_MEDUSA_BACKEND_URL", publicBaseUrl)
   putDefault(map, "DOCKER_NEXT_PUBLIC_MEDUSA_BACKEND_URL", publicBaseUrl)
   putDefault(map, "NEXT_PUBLIC_BASE_URL", publicBaseUrl)

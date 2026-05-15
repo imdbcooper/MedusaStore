@@ -77,7 +77,7 @@ NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT=/store/assistant/chat
 
 If the widget uses existing Medusa URL resolution, no new token is needed in storefront env. The widget can build the endpoint from:
 
-- `NEXT_PUBLIC_MEDUSA_BACKEND_URL` for browser calls, for example `https://slavx.mooo.com` in production;
+- `NEXT_PUBLIC_MEDUSA_BACKEND_URL` for browser calls, for example `https://studio.slavx.ru` in staging;
 - or a relative same-origin `/store/assistant/chat` path when served through the same public Caddy origin.
 
 Recommended production browser endpoints:
@@ -87,7 +87,7 @@ Recommended production browser endpoints:
 /store/assistant/history
 ```
 
-because `https://slavx.mooo.com/store/*` is already routed to Medusa backend by Caddy.
+because `https://studio.slavx.ru/store/*` is already routed to Medusa backend by Caddy.
 
 Server-only assistant secrets must stay outside storefront public env:
 
@@ -175,8 +175,8 @@ Browser smoke checklist:
 Production smoke after approved deploy:
 
 ```bash
-curl -I https://slavx.mooo.com/healthz
-curl -fsS -X POST https://slavx.mooo.com/store/assistant/chat \
+curl -I https://studio.slavx.ru/healthz
+curl -fsS -X POST https://studio.slavx.ru/store/assistant/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Помоги выбрать товар","store_id":"default","locale":"ru","mode":"auto"}'
 ```
@@ -184,9 +184,9 @@ curl -fsS -X POST https://slavx.mooo.com/store/assistant/chat \
 Then run a manual browser smoke on:
 
 ```text
-https://slavx.mooo.com/ru
-https://slavx.mooo.com/ru/products/<real-product-handle>
-https://slavx.mooo.com/ru/cart
+https://studio.slavx.ru/ru
+https://studio.slavx.ru/ru/products/<real-product-handle>
+https://studio.slavx.ru/ru/cart
 ```
 
 ## Risks and assumptions

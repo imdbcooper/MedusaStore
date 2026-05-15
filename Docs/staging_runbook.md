@@ -65,8 +65,9 @@ Use [`.env.staging.example`](../.env.staging.example) as the runtime contract. K
 - `DEPLOY_DOMAIN=studio.slavx.ru`;
 - `NEXT_PUBLIC_BASE_URL=https://studio.slavx.ru`;
 - `DOCKER_NEXT_PUBLIC_BASE_URL=https://studio.slavx.ru`;
-- `NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://studio.slavx.ru` (public Caddy origin);
+- `NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://studio.slavx.ru` (public Caddy origin for storefront/browser-safe use);
 - `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000` (internal Docker network);
+- `MEDUSA_ADMIN_BACKEND_URL=/` (same-origin Medusa Admin browser API base behind `https://admin.slavx.ru`; never a retired domain or `:9000` public URL);
 - `PAYLOAD_PUBLIC_SERVER_URL=https://cms.slavx.ru`;
 - `SMOKE_BACKEND_URL=https://admin.slavx.ru/app`;
 - `SMOKE_PAYLOAD_URL=https://cms.slavx.ru/api/pages`;

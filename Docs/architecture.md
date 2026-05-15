@@ -85,6 +85,7 @@ Production containers use internal Docker-network URLs for server-side calls:
 | Purpose | Production internal value | Public/browser value |
 | --- | --- | --- |
 | Medusa backend server-side storefront calls | `MEDUSA_BACKEND_URL=http://medusa-backend:9000` or `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000` | `NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://studio.slavx.ru` or proxy-relative public origin when used by browser code. |
+| Medusa Admin browser bundle API base | Not used for server-to-server calls; set explicitly as `MEDUSA_ADMIN_BACKEND_URL=/` during backend build. | Same-origin relative `/` behind `https://admin.slavx.ru`, so Admin auth/API calls do not bake Docker-network, port `9000`, or retired domains into browser JS. |
 | Payload server-side storefront calls | `PAYLOAD_CMS_URL=http://payload-cms:3100` or `DOCKER_PAYLOAD_CMS_URL=http://payload-cms:3100` | `https://cms.slavx.ru` for public admin/API access. |
 | Storefront base URL | `NEXT_PUBLIC_BASE_URL=https://studio.slavx.ru` in public semantics; compose build args may use the deploy domain. | `https://studio.slavx.ru`. |
 | Database | `postgresql://...@medusa-db:5432/medusa` | Not public. |
@@ -92,7 +93,7 @@ Production containers use internal Docker-network URLs for server-side calls:
 | Redis | `redis://medusa-redis:6379` | Not public. |
 | AI Assistant | `AI_ASSISTANT_BASE_URL=http://ai-assistant:8000/api/v1` from Medusa backend | Browser uses `/store/assistant/chat`; `AI_ASSISTANT_SERVER_TOKEN` must never be public. |
 
-Storefront server runtime explicitly prefers `MEDUSA_BACKEND_URL` before `NEXT_PUBLIC_MEDUSA_BACKEND_URL` in [`env.ts`](../medusa-agency-boilerplate-storefront/src/lib/env.ts). This is important in production: server-side rendering should call `http://medusa-backend:9000`, not the public HTTPS URL, while browser requests can go through Caddy.
+Storefront server runtime explicitly prefers `MEDUSA_BACKEND_URL` before `NEXT_PUBLIC_MEDUSA_BACKEND_URL` in [`env.ts`](../medusa-agency-boilerplate-storefront/src/lib/env.ts). This is important in production: server-side rendering should call `http://medusa-backend:9000`, not the public HTTPS URL, while browser requests can go through Caddy. Medusa Admin is separate: [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts) sets `admin.backendUrl` from `MEDUSA_ADMIN_BACKEND_URL`, defaulting to `/`, so the browser Admin bundle remains same-origin on `admin.slavx.ru`.
 
 ## 5. Runtime responsibilities
 
