@@ -121,6 +121,13 @@ services:
       PAYLOAD_CMS_URL: ${PAYLOAD_CMS_URL:-http://payload-cms:3100}
       RUN_PAYLOAD_MIGRATIONS: ${RUN_PAYLOAD_MIGRATIONS:-false}
       RUN_PAYLOAD_SEED: ${RUN_PAYLOAD_SEED:-false}
+      # Inside the docker network `localhost` resolves to the payload-cms
+      # container itself (port 3100), not the medusa-backend service. Override
+      # MEDUSA_BACKEND_URL to the service-DNS name so the Phase 2 dashboard
+      # widget «Отзывы на модерации» can reach the admin API. Same pattern as
+      # the medusa-backend / storefront / ai-assistant blocks above.
+      MEDUSA_BACKEND_URL: ${DOCKER_MEDUSA_BACKEND_URL:-http://medusa-backend:9000}
+      MEDUSA_ADMIN_SECRET_API_KEY: ${MEDUSA_ADMIN_SECRET_API_KEY}
     depends_on:
       medusa-db:
         condition: service_healthy

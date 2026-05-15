@@ -50,7 +50,9 @@ export default async function ProductReviewsModerationDashboardWidget(
         ? moderationCopy.dashboardWidget.errors.configMissing
         : result.error === 'unauthorized' || result.status === 401
           ? moderationCopy.dashboardWidget.errors.unauthorized
-          : moderationCopy.dashboardWidget.errors.generic
+          : result.error === 'transport_error'
+            ? moderationCopy.dashboardWidget.errors.transport
+            : moderationCopy.dashboardWidget.errors.generic
 
     return (
       <section style={cardStyle} aria-labelledby="prw-dashboard-widget-title">

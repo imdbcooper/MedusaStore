@@ -209,6 +209,7 @@ export const moderationCopy = {
     errors: {
       configMissing:
         'Не настроено: MEDUSA_BACKEND_URL / MEDUSA_ADMIN_SECRET_API_KEY',
+      transport: 'Не удалось связаться с Medusa',
       unauthorized: 'Нет доступа. Проверьте роль admin у API-ключа.',
       generic: 'Не удалось загрузить счётчик',
     },
