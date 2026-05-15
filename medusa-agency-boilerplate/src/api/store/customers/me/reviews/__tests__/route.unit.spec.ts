@@ -97,14 +97,38 @@ afterEach(() => {
 })
 
 describe("GET /store/customers/me/reviews", () => {
-  it("delegates to listProductReviewsForCustomer and returns its result", async () => {
-    const result = {
-      items: [{ id: "pr_1", product_id: "prod_1", status: "pending" }],
+  it("delegates to listProductReviewsForCustomer and returns whitelisted MINE items", async () => {
+    // Hotfix Phase 3 P0: customer-only items are mapped through
+    // `toMineReview` — `status` and `rejection_reason` ARE kept (the
+    // `/account/reviews` UI needs them), but `customer_id` / `order_id` /
+    // `moderated_by` / `moderated_at` are stripped.
+    const fullRow = {
+      id: "pr_1",
+      product_id: "prod_1",
+      customer_id: "cus_42",
+      order_id: "ord_1",
+      rating: 4,
+      title: "Хорошо",
+      text: "x".repeat(50),
+      pros: null,
+      cons: null,
+      status: "rejected",
+      moderated_by: "admin_1",
+      moderated_at: "2026-01-01T00:00:00.000Z",
+      rejection_reason: "ненормативная лексика",
+      verified_purchase: true,
+      helpful_count: 0,
+      images: null,
+      customer_name: "Иван И.",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    }
+    mockListProductReviewsForCustomer.mockImplementation(async () => ({
+      items: [fullRow],
       total: 1,
       page: 1,
       pageSize: 20,
-    }
-    mockListProductReviewsForCustomer.mockImplementation(async () => result)
+    }))
 
     const { res, recorder } = buildResponse()
     const req = buildReq({ customerId: "cus_42" })
@@ -112,7 +136,24 @@ describe("GET /store/customers/me/reviews", () => {
     await GET(req, res)
 
     expect(recorder.status).toBe(200)
-    expect(recorder.body).toEqual(result)
+    expect(recorder.body.total).toBe(1)
+    expect(Array.isArray(recorder.body.items)).toBe(true)
+    expect(recorder.body.items).toHaveLength(1)
+
+    const item = recorder.body.items[0]
+    // Mine-only fields kept:
+    expect(item.id).toBe("pr_1")
+    expect(item.product_id).toBe("prod_1")
+    expect(item.customer_name).toBe("Иван И.")
+    expect(item.status).toBe("rejected")
+    expect(item.rejection_reason).toBe("ненормативная лексика")
+    expect(item.rating).toBe(4)
+    expect(item.verified_purchase).toBe(true)
+    // Stripped fields (Phase 3 P0):
+    expect(item).not.toHaveProperty("customer_id")
+    expect(item).not.toHaveProperty("order_id")
+    expect(item).not.toHaveProperty("moderated_by")
+    expect(item).not.toHaveProperty("moderated_at")
 
     const arg = mockListProductReviewsForCustomer.mock.calls[0][0] as {
       customerId: string
@@ -122,6 +163,48 @@ describe("GET /store/customers/me/reviews", () => {
     expect(arg.customerId).toBe("cus_42")
     expect(arg.page).toBe(1)
     expect(arg.pageSize).toBe(20)
+  })
+
+  it("response items have status + rejection_reason but NO customer_id / order_id", async () => {
+    const fullRow = {
+      id: "pr_2",
+      product_id: "prod_2",
+      customer_id: "cus_42",
+      order_id: null,
+      rating: 5,
+      title: null,
+      text: "x".repeat(50),
+      pros: null,
+      cons: null,
+      status: "approved",
+      moderated_by: "admin_1",
+      moderated_at: "2026-01-01T00:00:00.000Z",
+      rejection_reason: null,
+      verified_purchase: true,
+      helpful_count: 0,
+      images: null,
+      customer_name: "Иван И.",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    }
+    mockListProductReviewsForCustomer.mockImplementation(async () => ({
+      items: [fullRow],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    }))
+
+    const { res, recorder } = buildResponse()
+    const req = buildReq({ customerId: "cus_42" })
+
+    await GET(req, res)
+
+    expect(recorder.status).toBe(200)
+    const item = recorder.body.items[0]
+    expect(item).toHaveProperty("status", "approved")
+    expect(item).toHaveProperty("rejection_reason", null)
+    expect(item).not.toHaveProperty("customer_id")
+    expect(item).not.toHaveProperty("order_id")
   })
 
   it("missing auth (empty actor_id) → 401 customer_auth_required", async () => {

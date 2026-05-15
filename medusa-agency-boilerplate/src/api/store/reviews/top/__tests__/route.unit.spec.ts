@@ -279,25 +279,56 @@ describe("GET /store/reviews/top", () => {
     expect(recorder.body).toMatchObject({ code: "invalid_query" })
   })
 
-  it("returns module result as `{items: [...]}`", async () => {
-    const items = [
+  it("returns whitelisted public items (no customer_id / order_id) — Phase 3 P0", async () => {
+    // The module returns the FULL row shape; after `toPublicReview` the
+    // response items must NOT contain `customer_id` / `order_id` /
+    // moderation metadata even though the underlying rows have them.
+    const fullRows = [
       {
         id: "pr_1",
         product_id: "prod_1",
+        customer_id: "cus_1",
+        order_id: "ord_1",
         rating: 5,
-        helpful_count: 9,
+        title: null,
         text: "amazing",
+        pros: null,
+        cons: null,
+        status: "approved",
+        moderated_by: "admin_1",
+        moderated_at: "2026-01-01T00:00:00.000Z",
+        rejection_reason: null,
+        verified_purchase: true,
+        helpful_count: 9,
+        images: null,
+        customer_name: "Иван И.",
+        created_at: "2026-01-02T00:00:00.000Z",
+        updated_at: "2026-01-02T00:00:00.000Z",
       },
       {
         id: "pr_2",
         product_id: "prod_2",
+        customer_id: "cus_2",
+        order_id: null,
         rating: 4,
-        helpful_count: 5,
+        title: null,
         text: "great",
+        pros: null,
+        cons: null,
+        status: "approved",
+        moderated_by: null,
+        moderated_at: null,
+        rejection_reason: null,
+        verified_purchase: false,
+        helpful_count: 5,
+        images: null,
+        customer_name: "Анна А.",
+        created_at: "2026-01-03T00:00:00.000Z",
+        updated_at: "2026-01-03T00:00:00.000Z",
       },
     ]
     mockListTopApprovedProductReviewsAcrossCatalog.mockImplementation(
-      async () => items
+      async () => fullRows
     )
 
     const { res, recorder } = buildResponse()
@@ -306,7 +337,21 @@ describe("GET /store/reviews/top", () => {
     await GET(req, res)
 
     expect(recorder.status).toBe(200)
-    expect(recorder.body).toEqual({ items })
+    expect(Array.isArray(recorder.body.items)).toBe(true)
+    expect(recorder.body.items).toHaveLength(2)
+
+    for (const item of recorder.body.items) {
+      expect(item).not.toHaveProperty("customer_id")
+      expect(item).not.toHaveProperty("order_id")
+      expect(item).not.toHaveProperty("status")
+      expect(item).not.toHaveProperty("moderated_by")
+      expect(item).not.toHaveProperty("moderated_at")
+      expect(item).not.toHaveProperty("rejection_reason")
+    }
+    expect(recorder.body.items[0].id).toBe("pr_1")
+    expect(recorder.body.items[0].customer_name).toBe("Иван И.")
+    expect(recorder.body.items[0].helpful_count).toBe(9)
+    expect(recorder.body.items[1].id).toBe("pr_2")
   })
 
   it("module throw → 500 internal_error (caught)", async () => {

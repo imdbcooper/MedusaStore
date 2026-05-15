@@ -4,6 +4,7 @@ import { z } from "@medusajs/framework/zod"
 import {
   getProductReviewsPgConnection,
   listTopApprovedProductReviewsAcrossCatalog,
+  toPublicReview,
 } from "../../../../modules/product-reviews"
 
 /**
@@ -57,7 +58,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       daysWindow: days_window,
     })
 
-    res.status(200).json({ items })
+    // Hotfix Phase 3 P0: this endpoint is unauthenticated and ships internal
+    // ids (`customer_id` / `order_id`) and moderation metadata otherwise.
+    // Whitelist through `toPublicReview` before returning to the caller.
+    res.status(200).json({ items: items.map((row) => toPublicReview(row)) })
     return
   } catch (error) {
     logger.error(

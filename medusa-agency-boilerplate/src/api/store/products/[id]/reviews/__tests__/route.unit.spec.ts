@@ -172,9 +172,22 @@ beforeEach(() => {
     id: "pr_1",
     product_id: "prod_1",
     customer_id: "cus_1",
+    order_id: "ord_1",
     status: "pending",
+    moderated_by: null,
+    moderated_at: null,
+    rejection_reason: null,
     rating: 5,
+    title: null,
     text: "x".repeat(50),
+    pros: null,
+    cons: null,
+    verified_purchase: false,
+    helpful_count: 0,
+    images: null,
+    customer_name: "Иван И.",
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
   }))
   mockListApprovedProductReviews.mockReset()
   mockListApprovedProductReviews.mockImplementation(async () => ({
@@ -322,6 +335,32 @@ describe("StoreCreateProductReviewSchema (strict)", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /store/products/:id/reviews", () => {
+  it("response.review whitelisted: no customer_id / order_id / moderation metadata (Phase 3 P0)", async () => {
+    // The mocked module returns the full row (set up in beforeEach); after
+    // `toPublicReview` the response.review must have only the public shape.
+    const { res, recorder } = buildResponse()
+    const req = buildReq({
+      productId: "prod_1",
+      customerId: "cus_1",
+      validatedBody: { rating: 5, text: "x".repeat(50) },
+    })
+
+    await POST(req, res)
+
+    expect(recorder.status).toBe(201)
+    expect(recorder.body).toHaveProperty("review")
+    const review = recorder.body.review
+    expect(review.id).toBe("pr_1")
+    expect(review.product_id).toBe("prod_1")
+    expect(review.customer_name).toBe("Иван И.")
+    expect(review).not.toHaveProperty("customer_id")
+    expect(review).not.toHaveProperty("order_id")
+    expect(review).not.toHaveProperty("status")
+    expect(review).not.toHaveProperty("moderated_by")
+    expect(review).not.toHaveProperty("moderated_at")
+    expect(review).not.toHaveProperty("rejection_reason")
+  })
+
   it("honeypot branch: returns 201 without calling createProductReview", async () => {
     const { res, recorder } = buildResponse()
     const req = buildReq({
@@ -541,22 +580,37 @@ describe("POST /store/products/:id/reviews", () => {
 // ---------------------------------------------------------------------------
 
 describe("GET /store/products/:id/reviews", () => {
-  it("delegates to listApprovedProductReviews and returns its result", async () => {
-    const result = {
-      items: [
-        {
-          id: "pr_1",
-          product_id: "prod_1",
-          customer_id: "cus_1",
-          rating: 5,
-          text: "great",
-        },
-      ],
+  it("delegates to listApprovedProductReviews and returns whitelisted public items", async () => {
+    // Hotfix Phase 3 P0: the module returns the full row, the route maps it
+    // through `toPublicReview` and the response items must NOT contain
+    // `customer_id`, `order_id` or moderation metadata.
+    const fullRow = {
+      id: "pr_1",
+      product_id: "prod_1",
+      customer_id: "cus_1",
+      order_id: "ord_1",
+      rating: 5,
+      title: "great",
+      text: "great",
+      pros: null,
+      cons: null,
+      status: "approved",
+      moderated_by: "admin_1",
+      moderated_at: "2026-01-01T00:00:00.000Z",
+      rejection_reason: null,
+      verified_purchase: true,
+      helpful_count: 3,
+      images: null,
+      customer_name: "Иван И.",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    }
+    mockListApprovedProductReviews.mockImplementation(async () => ({
+      items: [fullRow],
       total: 1,
       page: 1,
       pageSize: 20,
-    }
-    mockListApprovedProductReviews.mockImplementation(async () => result)
+    }))
 
     const { res, recorder } = buildResponse()
     const req = buildReq({ productId: "prod_1" })
@@ -564,7 +618,18 @@ describe("GET /store/products/:id/reviews", () => {
     await GET(req, res)
 
     expect(recorder.status).toBe(200)
-    expect(recorder.body).toEqual(result)
+    expect(recorder.body.total).toBe(1)
+    expect(recorder.body.page).toBe(1)
+    expect(recorder.body.pageSize).toBe(20)
+    expect(Array.isArray(recorder.body.items)).toBe(true)
+
+    const item = recorder.body.items[0]
+    expect(item.id).toBe("pr_1")
+    expect(item.product_id).toBe("prod_1")
+    expect(item.customer_name).toBe("Иван И.")
+    expect(item.rating).toBe(5)
+    expect(item.verified_purchase).toBe(true)
+    expect(item.helpful_count).toBe(3)
 
     const arg = mockListApprovedProductReviews.mock.calls[0][0] as {
       productId: string
@@ -576,6 +641,50 @@ describe("GET /store/products/:id/reviews", () => {
     expect(arg.page).toBe(1)
     expect(arg.pageSize).toBe(20)
     expect(arg.sort).toBe("newest")
+  })
+
+  it("response items have no customer_id / order_id / moderation metadata (Phase 3 P0)", async () => {
+    const fullRow = {
+      id: "pr_1",
+      product_id: "prod_1",
+      customer_id: "cus_1",
+      order_id: "ord_1",
+      rating: 5,
+      title: null,
+      text: "great",
+      pros: null,
+      cons: null,
+      status: "approved",
+      moderated_by: "admin_1",
+      moderated_at: "2026-01-01T00:00:00.000Z",
+      rejection_reason: null,
+      verified_purchase: true,
+      helpful_count: 0,
+      images: null,
+      customer_name: "Иван И.",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    }
+    mockListApprovedProductReviews.mockImplementation(async () => ({
+      items: [fullRow],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    }))
+
+    const { res, recorder } = buildResponse()
+    const req = buildReq({ productId: "prod_1" })
+
+    await GET(req, res)
+
+    expect(recorder.status).toBe(200)
+    const item = recorder.body.items[0]
+    expect(item).not.toHaveProperty("customer_id")
+    expect(item).not.toHaveProperty("order_id")
+    expect(item).not.toHaveProperty("status")
+    expect(item).not.toHaveProperty("moderated_by")
+    expect(item).not.toHaveProperty("moderated_at")
+    expect(item).not.toHaveProperty("rejection_reason")
   })
 
   it("missing :id → 400 product_id_required", async () => {

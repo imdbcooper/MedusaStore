@@ -6,6 +6,7 @@ import { z } from "@medusajs/framework/zod"
 import {
   getProductReviewsPgConnection,
   listProductReviewsForCustomer,
+  toMineReview,
 } from "../../../../../modules/product-reviews"
 
 /**
@@ -59,8 +60,12 @@ export async function GET(
     pageSize,
   })
 
+  // Hotfix Phase 3 P0: customer-only list. The customer already knows their
+  // own id from the auth cookie, so we still strip `customer_id` and
+  // `order_id` from items. We DO keep `status` + `rejection_reason` so the
+  // `/account/reviews` page can render the moderation badge (plan §6.5).
   res.status(200).json({
-    items: result.items,
+    items: result.items.map((row) => toMineReview(row)),
     total: result.total,
     page: result.page,
     pageSize: result.pageSize,

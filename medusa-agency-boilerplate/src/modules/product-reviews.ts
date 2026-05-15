@@ -129,6 +129,106 @@ export type ProductReviewListResult = {
   pageSize: number
 }
 
+// ---------------------------------------------------------------------------
+// Public-facing whitelisted shapes (hotfix Phase 3 P0).
+//
+// `ProductReviewRow` is the internal storage row and includes fields that
+// must never leak through public Store API responses: `customer_id`,
+// `order_id`, moderation metadata (`status`, `moderated_by`, `moderated_at`,
+// `rejection_reason`).
+//
+// - `ProductReviewPublic` / `toPublicReview`  → for endpoints that anybody
+//   (incl. unauthenticated bots) can hit:
+//     * GET  /store/products/:id/reviews
+//     * GET  /store/reviews/top
+//     * POST /store/products/:id/reviews   (response.review)
+//
+// - `ProductReviewMine` / `toMineReview`      → for the customer-only list
+//   GET /store/customers/me/reviews. The customer's own `customer_id`
+//   is already known on the server (cookie-derived), so we still do NOT
+//   echo it back; we only add `status` + `rejection_reason` so the
+//   `/account/reviews` page can render «На модерации / Опубликован /
+//   Отклонён» (plan §6.5).
+//
+// Admin routes keep `ProductReviewRow` — the moderation UI legitimately
+// needs the full shape.
+// ---------------------------------------------------------------------------
+
+export type ProductReviewPublic = {
+  id: string
+  product_id: string
+  customer_name: string
+  rating: number
+  title: string | null
+  text: string
+  pros: string | null
+  cons: string | null
+  verified_purchase: boolean
+  helpful_count: number
+  /**
+   * Reserved for Phase 3 step 5 (image attachments). The backend currently
+   * stores `null` because the POST schema rejects `images`; the field is
+   * declared on the public shape so future image rollout is non-breaking.
+   * Defensive: only `string[]` arrays are forwarded — any other runtime
+   * shape collapses to `null`.
+   */
+  images: string[] | null
+  created_at: string
+  updated_at: string
+}
+
+export type ProductReviewMine = ProductReviewPublic & {
+  status: ProductReviewStatus
+  rejection_reason: string | null
+}
+
+function normalizeImagesForPublic(value: unknown): string[] | null {
+  if (!Array.isArray(value)) {
+    return null
+  }
+  const strings = value.filter(
+    (item): item is string => typeof item === "string" && item.length > 0
+  )
+  return strings.length > 0 ? strings : null
+}
+
+/**
+ * Whitelist a {@link ProductReviewRow} into the public shape — explicit field
+ * copy so adding a new column to `product_review` cannot accidentally widen
+ * the public contract. Keep changes here and the storefront `ProductReviewItem`
+ * type in lockstep.
+ */
+export function toPublicReview(row: ProductReviewRow): ProductReviewPublic {
+  return {
+    id: row.id,
+    product_id: row.product_id,
+    customer_name: row.customer_name,
+    rating: row.rating,
+    title: row.title,
+    text: row.text,
+    pros: row.pros,
+    cons: row.cons,
+    verified_purchase: row.verified_purchase,
+    helpful_count: row.helpful_count,
+    images: normalizeImagesForPublic(row.images),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }
+}
+
+/**
+ * Whitelist a {@link ProductReviewRow} for the customer's own «Мои отзывы»
+ * list — the public shape plus `status` and `rejection_reason`. Still no
+ * `customer_id` / `order_id` / `moderated_by` / `moderated_at`.
+ */
+export function toMineReview(row: ProductReviewRow): ProductReviewMine {
+  return {
+    ...toPublicReview(row),
+    status: row.status,
+    rejection_reason: row.rejection_reason,
+  }
+}
+
 export type ProductReviewCreateInput = {
   rating: number
   text: string

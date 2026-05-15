@@ -12,6 +12,7 @@ import {
   createProductReview,
   getProductReviewsPgConnection,
   listApprovedProductReviews,
+  toPublicReview,
   verifyCustomerPurchasedProduct,
   type ProductReviewListSort,
 } from "../../../../../modules/product-reviews"
@@ -242,8 +243,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     verifiedOnly: verified_only,
   })
 
+  // Hotfix Phase 3 P0: whitelist items through `toPublicReview` so internal
+  // ids (`customer_id`, `order_id`) and moderation metadata never leak from
+  // this PUBLIC endpoint.
   res.status(200).json({
-    items: result.items,
+    items: result.items.map((row) => toPublicReview(row)),
     total: result.total,
     page: result.page,
     pageSize: result.pageSize,
@@ -364,7 +368,11 @@ export async function POST(
       autoApprove: isAutoApproveEnabled(),
     })
 
-    res.status(201).json({ review })
+    // Hotfix Phase 3 P0: even though the customer creating the review knows
+    // their own `customer_id`, the response shape is the single source of
+    // truth for every public/customer-facing endpoint. Whitelist through
+    // `toPublicReview` so the contract stays consistent.
+    res.status(201).json({ review: toPublicReview(review) })
     return
   } catch (error) {
     if (error instanceof ProductReviewError) {

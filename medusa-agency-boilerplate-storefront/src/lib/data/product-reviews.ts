@@ -40,24 +40,41 @@ export type ProductReviewSummary = {
   updated_at: string | null
 }
 
+/**
+ * Hotfix Phase 3 P0: this type mirrors the whitelisted public shape returned
+ * by the backend `toPublicReview` mapper (see
+ * [`product-reviews.ts`](medusa-agency-boilerplate/src/modules/product-reviews.ts:1)).
+ *
+ * Fields explicitly NOT in this shape — they would leak through public,
+ * unauthenticated Store API endpoints:
+ *   - `customer_id`
+ *   - `order_id`
+ *   - `status`
+ *   - `moderated_by`
+ *   - `moderated_at`
+ *   - `rejection_reason`
+ *
+ * The customer-only «Мои отзывы» surface uses {@link MyProductReview} below,
+ * which adds back `status` + `rejection_reason` (still no `customer_id` /
+ * `order_id`).
+ */
 export type ProductReviewItem = {
   id: string
   product_id: string
-  customer_id: string | null
-  order_id: string | null
+  customer_name: string
   rating: number
   title: string | null
   text: string
   pros: string | null
   cons: string | null
-  status: "pending" | "approved" | "rejected"
-  moderated_by: string | null
-  moderated_at: string | null
-  rejection_reason: string | null
   verified_purchase: boolean
   helpful_count: number
-  images: unknown
-  customer_name: string
+  /**
+   * Reserved for Phase 3 step 5 (image attachments). The backend currently
+   * normalises to `string[]` or `null`; UI consumers should treat `null` as
+   * «no images».
+   */
+  images: string[] | null
   created_at: string
   updated_at: string
 }
@@ -645,17 +662,21 @@ export async function submitProductReview(
 // ---------------------------------------------------------------------------
 
 /**
- * One row of the «Мои отзывы» list. Mirrors `ProductReviewItem` 1:1; declared
- * separately to express the contract that the customer-only endpoint always
- * returns the moderation `status` and (for rejected) `rejection_reason` —
- * fields that the public list never exposes for other customers' reviews.
+ * One row of the «Мои отзывы» list. Adds `status` + `rejection_reason` on
+ * top of the public {@link ProductReviewItem} shape so the
+ * `/account/reviews` page can render «На модерации / Опубликован /
+ * Отклонён» (plan §6.5).
  *
- * See backend route
- * [`store/customers/me/reviews/route.ts`](medusa-agency-boilerplate/src/api/store/customers/me/reviews/route.ts:1)
- * — the response shape is identical apart from being scoped to the
- * authenticated customer.
+ * Customer-only — never use this type for `/store/products/:id/reviews` or
+ * `/store/reviews/top` items.
+ *
+ * Backend mapper: `toMineReview(row)` in
+ * [`product-reviews.ts`](medusa-agency-boilerplate/src/modules/product-reviews.ts:1).
  */
-export type MyProductReview = ProductReviewItem
+export type MyProductReview = ProductReviewItem & {
+  status: "pending" | "approved" | "rejected"
+  rejection_reason: string | null
+}
 
 export type MyProductReviewListResult = {
   items: MyProductReview[]
