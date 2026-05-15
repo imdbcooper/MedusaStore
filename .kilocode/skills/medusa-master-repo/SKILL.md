@@ -228,6 +228,7 @@ Delivery Hub previous-baseline status:
 
 - Code and verified runtime behavior win over docs.
 - Current operational docs win over historical planning docs.
+- Before uploading images to the site (S3/media), always optimize them first: resize to max 800×800, convert to WebP (quality 80), unless the task explicitly requires full-resolution or lossless images. Use Pillow (PIL) for optimization.
 - Do not mark work complete unless its Definition of Done and validation evidence are satisfied.
 - Do not copy stale statuses from historical docs into current reports.
 - Do not describe closed workstreams as open without new evidence.

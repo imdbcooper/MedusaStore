@@ -24,6 +24,8 @@ medusa-agency-boilerplate-storefront/.middleware-check.log
 
 # Generated image/API outputs
 generated-images/
+plans/product-images/
+plans/product-images-optimized/
 
 # Generated app/runtime artifacts
 payload-cms/.next/
