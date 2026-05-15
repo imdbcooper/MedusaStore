@@ -161,14 +161,74 @@ export async function getProductRatingSummariesByIds(
 }
 
 /**
+ * Optional rating-bound on the public review list (plan §9 Phase 3 п.2).
+ * Integer 1..5 — values outside the range are dropped before the request is
+ * issued; the same constraint is enforced server-side via Zod.
+ */
+function clampRatingBound(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined
+  }
+  const truncated = Math.trunc(value)
+  if (truncated < 1 || truncated > 5) {
+    return undefined
+  }
+  return truncated
+}
+
+/**
+ * Build the query object passed to `sdk.client.fetch`. Filter keys are only
+ * included when set — leaving them off so the URL stays compact and the
+ * Next.js data cache key matches the unfiltered baseline when the user has
+ * not selected any chips.
+ */
+function buildReviewsListQuery(input: {
+  page: number
+  pageSize: number
+  sort: ProductReviewSort
+  minRating?: number | null
+  maxRating?: number | null
+  verifiedOnly?: boolean | null
+}): Record<string, string | number | boolean> {
+  const query: Record<string, string | number | boolean> = {
+    page: input.page,
+    pageSize: input.pageSize,
+    sort: input.sort,
+  }
+  const minRating = clampRatingBound(input.minRating ?? undefined)
+  const maxRating = clampRatingBound(input.maxRating ?? undefined)
+  if (minRating !== undefined) {
+    query.min_rating = minRating
+  }
+  if (maxRating !== undefined) {
+    query.max_rating = maxRating
+  }
+  if (input.verifiedOnly === true) {
+    query.verified_only = true
+  }
+  return query
+}
+
+/**
  * List approved reviews for a product. Server-side fetch with cache tag for
  * `revalidateTag('product-reviews-${productId}')` (plan §6.6).
+ *
+ * Phase 3 / step 2: optional `minRating` / `maxRating` / `verifiedOnly`
+ * filters are forwarded to the backend as `min_rating` / `max_rating` /
+ * `verified_only` query parameters. The cache tag stays the same — Next.js
+ * already keys its data cache on the full URL (including the query string)
+ * so different filter combinations produce distinct cached responses, and a
+ * single `revalidateTag('product-reviews-${productId}')` invalidates them
+ * all on review approve/reject.
  */
 export async function listApprovedProductReviews(input: {
   productId: string
   page?: number
   pageSize?: number
   sort?: ProductReviewSort
+  minRating?: number | null
+  maxRating?: number | null
+  verifiedOnly?: boolean | null
 }): Promise<ProductReviewListResult> {
   const productId = input.productId
   const page = input.page && input.page > 0 ? Math.floor(input.page) : 1
@@ -192,11 +252,14 @@ export async function listApprovedProductReviews(input: {
       `/store/products/${encodeURIComponent(productId)}/reviews`,
       {
         method: "GET",
-        query: {
+        query: buildReviewsListQuery({
           page,
           pageSize,
           sort,
-        },
+          minRating: input.minRating,
+          maxRating: input.maxRating,
+          verifiedOnly: input.verifiedOnly,
+        }),
         next: {
           tags: [REVIEWS_CACHE_TAG(productId)],
           revalidate: 60,
@@ -225,6 +288,9 @@ export async function fetchApprovedProductReviewsPage(input: {
   page: number
   pageSize?: number
   sort?: ProductReviewSort
+  minRating?: number | null
+  maxRating?: number | null
+  verifiedOnly?: boolean | null
 }): Promise<ProductReviewListResult> {
   const productId = input.productId
   const page = input.page > 0 ? Math.floor(input.page) : 1
@@ -247,11 +313,14 @@ export async function fetchApprovedProductReviewsPage(input: {
     `/store/products/${encodeURIComponent(productId)}/reviews`,
     {
       method: "GET",
-      query: {
+      query: buildReviewsListQuery({
         page,
         pageSize,
         sort,
-      },
+        minRating: input.minRating,
+        maxRating: input.maxRating,
+        verifiedOnly: input.verifiedOnly,
+      }),
       cache: "no-store",
     }
   )

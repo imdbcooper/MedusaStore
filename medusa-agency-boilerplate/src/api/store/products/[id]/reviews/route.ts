@@ -104,13 +104,61 @@ const PRODUCT_REVIEW_LIST_SORT_VALUES = PRODUCT_REVIEW_LIST_SORTS as readonly [
   ...ProductReviewListSort[]
 ]
 
+/**
+ * Strict query schema for the public review list (plan §9 Phase 3 п.2).
+ *
+ * - `min_rating` / `max_rating` are integer 1..5; both optional. When the
+ *   client sends only one bound, the SQL substitutes `null` for the other so
+ *   the parameterized plan stays stable (see
+ *   [`listApprovedProductReviews`](medusa-agency-boilerplate/src/modules/product-reviews.ts:1)).
+ *   `min_rating === max_rating === X` is the «exactly ★X» preset used by the
+ *   storefront chip filters.
+ * - `verified_only` accepts the typical query-string shapes (`"true"`,
+ *   `"false"`, `"1"`, `"0"`, plus real booleans). Anything else fails the
+ *   inner `z.boolean()` and yields HTTP 400 — required by the contract for
+ *   strings like `"yes"` or `"verified_only=invalid_string"`.
+ * - `.refine(min<=max)` rejects ranges where the client has them inverted
+ *   (e.g. `?min_rating=5&max_rating=3`).
+ */
+const VerifiedOnlySchema = z
+  .preprocess((value) => {
+    if (typeof value === "boolean") {
+      return value
+    }
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase()
+      if (normalized === "true" || normalized === "1") {
+        return true
+      }
+      if (normalized === "false" || normalized === "0") {
+        return false
+      }
+    }
+    // Fall through to z.boolean() which will reject everything else.
+    return value
+  }, z.boolean())
+  .optional()
+
 const ListReviewsQuerySchema = z
   .object({
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(20),
     sort: z.enum(PRODUCT_REVIEW_LIST_SORT_VALUES).default("newest"),
+    min_rating: z.coerce.number().int().min(1).max(5).optional(),
+    max_rating: z.coerce.number().int().min(1).max(5).optional(),
+    verified_only: VerifiedOnlySchema,
   })
   .strict()
+  .refine(
+    (data) =>
+      data.min_rating === undefined ||
+      data.max_rating === undefined ||
+      data.min_rating <= data.max_rating,
+    {
+      message: "invalid_rating_range",
+      path: ["min_rating"],
+    }
+  )
 
 /**
  * Strict Zod schema for review creation (plan §10.2).
@@ -179,7 +227,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return
   }
 
-  const { page, pageSize, sort } = queryParse.data
+  const { page, pageSize, sort, min_rating, max_rating, verified_only } =
+    queryParse.data
 
   const pgConnection = getProductReviewsPgConnection(req.scope)
   const result = await listApprovedProductReviews({
@@ -188,6 +237,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     page,
     pageSize,
     sort,
+    minRating: min_rating,
+    maxRating: max_rating,
+    verifiedOnly: verified_only,
   })
 
   res.status(200).json({

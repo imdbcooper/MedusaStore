@@ -327,6 +327,21 @@ export const storefrontConfig = {
         loading: "Загружаем…",
         error: "Не удалось загрузить отзывы",
         retry: "Попробовать снова",
+        // Phase 3 / step 2 — chip filters above the list (rating preset
+        // ★1..★5 + a `verified_purchase` toggle). The backend Zod schema
+        // accepts `min_rating` / `max_rating` / `verified_only`; an exact
+        // chip preset is `min_rating === max_rating === X`.
+        filters: {
+          allLabel: "Все",
+          stars1: "★ 1",
+          stars2: "★★ 2",
+          stars3: "★★★ 3",
+          stars4: "★★★★ 4",
+          stars5: "★★★★★ 5",
+          verifiedOnly: "Только проверенные",
+          emptyFiltered: "Нет отзывов по выбранным фильтрам",
+          clearAll: "Сбросить",
+        },
       },
       // Plural forms used together with `summary.average` and the count badge
       // in catalog/info surfaces. Order is [one, few, many] — see

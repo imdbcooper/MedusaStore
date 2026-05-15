@@ -658,4 +658,164 @@ describe("GET /store/products/:id/reviews", () => {
     expect(arg.pageSize).toBe(5)
     expect(arg.sort).toBe("helpful")
   })
+
+  // -------------------------------------------------------------------------
+  // Phase 3 / step 2 — rating range + verified_only query filters
+  // -------------------------------------------------------------------------
+
+  describe("filters: min_rating / max_rating / verified_only", () => {
+    it("accepts min_rating=3, max_rating=5, verified_only=true and forwards to module in camelCase", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: {
+          min_rating: "3",
+          max_rating: "5",
+          verified_only: "true",
+        },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(200)
+      const arg = mockListApprovedProductReviews.mock.calls[0][0] as {
+        productId: string
+        minRating?: number
+        maxRating?: number
+        verifiedOnly?: boolean
+      }
+      expect(arg.productId).toBe("prod_1")
+      expect(arg.minRating).toBe(3)
+      expect(arg.maxRating).toBe(5)
+      expect(arg.verifiedOnly).toBe(true)
+    })
+
+    it("accepts the exact-rating preset min_rating=max_rating=5", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { min_rating: "5", max_rating: "5" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(200)
+      const arg = mockListApprovedProductReviews.mock.calls[0][0] as {
+        minRating?: number
+        maxRating?: number
+        verifiedOnly?: boolean
+      }
+      expect(arg.minRating).toBe(5)
+      expect(arg.maxRating).toBe(5)
+      expect(arg.verifiedOnly).toBeUndefined()
+    })
+
+    it("accepts verified_only=false (no-op filter, forwarded as boolean)", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { verified_only: "false" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(200)
+      const arg = mockListApprovedProductReviews.mock.calls[0][0] as {
+        verifiedOnly?: boolean
+      }
+      expect(arg.verifiedOnly).toBe(false)
+    })
+
+    it("rejects min_rating=0 → 400 invalid_query", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { min_rating: "0" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(400)
+      expect(recorder.body).toMatchObject({ code: "invalid_query" })
+      expect(mockListApprovedProductReviews).not.toHaveBeenCalled()
+    })
+
+    it("rejects max_rating=6 → 400 invalid_query", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { max_rating: "6" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(400)
+      expect(recorder.body).toMatchObject({ code: "invalid_query" })
+      expect(mockListApprovedProductReviews).not.toHaveBeenCalled()
+    })
+
+    it("rejects min_rating=5 & max_rating=3 → 400 invalid_rating_range", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { min_rating: "5", max_rating: "3" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(400)
+      expect(recorder.body).toMatchObject({ code: "invalid_query" })
+      // The Zod refine message is propagated as the 400 body.message so the
+      // storefront can branch on it if needed.
+      expect(recorder.body.message).toBe("invalid_rating_range")
+      expect(mockListApprovedProductReviews).not.toHaveBeenCalled()
+    })
+
+    it("rejects verified_only with non-boolean string → 400 invalid_query", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { verified_only: "invalid_string" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(400)
+      expect(recorder.body).toMatchObject({ code: "invalid_query" })
+      expect(mockListApprovedProductReviews).not.toHaveBeenCalled()
+    })
+
+    it("rejects non-integer min_rating=3.5 → 400 invalid_query", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { min_rating: "3.5" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(400)
+      expect(recorder.body).toMatchObject({ code: "invalid_query" })
+    })
+
+    it("omitted filters → module receives undefined for all three", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { page: "1", pageSize: "20", sort: "newest" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(200)
+      const arg = mockListApprovedProductReviews.mock.calls[0][0] as {
+        minRating?: number
+        maxRating?: number
+        verifiedOnly?: boolean
+      }
+      expect(arg.minRating).toBeUndefined()
+      expect(arg.maxRating).toBeUndefined()
+      expect(arg.verifiedOnly).toBeUndefined()
+    })
+  })
 })

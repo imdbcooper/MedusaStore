@@ -5,7 +5,6 @@ import {
   listApprovedProductReviews,
   type ProductReviewSort,
 } from "@lib/data/product-reviews"
-import ProductReviewCard from "@modules/products/components/product-review-card"
 
 import ProductReviewsListPager from "./pager"
 
@@ -45,26 +44,25 @@ const ProductReviewsList = async ({
 
   const hasItems = initialResult.items.length > 0
 
+  // Phase 3 / step 2: when the product has at least one approved review we
+  // delegate the entire list rendering (including the initial page that was
+  // fetched on the server) to the client pager. Previously the server
+  // component rendered its own `<ul>` and the pager appended a second one
+  // for sort/filter changes — that produced a visible duplicate. Centralising
+  // the list inside the pager fixes the duplicate and lets the filtered
+  // empty-state replace the list cleanly when the user picks a chip that
+  // matches no rows.
   return (
     <div className="flex flex-col gap-6">
       {hasItems ? (
-        <>
-          <ul className="flex flex-col gap-4" data-testid="product-reviews-list">
-            {initialResult.items.map((review) => (
-              <li key={review.id}>
-                <ProductReviewCard review={review} />
-              </li>
-            ))}
-          </ul>
-          <ProductReviewsListPager
-            productId={productId}
-            initialItems={initialResult.items}
-            total={initialResult.total}
-            initialPage={initialResult.page}
-            initialSort={initialSort}
-            pageSize={pageSize}
-          />
-        </>
+        <ProductReviewsListPager
+          productId={productId}
+          initialItems={initialResult.items}
+          total={initialResult.total}
+          initialPage={initialResult.page}
+          initialSort={initialSort}
+          pageSize={pageSize}
+        />
       ) : (
         <div
           className="rounded-[var(--theme-radius-card)] border border-dashed border-[var(--theme-border)] bg-[var(--theme-canvas)] p-6 text-center text-sm text-[var(--theme-muted)]"

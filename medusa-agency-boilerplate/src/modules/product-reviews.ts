@@ -1160,19 +1160,85 @@ async function countReviews(
   return typeof value === "number" ? value : asInteger(value, 0)
 }
 
+/**
+ * Normalise an optional integer rating bound (1..5). `null` / `undefined` /
+ * out-of-range values collapse to `null` so the parameterized SQL evaluates
+ * `($N::int IS NULL OR rating <= $N)` as a no-op and skips the predicate.
+ *
+ * Defensive — Zod at the route already enforces 1..5 — but the module is
+ * exported and may be called from subscribers/scripts.
+ */
+function normalizeRatingBound(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null
+  }
+  const truncated = Math.trunc(value)
+  if (truncated < 1 || truncated > 5) {
+    return null
+  }
+  return truncated
+}
+
+/**
+ * Normalise the optional `verifiedOnly` flag. `undefined` / `null` collapse
+ * to `null` — that disables the predicate. Anything truthy/falsy yields a
+ * concrete boolean. Mirrors `asBoolean` but keeps a tri-state instead of
+ * defaulting to `false`.
+ */
+function normalizeOptionalBoolean(value: unknown): boolean | null {
+  if (value === undefined || value === null) {
+    return null
+  }
+  if (typeof value === "boolean") {
+    return value
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === "true" || normalized === "1") {
+      return true
+    }
+    if (normalized === "false" || normalized === "0") {
+      return false
+    }
+  }
+  return null
+}
+
+export interface ListApprovedProductReviewsArgs {
+  pgConnection: PgConnectionLike
+  productId: string
+  page: number
+  pageSize: number
+  sort: ProductReviewListSort
+  /** Optional inclusive lower bound on `rating` (1..5). */
+  minRating?: number | null
+  /** Optional inclusive upper bound on `rating` (1..5). */
+  maxRating?: number | null
+  /** When `true`, only `verified_purchase = true` rows are returned. */
+  verifiedOnly?: boolean | null
+}
+
+/**
+ * List approved product reviews for the public storefront (plan §4.3).
+ *
+ * Phase 3 / step 2: optional filters `minRating` / `maxRating` /
+ * `verifiedOnly` are applied through a single dynamic WHERE clause built
+ * with positional placeholders. Unset filters become `NULL` so the SQL plan
+ * is stable and the query optimiser can short-circuit each predicate.
+ *
+ * Filtering applies to BOTH the items query AND the count query so `total`
+ * matches the visible page count.
+ */
 export async function listApprovedProductReviews({
   pgConnection,
   productId,
   page,
   pageSize,
   sort,
-}: {
-  pgConnection: PgConnectionLike
-  productId: string
-  page: number
-  pageSize: number
-  sort: ProductReviewListSort
-}): Promise<ProductReviewListResult> {
+  minRating,
+  maxRating,
+  verifiedOnly,
+}: ListApprovedProductReviewsArgs): Promise<ProductReviewListResult> {
   await ensureProductReviewsTables(pgConnection)
 
   const { page: safePage, pageSize: safePageSize } = clampPagination(
@@ -1195,24 +1261,48 @@ export async function listApprovedProductReviews({
       break
   }
 
+  // Resolve the optional filters into stable positional values. Each filter
+  // is a single placeholder; the SQL gates it with `($N::type IS NULL OR …)`
+  // so passing NULL disables the predicate without changing the plan.
+  const minRatingParam = normalizeRatingBound(minRating)
+  const maxRatingParam = normalizeRatingBound(maxRating)
+  const verifiedOnlyParam = normalizeOptionalBoolean(verifiedOnly)
+
+  const filterWhereClause = `
+    where product_id = ?
+      and status = 'approved'
+      and (?::int is null or rating >= ?::int)
+      and (?::int is null or rating <= ?::int)
+      and (?::boolean is null or verified_purchase = ?::boolean)
+  `
+  const filterBindings = [
+    productId,
+    minRatingParam,
+    minRatingParam,
+    maxRatingParam,
+    maxRatingParam,
+    verifiedOnlyParam,
+    verifiedOnlyParam,
+  ]
+
   const itemsResult = await pgConnection.raw<Record<string, unknown>>(
     `
       select *
       from product_review
-      where product_id = ? and status = 'approved'
+      ${filterWhereClause}
       ${orderByClause}
       limit ?
       offset ?
     `,
-    [productId, safePageSize, offset]
+    [...filterBindings, safePageSize, offset]
   )
   const rows = getRawRows<Record<string, unknown>>(itemsResult)
   const items = rows.map((row) => normalizeReviewRow(row))
 
   const total = await countReviews(
     pgConnection,
-    "where product_id = ? and status = 'approved'",
-    [productId]
+    filterWhereClause,
+    filterBindings
   )
 
   return {
