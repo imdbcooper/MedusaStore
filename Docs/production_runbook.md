@@ -120,7 +120,7 @@ Do not put GitHub-only deploy secrets into the app `.env`; keep `DEPLOY_SSH_PRIV
    - `git checkout <branch>`;
    - `git reset --hard origin/<branch>`;
    - verifies remote `.env` exists;
-   - builds images;
+   - builds images from a clean Docker context for generated Admin assets; the backend image build removes stale `.medusa`/`public/admin` artifacts before `npm run build` so retired public origins cannot survive in the Medusa Admin JS bundle;
    - starts `medusa-db` and `medusa-redis`;
    - optionally runs Payload migrations and seed one-off jobs;
    - starts/recreates `medusa-backend`, `payload-cms`, `storefront`, `caddy`, and enabled profile services with `--force-recreate --remove-orphans` so interrupted compose recreates do not poison the next run;

@@ -79,6 +79,8 @@ services:
     build:
       context: .
       dockerfile: docker/medusa-backend/Dockerfile
+      args:
+        MEDUSA_ADMIN_BACKEND_URL: ${MEDUSA_ADMIN_BACKEND_URL:-/}
     image: medusastore-backend:prod
     container_name: medusastore-backend
     env_file:
@@ -91,6 +93,7 @@ services:
       DATABASE_DRIVER_OPTIONS: '{"connection":{"ssl":false}}'
       MEDUSA_DATABASE_DRIVER_OPTIONS: '{"connection":{"ssl":false}}'
       MEDUSA_BACKEND_URL: ${MEDUSA_BACKEND_URL:-http://medusa-backend:9000}
+      MEDUSA_ADMIN_BACKEND_URL: ${MEDUSA_ADMIN_BACKEND_URL:-/}
       RUN_MEDUSA_MIGRATIONS: ${RUN_MEDUSA_MIGRATIONS:-true}
       AI_ASSISTANT_ENABLED: ${AI_ASSISTANT_ENABLED:-false}
       AI_ASSISTANT_BASE_URL: ${AI_ASSISTANT_BASE_URL:-http://ai-assistant:8000/api/v1}

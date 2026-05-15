@@ -11,12 +11,15 @@ FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 
+ARG MEDUSA_ADMIN_BACKEND_URL=/
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV MEDUSA_ADMIN_BACKEND_URL=$MEDUSA_ADMIN_BACKEND_URL
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY medusa-agency-boilerplate/ ./
-RUN npm run build && mkdir -p public && cp -a .medusa/server/public/admin public/admin
+RUN rm -rf .medusa public/admin && npm run build && mkdir -p public && cp -a .medusa/server/public/admin public/admin
 
 FROM node:22-bookworm-slim AS runner
 

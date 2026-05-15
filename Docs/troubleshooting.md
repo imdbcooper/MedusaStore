@@ -148,7 +148,7 @@ Fix direction:
 
 - Set `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000` through GitHub Secrets/Variables and the `Deploy Staging` workflow-rendered `.env`.
 - Rebuild/restart storefront through `Deploy Staging` because build args also receive backend/public URL values.
-- If Medusa Admin login requests a wrong absolute origin, set `MEDUSA_ADMIN_BACKEND_URL=/` through GitHub Secrets/Variables and redeploy through `Deploy Staging`; verify the generated Admin asset no longer contains the bad origin.
+- If Medusa Admin login requests a wrong absolute origin, set `MEDUSA_ADMIN_BACKEND_URL=/` through GitHub Secrets/Variables and redeploy through `Deploy Staging`; the backend Docker build removes stale `.medusa`/`public/admin` artifacts before `npm run build`, so verify the generated Admin asset no longer contains the bad origin after the workflow completes.
 
 ## 5. Publishable key missing or placeholder
 
