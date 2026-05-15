@@ -37,11 +37,15 @@ import { revalidateStorefrontTags } from "../../../../../lib/storefront-revalida
  *     cache; if the replied-to review is in the top list its body changes,
  *     so the widget must re-fetch.
  *
- * `customer-reviews-${customer_id}` is intentionally NOT invalidated:
- *   - the «Мои отзывы» surface (`my-review-card`) does NOT render the
- *     merchant reply block (see plan §9 Phase 3 п.3 — surface is the
- *     public product detail), and adding the tag would force the page to
- *     re-fetch on every reply edit without a visible delta.
+ * `customer-reviews-${customer_id}` is intentionally NOT invalidated here:
+ *   - the «Мои отзывы» card (`my-review-card`) DOES render the merchant
+ *     reply block too (added in Phase 3 / step 4 — same `merchant_reply`
+ *     payload as the public product card), but admin doesn't have the
+ *     `customer_id` plumbed into this thin route layer, and a stale reply
+ *     on the customer's own surface is a low-impact lag;
+ *   - the page sets `revalidate: 60` on its data fetch (see
+ *     `getMyProductReviews` cache contract, plan §6.6), so the customer
+ *     sees the new reply within at most 60s without an explicit tag bust.
  *
  * `product-rating-${productId}` is also NOT invalidated — admin reply does
  * not change `helpful_count` / `rating` / `status`, so the rating summary

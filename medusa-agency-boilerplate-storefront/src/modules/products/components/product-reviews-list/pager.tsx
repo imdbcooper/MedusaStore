@@ -86,8 +86,18 @@ const ProductReviewsListPager: React.FC<ProductReviewsListPagerProps> = ({
   // empty array). Show the dedicated empty-state copy instead of the
   // ambient `summary.empty` because the user picked a filter that simply
   // produced zero rows — not «no reviews exist».
+  //
+  // The `isFilterActive` guard covers an edge case: the user clicks a chip
+  // that yields zero rows, then clears the filter via «Все» / verified-off.
+  // At that point `hasReplacedFirstPage === true` and `replacedItems` is
+  // still empty (because the «no rows» state truly persists), but no
+  // filter is active anymore — so we must fall back to the ambient empty
+  // copy, not the filter-specific one.
   const showFilteredEmptyState =
-    hasReplacedFirstPage && replacedItems.length === 0 && total === 0
+    hasReplacedFirstPage &&
+    replacedItems.length === 0 &&
+    total === 0 &&
+    isFilterActive
 
   const buildFilterArgs = React.useCallback(
     (next: { ratingFilter: RatingFilter; verifiedOnly: boolean }) => {
