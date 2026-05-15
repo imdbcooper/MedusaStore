@@ -33,6 +33,7 @@ Read documents and implementation sources in this order:
    - `docker-compose.prod.yml` (filename retained as Medusa convention; hosts the staging runtime)
    - `docker/caddy/Caddyfile`
    - `.github/workflows/deploy-staging.yml`
+   - `scripts/env-contract.mjs`
    - `scripts/github-deploy-staging.sh`
    - `scripts/staging-container-smoke.sh`
    - `.env.staging.example`
@@ -150,7 +151,9 @@ Current public route ownership:
 
 - **Only** source of real secrets: GitHub Secrets (passwords, tokens, API keys) + GitHub Variables (non-secret config).
 - Never commit real secret values to git.
-- Remote `.env` on staging is built from GitHub Secrets/Variables during deploy.
+- Remote `.env` on staging is fully rendered from `.env.staging.example` plus GitHub Secrets/Variables during deploy by `scripts/env-contract.mjs`; manual remote `.env` edits are overwritten by the next deploy.
+- Local env source of truth is root `.env`; `npm run env:check`, `npm run bootstrap`, and `npm run preflight` run the local contract checks. Local ignored app env files are synchronized from root `.env` by `scripts/env-sync.sh`.
+- Storefront revalidate uses two names for one shared secret: backend-side `STOREFRONT_REVALIDATE_SECRET` and storefront-side `REVALIDATE_SECRET`. They must match. On staging store them in GitHub Secrets; locally keep them in ignored env files only.
 - `.env.template`, `.env.example`, `.env.staging.example` contain only placeholder values for documentation.
 
 ## Runtime URL Precedence

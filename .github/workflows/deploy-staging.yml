@@ -22,8 +22,173 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Validate staging compose config
-        run: docker compose -f docker-compose.prod.yml --env-file .env.example config -q
+      - name: Validate staging compose template
+        run: docker compose -f docker-compose.prod.yml --env-file .env.staging.example config -q
+
+      - name: Render staging env from GitHub Secrets and Variables
+        env:
+          DEPLOY_DOMAIN: ${{ secrets.DEPLOY_DOMAIN || vars.DEPLOY_DOMAIN }}
+          ACME_EMAIL: ${{ secrets.ACME_EMAIL || vars.ACME_EMAIL }}
+          HTTP_PORT: ${{ secrets.HTTP_PORT || vars.HTTP_PORT }}
+          HTTPS_PORT: ${{ secrets.HTTPS_PORT || vars.HTTPS_PORT }}
+          COMPOSE_PROJECT_NAME: ${{ secrets.COMPOSE_PROJECT_NAME || vars.COMPOSE_PROJECT_NAME }}
+          NODE_ENV: ${{ secrets.NODE_ENV || vars.NODE_ENV }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER || vars.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD || vars.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB || vars.POSTGRES_DB }}
+          DOCKER_DATABASE_URL: ${{ secrets.DOCKER_DATABASE_URL || vars.DOCKER_DATABASE_URL }}
+          DOCKER_PAYLOAD_DATABASE_URL: ${{ secrets.DOCKER_PAYLOAD_DATABASE_URL || vars.DOCKER_PAYLOAD_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL || vars.DATABASE_URL }}
+          PAYLOAD_DATABASE_URL: ${{ secrets.PAYLOAD_DATABASE_URL || vars.PAYLOAD_DATABASE_URL }}
+          DOCKER_REDIS_URL: ${{ secrets.DOCKER_REDIS_URL || vars.DOCKER_REDIS_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL || vars.REDIS_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET || vars.JWT_SECRET }}
+          COOKIE_SECRET: ${{ secrets.COOKIE_SECRET || vars.COOKIE_SECRET }}
+          MEDUSA_BACKEND_URL: ${{ secrets.MEDUSA_BACKEND_URL || vars.MEDUSA_BACKEND_URL }}
+          DOCKER_MEDUSA_BACKEND_URL: ${{ secrets.DOCKER_MEDUSA_BACKEND_URL || vars.DOCKER_MEDUSA_BACKEND_URL }}
+          MEDUSA_ADMIN_SECRET_API_KEY: ${{ secrets.MEDUSA_ADMIN_SECRET_API_KEY || vars.MEDUSA_ADMIN_SECRET_API_KEY }}
+          NEXT_PUBLIC_MEDUSA_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_MEDUSA_BACKEND_URL || vars.NEXT_PUBLIC_MEDUSA_BACKEND_URL }}
+          DOCKER_NEXT_PUBLIC_MEDUSA_BACKEND_URL: ${{ secrets.DOCKER_NEXT_PUBLIC_MEDUSA_BACKEND_URL || vars.DOCKER_NEXT_PUBLIC_MEDUSA_BACKEND_URL }}
+          NEXT_PUBLIC_BASE_URL: ${{ secrets.NEXT_PUBLIC_BASE_URL || vars.NEXT_PUBLIC_BASE_URL }}
+          DOCKER_NEXT_PUBLIC_BASE_URL: ${{ secrets.DOCKER_NEXT_PUBLIC_BASE_URL || vars.DOCKER_NEXT_PUBLIC_BASE_URL }}
+          NEXT_PUBLIC_DEFAULT_REGION: ${{ secrets.NEXT_PUBLIC_DEFAULT_REGION || vars.NEXT_PUBLIC_DEFAULT_REGION }}
+          STORE_CORS: ${{ secrets.STORE_CORS || vars.STORE_CORS }}
+          ADMIN_CORS: ${{ secrets.ADMIN_CORS || vars.ADMIN_CORS }}
+          AUTH_CORS: ${{ secrets.AUTH_CORS || vars.AUTH_CORS }}
+          STOREFRONT_URL: ${{ secrets.STOREFRONT_URL || vars.STOREFRONT_URL }}
+          EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: ${{ secrets.EMAIL_VERIFICATION_TOKEN_TTL_MINUTES || vars.EMAIL_VERIFICATION_TOKEN_TTL_MINUTES }}
+          EMAIL_VERIFICATION_REDIRECT_PATH: ${{ secrets.EMAIL_VERIFICATION_REDIRECT_PATH || vars.EMAIL_VERIFICATION_REDIRECT_PATH }}
+          PASSWORD_RESET_TOKEN_TTL_MINUTES: ${{ secrets.PASSWORD_RESET_TOKEN_TTL_MINUTES || vars.PASSWORD_RESET_TOKEN_TTL_MINUTES }}
+          PASSWORD_RESET_REDIRECT_PATH: ${{ secrets.PASSWORD_RESET_REDIRECT_PATH || vars.PASSWORD_RESET_REDIRECT_PATH }}
+          PASSWORD_MIN_LENGTH: ${{ secrets.PASSWORD_MIN_LENGTH || vars.PASSWORD_MIN_LENGTH }}
+          PASSWORD_REQUIRE_LETTER: ${{ secrets.PASSWORD_REQUIRE_LETTER || vars.PASSWORD_REQUIRE_LETTER }}
+          PASSWORD_REQUIRE_DIGIT: ${{ secrets.PASSWORD_REQUIRE_DIGIT || vars.PASSWORD_REQUIRE_DIGIT }}
+          BRAND_NAME: ${{ secrets.BRAND_NAME || vars.BRAND_NAME }}
+          BRAND_LOGO_URL: ${{ secrets.BRAND_LOGO_URL || vars.BRAND_LOGO_URL }}
+          BRAND_PRIMARY_COLOR: ${{ secrets.BRAND_PRIMARY_COLOR || vars.BRAND_PRIMARY_COLOR }}
+          BRAND_ACCENT_COLOR: ${{ secrets.BRAND_ACCENT_COLOR || vars.BRAND_ACCENT_COLOR }}
+          BRAND_TEXT_COLOR: ${{ secrets.BRAND_TEXT_COLOR || vars.BRAND_TEXT_COLOR }}
+          BRAND_BACKGROUND_COLOR: ${{ secrets.BRAND_BACKGROUND_COLOR || vars.BRAND_BACKGROUND_COLOR }}
+          BRAND_FOOTER_HTML: ${{ secrets.BRAND_FOOTER_HTML || vars.BRAND_FOOTER_HTML }}
+          NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || vars.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY }}
+          PAYLOAD_PORT: ${{ secrets.PAYLOAD_PORT || vars.PAYLOAD_PORT }}
+          PAYLOAD_ENABLED: ${{ secrets.PAYLOAD_ENABLED || vars.PAYLOAD_ENABLED }}
+          PAYLOAD_CMS_URL: ${{ secrets.PAYLOAD_CMS_URL || vars.PAYLOAD_CMS_URL }}
+          DOCKER_PAYLOAD_CMS_URL: ${{ secrets.DOCKER_PAYLOAD_CMS_URL || vars.DOCKER_PAYLOAD_CMS_URL }}
+          PAYLOAD_PUBLIC_SERVER_URL: ${{ secrets.PAYLOAD_PUBLIC_SERVER_URL || vars.PAYLOAD_PUBLIC_SERVER_URL }}
+          PAYLOAD_SECRET: ${{ secrets.PAYLOAD_SECRET || vars.PAYLOAD_SECRET }}
+          PAYLOAD_CONTENT_PREVIEW_TOKEN: ${{ secrets.PAYLOAD_CONTENT_PREVIEW_TOKEN || vars.PAYLOAD_CONTENT_PREVIEW_TOKEN }}
+          PAYLOAD_PREVIEW_SECRET: ${{ secrets.PAYLOAD_PREVIEW_SECRET || vars.PAYLOAD_PREVIEW_SECRET }}
+          PAYLOAD_REVALIDATE_SECRET: ${{ secrets.PAYLOAD_REVALIDATE_SECRET || vars.PAYLOAD_REVALIDATE_SECRET }}
+          STOREFRONT_REVALIDATE_SECRET: ${{ secrets.STOREFRONT_REVALIDATE_SECRET || vars.STOREFRONT_REVALIDATE_SECRET }}
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET || vars.REVALIDATE_SECRET }}
+          REVIEWS_CAPTCHA_PROVIDER: ${{ secrets.REVIEWS_CAPTCHA_PROVIDER || vars.REVIEWS_CAPTCHA_PROVIDER }}
+          STOREFRONT_PREVIEW_URL: ${{ secrets.STOREFRONT_PREVIEW_URL || vars.STOREFRONT_PREVIEW_URL }}
+          STOREFRONT_PREVIEW_LOCALE: ${{ secrets.STOREFRONT_PREVIEW_LOCALE || vars.STOREFRONT_PREVIEW_LOCALE }}
+          STOREFRONT_REVALIDATE_URL: ${{ secrets.STOREFRONT_REVALIDATE_URL || vars.STOREFRONT_REVALIDATE_URL }}
+          PAYLOAD_CORS: ${{ secrets.PAYLOAD_CORS || vars.PAYLOAD_CORS }}
+          PAYLOAD_CSRF: ${{ secrets.PAYLOAD_CSRF || vars.PAYLOAD_CSRF }}
+          RUN_MEDUSA_MIGRATIONS: ${{ secrets.RUN_MEDUSA_MIGRATIONS || vars.RUN_MEDUSA_MIGRATIONS }}
+          RUN_PAYLOAD_MIGRATIONS: ${{ secrets.RUN_PAYLOAD_MIGRATIONS || vars.RUN_PAYLOAD_MIGRATIONS }}
+          RUN_PAYLOAD_SEED: ${{ secrets.RUN_PAYLOAD_SEED || vars.RUN_PAYLOAD_SEED }}
+          SMOKE_BASE_URL: ${{ secrets.SMOKE_BASE_URL || vars.SMOKE_BASE_URL }}
+          SMOKE_BACKEND_URL: ${{ secrets.SMOKE_BACKEND_URL || vars.SMOKE_BACKEND_URL }}
+          SMOKE_PAYLOAD_URL: ${{ secrets.SMOKE_PAYLOAD_URL || vars.SMOKE_PAYLOAD_URL }}
+          NOTIFICATION_EMAIL_PROVIDER: ${{ secrets.NOTIFICATION_EMAIL_PROVIDER || vars.NOTIFICATION_EMAIL_PROVIDER }}
+          NOTIFICATION_EMAIL_FROM: ${{ secrets.NOTIFICATION_EMAIL_FROM || vars.NOTIFICATION_EMAIL_FROM }}
+          UNISENDER_API_KEY: ${{ secrets.UNISENDER_API_KEY || vars.UNISENDER_API_KEY }}
+          UNISENDER_BASE_URL: ${{ secrets.UNISENDER_BASE_URL || vars.UNISENDER_BASE_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST || vars.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT || vars.SMTP_PORT }}
+          SMTP_SECURE: ${{ secrets.SMTP_SECURE || vars.SMTP_SECURE }}
+          SMTP_USER: ${{ secrets.SMTP_USER || vars.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD || vars.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM || vars.SMTP_FROM }}
+          SMTP_FROM_NAME: ${{ secrets.SMTP_FROM_NAME || vars.SMTP_FROM_NAME }}
+          SMTP_REPLY_TO: ${{ secrets.SMTP_REPLY_TO || vars.SMTP_REPLY_TO }}
+          SMTP_TLS_REJECT_UNAUTHORIZED: ${{ secrets.SMTP_TLS_REJECT_UNAUTHORIZED || vars.SMTP_TLS_REJECT_UNAUTHORIZED }}
+          MARKETING_EMAIL_FROM: ${{ secrets.MARKETING_EMAIL_FROM || vars.MARKETING_EMAIL_FROM }}
+          MARKETING_EMAIL_FROM_NAME: ${{ secrets.MARKETING_EMAIL_FROM_NAME || vars.MARKETING_EMAIL_FROM_NAME }}
+          MARKETING_EMAIL_REPLY_TO: ${{ secrets.MARKETING_EMAIL_REPLY_TO || vars.MARKETING_EMAIL_REPLY_TO }}
+          MARKETING_UNSUBSCRIBE_MAILTO: ${{ secrets.MARKETING_UNSUBSCRIBE_MAILTO || vars.MARKETING_UNSUBSCRIBE_MAILTO }}
+          MARKETING_DOUBLE_OPTIN_TOKEN_TTL_DAYS: ${{ secrets.MARKETING_DOUBLE_OPTIN_TOKEN_TTL_DAYS || vars.MARKETING_DOUBLE_OPTIN_TOKEN_TTL_DAYS }}
+          MARKETING_UNSUBSCRIBE_TOKEN_TTL_DAYS: ${{ secrets.MARKETING_UNSUBSCRIBE_TOKEN_TTL_DAYS || vars.MARKETING_UNSUBSCRIBE_TOKEN_TTL_DAYS }}
+          MARKETING_UNSUBSCRIBE_REDIRECT_PATH: ${{ secrets.MARKETING_UNSUBSCRIBE_REDIRECT_PATH || vars.MARKETING_UNSUBSCRIBE_REDIRECT_PATH }}
+          MARKETING_CONFIRMATION_REDIRECT_PATH: ${{ secrets.MARKETING_CONFIRMATION_REDIRECT_PATH || vars.MARKETING_CONFIRMATION_REDIRECT_PATH }}
+          MARKETING_DEFAULT_COUNTRY_CODE: ${{ secrets.MARKETING_DEFAULT_COUNTRY_CODE || vars.MARKETING_DEFAULT_COUNTRY_CODE }}
+          NOTIFICATION_DEFAULT_COUNTRY_CODE: ${{ secrets.NOTIFICATION_DEFAULT_COUNTRY_CODE || vars.NOTIFICATION_DEFAULT_COUNTRY_CODE }}
+          NOTIFICATION_SMS_PROVIDER: ${{ secrets.NOTIFICATION_SMS_PROVIDER || vars.NOTIFICATION_SMS_PROVIDER }}
+          MTS_EXOLVE_API_KEY: ${{ secrets.MTS_EXOLVE_API_KEY || vars.MTS_EXOLVE_API_KEY }}
+          MTS_EXOLVE_SENDER: ${{ secrets.MTS_EXOLVE_SENDER || vars.MTS_EXOLVE_SENDER }}
+          MTS_EXOLVE_BASE_URL: ${{ secrets.MTS_EXOLVE_BASE_URL || vars.MTS_EXOLVE_BASE_URL }}
+          NOTIFICATION_VK_PROVIDER: ${{ secrets.NOTIFICATION_VK_PROVIDER || vars.NOTIFICATION_VK_PROVIDER }}
+          VK_COMMUNITY_ACCESS_TOKEN: ${{ secrets.VK_COMMUNITY_ACCESS_TOKEN || vars.VK_COMMUNITY_ACCESS_TOKEN }}
+          VK_COMMUNITY_GROUP_ID: ${{ secrets.VK_COMMUNITY_GROUP_ID || vars.VK_COMMUNITY_GROUP_ID }}
+          VK_API_VERSION: ${{ secrets.VK_API_VERSION || vars.VK_API_VERSION }}
+          VK_ID_ENABLED: ${{ secrets.VK_ID_ENABLED || vars.VK_ID_ENABLED }}
+          VK_ID_LOGIN_ENABLED: ${{ secrets.VK_ID_LOGIN_ENABLED || vars.VK_ID_LOGIN_ENABLED }}
+          VK_ID_REGISTER_ENABLED: ${{ secrets.VK_ID_REGISTER_ENABLED || vars.VK_ID_REGISTER_ENABLED }}
+          VK_ID_EMAIL_TRUST_POLICY: ${{ secrets.VK_ID_EMAIL_TRUST_POLICY || vars.VK_ID_EMAIL_TRUST_POLICY }}
+          VK_ID_PENDING_TOKEN_TTL_MINUTES: ${{ secrets.VK_ID_PENDING_TOKEN_TTL_MINUTES || vars.VK_ID_PENDING_TOKEN_TTL_MINUTES }}
+          VK_ID_CLIENT_ID: ${{ secrets.VK_ID_CLIENT_ID || vars.VK_ID_CLIENT_ID }}
+          VK_ID_CLIENT_SECRET: ${{ secrets.VK_ID_CLIENT_SECRET || vars.VK_ID_CLIENT_SECRET }}
+          VK_ID_REDIRECT_URI: ${{ secrets.VK_ID_REDIRECT_URI || vars.VK_ID_REDIRECT_URI }}
+          VK_ID_SCOPES: ${{ secrets.VK_ID_SCOPES || vars.VK_ID_SCOPES }}
+          VK_ID_ALLOW_NO_EMAIL_REGISTER: ${{ secrets.VK_ID_ALLOW_NO_EMAIL_REGISTER || vars.VK_ID_ALLOW_NO_EMAIL_REGISTER }}
+          VK_ID_SESSION_SECRET: ${{ secrets.VK_ID_SESSION_SECRET || vars.VK_ID_SESSION_SECRET }}
+          VK_ID_STOREFRONT_RETURN_ORIGINS: ${{ secrets.VK_ID_STOREFRONT_RETURN_ORIGINS || vars.VK_ID_STOREFRONT_RETURN_ORIGINS }}
+          VK_ID_COOKIE_SECURE: ${{ secrets.VK_ID_COOKIE_SECURE || vars.VK_ID_COOKIE_SECURE }}
+          NEXT_PUBLIC_VK_ID_ENABLED: ${{ secrets.NEXT_PUBLIC_VK_ID_ENABLED || vars.NEXT_PUBLIC_VK_ID_ENABLED }}
+          NEXT_PUBLIC_YOOKASSA_ENABLED: ${{ secrets.NEXT_PUBLIC_YOOKASSA_ENABLED || vars.NEXT_PUBLIC_YOOKASSA_ENABLED }}
+          YOOKASSA_SHOP_ID: ${{ secrets.YOOKASSA_SHOP_ID || vars.YOOKASSA_SHOP_ID }}
+          YOOKASSA_SECRET_KEY: ${{ secrets.YOOKASSA_SECRET_KEY || vars.YOOKASSA_SECRET_KEY }}
+          YOOKASSA_RETURN_URL: ${{ secrets.YOOKASSA_RETURN_URL || vars.YOOKASSA_RETURN_URL }}
+          YOOKASSA_STOREFRONT_RETURN_ORIGINS: ${{ secrets.YOOKASSA_STOREFRONT_RETURN_ORIGINS || vars.YOOKASSA_STOREFRONT_RETURN_ORIGINS }}
+          YOOKASSA_WEBHOOK_URL: ${{ secrets.YOOKASSA_WEBHOOK_URL || vars.YOOKASSA_WEBHOOK_URL }}
+          YOOKASSA_WEBHOOK_SECRET: ${{ secrets.YOOKASSA_WEBHOOK_SECRET || vars.YOOKASSA_WEBHOOK_SECRET }}
+          YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS: ${{ secrets.YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS || vars.YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS }}
+          APISHIP_SHIPMENT_EXECUTION_ENABLED: ${{ secrets.APISHIP_SHIPMENT_EXECUTION_ENABLED || vars.APISHIP_SHIPMENT_EXECUTION_ENABLED }}
+          S3_FILE_URL: ${{ secrets.S3_FILE_URL || vars.S3_FILE_URL }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID || vars.S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY || vars.S3_SECRET_ACCESS_KEY }}
+          S3_REGION: ${{ secrets.S3_REGION || vars.S3_REGION }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET || vars.S3_BUCKET }}
+          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT || vars.S3_ENDPOINT }}
+          AI_ASSISTANT_ENABLED: ${{ secrets.AI_ASSISTANT_ENABLED || vars.AI_ASSISTANT_ENABLED }}
+          AI_ASSISTANT_BASE_URL: ${{ secrets.AI_ASSISTANT_BASE_URL || vars.AI_ASSISTANT_BASE_URL }}
+          AI_ASSISTANT_API_TOKEN: ${{ secrets.AI_ASSISTANT_API_TOKEN || vars.AI_ASSISTANT_API_TOKEN }}
+          AI_ASSISTANT_SERVER_TOKEN: ${{ secrets.AI_ASSISTANT_SERVER_TOKEN || vars.AI_ASSISTANT_SERVER_TOKEN }}
+          AI_ASSISTANT_TIMEOUT_MS: ${{ secrets.AI_ASSISTANT_TIMEOUT_MS || vars.AI_ASSISTANT_TIMEOUT_MS }}
+          AI_ASSISTANT_CORS_ORIGINS: ${{ secrets.AI_ASSISTANT_CORS_ORIGINS || vars.AI_ASSISTANT_CORS_ORIGINS }}
+          AI_ASSISTANT_RETRIEVAL_MODE: ${{ secrets.AI_ASSISTANT_RETRIEVAL_MODE || vars.AI_ASSISTANT_RETRIEVAL_MODE }}
+          ASSISTANT_POSTGRES_URI: ${{ secrets.ASSISTANT_POSTGRES_URI || vars.ASSISTANT_POSTGRES_URI }}
+          QDRANT_URL: ${{ secrets.QDRANT_URL || vars.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY || vars.QDRANT_API_KEY }}
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER || vars.LLM_PROVIDER }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || vars.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL || vars.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL || vars.OPENAI_MODEL }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || vars.GOOGLE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || vars.ANTHROPIC_API_KEY }}
+          POLZA_API_KEY: ${{ secrets.POLZA_API_KEY || vars.POLZA_API_KEY }}
+          NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED: ${{ secrets.NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED || vars.NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED }}
+          NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT: ${{ secrets.NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT || vars.NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT }}
+          NEXT_PUBLIC_STOREFRONT_PRESET: ${{ secrets.NEXT_PUBLIC_STOREFRONT_PRESET || vars.NEXT_PUBLIC_STOREFRONT_PRESET }}
+          NEXT_PUBLIC_STRIPE_KEY: ${{ secrets.NEXT_PUBLIC_STRIPE_KEY || vars.NEXT_PUBLIC_STRIPE_KEY }}
+          NEXT_PUBLIC_MEDUSA_PAYMENTS_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_MEDUSA_PAYMENTS_PUBLISHABLE_KEY || vars.NEXT_PUBLIC_MEDUSA_PAYMENTS_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_MEDUSA_PAYMENTS_ACCOUNT_ID: ${{ secrets.NEXT_PUBLIC_MEDUSA_PAYMENTS_ACCOUNT_ID || vars.NEXT_PUBLIC_MEDUSA_PAYMENTS_ACCOUNT_ID }}
+          NOTIFICATION_SMOKE_TO: ${{ secrets.NOTIFICATION_SMOKE_TO || vars.NOTIFICATION_SMOKE_TO }}
+          NOTIFICATION_SMOKE_SUBJECT: ${{ secrets.NOTIFICATION_SMOKE_SUBJECT || vars.NOTIFICATION_SMOKE_SUBJECT }}
+          NOTIFICATION_SMOKE_MESSAGE: ${{ secrets.NOTIFICATION_SMOKE_MESSAGE || vars.NOTIFICATION_SMOKE_MESSAGE }}
+          NOTIFICATION_SMOKE_ADMIN_SECRET_API_KEY: ${{ secrets.NOTIFICATION_SMOKE_ADMIN_SECRET_API_KEY || vars.NOTIFICATION_SMOKE_ADMIN_SECRET_API_KEY }}
+          BACKEND_DATABASE_URL: ${{ secrets.BACKEND_DATABASE_URL || vars.BACKEND_DATABASE_URL }}
+          BACKEND_REDIS_URL: ${{ secrets.BACKEND_REDIS_URL || vars.BACKEND_REDIS_URL }}
+          STAGING_VERIFICATION_CONTOUR: ${{ secrets.STAGING_VERIFICATION_CONTOUR || vars.STAGING_VERIFICATION_CONTOUR }}
+          STAGING_BROWSER_ACCOUNT_PATH: ${{ secrets.STAGING_BROWSER_ACCOUNT_PATH || vars.STAGING_BROWSER_ACCOUNT_PATH }}
+        run: node scripts/env-contract.mjs render-staging --output .env.staging.generated
+
+      - name: Validate rendered staging compose config
+        run: docker compose -f docker-compose.prod.yml --env-file .env.staging.generated config -q
 
       - name: Install SSH key
         uses: webfactory/ssh-agent@v0.9.0
@@ -35,37 +200,16 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Sync S3 secrets to remote .env
+      - name: Upload rendered staging env
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-          S3_BUCKET: ${{ secrets.S3_BUCKET }}
-          S3_REGION: ${{ secrets.S3_REGION }}
-          S3_FILE_URL: ${{ secrets.S3_FILE_URL }}
         run: |
-          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "
-            set -euo pipefail
-            ENV_FILE='${DEPLOY_PATH}/.env'
-            update_env_var() {
-              local key=\$1 val=\$2
-              if grep -qE \"^\${key}=\" \"\$ENV_FILE\" 2>/dev/null; then
-                sed -i \"s|^\${key}=.*|\${key}=\${val}|\" \"\$ENV_FILE\"
-              else
-                echo \"\${key}=\${val}\" >> \"\$ENV_FILE\"
-              fi
-            }
-            update_env_var S3_ACCESS_KEY_ID '${S3_ACCESS_KEY_ID}'
-            update_env_var S3_SECRET_ACCESS_KEY '${S3_SECRET_ACCESS_KEY}'
-            update_env_var S3_ENDPOINT '${S3_ENDPOINT}'
-            update_env_var S3_BUCKET '${S3_BUCKET}'
-            update_env_var S3_REGION '${S3_REGION}'
-            update_env_var S3_FILE_URL '${S3_FILE_URL}'
-            echo 'S3 secrets synced to remote .env'
-          "
+          set -euo pipefail
+          remote_tmp="${DEPLOY_PATH}/.env.tmp-${{ github.run_id }}-${{ github.run_attempt }}"
+          scp .env.staging.generated "${DEPLOY_USER}@${DEPLOY_HOST}:${remote_tmp}"
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}"             "set -euo pipefail; chmod 600 '${remote_tmp}'; mv '${remote_tmp}' '${DEPLOY_PATH}/.env'; echo 'Rendered staging .env uploaded'"
 
       - name: Run remote staging deploy
         env:
@@ -74,5 +218,4 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           DEPLOY_BRANCH: ${{ github.event.inputs.branch || github.ref_name }}
         run: |
-          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "DEPLOY_PATH='${DEPLOY_PATH}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash '${DEPLOY_PATH}/scripts/github-deploy-staging.sh'"
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}"             "DEPLOY_PATH='${DEPLOY_PATH}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash '${DEPLOY_PATH}/scripts/github-deploy-staging.sh'"

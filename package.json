@@ -7,6 +7,8 @@
   "scripts": {
     "client:init:contract": "node -e \"process.stdout.write(require('fs').readFileSync('Docs/client_init_contract.md', 'utf8'))\"",
     "preflight": "bash ./scripts/preflight.sh",
+    "env:check": "node ./scripts/env-contract.mjs check-local",
+    "env:render:staging": "node ./scripts/env-contract.mjs render-staging",
     "env:sync": "bash ./scripts/env-sync.sh",
     "permissions:fix": "bash ./scripts/fix-medusa-permissions.sh",
     "infra:check": "docker compose config -q",

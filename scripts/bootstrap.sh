@@ -43,6 +43,8 @@ if [[ ! -f "$ROOT_DIR/.env" ]]; then
   exit 1
 fi
 
+node "$ROOT_DIR/scripts/env-contract.mjs" check-local --env "$ROOT_DIR/.env"
+
 log_info "Synchronizing backend/storefront env files from root env..."
 bash "$ROOT_DIR/scripts/env-sync.sh"
 

@@ -11,7 +11,7 @@
 | Is there a staging GitHub Actions deploy workflow? | Yes: [`.github/workflows/deploy-staging.yml`](../.github/workflows/deploy-staging.yml) (`Deploy Staging`). |
 | Is there a real production environment? | No. Not provisioned yet. Will be added after development is complete. |
 | Is deployment by any method other than GitHub Actions supported? | No. Direct SSH + docker build is not canonical. |
-| How do secrets reach the staging server? | Only through GitHub Secrets and GitHub Variables, injected into the remote `.env` during deploy. |
+| How do secrets reach the staging server? | Only through GitHub Secrets and GitHub Variables; the deploy workflow renders the complete remote `.env` from the staging contract on every deploy. |
 
 ## 2. Concrete staging facts
 
@@ -44,7 +44,7 @@ Mail infrastructure runs on a separate VPS (`smtpserv` / `77.83.92.194`, hostnam
 - **Only** source of real secrets: GitHub Secrets (passwords, tokens, API keys).
 - **Only** source of non-secret config: GitHub Variables.
 - Never commit real secret values to git.
-- Remote `.env` on staging is built from GitHub Secrets/Variables during deploy.
+- Remote `.env` on staging is fully rendered from GitHub Secrets/Variables during deploy; manual remote edits are overwritten by the next deploy.
 - [`.env.example`](../.env.example), [`.env.staging.example`](../.env.staging.example), and the per-app templates contain only placeholder values for documentation.
 
 ## 5. How to read existing staging docs

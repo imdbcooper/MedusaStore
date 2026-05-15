@@ -1,6 +1,8 @@
 
 # Docker Compose secrets
 .env
+.env.staging.generated
+.env.staging.generated.*
 .logs/
 
 # Local restore artifacts

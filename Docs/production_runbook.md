@@ -44,9 +44,9 @@ Configure these in the GitHub repository. Real secret values go into GitHub Secr
 
 The workflow also has a manual `branch` input, defaulting to `main`.
 
-### S3 secrets sync
+### Staging env render
 
-The deploy workflow includes a step **"Sync S3 secrets to remote .env"** that writes S3 credentials from GitHub Secrets into the remote `.env` file before running the deploy script. This ensures S3 credentials are never manually managed on the server — they are always sourced from GitHub Secrets and overwritten on each deploy.
+The deploy workflow renders the complete staging `.env` from GitHub Secrets/Variables with `scripts/env-contract.mjs render-staging`, validates it with Docker Compose, uploads it to the staging host, and then runs the remote deploy script. This replaces partial/manual remote `.env` management: manual edits on the server are overwritten by the next deploy, and missing mandatory values fail before containers are rebuilt.
 
 ## 2.1. External mailserver follow-ups
 
@@ -104,9 +104,11 @@ Do not put GitHub-only deploy secrets into the app `.env`; keep `DEPLOY_SSH_PRIV
 4. Keep branch as `main` unless intentionally deploying another branch.
 5. The workflow:
    - checks out the repository;
-   - validates staging compose syntax with `docker compose -f docker-compose.prod.yml --env-file .env.example config -q`;
+   - validates staging compose syntax with `docker compose -f docker-compose.prod.yml --env-file .env.staging.example config -q`;
+   - renders and validates the complete staging `.env` from GitHub Secrets/Variables;
    - loads SSH key from `DEPLOY_SSH_PRIVATE_KEY`;
    - adds `DEPLOY_HOST` to `known_hosts`;
+   - uploads the rendered `.env` to the remote checkout;
    - runs `scripts/github-deploy-staging.sh` on the remote server.
 6. The remote script:
    - `git fetch origin <branch>`;

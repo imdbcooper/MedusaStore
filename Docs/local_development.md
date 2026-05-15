@@ -44,7 +44,7 @@ npm run dev
 What this does:
 
 1. `bootstrap` syncs env files, starts DB/Redis, runs Medusa migrations/seed, and writes the real storefront publishable key.
-2. `preflight` checks required files, ports, and compose config.
+2. `preflight` checks the local env contract, required files, ports, and compose config.
 3. `dev` starts the local root runtime: compose backend/infra plus storefront host process after backend readiness.
 
 ## 4. Local app commands

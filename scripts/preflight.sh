@@ -58,6 +58,7 @@ check_local_port() {
 check_command docker
 check_command npm
 check_command curl
+check_command node
 
 if ! command_exists ss && ! command_exists lsof; then
   log_error "Preflight requires either 'ss' or 'lsof' for port checks."
@@ -67,6 +68,12 @@ fi
 check_required_file "$ROOT_DIR/.env" "root .env"
 check_required_file "$ROOT_DIR/medusa-agency-boilerplate/.env" "backend .env"
 check_required_file "$ROOT_DIR/medusa-agency-boilerplate-storefront/.env.local" "storefront .env.local"
+
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  if ! node "$ROOT_DIR/scripts/env-contract.mjs" check-local --env "$ROOT_DIR/.env"; then
+    failed=1
+  fi
+fi
 
 if [[ -f "$ROOT_DIR/medusa-agency-boilerplate-storefront/.env.local" ]]; then
   if ! env_file_has_value "$ROOT_DIR/medusa-agency-boilerplate-storefront/.env.local" "NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY"; then
