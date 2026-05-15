@@ -4,6 +4,7 @@ import { revalidateTag } from "next/cache"
 
 import { sdk } from "@lib/config"
 import { getAuthHeaders } from "./cookies"
+import { retrieveCustomer } from "./customer"
 
 /**
  * Phase 1 / step 6 — storefront data layer for product reviews.
@@ -70,6 +71,8 @@ export type ProductReviewListResult = {
 
 const RATING_CACHE_TAG = (productId: string) => `product-rating-${productId}`
 const REVIEWS_CACHE_TAG = (productId: string) => `product-reviews-${productId}`
+const CUSTOMER_REVIEWS_CACHE_TAG = (customerId: string) =>
+  `customer-reviews-${customerId}`
 
 /**
  * Fetch the public rating summary for a product. Returns deterministic empty
@@ -480,3 +483,221 @@ export async function submitProductReview(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 2 / step 5 — «Мои отзывы» account page
+// ---------------------------------------------------------------------------
+
+/**
+ * One row of the «Мои отзывы» list. Mirrors `ProductReviewItem` 1:1; declared
+ * separately to express the contract that the customer-only endpoint always
+ * returns the moderation `status` and (for rejected) `rejection_reason` —
+ * fields that the public list never exposes for other customers' reviews.
+ *
+ * See backend route
+ * [`store/customers/me/reviews/route.ts`](medusa-agency-boilerplate/src/api/store/customers/me/reviews/route.ts:1)
+ * — the response shape is identical apart from being scoped to the
+ * authenticated customer.
+ */
+export type MyProductReview = ProductReviewItem
+
+export type MyProductReviewListResult = {
+  items: MyProductReview[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/**
+ * Server fetch for the authenticated customer's reviews across all products.
+ *
+ * Cache contract (plan §6.6):
+ *   - tag `customer-reviews-${customerId}` so admin approve/reject and the
+ *     customer's own delete can invalidate this surface;
+ *   - `revalidate: 60` as a safety net — even if no admin webhook fires
+ *     (current Phase 2 backend only tags `product-rating-${id}` and
+ *     `product-reviews-${id}` on approve/reject; see plan §9 Phase 2 step 6
+ *     — extending `revalidateStorefrontTags` to additionally invalidate
+ *     `customer-reviews-${customer_id}` is the next step), the page
+ *     refreshes within a minute.
+ *
+ * The customerId is resolved via {@link retrieveCustomer} on the server. When
+ * the customer is not authenticated the function returns an empty result
+ * (rather than throwing) so the page-level `redirect()` stays the single
+ * source of truth for auth-flow.
+ *
+ * Non-2xx responses are caught and logged; the UI then renders an empty
+ * state — matching the defensive style of {@link listApprovedProductReviews}.
+ */
+export async function getMyProductReviews({
+  page = 1,
+  pageSize = 20,
+}: { page?: number; pageSize?: number } = {}): Promise<MyProductReviewListResult> {
+  const safePage = page > 0 ? Math.floor(page) : 1
+  const safePageSize =
+    pageSize > 0 && pageSize <= 100 ? Math.floor(pageSize) : 20
+
+  const empty: MyProductReviewListResult = {
+    items: [],
+    total: 0,
+    page: safePage,
+    pageSize: safePageSize,
+  }
+
+  const authHeaders = await getAuthHeaders()
+  const hasAuth =
+    typeof (authHeaders as { authorization?: string }).authorization === "string"
+  if (!hasAuth) {
+    return empty
+  }
+
+  // Resolve the customer id so we can scope the cache tag deterministically.
+  // `retrieveCustomer()` already swallows transport errors and returns null.
+  const customer = await retrieveCustomer()
+  if (!customer?.id) {
+    return empty
+  }
+
+  try {
+    const response = await sdk.client.fetch<MyProductReviewListResult>(
+      `/store/customers/me/reviews`,
+      {
+        method: "GET",
+        headers: { ...authHeaders },
+        query: {
+          page: safePage,
+          pageSize: safePageSize,
+        },
+        next: {
+          tags: [CUSTOMER_REVIEWS_CACHE_TAG(customer.id)],
+          revalidate: 60,
+        },
+        cache: "force-cache",
+      }
+    )
+
+    if (!response || !Array.isArray(response.items)) {
+      return empty
+    }
+
+    return {
+      items: response.items,
+      total:
+        typeof response.total === "number"
+          ? Math.max(0, Math.trunc(response.total))
+          : 0,
+      page:
+        typeof response.page === "number" && response.page > 0
+          ? Math.floor(response.page)
+          : safePage,
+      pageSize:
+        typeof response.pageSize === "number" && response.pageSize > 0
+          ? Math.floor(response.pageSize)
+          : safePageSize,
+    }
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error(
+      "[product-reviews] getMyProductReviews failed",
+      error instanceof Error ? error.message : error
+    )
+    return empty
+  }
+}
+
+/**
+ * Stable error codes for {@link deleteMyProductReview}. Decoupled from
+ * backend `message`/`code` strings so the UI can map them to copy without
+ * coupling to the API surface (plan §6.5).
+ *
+ * Backend → code map:
+ *   - 204 No Content              → `ok: true`
+ *   - 404 not_found / not_owner   → `not_found`
+ *   - 409 cannot_delete_published → `cannot_delete_published`
+ *   - 401                         → `auth_required`
+ *   - other / network             → `unknown`
+ */
+export type DeleteMyProductReviewCode =
+  | "auth_required"
+  | "not_found"
+  | "cannot_delete_published"
+  | "unknown"
+
+export type DeleteMyProductReviewResult =
+  | { ok: true }
+  | { ok: false; code: DeleteMyProductReviewCode; status: number }
+
+/**
+ * Server action for `DELETE /store/customers/me/reviews/:id`.
+ *
+ * Mirrors the auth pattern of {@link voteHelpfulOnReview} and
+ * {@link submitProductReview}: `_medusa_jwt` is `httpOnly`, so client islands
+ * cannot DELETE directly — they go through this server action.
+ *
+ * On 204 the function calls `revalidateTag('customer-reviews-${customerId}')`
+ * so the «Мои отзывы» page re-fetches without waiting for the 60-second
+ * stale-while-revalidate (plan §6.6, §5.7 of step 5).
+ */
+export async function deleteMyProductReview(
+  reviewId: string
+): Promise<DeleteMyProductReviewResult> {
+  if (!reviewId?.trim()) {
+    return { ok: false, code: "unknown", status: 400 }
+  }
+
+  const authHeaders = await getAuthHeaders()
+  const hasAuth =
+    typeof (authHeaders as { authorization?: string }).authorization === "string"
+  if (!hasAuth) {
+    return { ok: false, code: "auth_required", status: 401 }
+  }
+
+  // Resolve the customer id BEFORE calling DELETE — we need it to invalidate
+  // the cache tag on success. If the customer cookie is stale and there is
+  // no current customer record the backend will reply 401, so it is safe to
+  // short-circuit here too.
+  const customer = await retrieveCustomer()
+  if (!customer?.id) {
+    return { ok: false, code: "auth_required", status: 401 }
+  }
+
+  try {
+    await sdk.client.fetch<unknown>(
+      `/store/customers/me/reviews/${encodeURIComponent(reviewId)}`,
+      {
+        method: "DELETE",
+        headers: { ...authHeaders },
+        cache: "no-store",
+      }
+    )
+
+    // 204 No Content — the SDK resolves with `undefined`. Invalidate the
+    // customer-scoped tag so the next visit to /account/reviews re-fetches.
+    revalidateTag(CUSTOMER_REVIEWS_CACHE_TAG(customer.id))
+
+    return { ok: true }
+  } catch (error) {
+    const candidate = error as { status?: number; statusCode?: number }
+    const status = candidate?.status ?? candidate?.statusCode ?? 0
+
+    if (status === 401) {
+      return { ok: false, code: "auth_required", status: 401 }
+    }
+    if (status === 404) {
+      return { ok: false, code: "not_found", status: 404 }
+    }
+    if (status === 409) {
+      return {
+        ok: false,
+        code: "cannot_delete_published",
+        status: 409,
+      }
+    }
+
+    // eslint-disable-next-line no-console
+    console.error(
+      "[product-reviews] deleteMyProductReview failed",
+      error instanceof Error ? error.message : error
+    )
+    return { ok: false, code: "unknown", status: status || 500 }
+  }
+}

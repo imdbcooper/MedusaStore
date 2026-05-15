@@ -138,6 +138,7 @@ export const storefrontConfig = {
       profile: "Профиль",
       addresses: "Адреса",
       orders: "Заказы",
+      reviews: "Мои отзывы",
       logOut: "Выйти",
       welcomeBack: "С возвращением",
       signInTitle: "Вход в аккаунт",
@@ -283,6 +284,42 @@ export const storefrontConfig = {
         rejected: "Отклонён",
       },
       verified: "Проверенная покупка",
+      // Phase 2 / step 5 — copy used by the «Мои отзывы» account page
+      // (`/account/reviews`). Lives under `copy.reviews.account.*` because
+      // the entire review domain is centralised here, not split across
+      // `copy.account.*` / `copy.reviews.*` (plan §6.7).
+      account: {
+        title: "Мои отзывы",
+        description: "Список отзывов, которые вы оставили.",
+        empty: "Вы пока не оставляли отзывы.",
+        emptyHint:
+          "Купите товар и поделитесь впечатлением — это поможет другим покупателям.",
+        emptyCTA: "К каталогу",
+        emptyCTAHref: "/store",
+        productLabel: "Товар",
+        prosLabel: "Достоинства",
+        consLabel: "Недостатки",
+        rejectedReasonLabel: "Причина отклонения",
+        // Substituted client-side via simple replace, mirrors `account.*` style.
+        // Used for `<time dateTime>`-prefix labels on the card.
+        createdLabel: "Оставлен",
+        delete: {
+          cta: "Удалить",
+          confirm: "Удалить этот отзыв?",
+          success: "Отзыв удалён",
+          cannotDeletePublished: "Опубликованный отзыв удалить нельзя",
+          notFound: "Отзыв не найден или уже удалён",
+          authRequired: "Войдите, чтобы удалить отзыв",
+          error: "Не удалось удалить отзыв",
+          submitting: "Удаляем…",
+        },
+        pagination: {
+          next: "Дальше",
+          prev: "Назад",
+          // `{current}` / `{total}` are substituted client-side.
+          pageOf: "Страница {current} из {total}",
+        },
+      },
       list: {
         sortNewest: "Новые",
         sortHelpful: "Сначала полезные",
