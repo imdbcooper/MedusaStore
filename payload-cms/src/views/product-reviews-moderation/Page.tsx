@@ -59,6 +59,14 @@ export default async function ProductReviewsModerationView(
   // Plan: Payload's DefaultTemplate provides the sidebar nav, app header,
   // and theming. All custom views in Payload 3 are expected to render
   // inside it; otherwise the page lacks navigation and feels broken.
+  //
+  // Hotfix: for top-level `AdminViewConfig` routes Payload doesn't always
+  // populate `visibleEntities` (it's `undefined` on initial server render),
+  // and `DefaultTemplate` later iterates `.collections.filter(...)`, which
+  // crashes the Server Component render with
+  // `Cannot read properties of undefined (reading 'collections')`
+  // (digest 2342323083). Provide a safe fallback shape instead of the
+  // previous `visibleEntities!` non-null assertion.
   const templateProps = {
     i18n,
     locale,
@@ -67,7 +75,7 @@ export default async function ProductReviewsModerationView(
     permissions,
     searchParams,
     user,
-    visibleEntities: visibleEntities!,
+    visibleEntities: visibleEntities ?? { collections: [], globals: [] },
   }
 
   return (
