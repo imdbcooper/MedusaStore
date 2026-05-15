@@ -818,6 +818,19 @@ async function recalcProductRatingSummaryWithExecutor(
 export type ProductReviewModerationResult = {
   review: ProductReviewRow
   productId: string
+  /**
+   * True when the row's status actually transitioned (e.g.
+   * `pending → approved`, `approved → rejected`, `pending → rejected`).
+   * False on the idempotent paths where the row was already in the
+   * target status and no UPDATE was issued.
+   *
+   * Phase 2 / step 6: admin routes use this flag to send a transactional
+   * moderation email exactly once per real transition (plan §1.1 п.9 +
+   * §9 Phase 2). `recalculated` cannot be reused for that decision: a
+   * `pending → rejected` transition is a real status change but does
+   * NOT touch the rating summary, so `recalculated` is `false`.
+   */
+  statusChanged: boolean
   recalculated: boolean
 }
 
@@ -860,6 +873,7 @@ export async function approveProductReview({
       return {
         review: lockedRow,
         productId,
+        statusChanged: false,
         recalculated: false,
       }
     }
@@ -891,6 +905,7 @@ export async function approveProductReview({
     return {
       review: updatedReview,
       productId,
+      statusChanged: true,
       recalculated: true,
     }
   })
@@ -939,6 +954,7 @@ export async function rejectProductReview({
       return {
         review: lockedRow,
         productId,
+        statusChanged: false,
         recalculated: false,
       }
     }
@@ -975,6 +991,7 @@ export async function rejectProductReview({
     return {
       review: updatedReview,
       productId,
+      statusChanged: true,
       recalculated,
     }
   })
@@ -982,6 +999,14 @@ export async function rejectProductReview({
 
 export type ProductReviewAdminDeleteResult = {
   productId: string
+  /**
+   * `customer_id` of the deleted row, mirroring the same field on
+   * [`ProductReviewRow`](medusa-agency-boilerplate/src/modules/product-reviews.ts:89).
+   * `null` for anonymized reviews. Phase 2 / step 6: the admin DELETE
+   * route uses this to invalidate the per-customer storefront tag
+   * `customer-reviews-${customer_id}` (plan §6.6).
+   */
+  customerId: string | null
   recalculated: boolean
 }
 
@@ -1016,6 +1041,7 @@ export async function deleteProductReviewAsAdmin({
 
     const lockedRow = normalizeReviewRow(lockedRows[0])
     const productId = lockedRow.product_id
+    const customerId = lockedRow.customer_id
     const prevStatus = lockedRow.status
 
     await trx.raw(
@@ -1034,6 +1060,7 @@ export async function deleteProductReviewAsAdmin({
 
     return {
       productId,
+      customerId,
       recalculated,
     }
   })

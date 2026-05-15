@@ -1,12 +1,18 @@
 /**
  * Unit tests for `GET` and `DELETE /admin/reviews/:id`.
  *
- * Plan §4.2 / §4.3 / §6.6:
+ * Plan §4.2 / §4.3 / §6.6 / §9 Phase 2 шаг 6:
  *   - GET returns `{ review }` when found, 404 `{ code: "not_found" }` otherwise;
  *   - DELETE returns 204 on success and triggers
  *     [`revalidateStorefrontTags`](medusa-agency-boilerplate/src/lib/storefront-revalidate.ts:69)
  *     ONLY when the module reports `recalculated: true`. Deleting a
  *     pending/rejected row keeps the aggregates intact, so no invalidation.
+ *   - The customer-scoped `customer-reviews-${customer_id}` tag is added
+ *     to the invalidation set ONLY when `recalculated: true` AND
+ *     `customerId` is non-null (anonymized rows have no surface to
+ *     refresh). Plan §9 Phase 2 шаг 6 explicitly: «при approved cleanup».
+ *   - DELETE NEVER sends a moderation email — admin removal is treated as
+ *     an admin decision, not customer-facing feedback (plan §6.3).
  */
 
 import {
@@ -106,6 +112,7 @@ beforeEach(() => {
   mockDeleteProductReviewAsAdmin.mockReset()
   mockDeleteProductReviewAsAdmin.mockImplementation(async () => ({
     productId: "prod_1",
+    customerId: "cust_1",
     recalculated: false,
   }))
   mockGetProductReviewsPgConnection.mockReset()
@@ -176,9 +183,10 @@ describe("GET /admin/reviews/:id", () => {
 // ---------------------------------------------------------------------------
 
 describe("DELETE /admin/reviews/:id", () => {
-  it("success with recalculated:true → 204 + revalidateStorefrontTags called with both tags", async () => {
+  it("success with recalculated:true and customer_id → 204 + all three tags", async () => {
     mockDeleteProductReviewAsAdmin.mockImplementation(async () => ({
       productId: "prod_42",
+      customerId: "cust_42",
       recalculated: true,
     }))
 
@@ -195,12 +203,35 @@ describe("DELETE /admin/reviews/:id", () => {
     expect(tagsArg).toEqual([
       "product-rating-prod_42",
       "product-reviews-prod_42",
+      "customer-reviews-cust_42",
     ])
   })
 
-  it("success with recalculated:false → 204 + revalidateStorefrontTags NOT called", async () => {
+  it("success with recalculated:true and anonymized customerId:null → only product tags", async () => {
     mockDeleteProductReviewAsAdmin.mockImplementation(async () => ({
       productId: "prod_42",
+      customerId: null,
+      recalculated: true,
+    }))
+
+    const { res, recorder } = buildResponse()
+    const req = buildReq({ reviewId: "pr_1" })
+
+    await DELETE(req, res)
+
+    expect(recorder.status).toBe(204)
+    expect(mockRevalidateStorefrontTags).toHaveBeenCalledTimes(1)
+    const tagsArg = mockRevalidateStorefrontTags.mock.calls[0][0] as string[]
+    expect(tagsArg).toEqual([
+      "product-rating-prod_42",
+      "product-reviews-prod_42",
+    ])
+  })
+
+  it("success with recalculated:false (deleted pending/rejected) → 204 + no revalidate even if customerId is set", async () => {
+    mockDeleteProductReviewAsAdmin.mockImplementation(async () => ({
+      productId: "prod_42",
+      customerId: "cust_42",
       recalculated: false,
     }))
 

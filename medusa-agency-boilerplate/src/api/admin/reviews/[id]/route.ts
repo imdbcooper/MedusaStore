@@ -12,6 +12,16 @@ import {
 import { revalidateStorefrontTags } from "../../../../lib/storefront-revalidate"
 
 /**
+ * Per plan §6.6 + §9 Phase 2 шаг 6, the admin DELETE route should also
+ * invalidate the customer's `«Мои отзывы»` surface when an approved row
+ * is removed. We therefore need the deleted row's `customer_id` —
+ * `deleteProductReviewAsAdmin` did not surface it before, but it has the
+ * row locked and known internally; the public result type
+ * [`ProductReviewAdminDeleteResult`](medusa-agency-boilerplate/src/modules/product-reviews.ts:983)
+ * was extended in this step to include `customerId: string | null`.
+ */
+
+/**
  * Phase 1 / step 4: thin admin routes for a single review.
  *
  * - `GET    /admin/reviews/:id` — fetch review by id (or 404).
@@ -103,19 +113,30 @@ export async function DELETE(
       reviewId,
     })
 
-    // Plan §6.6: invalidate only when the deleted row was previously
-    // `approved` and the summary was actually rebuilt. Deleting a
-    // pending/rejected review does not touch the aggregates, so there is
-    // nothing to invalidate on the storefront. Best-effort — see helper
-    // docs.
+    // Plan §6.6 + §9 Phase 2 шаг 6: invalidate only when the deleted row
+    // was previously `approved` and the summary was actually rebuilt.
+    // Deleting a pending/rejected review does not touch the aggregates,
+    // so there is nothing to invalidate on the storefront. The
+    // `customer-reviews-${id}` tag is added under the SAME guard
+    // (`recalculated === true`) — the plan ties the «Мои отзывы»
+    // invalidation on DELETE to the approved-cleanup case only, because
+    // a customer with a pending/rejected row that is hard-deleted by an
+    // admin is an edge case where the storefront cannot link it back to
+    // them anyway. Best-effort — see helper docs.
+    //
+    // Email: NOT sent on admin DELETE (plan §6.3 explicitly: «admin-
+    // decision, не feedback покупателю»).
     if (result.recalculated) {
-      await revalidateStorefrontTags(
-        [
-          `product-rating-${result.productId}`,
-          `product-reviews-${result.productId}`,
-        ],
-        { logger }
-      )
+      const tags = [
+        `product-rating-${result.productId}`,
+        `product-reviews-${result.productId}`,
+      ]
+
+      if (result.customerId) {
+        tags.push(`customer-reviews-${result.customerId}`)
+      }
+
+      await revalidateStorefrontTags(tags, { logger })
     }
 
     res.status(204).end()

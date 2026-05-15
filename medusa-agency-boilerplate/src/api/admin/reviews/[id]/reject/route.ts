@@ -8,6 +8,7 @@ import {
   ProductReviewError,
   rejectProductReview,
 } from "../../../../../modules/product-reviews"
+import { sendReviewModerationEmail } from "../../../../../modules/product-reviews-email"
 import { revalidateStorefrontTags } from "../../../../../lib/storefront-revalidate"
 
 /**
@@ -85,15 +86,55 @@ export async function POST(
     // Plan §4.3 + §6.6: only invalidate when the previous status was
     // `approved` and the summary was actually recalculated; an idempotent
     // reject (already-rejected row) leaves the aggregates untouched, so
-    // there is nothing to invalidate. Best-effort — see helper docs.
-    if (result.recalculated) {
-      await revalidateStorefrontTags(
-        [
+    // there is nothing to invalidate. The «Мои отзывы» surface is also
+    // worth invalidating on `pending → rejected` because the row's status
+    // visible to the customer changes — that is signalled by
+    // `result.statusChanged`, not by `recalculated`. Best-effort — see
+    // helper docs.
+    if (result.recalculated || result.statusChanged) {
+      const tags: string[] = []
+
+      if (result.recalculated) {
+        tags.push(
           `product-rating-${result.productId}`,
-          `product-reviews-${result.productId}`,
-        ],
-        { logger }
-      )
+          `product-reviews-${result.productId}`
+        )
+      }
+
+      // Plan §6.6: extra tag for the «Мои отзывы» surface so the customer
+      // sees their now-rejected review reflect the new status without the
+      // 60s ISR wait. Anonymized rows (`customer_id === null`) cannot be
+      // tied back to an account, so the tag is omitted.
+      if (result.statusChanged && result.review.customer_id) {
+        tags.push(`customer-reviews-${result.review.customer_id}`)
+      }
+
+      if (tags.length) {
+        await revalidateStorefrontTags(tags, { logger })
+      }
+    }
+
+    // Plan §1.1 п.9 + §9 Phase 2 шаг 6: send the transactional «Ваш отзыв
+    // отклонён» email exactly once per real status transition. The
+    // module's `statusChanged` flag is true for `pending → rejected` AND
+    // `approved → rejected`; it is false on the idempotent already-
+    // rejected path. The helper itself is best-effort and never throws,
+    // but we still wrap it as defence-in-depth so any future refactor
+    // cannot break the admin 200 response.
+    if (result.statusChanged) {
+      try {
+        await sendReviewModerationEmail(req.scope, {
+          review: result.review,
+          type: "rejected",
+          rejectionReason: result.review.rejection_reason || reason,
+        })
+      } catch (emailError) {
+        logger.error(
+          `[product-reviews] reject email best-effort failed review_id=${reviewId} error=${
+            emailError instanceof Error ? emailError.message : "unknown_error"
+          }`
+        )
+      }
     }
 
     res.status(200).json({

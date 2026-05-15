@@ -9,6 +9,15 @@
  *
  * No container, no Postgres — these are pure-function tests, kept inside
  * `src/modules/__tests__/` per the existing project convention.
+ *
+ * TODO Phase 3: module-level assert'ы для `approveProductReview` /
+ * `rejectProductReview` / `deleteProductReviewAsAdmin` на новые поля
+ * (`statusChanged`, `recalculated`, `customerId`) требуют pg-моков транзакций.
+ * Текущее покрытие route-tests'ами достаточно (
+ * [`approve/__tests__/route.unit.spec.ts`](medusa-agency-boilerplate/src/api/admin/reviews/[id]/approve/__tests__/route.unit.spec.ts:1),
+ * [`reject/__tests__/route.unit.spec.ts`](medusa-agency-boilerplate/src/api/admin/reviews/[id]/reject/__tests__/route.unit.spec.ts:1),
+ * [`[id]/__tests__/route.unit.spec.ts`](medusa-agency-boilerplate/src/api/admin/reviews/[id]/__tests__/route.unit.spec.ts:1)) —
+ * новые поля проверяются через моки модуля.
  */
 
 import { describe, expect, it } from "@jest/globals"

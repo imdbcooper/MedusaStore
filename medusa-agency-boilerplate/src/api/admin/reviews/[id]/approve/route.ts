@@ -7,6 +7,7 @@ import {
   ProductReviewError,
   approveProductReview,
 } from "../../../../../modules/product-reviews"
+import { sendReviewModerationEmail } from "../../../../../modules/product-reviews-email"
 import { revalidateStorefrontTags } from "../../../../../lib/storefront-revalidate"
 
 /**
@@ -61,14 +62,48 @@ export async function POST(
     // Best-effort — `revalidateStorefrontTags` never throws and the
     // storefront also has 60s ISR fallback, so a transient webhook
     // failure must not break this 200.
-    if (result.recalculated) {
-      await revalidateStorefrontTags(
-        [
-          `product-rating-${result.productId}`,
-          `product-reviews-${result.productId}`,
-        ],
-        { logger }
-      )
+    //
+    // For approve `statusChanged === recalculated` (any pending→approved
+    // transition recalculates the summary). We use `statusChanged` for
+    // symmetry with the reject route, where pending→rejected changes status
+    // without touching the summary.
+    if (result.statusChanged) {
+      const tags = [
+        `product-rating-${result.productId}`,
+        `product-reviews-${result.productId}`,
+      ]
+
+      // Plan §6.6: «Мои отзывы» surface caches under
+      // `customer-reviews-${customer_id}`; invalidate it so the customer
+      // sees their freshly-approved review without waiting for the 60s
+      // ISR fallback. Anonymized rows (`customer_id === null`) cannot be
+      // tied back to an account, so the tag is omitted.
+      if (result.review.customer_id) {
+        tags.push(`customer-reviews-${result.review.customer_id}`)
+      }
+
+      await revalidateStorefrontTags(tags, { logger })
+    }
+
+    // Plan §1.1 п.9 + §9 Phase 2 шаг 6: send the transactional «Ваш отзыв
+    // опубликован» email. Best-effort — the helper never throws, but we
+    // still wrap in try/catch as a defence-in-depth measure so any future
+    // refactor cannot break the admin 200 response. We send only when the
+    // status actually changed; idempotent re-approvals leave the row alone,
+    // so the customer was already notified by the first approval.
+    if (result.statusChanged) {
+      try {
+        await sendReviewModerationEmail(req.scope, {
+          review: result.review,
+          type: "approved",
+        })
+      } catch (emailError) {
+        logger.error(
+          `[product-reviews] approve email best-effort failed review_id=${reviewId} error=${
+            emailError instanceof Error ? emailError.message : "unknown_error"
+          }`
+        )
+      }
     }
 
     res.status(200).json({
