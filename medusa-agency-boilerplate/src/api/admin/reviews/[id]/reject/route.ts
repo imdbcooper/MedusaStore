@@ -99,6 +99,12 @@ export async function POST(
           `product-rating-${result.productId}`,
           `product-reviews-${result.productId}`
         )
+        // Plan §9 Phase 3 п.5 — homepage «Лучшие отзывы» widget caches
+        // under the singleton tag `top-reviews`. Only invalidate when the
+        // summary was actually recalculated (i.e. an `approved` row went
+        // away); a `pending → rejected` transition cannot affect the
+        // catalog-wide top list because the row was never approved.
+        tags.push("top-reviews")
       }
 
       // Plan §6.6: extra tag for the «Мои отзывы» surface so the customer

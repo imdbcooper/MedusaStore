@@ -277,6 +277,26 @@ export const storefrontConfig = {
           cancel: "Отмена",
           submitting: "Отправляем…",
         },
+        // Phase 3 / step 5 — image attachments. Limits mirror the backend
+        // upload route (max 5 photos / 5 MiB each / jpeg|png|webp). The
+        // `{count}` / `{max}` / `{size}` tokens are substituted client-side.
+        images: {
+          label: "Фотографии (необязательно)",
+          hint: "До {max} фото, JPEG/PNG/WEBP, до {size} МБ каждое",
+          add: "Добавить фото",
+          uploading: "Загружаем…",
+          remove: "Удалить",
+          counter: "{count} из {max}",
+          previewAlt: "Превью загруженного фото",
+          errors: {
+            tooMany: "Можно добавить максимум {max} фото",
+            tooLarge: "Файл больше {size} МБ",
+            invalidType: "Поддерживаются только JPEG, PNG и WEBP",
+            uploadFailed: "Не удалось загрузить фото",
+            authRequired: "Войдите, чтобы прикреплять фото",
+            rateLimited: "Слишком много загрузок. Попробуйте позже.",
+          },
+        },
       },
       status: {
         pending: "На модерации",
@@ -284,6 +304,11 @@ export const storefrontConfig = {
         rejected: "Отклонён",
       },
       verified: "Проверенная покупка",
+      // Phase 3 / step 4 — admin reply («Ответ магазина»). Rendered under
+      // each review card on the public product detail page. The label is
+      // a static string; date formatting reuses the same `Intl.DateTimeFormat`
+      // configured in the card component.
+      merchantReplyLabel: "Ответ магазина",
       // Phase 2 / step 5 — copy used by the «Мои отзывы» account page
       // (`/account/reviews`). Lives under `copy.reviews.account.*` because
       // the entire review domain is centralised here, not split across
@@ -327,11 +352,36 @@ export const storefrontConfig = {
         loading: "Загружаем…",
         error: "Не удалось загрузить отзывы",
         retry: "Попробовать снова",
+        // Phase 3 / step 2 — chip filters above the list (rating preset
+        // ★1..★5 + a `verified_purchase` toggle). The backend Zod schema
+        // accepts `min_rating` / `max_rating` / `verified_only`; an exact
+        // chip preset is `min_rating === max_rating === X`.
+        filters: {
+          allLabel: "Все",
+          stars1: "★ 1",
+          stars2: "★★ 2",
+          stars3: "★★★ 3",
+          stars4: "★★★★ 4",
+          stars5: "★★★★★ 5",
+          verifiedOnly: "Только проверенные",
+          emptyFiltered: "Нет отзывов по выбранным фильтрам",
+          clearAll: "Сбросить",
+        },
       },
       // Plural forms used together with `summary.average` and the count badge
       // in catalog/info surfaces. Order is [one, few, many] — see
       // `pluralizeRu` doc.
       reviewWordForms: ["отзыв", "отзыва", "отзывов"],
+      // Phase 3 / step 3 — homepage «Лучшие отзывы» widget. Singleton
+      // section, rendered after the existing home sections. Empty state
+      // hides the section entirely (the widget returns `null`), so
+      // `empty` here is a stored fallback in case future variants want
+      // to surface the placeholder.
+      topWidget: {
+        title: "Что говорят покупатели",
+        subtitle: "Отзывы клиентов о товарах",
+        empty: "Будьте первыми!",
+      },
     },
     freeShipping: {
       unlocked: "Бесплатная доставка доступна",

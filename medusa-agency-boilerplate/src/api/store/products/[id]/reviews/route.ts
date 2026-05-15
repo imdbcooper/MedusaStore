@@ -12,6 +12,7 @@ import {
   createProductReview,
   getProductReviewsPgConnection,
   listApprovedProductReviews,
+  toPublicReview,
   verifyCustomerPurchasedProduct,
   type ProductReviewListSort,
 } from "../../../../../modules/product-reviews"
@@ -104,22 +105,98 @@ const PRODUCT_REVIEW_LIST_SORT_VALUES = PRODUCT_REVIEW_LIST_SORTS as readonly [
   ...ProductReviewListSort[]
 ]
 
+/**
+ * Strict query schema for the public review list (plan §9 Phase 3 п.2).
+ *
+ * - `min_rating` / `max_rating` are integer 1..5; both optional. When the
+ *   client sends only one bound, the SQL substitutes `null` for the other so
+ *   the parameterized plan stays stable (see
+ *   [`listApprovedProductReviews`](medusa-agency-boilerplate/src/modules/product-reviews.ts:1)).
+ *   `min_rating === max_rating === X` is the «exactly ★X» preset used by the
+ *   storefront chip filters.
+ * - `verified_only` accepts the typical query-string shapes (`"true"`,
+ *   `"false"`, `"1"`, `"0"`, plus real booleans). Anything else fails the
+ *   inner `z.boolean()` and yields HTTP 400 — required by the contract for
+ *   strings like `"yes"` or `"verified_only=invalid_string"`.
+ * - `.refine(min<=max)` rejects ranges where the client has them inverted
+ *   (e.g. `?min_rating=5&max_rating=3`).
+ */
+const VerifiedOnlySchema = z
+  .preprocess((value) => {
+    if (typeof value === "boolean") {
+      return value
+    }
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase()
+      if (normalized === "true" || normalized === "1") {
+        return true
+      }
+      if (normalized === "false" || normalized === "0") {
+        return false
+      }
+    }
+    // Fall through to z.boolean() which will reject everything else.
+    return value
+  }, z.boolean())
+  .optional()
+
 const ListReviewsQuerySchema = z
   .object({
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(20),
     sort: z.enum(PRODUCT_REVIEW_LIST_SORT_VALUES).default("newest"),
+    min_rating: z.coerce.number().int().min(1).max(5).optional(),
+    max_rating: z.coerce.number().int().min(1).max(5).optional(),
+    verified_only: VerifiedOnlySchema,
+  })
+  .strict()
+  .refine(
+    (data) =>
+      data.min_rating === undefined ||
+      data.max_rating === undefined ||
+      data.min_rating <= data.max_rating,
+    {
+      message: "invalid_rating_range",
+      path: ["min_rating"],
+    }
+  )
+
+/**
+ * Phase 3 / step 5 — strict subschema for image attachments uploaded earlier
+ * via `POST /store/products/:id/reviews/upload`. Each entry must be a
+ * `{ id, url }` object echoed back by that route. The route also validates
+ * `url` is `https://`-only — `http://` is rejected with HTTP 400 because
+ * the storefront contract guarantees CDN-delivered, transport-secure
+ * thumbnails (plan §10.2).
+ *
+ * The cap of 5 attachments mirrors the upload UI in
+ * [`product-review-form/index.tsx`](medusa-agency-boilerplate-storefront/src/modules/products/components/product-review-form/index.tsx:1).
+ */
+const PRODUCT_REVIEW_IMAGES_MAX = 5
+
+const ProductReviewImageSchema = z
+  .object({
+    id: z.string().trim().min(1).max(512),
+    url: z
+      .string()
+      .trim()
+      .url()
+      .max(2048)
+      .regex(/^https:\/\//i, "must be https"),
   })
   .strict()
 
 /**
  * Strict Zod schema for review creation (plan §10.2).
  *
- * - `.strict()` rejects unknown fields with HTTP 400 — this is how Phase 1
- *   gets rid of `images`: it is intentionally NOT in the schema.
+ * - `.strict()` rejects unknown fields with HTTP 400.
  * - `website` is the honeypot (plan §10.1 / §6.4). It is accepted as
  *   `optional()` so legitimate clients (which do not send it) pass; if it is
  *   present and non-empty the handler silently drops the submission.
+ * - `images` (Phase 3 / step 5): optional `Array<{id,url}>`, max 5, https
+ *   urls only. Empty array is treated as "no images" by the create
+ *   handler. The Phase 1 contract that *unknown keys* (e.g. `foo: 1`) are
+ *   still rejected is preserved by `.strict()`.
  */
 export const StoreCreateProductReviewSchema = z
   .object({
@@ -133,6 +210,7 @@ export const StoreCreateProductReviewSchema = z
     pros: z.string().trim().max(1000).optional(),
     cons: z.string().trim().max(1000).optional(),
     website: z.string().max(2000).optional(),
+    images: z.array(ProductReviewImageSchema).max(PRODUCT_REVIEW_IMAGES_MAX).optional(),
   })
   .strict()
 
@@ -179,7 +257,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return
   }
 
-  const { page, pageSize, sort } = queryParse.data
+  const { page, pageSize, sort, min_rating, max_rating, verified_only } =
+    queryParse.data
 
   const pgConnection = getProductReviewsPgConnection(req.scope)
   const result = await listApprovedProductReviews({
@@ -188,10 +267,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     page,
     pageSize,
     sort,
+    minRating: min_rating,
+    maxRating: max_rating,
+    verifiedOnly: verified_only,
   })
 
+  // Hotfix Phase 3 P0: whitelist items through `toPublicReview` so internal
+  // ids (`customer_id`, `order_id`) and moderation metadata never leak from
+  // this PUBLIC endpoint.
   res.status(200).json({
-    items: result.items,
+    items: result.items.map((row) => toPublicReview(row)),
     total: result.total,
     page: result.page,
     pageSize: result.pageSize,
@@ -308,11 +393,21 @@ export async function POST(
         title: body.title ?? null,
         pros: body.pros ?? null,
         cons: body.cons ?? null,
+        // Phase 3 / step 5 — `images` is optional at the wire layer
+        // (legacy clients still POST without it). When present, the
+        // route forwards the validated `Array<{id,url}>` straight to
+        // the module; the module's `sanitizeReviewImagesForInsert` is
+        // a defence-in-depth normaliser, not a primary validator.
+        images: body.images ?? null,
       },
       autoApprove: isAutoApproveEnabled(),
     })
 
-    res.status(201).json({ review })
+    // Hotfix Phase 3 P0: even though the customer creating the review knows
+    // their own `customer_id`, the response shape is the single source of
+    // truth for every public/customer-facing endpoint. Whitelist through
+    // `toPublicReview` so the contract stays consistent.
+    res.status(201).json({ review: toPublicReview(review) })
     return
   } catch (error) {
     if (error instanceof ProductReviewError) {

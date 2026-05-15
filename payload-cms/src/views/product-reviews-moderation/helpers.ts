@@ -74,6 +74,35 @@ export const RATING_OPTIONS: ReadonlyArray<{ value: '' | '1' | '2' | '3' | '4' |
  * the badge integrates with the admin's light/dark themes without bringing
  * in a new SCSS module just for three colour swatches.
  */
+/**
+ * Phase 3 / step 5 — admin moderation jsonb shape may contain either
+ * the new `Array<{id,url}>` (preferred) or a legacy plain `string[]`
+ * (early development). The moderator UI only needs URLs to render
+ * thumbnails and never deletes individual files, so this helper
+ * collapses both shapes into a clean `string[]` of URLs and drops
+ * malformed entries. Returns `[]` when the column is `null`,
+ * non-array or every entry is invalid.
+ */
+export function normalizeAdminReviewImageUrls(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  const urls: string[] = []
+  for (const entry of value) {
+    if (typeof entry === 'string' && entry.length > 0) {
+      urls.push(entry)
+      continue
+    }
+    if (entry && typeof entry === 'object') {
+      const candidate = entry as { url?: unknown }
+      if (typeof candidate.url === 'string' && candidate.url.length > 0) {
+        urls.push(candidate.url)
+      }
+    }
+  }
+  return urls
+}
+
 export function statusPillStyle(status: ProductReviewStatus): {
   background: string
   color: string

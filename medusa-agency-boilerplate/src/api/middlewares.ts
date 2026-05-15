@@ -47,7 +47,9 @@ import { StoreYooKassaReturnSchema } from "./store/payment/yookassa/return/route
 import { StoreVkIdCallbackSchema } from "./store/vk-id/callback/route"
 import { StoreOnboardingSchema } from "./store/customers/me/onboarding/route"
 import { StoreCreateProductReviewSchema } from "./store/products/[id]/reviews/route"
+import { StoreUploadProductReviewImageSchema } from "./store/products/[id]/reviews/upload/route"
 import { AdminRejectProductReviewSchema } from "./admin/reviews/[id]/reject/route"
+import { AdminProductReviewReplySchema } from "./admin/reviews/[id]/reply/route"
 
 const adminAuth = authenticate("user", ["session", "bearer", "api-key"])
 
@@ -186,6 +188,23 @@ export default defineMiddlewares({
         adminAuth,
         validateAndTransformBody(AdminRejectProductReviewSchema),
       ],
+    },
+    {
+      // Phase 3 / step 4 — admin reply («Ответ магазина»). POST validates
+      // a strict `{ text }` body via the schema in the route file; DELETE
+      // has no body but still goes through `adminAuth` so the Payload
+      // basic-auth path keeps working.
+      matcher: "/admin/reviews/:id/reply",
+      methods: ["POST"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformBody(AdminProductReviewReplySchema),
+      ],
+    },
+    {
+      matcher: "/admin/reviews/:id/reply",
+      methods: ["DELETE"],
+      middlewares: [adminAuth],
     },
     {
       matcher: "/admin/notifications/smoke",
@@ -366,6 +385,40 @@ export default defineMiddlewares({
       ],
     },
     {
+      // Phase 3 / step 5 — upload endpoint for image attachments. Reuses
+      // the same per-IP rate buckets as create + adds a tighter
+      // per-minute upload bucket so even one customer cannot burn S3
+      // budget by holding the form open and re-uploading. JSON body
+      // (`{filename, mime_type, content_base64}`) — multipart is
+      // intentionally not introduced.
+      //
+      // Phase 3 / step 5 hotfix (P0.2) — Medusa's default body-parser
+      // limit is `100kb`, but a 5 MiB raw image base64-encodes to
+      // ~6.7 MiB. Without an explicit `bodyParser.sizeLimit` the request
+      // is rejected with 413 *before* the route handler runs and the
+      // feature is functionally broken. We allow 8 MiB to leave headroom
+      // for the base64 33% inflation plus a small JSON envelope; the
+      // route's own `MAX_BYTES = 5 MiB` cap on the *decoded* size is
+      // unaffected (it runs after parsing).
+      matcher: "/store/products/:id/reviews/upload",
+      methods: ["POST"],
+      bodyParser: { sizeLimit: "8mb" },
+      middlewares: [
+        publicRateLimit({
+          bucketKey: "product-reviews-upload-minute",
+          limit: 20,
+          windowMs: 60_000,
+        }),
+        publicRateLimit({
+          bucketKey: "product-reviews-upload-hour",
+          limit: 100,
+          windowMs: 60 * 60_000,
+        }),
+        authenticate("customer", ["session", "bearer"]),
+        validateAndTransformBody(StoreUploadProductReviewImageSchema),
+      ],
+    },
+    {
       // Plan §10.1: helpful vote — 30/min IP+customer.
       matcher: "/store/reviews/:id/helpful",
       methods: ["POST"],
@@ -376,6 +429,22 @@ export default defineMiddlewares({
           windowMs: 60_000,
         }),
         authenticate("customer", ["session", "bearer"]),
+      ],
+    },
+    {
+      // Phase 3 / step 3 — public homepage «Top reviews» widget.
+      // Public, GET-only, no auth. `publicRateLimit` 60/min/IP guards the
+      // backend from runaway clients (plan §9 Phase 3 п.5). The widget on
+      // the storefront caches with `revalidate: 300`, so steady-state load
+      // hits cache, not this rate limit.
+      matcher: "/store/reviews/top",
+      methods: ["GET"],
+      middlewares: [
+        publicRateLimit({
+          bucketKey: "product-reviews-top-minute",
+          limit: 60,
+          windowMs: 60_000,
+        }),
       ],
     },
     {

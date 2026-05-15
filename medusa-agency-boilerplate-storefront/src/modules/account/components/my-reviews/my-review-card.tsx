@@ -149,6 +149,34 @@ const MyReviewCard: React.FC<MyReviewCardProps> = ({ review }) => {
         </div>
       ) : null}
 
+      {/*
+        Phase 3 / step 4 — surface the merchant's public reply on the «Мои
+        отзывы» card too. The customer benefits from seeing the reply
+        without leaving the account page; styling mirrors the public
+        product page card (left accent border, soft accent background).
+      */}
+      {review.merchant_reply ? (
+        <aside
+          className="rounded-md border-l-2 border-sky-400 bg-sky-50/60 px-4 py-3"
+          data-testid="my-review-card-merchant-reply"
+        >
+          <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">
+            {reviewsCopy.merchantReplyLabel}
+          </div>
+          <p className="mt-1 whitespace-pre-line text-sm leading-6 text-ui-fg-base">
+            {review.merchant_reply.text}
+          </p>
+          {review.merchant_reply.created_at ? (
+            <time
+              className="mt-1 block text-xs text-ui-fg-subtle"
+              dateTime={review.merchant_reply.created_at}
+            >
+              {formatDateLong(review.merchant_reply.created_at)}
+            </time>
+          ) : null}
+        </aside>
+      ) : null}
+
       {showDeleteButton ? (
         <footer className="flex justify-end">
           <DeleteOwnReviewButton reviewId={review.id} />

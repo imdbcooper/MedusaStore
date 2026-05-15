@@ -5,6 +5,12 @@ import { revalidateTag } from "next/cache"
 import { sdk } from "@lib/config"
 import { getAuthHeaders } from "./cookies"
 import { retrieveCustomer } from "./customer"
+import {
+  PRODUCT_REVIEW_IMAGE_ALLOWED_MIME_TYPES,
+  PRODUCT_REVIEW_IMAGE_MAX_BYTES,
+  type ProductReviewImageRef,
+  type ProductReviewUploadResult,
+} from "./product-reviews-images-constants"
 
 /**
  * Phase 1 / step 6 — storefront data layer for product reviews.
@@ -40,24 +46,49 @@ export type ProductReviewSummary = {
   updated_at: string | null
 }
 
+/**
+ * Hotfix Phase 3 P0: this type mirrors the whitelisted public shape returned
+ * by the backend `toPublicReview` mapper (see
+ * [`product-reviews.ts`](medusa-agency-boilerplate/src/modules/product-reviews.ts:1)).
+ *
+ * Fields explicitly NOT in this shape — they would leak through public,
+ * unauthenticated Store API endpoints:
+ *   - `customer_id`
+ *   - `order_id`
+ *   - `status`
+ *   - `moderated_by`
+ *   - `moderated_at`
+ *   - `rejection_reason`
+ *
+ * The customer-only «Мои отзывы» surface uses {@link MyProductReview} below,
+ * which adds back `status` + `rejection_reason` (still no `customer_id` /
+ * `order_id`).
+ */
 export type ProductReviewItem = {
   id: string
   product_id: string
-  customer_id: string | null
-  order_id: string | null
+  customer_name: string
   rating: number
   title: string | null
   text: string
   pros: string | null
   cons: string | null
-  status: "pending" | "approved" | "rejected"
-  moderated_by: string | null
-  moderated_at: string | null
-  rejection_reason: string | null
   verified_purchase: boolean
   helpful_count: number
-  images: unknown
-  customer_name: string
+  /**
+   * Reserved for Phase 3 step 5 (image attachments). The backend currently
+   * normalises to `string[]` or `null`; UI consumers should treat `null` as
+   * «no images».
+   */
+  images: string[] | null
+  /**
+   * Phase 3 / step 4 — admin reply («Ответ магазина»). The backend
+   * `toPublicReview` mapper exposes `{ text, created_at }` when the
+   * moderator has saved a reply, otherwise `null`. The admin actor id
+   * (backend `merchant_reply_by`) is intentionally NOT exposed to the
+   * storefront.
+   */
+  merchant_reply: { text: string; created_at: string } | null
   created_at: string
   updated_at: string
 }
@@ -73,6 +104,13 @@ const RATING_CACHE_TAG = (productId: string) => `product-rating-${productId}`
 const REVIEWS_CACHE_TAG = (productId: string) => `product-reviews-${productId}`
 const CUSTOMER_REVIEWS_CACHE_TAG = (customerId: string) =>
   `customer-reviews-${customerId}`
+/**
+ * Phase 3 / step 3 — homepage «Лучшие отзывы» widget. The widget shares a
+ * single, catalog-wide cache, so the tag is a singleton (no per-id suffix).
+ * Backend admin routes invalidate it on every approve/reject of an approved
+ * row and on admin DELETE of a previously-approved row (plan §9 Phase 3 п.5).
+ */
+const TOP_REVIEWS_CACHE_TAG = "top-reviews"
 
 /**
  * Fetch the public rating summary for a product. Returns deterministic empty
@@ -161,14 +199,74 @@ export async function getProductRatingSummariesByIds(
 }
 
 /**
+ * Optional rating-bound on the public review list (plan §9 Phase 3 п.2).
+ * Integer 1..5 — values outside the range are dropped before the request is
+ * issued; the same constraint is enforced server-side via Zod.
+ */
+function clampRatingBound(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined
+  }
+  const truncated = Math.trunc(value)
+  if (truncated < 1 || truncated > 5) {
+    return undefined
+  }
+  return truncated
+}
+
+/**
+ * Build the query object passed to `sdk.client.fetch`. Filter keys are only
+ * included when set — leaving them off so the URL stays compact and the
+ * Next.js data cache key matches the unfiltered baseline when the user has
+ * not selected any chips.
+ */
+function buildReviewsListQuery(input: {
+  page: number
+  pageSize: number
+  sort: ProductReviewSort
+  minRating?: number | null
+  maxRating?: number | null
+  verifiedOnly?: boolean | null
+}): Record<string, string | number | boolean> {
+  const query: Record<string, string | number | boolean> = {
+    page: input.page,
+    pageSize: input.pageSize,
+    sort: input.sort,
+  }
+  const minRating = clampRatingBound(input.minRating ?? undefined)
+  const maxRating = clampRatingBound(input.maxRating ?? undefined)
+  if (minRating !== undefined) {
+    query.min_rating = minRating
+  }
+  if (maxRating !== undefined) {
+    query.max_rating = maxRating
+  }
+  if (input.verifiedOnly === true) {
+    query.verified_only = true
+  }
+  return query
+}
+
+/**
  * List approved reviews for a product. Server-side fetch with cache tag for
  * `revalidateTag('product-reviews-${productId}')` (plan §6.6).
+ *
+ * Phase 3 / step 2: optional `minRating` / `maxRating` / `verifiedOnly`
+ * filters are forwarded to the backend as `min_rating` / `max_rating` /
+ * `verified_only` query parameters. The cache tag stays the same — Next.js
+ * already keys its data cache on the full URL (including the query string)
+ * so different filter combinations produce distinct cached responses, and a
+ * single `revalidateTag('product-reviews-${productId}')` invalidates them
+ * all on review approve/reject.
  */
 export async function listApprovedProductReviews(input: {
   productId: string
   page?: number
   pageSize?: number
   sort?: ProductReviewSort
+  minRating?: number | null
+  maxRating?: number | null
+  verifiedOnly?: boolean | null
 }): Promise<ProductReviewListResult> {
   const productId = input.productId
   const page = input.page && input.page > 0 ? Math.floor(input.page) : 1
@@ -192,11 +290,14 @@ export async function listApprovedProductReviews(input: {
       `/store/products/${encodeURIComponent(productId)}/reviews`,
       {
         method: "GET",
-        query: {
+        query: buildReviewsListQuery({
           page,
           pageSize,
           sort,
-        },
+          minRating: input.minRating,
+          maxRating: input.maxRating,
+          verifiedOnly: input.verifiedOnly,
+        }),
         next: {
           tags: [REVIEWS_CACHE_TAG(productId)],
           revalidate: 60,
@@ -206,6 +307,87 @@ export async function listApprovedProductReviews(input: {
     )
   } catch {
     return empty
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 / step 3 — homepage «Лучшие отзывы» widget data layer
+// ---------------------------------------------------------------------------
+
+export type GetTopApprovedProductReviewsArgs = {
+  /** Default 8 — fits a 4-col, 2-row grid on desktop. Backend caps at 50. */
+  limit?: number
+  /** Default 4 — only ★4 and above qualify as «top». Backend caps 1..5. */
+  minRating?: number
+  /**
+   * Optional time window in days. Omitted by default so older approved
+   * reviews still surface on a low-traffic catalog. `0` is forwarded
+   * verbatim to disable the date filter on the backend.
+   */
+  daysWindow?: number
+}
+
+/**
+ * Fetch the top approved reviews across the whole catalog. Used by the
+ * homepage `<TopReviewsWidget>` (plan §9 Phase 3 п.5).
+ *
+ * Cache contract:
+ *   - tag `top-reviews` (singleton, catalog-wide). Admin approve/reject/delete
+ *     of an approved row triggers `revalidateStorefrontTags(["top-reviews"])`
+ *     on the backend.
+ *   - `revalidate: 300` (5 minutes) as a safety net so the widget refreshes
+ *     even when the webhook misses (env not configured, transport error).
+ *
+ * Defensive on transport failure — returns an empty array so the widget can
+ * decide to render `null` instead of breaking the homepage.
+ */
+export async function getTopApprovedProductReviews(
+  args: GetTopApprovedProductReviewsArgs = {}
+): Promise<ProductReviewItem[]> {
+  const limit =
+    args.limit && args.limit > 0 ? Math.min(50, Math.floor(args.limit)) : 8
+  const minRating =
+    args.minRating !== undefined &&
+    Number.isFinite(args.minRating) &&
+    args.minRating >= 1 &&
+    args.minRating <= 5
+      ? Math.floor(args.minRating)
+      : 4
+
+  const query: Record<string, string | number | boolean> = {
+    limit,
+    min_rating: minRating,
+  }
+  if (
+    args.daysWindow !== undefined &&
+    Number.isFinite(args.daysWindow) &&
+    args.daysWindow >= 0 &&
+    args.daysWindow <= 365
+  ) {
+    query.days_window = Math.floor(args.daysWindow)
+  }
+
+  try {
+    const response = await sdk.client.fetch<{ items: ProductReviewItem[] }>(
+      `/store/reviews/top`,
+      {
+        method: "GET",
+        query,
+        next: {
+          tags: [TOP_REVIEWS_CACHE_TAG],
+          revalidate: 300,
+        },
+        cache: "force-cache",
+      }
+    )
+    return Array.isArray(response?.items) ? response.items : []
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error(
+      "[product-reviews] getTopApprovedProductReviews failed",
+      error instanceof Error ? error.message : error
+    )
+    return []
   }
 }
 
@@ -225,6 +407,9 @@ export async function fetchApprovedProductReviewsPage(input: {
   page: number
   pageSize?: number
   sort?: ProductReviewSort
+  minRating?: number | null
+  maxRating?: number | null
+  verifiedOnly?: boolean | null
 }): Promise<ProductReviewListResult> {
   const productId = input.productId
   const page = input.page > 0 ? Math.floor(input.page) : 1
@@ -247,11 +432,14 @@ export async function fetchApprovedProductReviewsPage(input: {
     `/store/products/${encodeURIComponent(productId)}/reviews`,
     {
       method: "GET",
-      query: {
+      query: buildReviewsListQuery({
         page,
         pageSize,
         sort,
-      },
+        minRating: input.minRating,
+        maxRating: input.maxRating,
+        verifiedOnly: input.verifiedOnly,
+      }),
       cache: "no-store",
     }
   )
@@ -390,6 +578,12 @@ export type SubmitProductReviewInput = {
    * accepts the request without writing to the DB.
    */
   website?: string
+  /**
+   * Phase 3 / step 5 — attached images uploaded earlier through
+   * {@link uploadProductReviewImage}. Empty array / `undefined` skip
+   * the field entirely (legacy clients keep working).
+   */
+  images?: ProductReviewImageRef[]
 }
 
 /**
@@ -436,6 +630,12 @@ export async function submitProductReview(
   }
   if (typeof input.cons === "string" && input.cons.trim().length > 0) {
     body.cons = input.cons.trim()
+  }
+  if (Array.isArray(input.images) && input.images.length > 0) {
+    body.images = input.images.map((image) => ({
+      id: image.id,
+      url: image.url,
+    }))
   }
 
   try {
@@ -488,17 +688,21 @@ export async function submitProductReview(
 // ---------------------------------------------------------------------------
 
 /**
- * One row of the «Мои отзывы» list. Mirrors `ProductReviewItem` 1:1; declared
- * separately to express the contract that the customer-only endpoint always
- * returns the moderation `status` and (for rejected) `rejection_reason` —
- * fields that the public list never exposes for other customers' reviews.
+ * One row of the «Мои отзывы» list. Adds `status` + `rejection_reason` on
+ * top of the public {@link ProductReviewItem} shape so the
+ * `/account/reviews` page can render «На модерации / Опубликован /
+ * Отклонён» (plan §6.5).
  *
- * See backend route
- * [`store/customers/me/reviews/route.ts`](medusa-agency-boilerplate/src/api/store/customers/me/reviews/route.ts:1)
- * — the response shape is identical apart from being scoped to the
- * authenticated customer.
+ * Customer-only — never use this type for `/store/products/:id/reviews` or
+ * `/store/reviews/top` items.
+ *
+ * Backend mapper: `toMineReview(row)` in
+ * [`product-reviews.ts`](medusa-agency-boilerplate/src/modules/product-reviews.ts:1).
  */
-export type MyProductReview = ProductReviewItem
+export type MyProductReview = ProductReviewItem & {
+  status: "pending" | "approved" | "rejected"
+  rejection_reason: string | null
+}
 
 export type MyProductReviewListResult = {
   items: MyProductReview[]
@@ -696,6 +900,121 @@ export async function deleteMyProductReview(
     // eslint-disable-next-line no-console
     console.error(
       "[product-reviews] deleteMyProductReview failed",
+      error instanceof Error ? error.message : error
+    )
+    return { ok: false, code: "unknown", status: status || 500 }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 / step 5 — image attachment upload
+// ---------------------------------------------------------------------------
+
+// `ProductReviewUploadCode` / `ProductReviewUploadResult` types live in
+// [`product-reviews-images-constants.ts`](medusa-agency-boilerplate-storefront/src/lib/data/product-reviews-images-constants.ts:1)
+// because Next.js `"use server"` files can only export `async`
+// functions — exporting types alongside async actions would still be
+// allowed by TypeScript, but the project keeps ALL non-async exports
+// out of this module to make the rule explicit. The constants file is
+// the single source of truth for image limits.
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  // Server actions run in Node — `Buffer` is available. We avoid pulling
+  // it through ESM import to keep the file isomorphic with the rest of
+  // the data layer (everything else uses the SDK fetch helper).
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const buf = Buffer.from(buffer)
+  return buf.toString("base64")
+}
+
+/**
+ * Server action: upload a single image to
+ * `POST /store/products/:id/reviews/upload`. Returns the `{id, url}`
+ * pair the form keeps in client state until the customer hits «Отправить
+ * отзыв». No cache tags are revalidated — the file is private until the
+ * review row that references it is approved by an admin.
+ *
+ * The wire format is JSON `{filename, mime_type, content_base64}` —
+ * the same format the upload route expects (multipart is intentionally
+ * not introduced).
+ */
+export async function uploadProductReviewImage(input: {
+  productId: string
+  filename: string
+  mimeType: string
+  content: ArrayBuffer
+}): Promise<ProductReviewUploadResult> {
+  const productId = input.productId?.trim() ?? ""
+  if (!productId) {
+    return { ok: false, code: "validation_error", status: 400 }
+  }
+
+  const authHeaders = await getAuthHeaders()
+  const hasAuth =
+    typeof (authHeaders as { authorization?: string }).authorization === "string"
+  if (!hasAuth) {
+    return { ok: false, code: "auth_required", status: 401 }
+  }
+
+  if (input.content.byteLength > PRODUCT_REVIEW_IMAGE_MAX_BYTES) {
+    return { ok: false, code: "payload_too_large", status: 413 }
+  }
+
+  const allowed = (
+    PRODUCT_REVIEW_IMAGE_ALLOWED_MIME_TYPES as readonly string[]
+  ).includes(input.mimeType)
+  if (!allowed) {
+    return { ok: false, code: "validation_error", status: 400 }
+  }
+
+  const filename = input.filename.trim()
+  if (!filename || filename.includes("/") || filename.includes("\\")) {
+    return { ok: false, code: "validation_error", status: 400 }
+  }
+
+  const contentBase64 = arrayBufferToBase64(input.content)
+
+  try {
+    const response = await sdk.client.fetch<{ id: string; url: string }>(
+      `/store/products/${encodeURIComponent(productId)}/reviews/upload`,
+      {
+        method: "POST",
+        headers: { ...authHeaders },
+        body: {
+          filename,
+          mime_type: input.mimeType,
+          content_base64: contentBase64,
+        },
+        cache: "no-store",
+      }
+    )
+
+    if (!response?.id || !response?.url) {
+      return { ok: false, code: "unknown", status: 0 }
+    }
+
+    return {
+      ok: true,
+      image: { id: response.id, url: response.url },
+    }
+  } catch (error) {
+    const candidate = error as { status?: number; statusCode?: number }
+    const status = candidate?.status ?? candidate?.statusCode ?? 0
+    if (status === 401) {
+      return { ok: false, code: "auth_required", status: 401 }
+    }
+    if (status === 400) {
+      return { ok: false, code: "validation_error", status: 400 }
+    }
+    if (status === 413) {
+      return { ok: false, code: "payload_too_large", status: 413 }
+    }
+    if (status === 429) {
+      return { ok: false, code: "rate_limited", status: 429 }
+    }
+    // eslint-disable-next-line no-console
+    console.error(
+      "[product-reviews] uploadProductReviewImage failed",
       error instanceof Error ? error.message : error
     )
     return { ok: false, code: "unknown", status: status || 500 }

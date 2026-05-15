@@ -14,6 +14,7 @@ import {
   PAGE_SIZE,
   customerDisplayName,
   formatDate,
+  normalizeAdminReviewImageUrls,
   truncateText,
   type AllStatusOption,
 } from './helpers.ts'
@@ -615,7 +616,72 @@ function ReviewBody({ review }: { review: ProductReviewAdminItem }) {
           </p>
         </Field>
       ) : null}
+
+      {/* Phase 3 / step 5 — image attachments preview. */}
+      <ReviewImagesGrid review={review} />
     </article>
+  )
+}
+
+function ReviewImagesGrid({ review }: { review: ProductReviewAdminItem }) {
+  const urls = normalizeAdminReviewImageUrls(review.images)
+  if (urls.length === 0) {
+    return null
+  }
+  return (
+    <div
+      style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
+      data-testid="moderation-detail-images"
+    >
+      <h3 style={{ margin: 0 }}>{moderationCopy.detail.sections.images}</h3>
+      <ul
+        style={{
+          listStyle: 'none',
+          margin: 0,
+          padding: 0,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+          gap: '8px',
+        }}
+      >
+        {urls.map((url, index) => (
+          <li
+            key={`${review.id}-image-${index}`}
+            style={{
+              aspectRatio: '1 / 1',
+              overflow: 'hidden',
+              borderRadius: 'var(--style-radius-s, 4px)',
+              border: '1px solid var(--theme-elevation-100)',
+              background: 'var(--theme-elevation-50)',
+            }}
+          >
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={moderationCopy.detail.fields.imageOpenLabel}
+              style={{ display: 'block', width: '100%', height: '100%' }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={url}
+                alt={moderationCopy.detail.fields.imageAltLabel.replace(
+                  '{index}',
+                  String(index + 1),
+                )}
+                loading="lazy"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  display: 'block',
+                }}
+              />
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -714,6 +780,30 @@ function ReviewSidebar({
         reviewId={review.id}
         status={review.status as ProductReviewStatus}
         backHref={adminBase}
+        // Phase 3 / step 5 — surface attachment presence to the
+        // delete-confirm dialog so the moderator gets the «фото будут
+        // удалены из хранилища» warning.
+        hasImages={normalizeAdminReviewImageUrls(review.images).length > 0}
+        reply={{
+          // Phase 3 / step 4 — feed the persisted reply snapshot into the
+          // client island so the «Ответ магазина» section renders the
+          // current value on first paint without a client-side fetch.
+          text:
+            typeof review.merchant_reply_text === 'string' &&
+            review.merchant_reply_text.length > 0
+              ? review.merchant_reply_text
+              : null,
+          by:
+            typeof review.merchant_reply_by === 'string' &&
+            review.merchant_reply_by.length > 0
+              ? review.merchant_reply_by
+              : null,
+          at:
+            typeof review.merchant_reply_at === 'string' &&
+            review.merchant_reply_at.length > 0
+              ? review.merchant_reply_at
+              : null,
+        }}
       />
     </aside>
   )

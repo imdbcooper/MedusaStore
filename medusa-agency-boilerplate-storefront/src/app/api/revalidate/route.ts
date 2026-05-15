@@ -35,6 +35,9 @@ import { REVALIDATE_SECRET } from "@lib/env"
  *   - `product-reviews-`
  *   - `customer-reviews-` (reserved for Phase 2 «Мои отзывы»)
  *
+ * Allowed exact tags:
+ *   - `top-reviews` (Phase 3 / step 3 — homepage «Лучшие отзывы» widget)
+ *
  * Responses:
  *   - 200 `{ revalidated: string[] }` — all whitelisted tags were invalidated.
  *   - 400 `{ message }` — body shape invalid or no whitelisted tags.
@@ -53,6 +56,15 @@ const ALLOWED_TAG_PREFIXES = [
   "customer-reviews-",
 ] as const
 
+/**
+ * Singleton tags allowed in addition to the prefixed ones above. Phase 3 /
+ * step 3 — the homepage «Лучшие отзывы» widget shares a single, catalog-wide
+ * cache, so the tag is a single word without a per-id suffix. Kept as a
+ * separate allowlist (not a prefix) to make sure a caller cannot smuggle
+ * arbitrary `top-reviews-anything` strings through.
+ */
+const ALLOWED_EXACT_TAGS = ["top-reviews"] as const
+
 const TAG_MAX_LENGTH = 256
 const TAG_MAX_COUNT = 32
 
@@ -62,6 +74,9 @@ function isAllowedTag(tag: unknown): tag is string {
   }
   if (tag.length === 0 || tag.length > TAG_MAX_LENGTH) {
     return false
+  }
+  if ((ALLOWED_EXACT_TAGS as readonly string[]).includes(tag)) {
+    return true
   }
   return ALLOWED_TAG_PREFIXES.some((prefix) => tag.startsWith(prefix))
 }
@@ -130,7 +145,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         message:
-          "No tag matches an allowed prefix (product-rating-, product-reviews-, customer-reviews-).",
+          "No tag matches an allowed prefix (product-rating-, product-reviews-, customer-reviews-) or exact tag (top-reviews).",
       },
       { status: 400 }
     )

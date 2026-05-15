@@ -172,9 +172,22 @@ beforeEach(() => {
     id: "pr_1",
     product_id: "prod_1",
     customer_id: "cus_1",
+    order_id: "ord_1",
     status: "pending",
+    moderated_by: null,
+    moderated_at: null,
+    rejection_reason: null,
     rating: 5,
+    title: null,
     text: "x".repeat(50),
+    pros: null,
+    cons: null,
+    verified_purchase: false,
+    helpful_count: 0,
+    images: null,
+    customer_name: "Иван И.",
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
   }))
   mockListApprovedProductReviews.mockReset()
   mockListApprovedProductReviews.mockImplementation(async () => ({
@@ -214,13 +227,109 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("StoreCreateProductReviewSchema (strict)", () => {
-  it("rejects unknown keys including `images` (Phase 1 §13)", () => {
+  it("rejects unknown keys (.strict)", () => {
     const parse = StoreCreateProductReviewSchema.safeParse({
       rating: 5,
       text: "x".repeat(50),
-      images: [],
+      hacker_field: 1,
     })
     expect(parse.success).toBe(false)
+  })
+
+  // Phase 3 / step 5 — `images` is now a recognised optional field.
+  describe("images (Phase 3 step 5)", () => {
+    const validImage = {
+      id: "review-img-abc",
+      url: "https://cdn.example/photo.jpg",
+    }
+
+    it("accepts an empty images array", () => {
+      const parse = StoreCreateProductReviewSchema.safeParse({
+        rating: 5,
+        text: "x".repeat(50),
+        images: [],
+      })
+      expect(parse.success).toBe(true)
+    })
+
+    it("accepts up to 5 images", () => {
+      const parse = StoreCreateProductReviewSchema.safeParse({
+        rating: 5,
+        text: "x".repeat(50),
+        images: [validImage, validImage, validImage, validImage, validImage],
+      })
+      expect(parse.success).toBe(true)
+    })
+
+    it("rejects more than 5 images", () => {
+      const parse = StoreCreateProductReviewSchema.safeParse({
+        rating: 5,
+        text: "x".repeat(50),
+        images: Array.from({ length: 6 }, () => validImage),
+      })
+      expect(parse.success).toBe(false)
+    })
+
+    it("rejects http (non-https) urls", () => {
+      const parse = StoreCreateProductReviewSchema.safeParse({
+        rating: 5,
+        text: "x".repeat(50),
+        images: [{ id: "x", url: "http://cdn.example/photo.jpg" }],
+      })
+      expect(parse.success).toBe(false)
+    })
+
+    it("rejects malformed urls", () => {
+      const parse = StoreCreateProductReviewSchema.safeParse({
+        rating: 5,
+        text: "x".repeat(50),
+        images: [{ id: "x", url: "not-a-url" }],
+      })
+      expect(parse.success).toBe(false)
+    })
+
+    it("rejects entries missing `id` or `url`", () => {
+      expect(
+        StoreCreateProductReviewSchema.safeParse({
+          rating: 5,
+          text: "x".repeat(50),
+          images: [{ url: "https://cdn.example/photo.jpg" }],
+        }).success
+      ).toBe(false)
+      expect(
+        StoreCreateProductReviewSchema.safeParse({
+          rating: 5,
+          text: "x".repeat(50),
+          images: [{ id: "x" }],
+        }).success
+      ).toBe(false)
+    })
+
+    it("rejects non-array `images`", () => {
+      expect(
+        StoreCreateProductReviewSchema.safeParse({
+          rating: 5,
+          text: "x".repeat(50),
+          images: "not-an-array",
+        }).success
+      ).toBe(false)
+      expect(
+        StoreCreateProductReviewSchema.safeParse({
+          rating: 5,
+          text: "x".repeat(50),
+          images: { id: "x", url: "https://cdn/" },
+        }).success
+      ).toBe(false)
+    })
+
+    it("rejects entries with extra keys (.strict on subschema)", () => {
+      const parse = StoreCreateProductReviewSchema.safeParse({
+        rating: 5,
+        text: "x".repeat(50),
+        images: [{ ...validImage, foo: 1 }],
+      })
+      expect(parse.success).toBe(false)
+    })
   })
 
   it("accepts the minimal valid payload", () => {
@@ -322,6 +431,32 @@ describe("StoreCreateProductReviewSchema (strict)", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /store/products/:id/reviews", () => {
+  it("response.review whitelisted: no customer_id / order_id / moderation metadata (Phase 3 P0)", async () => {
+    // The mocked module returns the full row (set up in beforeEach); after
+    // `toPublicReview` the response.review must have only the public shape.
+    const { res, recorder } = buildResponse()
+    const req = buildReq({
+      productId: "prod_1",
+      customerId: "cus_1",
+      validatedBody: { rating: 5, text: "x".repeat(50) },
+    })
+
+    await POST(req, res)
+
+    expect(recorder.status).toBe(201)
+    expect(recorder.body).toHaveProperty("review")
+    const review = recorder.body.review
+    expect(review.id).toBe("pr_1")
+    expect(review.product_id).toBe("prod_1")
+    expect(review.customer_name).toBe("Иван И.")
+    expect(review).not.toHaveProperty("customer_id")
+    expect(review).not.toHaveProperty("order_id")
+    expect(review).not.toHaveProperty("status")
+    expect(review).not.toHaveProperty("moderated_by")
+    expect(review).not.toHaveProperty("moderated_at")
+    expect(review).not.toHaveProperty("rejection_reason")
+  })
+
   it("honeypot branch: returns 201 without calling createProductReview", async () => {
     const { res, recorder } = buildResponse()
     const req = buildReq({
@@ -399,6 +534,51 @@ describe("POST /store/products/:id/reviews", () => {
     expect(recorder.status).toBe(201)
     expect(mockVerifyCustomerPurchasedProduct).not.toHaveBeenCalled()
     expect(mockCreateProductReview).toHaveBeenCalledTimes(1)
+  })
+
+  it("forwards `images` payload to createProductReview when present", async () => {
+    const images = [
+      { id: "review-img-1", url: "https://cdn.example/a.jpg" },
+      { id: "review-img-2", url: "https://cdn.example/b.jpg" },
+    ]
+    const { res, recorder } = buildResponse()
+    const req = buildReq({
+      productId: "prod_1",
+      customerId: "cus_1",
+      validatedBody: { rating: 5, text: "x".repeat(50), images },
+    })
+
+    await POST(req, res)
+
+    expect(recorder.status).toBe(201)
+    expect(mockCreateProductReview).toHaveBeenCalledTimes(1)
+    expect(mockCreateProductReview.mock.calls[0][0]).toMatchObject({
+      productId: "prod_1",
+      customerId: "cus_1",
+      payload: {
+        rating: 5,
+        images,
+      },
+    })
+  })
+
+  it("missing `images` → forwards `null` to module (legacy clients)", async () => {
+    const { res, recorder } = buildResponse()
+    const req = buildReq({
+      productId: "prod_1",
+      customerId: "cus_1",
+      validatedBody: { rating: 5, text: "x".repeat(50) },
+    })
+
+    await POST(req, res)
+
+    expect(recorder.status).toBe(201)
+    expect(mockCreateProductReview).toHaveBeenCalledTimes(1)
+    expect(mockCreateProductReview.mock.calls[0][0]).toMatchObject({
+      payload: {
+        images: null,
+      },
+    })
   })
 
   it("REVIEWS_REQUIRE_PURCHASE='false' → verify NOT called", async () => {
@@ -541,22 +721,37 @@ describe("POST /store/products/:id/reviews", () => {
 // ---------------------------------------------------------------------------
 
 describe("GET /store/products/:id/reviews", () => {
-  it("delegates to listApprovedProductReviews and returns its result", async () => {
-    const result = {
-      items: [
-        {
-          id: "pr_1",
-          product_id: "prod_1",
-          customer_id: "cus_1",
-          rating: 5,
-          text: "great",
-        },
-      ],
+  it("delegates to listApprovedProductReviews and returns whitelisted public items", async () => {
+    // Hotfix Phase 3 P0: the module returns the full row, the route maps it
+    // through `toPublicReview` and the response items must NOT contain
+    // `customer_id`, `order_id` or moderation metadata.
+    const fullRow = {
+      id: "pr_1",
+      product_id: "prod_1",
+      customer_id: "cus_1",
+      order_id: "ord_1",
+      rating: 5,
+      title: "great",
+      text: "great",
+      pros: null,
+      cons: null,
+      status: "approved",
+      moderated_by: "admin_1",
+      moderated_at: "2026-01-01T00:00:00.000Z",
+      rejection_reason: null,
+      verified_purchase: true,
+      helpful_count: 3,
+      images: null,
+      customer_name: "Иван И.",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    }
+    mockListApprovedProductReviews.mockImplementation(async () => ({
+      items: [fullRow],
       total: 1,
       page: 1,
       pageSize: 20,
-    }
-    mockListApprovedProductReviews.mockImplementation(async () => result)
+    }))
 
     const { res, recorder } = buildResponse()
     const req = buildReq({ productId: "prod_1" })
@@ -564,7 +759,18 @@ describe("GET /store/products/:id/reviews", () => {
     await GET(req, res)
 
     expect(recorder.status).toBe(200)
-    expect(recorder.body).toEqual(result)
+    expect(recorder.body.total).toBe(1)
+    expect(recorder.body.page).toBe(1)
+    expect(recorder.body.pageSize).toBe(20)
+    expect(Array.isArray(recorder.body.items)).toBe(true)
+
+    const item = recorder.body.items[0]
+    expect(item.id).toBe("pr_1")
+    expect(item.product_id).toBe("prod_1")
+    expect(item.customer_name).toBe("Иван И.")
+    expect(item.rating).toBe(5)
+    expect(item.verified_purchase).toBe(true)
+    expect(item.helpful_count).toBe(3)
 
     const arg = mockListApprovedProductReviews.mock.calls[0][0] as {
       productId: string
@@ -576,6 +782,50 @@ describe("GET /store/products/:id/reviews", () => {
     expect(arg.page).toBe(1)
     expect(arg.pageSize).toBe(20)
     expect(arg.sort).toBe("newest")
+  })
+
+  it("response items have no customer_id / order_id / moderation metadata (Phase 3 P0)", async () => {
+    const fullRow = {
+      id: "pr_1",
+      product_id: "prod_1",
+      customer_id: "cus_1",
+      order_id: "ord_1",
+      rating: 5,
+      title: null,
+      text: "great",
+      pros: null,
+      cons: null,
+      status: "approved",
+      moderated_by: "admin_1",
+      moderated_at: "2026-01-01T00:00:00.000Z",
+      rejection_reason: null,
+      verified_purchase: true,
+      helpful_count: 0,
+      images: null,
+      customer_name: "Иван И.",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    }
+    mockListApprovedProductReviews.mockImplementation(async () => ({
+      items: [fullRow],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    }))
+
+    const { res, recorder } = buildResponse()
+    const req = buildReq({ productId: "prod_1" })
+
+    await GET(req, res)
+
+    expect(recorder.status).toBe(200)
+    const item = recorder.body.items[0]
+    expect(item).not.toHaveProperty("customer_id")
+    expect(item).not.toHaveProperty("order_id")
+    expect(item).not.toHaveProperty("status")
+    expect(item).not.toHaveProperty("moderated_by")
+    expect(item).not.toHaveProperty("moderated_at")
+    expect(item).not.toHaveProperty("rejection_reason")
   })
 
   it("missing :id → 400 product_id_required", async () => {
@@ -657,5 +907,165 @@ describe("GET /store/products/:id/reviews", () => {
     expect(arg.page).toBe(3)
     expect(arg.pageSize).toBe(5)
     expect(arg.sort).toBe("helpful")
+  })
+
+  // -------------------------------------------------------------------------
+  // Phase 3 / step 2 — rating range + verified_only query filters
+  // -------------------------------------------------------------------------
+
+  describe("filters: min_rating / max_rating / verified_only", () => {
+    it("accepts min_rating=3, max_rating=5, verified_only=true and forwards to module in camelCase", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: {
+          min_rating: "3",
+          max_rating: "5",
+          verified_only: "true",
+        },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(200)
+      const arg = mockListApprovedProductReviews.mock.calls[0][0] as {
+        productId: string
+        minRating?: number
+        maxRating?: number
+        verifiedOnly?: boolean
+      }
+      expect(arg.productId).toBe("prod_1")
+      expect(arg.minRating).toBe(3)
+      expect(arg.maxRating).toBe(5)
+      expect(arg.verifiedOnly).toBe(true)
+    })
+
+    it("accepts the exact-rating preset min_rating=max_rating=5", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { min_rating: "5", max_rating: "5" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(200)
+      const arg = mockListApprovedProductReviews.mock.calls[0][0] as {
+        minRating?: number
+        maxRating?: number
+        verifiedOnly?: boolean
+      }
+      expect(arg.minRating).toBe(5)
+      expect(arg.maxRating).toBe(5)
+      expect(arg.verifiedOnly).toBeUndefined()
+    })
+
+    it("accepts verified_only=false (no-op filter, forwarded as boolean)", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { verified_only: "false" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(200)
+      const arg = mockListApprovedProductReviews.mock.calls[0][0] as {
+        verifiedOnly?: boolean
+      }
+      expect(arg.verifiedOnly).toBe(false)
+    })
+
+    it("rejects min_rating=0 → 400 invalid_query", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { min_rating: "0" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(400)
+      expect(recorder.body).toMatchObject({ code: "invalid_query" })
+      expect(mockListApprovedProductReviews).not.toHaveBeenCalled()
+    })
+
+    it("rejects max_rating=6 → 400 invalid_query", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { max_rating: "6" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(400)
+      expect(recorder.body).toMatchObject({ code: "invalid_query" })
+      expect(mockListApprovedProductReviews).not.toHaveBeenCalled()
+    })
+
+    it("rejects min_rating=5 & max_rating=3 → 400 invalid_rating_range", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { min_rating: "5", max_rating: "3" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(400)
+      expect(recorder.body).toMatchObject({ code: "invalid_query" })
+      // The Zod refine message is propagated as the 400 body.message so the
+      // storefront can branch on it if needed.
+      expect(recorder.body.message).toBe("invalid_rating_range")
+      expect(mockListApprovedProductReviews).not.toHaveBeenCalled()
+    })
+
+    it("rejects verified_only with non-boolean string → 400 invalid_query", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { verified_only: "invalid_string" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(400)
+      expect(recorder.body).toMatchObject({ code: "invalid_query" })
+      expect(mockListApprovedProductReviews).not.toHaveBeenCalled()
+    })
+
+    it("rejects non-integer min_rating=3.5 → 400 invalid_query", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { min_rating: "3.5" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(400)
+      expect(recorder.body).toMatchObject({ code: "invalid_query" })
+    })
+
+    it("omitted filters → module receives undefined for all three", async () => {
+      const { res, recorder } = buildResponse()
+      const req = buildReq({
+        productId: "prod_1",
+        query: { page: "1", pageSize: "20", sort: "newest" },
+      })
+
+      await GET(req, res)
+
+      expect(recorder.status).toBe(200)
+      const arg = mockListApprovedProductReviews.mock.calls[0][0] as {
+        minRating?: number
+        maxRating?: number
+        verifiedOnly?: boolean
+      }
+      expect(arg.minRating).toBeUndefined()
+      expect(arg.maxRating).toBeUndefined()
+      expect(arg.verifiedOnly).toBeUndefined()
+    })
   })
 })

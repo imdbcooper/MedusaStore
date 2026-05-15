@@ -82,6 +82,13 @@ export async function POST(
         tags.push(`customer-reviews-${result.review.customer_id}`)
       }
 
+      // Plan §9 Phase 3 п.5 — homepage «Лучшие отзывы» widget caches under
+      // the singleton tag `top-reviews`. Invalidating it on every status
+      // transition (regardless of rating) keeps the rule trivial; the cache
+      // already has a 5-minute revalidate fallback, so the cost of an extra
+      // refresh on a low-rating approve is negligible.
+      tags.push("top-reviews")
+
       await revalidateStorefrontTags(tags, { logger })
     }
 

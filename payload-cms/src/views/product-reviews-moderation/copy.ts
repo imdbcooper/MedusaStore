@@ -82,6 +82,8 @@ export const moderationCopy = {
       review: 'Отзыв',
       meta: 'Метаданные',
       customer: 'Покупатель',
+      // Phase 3 / step 5 — image attachments shown as a thumbnail grid.
+      images: 'Фотографии',
     },
     fields: {
       title: 'Заголовок',
@@ -103,6 +105,10 @@ export const moderationCopy = {
       none: '—',
       yes: 'Да',
       no: 'Нет',
+      // Phase 3 / step 5 — alt text used for screen readers on the
+      // moderation thumbnail grid. `{index}` is substituted client-side.
+      imageAltLabel: 'Фото №{index}',
+      imageOpenLabel: 'Открыть в новой вкладке',
     },
     actions: {
       approve: 'Одобрить',
@@ -118,9 +124,46 @@ export const moderationCopy = {
       validationRequired: 'Введите причину отклонения.',
       validationLength: 'Причина не должна превышать 500 символов.',
     },
+    /**
+     * Phase 3 / step 4 — «Ответ магазина» секция в детальной view.
+     * Текст храниться в едином `moderationCopy` объекте, чтобы будущая
+     * миграция на i18n затронула один файл (см. comment в `copy.ts`).
+     * `{current}` / `{max}` подставляются client-side через
+     * `String.replace`, как и `rating.starsAria(n)`.
+     */
+    reply: {
+      title: 'Ответ магазина',
+      empty: 'Ответ не оставлен',
+      authorPrefix: 'От:',
+      datePrefix: 'Опубликовано:',
+      addCta: 'Добавить ответ',
+      editCta: 'Изменить ответ',
+      removeCta: 'Удалить ответ',
+      submit: 'Сохранить ответ',
+      cancel: 'Отмена',
+      hint: 'Будет отображаться публично под отзывом покупателя.',
+      placeholder: 'Например, спасибо за отзыв и обратную связь…',
+      charCounter: '{current} / {max}',
+      removeConfirm: 'Удалить ответ магазина?',
+      success: {
+        saved: 'Ответ сохранён.',
+        removed: 'Ответ удалён.',
+      },
+      errors: {
+        required: 'Введите текст ответа.',
+        tooLong: 'Ответ не должен превышать 1000 символов.',
+        generic: 'Не удалось сохранить ответ.',
+      },
+    },
     deleteConfirm: {
       heading: 'Удалить отзыв?',
       body: 'Действие необратимо. Если отзыв был опубликован, рейтинг товара будет пересчитан.',
+      // Phase 3 / step 5 — extra warning appended to the body when the
+      // review has at least one image attached. Surfaced on top of the
+      // existing `body` copy so a moderator deleting a photo-bearing
+      // review knows S3 cleanup will run.
+      bodyWithImages:
+        'У отзыва прикреплены фотографии — они также будут удалены из хранилища.',
       confirm: 'Удалить',
       cancel: 'Отмена',
     },
@@ -128,6 +171,8 @@ export const moderationCopy = {
       approved: 'Отзыв одобрен.',
       rejected: 'Отзыв отклонён.',
       deleted: 'Отзыв удалён.',
+      replySaved: 'Ответ сохранён.',
+      replyRemoved: 'Ответ удалён.',
     },
     error: {
       notFound: 'Отзыв не найден.',

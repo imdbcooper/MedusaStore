@@ -5,16 +5,53 @@ import { useRouter } from 'next/navigation'
 import { Button, toast } from '@payloadcms/ui'
 import {
   approveReviewAction,
+  clearReviewReplyAction,
   deleteReviewAction,
   rejectReviewAction,
+  setReviewReplyAction,
 } from './actions.ts'
 import { moderationCopy } from './copy.ts'
+
+const REPLY_MAX_LENGTH = 1000
+
+type ReplySnapshot = {
+  text: string | null
+  by: string | null
+  at: string | null
+}
 
 type Props = {
   reviewId: string
   status: 'pending' | 'approved' | 'rejected'
   /** Where to navigate after a successful delete. */
   backHref: string
+  /**
+   * Phase 3 / step 4 — current state of the merchant reply on the row.
+   * Driven by the server component (`Page.tsx`) so the initial render
+   * reflects the persisted data without needing a client-side fetch.
+   * After save/clear we still call `router.refresh()` so the server
+   * component re-resolves and feeds the next snapshot back in.
+   */
+  reply?: ReplySnapshot
+  /**
+   * Phase 3 / step 5 — moderator gets a heads-up «фото будут удалены
+   * из хранилища» on the delete confirm dialog whenever the row has
+   * at least one image attachment. Driven by the server component
+   * (`Page.tsx`) which inspects the row's `images` jsonb.
+   */
+  hasImages?: boolean
+}
+
+const RU_DATE_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
+  dateStyle: 'long',
+  timeStyle: 'short',
+})
+
+function formatReplyDate(iso: string | null): string {
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return RU_DATE_FORMATTER.format(date)
 }
 
 /**
@@ -25,12 +62,29 @@ type Props = {
  * focus out of the document flow; the textarea has the `required`
  * attribute and a max-length cap of 500 chars per plan §4.3.
  */
-export function ModerationDetailActions({ reviewId, status, backHref }: Props) {
+export function ModerationDetailActions({
+  reviewId,
+  status,
+  backHref,
+  reply,
+  hasImages = false,
+}: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
-  const [busy, setBusy] = useState<null | 'approve' | 'reject' | 'delete'>(null)
+  const [showReplyForm, setShowReplyForm] = useState(false)
+  const [replyText, setReplyText] = useState(() => reply?.text ?? '')
+  const [busy, setBusy] = useState<
+    | null
+    | 'approve'
+    | 'reject'
+    | 'delete'
+    | 'reply-save'
+    | 'reply-remove'
+  >(null)
+
+  const hasReply = Boolean(reply?.text)
 
   const handleApprove = useCallback(() => {
     setBusy('approve')
@@ -77,8 +131,11 @@ export function ModerationDetailActions({ reviewId, status, backHref }: Props) {
 
   const handleDelete = useCallback(() => {
     if (typeof window === 'undefined') return
+    const confirmBody = hasImages
+      ? `${moderationCopy.detail.deleteConfirm.body}\n\n${moderationCopy.detail.deleteConfirm.bodyWithImages}`
+      : moderationCopy.detail.deleteConfirm.body
     const confirmed = window.confirm(
-      `${moderationCopy.detail.deleteConfirm.heading}\n\n${moderationCopy.detail.deleteConfirm.body}`,
+      `${moderationCopy.detail.deleteConfirm.heading}\n\n${confirmBody}`,
     )
     if (!confirmed) return
     setBusy('delete')
@@ -92,7 +149,66 @@ export function ModerationDetailActions({ reviewId, status, backHref }: Props) {
         toast.error(mapErrorToCopy(result.error))
       }
     })
-  }, [reviewId, router, backHref])
+  }, [reviewId, router, backHref, hasImages])
+
+  const handleReplySubmit = useCallback(
+    (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      const trimmed = replyText.trim()
+      if (!trimmed) {
+        toast.error(moderationCopy.detail.reply.errors.required)
+        return
+      }
+      if (trimmed.length > REPLY_MAX_LENGTH) {
+        toast.error(moderationCopy.detail.reply.errors.tooLong)
+        return
+      }
+      setBusy('reply-save')
+      startTransition(async () => {
+        const result = await setReviewReplyAction(reviewId, trimmed)
+        setBusy(null)
+        if (result.ok) {
+          toast.success(moderationCopy.detail.success.replySaved)
+          setShowReplyForm(false)
+          router.refresh()
+        } else {
+          toast.error(mapErrorToCopy(result.error))
+        }
+      })
+    },
+    [replyText, reviewId, router],
+  )
+
+  const handleReplyRemove = useCallback(() => {
+    if (typeof window === 'undefined') return
+    const confirmed = window.confirm(
+      moderationCopy.detail.reply.removeConfirm,
+    )
+    if (!confirmed) return
+    setBusy('reply-remove')
+    startTransition(async () => {
+      const result = await clearReviewReplyAction(reviewId)
+      setBusy(null)
+      if (result.ok) {
+        toast.success(moderationCopy.detail.success.replyRemoved)
+        setShowReplyForm(false)
+        setReplyText('')
+        router.refresh()
+      } else {
+        toast.error(mapErrorToCopy(result.error))
+      }
+    })
+  }, [reviewId, router])
+
+  const openReplyEditor = useCallback(() => {
+    setReplyText(reply?.text ?? '')
+    setShowReplyForm(true)
+  }, [reply?.text])
+
+  const closeReplyEditor = useCallback(() => {
+    setReplyText(reply?.text ?? '')
+    setShowReplyForm(false)
+  }, [reply?.text])
 
   return (
     <div
@@ -204,6 +320,201 @@ export function ModerationDetailActions({ reviewId, status, backHref }: Props) {
           </div>
         </form>
       ) : null}
+
+      {/* ----------------------------------------------------------------
+          Phase 3 / step 4 — «Ответ магазина» section.
+          ---------------------------------------------------------------- */}
+      <section
+        aria-labelledby="merchant-reply-heading"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          padding: 'var(--base, 16px)',
+          border: '1px solid var(--theme-elevation-150)',
+          borderRadius: 'var(--style-radius-s, 4px)',
+          background: 'var(--theme-elevation-0)',
+        }}
+      >
+        <h3
+          id="merchant-reply-heading"
+          style={{ margin: 0, fontSize: '0.95rem' }}
+        >
+          {moderationCopy.detail.reply.title}
+        </h3>
+
+        {hasReply && !showReplyForm ? (
+          <ReplyDisplay
+            text={reply!.text!}
+            by={reply?.by ?? null}
+            at={reply?.at ?? null}
+          />
+        ) : null}
+
+        {!hasReply && !showReplyForm ? (
+          <p
+            style={{
+              margin: 0,
+              fontSize: '0.85rem',
+              color: 'var(--theme-elevation-500)',
+            }}
+          >
+            {moderationCopy.detail.reply.empty}
+          </p>
+        ) : null}
+
+        {showReplyForm ? (
+          <form
+            onSubmit={handleReplySubmit}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+            }}
+          >
+            <textarea
+              id="merchant-reply-text"
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              placeholder={moderationCopy.detail.reply.placeholder}
+              maxLength={REPLY_MAX_LENGTH}
+              required
+              rows={4}
+              style={{
+                padding: '8px',
+                borderRadius: 'var(--style-radius-s, 4px)',
+                border: '1px solid var(--theme-elevation-150)',
+                background: 'var(--theme-input-bg, var(--theme-elevation-50))',
+                color: 'var(--theme-elevation-1000)',
+                fontFamily: 'inherit',
+                fontSize: '0.875rem',
+                resize: 'vertical',
+              }}
+            />
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                fontSize: '0.75rem',
+                color: 'var(--theme-elevation-500)',
+              }}
+            >
+              <span>{moderationCopy.detail.reply.hint}</span>
+              <span>
+                {moderationCopy.detail.reply.charCounter
+                  .replace('{current}', String(replyText.length))
+                  .replace('{max}', String(REPLY_MAX_LENGTH))}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <Button
+                type="submit"
+                buttonStyle="primary"
+                size="small"
+                disabled={isPending}
+              >
+                {busy === 'reply-save'
+                  ? '…'
+                  : moderationCopy.detail.reply.submit}
+              </Button>
+              <Button
+                type="button"
+                buttonStyle="secondary"
+                size="small"
+                onClick={closeReplyEditor}
+                disabled={isPending}
+              >
+                {moderationCopy.detail.reply.cancel}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <Button
+              type="button"
+              buttonStyle="secondary"
+              size="small"
+              onClick={openReplyEditor}
+              disabled={isPending}
+            >
+              {hasReply
+                ? moderationCopy.detail.reply.editCta
+                : moderationCopy.detail.reply.addCta}
+            </Button>
+            {hasReply ? (
+              <Button
+                type="button"
+                buttonStyle="error"
+                size="small"
+                onClick={handleReplyRemove}
+                disabled={isPending}
+              >
+                {busy === 'reply-remove'
+                  ? '…'
+                  : moderationCopy.detail.reply.removeCta}
+              </Button>
+            ) : null}
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
+function ReplyDisplay({
+  text,
+  by,
+  at,
+}: {
+  text: string
+  by: string | null
+  at: string | null
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <p
+        style={{
+          margin: 0,
+          fontSize: '0.875rem',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      >
+        {text}
+      </p>
+      <div
+        style={{
+          display: 'flex',
+          gap: '12px',
+          flexWrap: 'wrap',
+          fontSize: '0.7rem',
+          color: 'var(--theme-elevation-500)',
+        }}
+      >
+        {at ? (
+          <span>
+            {moderationCopy.detail.reply.datePrefix} {formatReplyDate(at)}
+          </span>
+        ) : null}
+        {by ? (
+          <span>
+            {moderationCopy.detail.reply.authorPrefix}{' '}
+            <code
+              style={{
+                fontFamily:
+                  'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace',
+                fontSize: '0.7rem',
+                background: 'var(--theme-elevation-50)',
+                padding: '1px 4px',
+                borderRadius: 'var(--style-radius-s, 4px)',
+              }}
+            >
+              {by}
+            </code>
+          </span>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -222,6 +533,12 @@ function mapErrorToCopy(error: string): string {
       return moderationCopy.detail.rejectForm.validationRequired
     case 'reason_too_long':
       return moderationCopy.detail.rejectForm.validationLength
+    case 'reply_required':
+    case 'reply_text_required':
+      return moderationCopy.detail.reply.errors.required
+    case 'reply_too_long':
+    case 'reply_text_too_long':
+      return moderationCopy.detail.reply.errors.tooLong
     default:
       return moderationCopy.detail.error.generic
   }

@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 
 /**
  * Product reviews module — pure SQL access layer over Medusa's pg connection,
@@ -86,6 +86,30 @@ export type ProductReviewListSort = (typeof PRODUCT_REVIEW_LIST_SORTS)[number]
 
 export const ANONYMIZED_CUSTOMER_NAME = "Покупатель"
 
+/**
+ * Phase 3 / step 5 — image attachments.
+ *
+ * Each image stored in `product_review.images` is a `{ id, url }` pair:
+ *   - `id`  → identifier returned by the Medusa file module
+ *     (`fileModuleService.createFiles({...}).id`); this is what we hand to
+ *     `fileModuleService.deleteFiles([id, ...])` on review delete /
+ *     product cascade. Local provider returns the relative file path; S3
+ *     provider returns the bucket key — both are opaque tokens we never
+ *     parse on this side.
+ *   - `url` → public CDN URL (also returned by the file module, e.g.
+ *     `${S3_FILE_URL}/<key>` for S3 or `http://localhost:9000/static/<file>`
+ *     for local). Surfaced to the storefront via {@link toPublicReview}.
+ *
+ * The wire format that crosses the public storefront contract
+ * ({@link ProductReviewPublic.images}) is intentionally a flat
+ * `string[]` of URLs — the internal `{id,url}` shape stays inside the
+ * server boundary so admin operations can map URL→id for cleanup.
+ */
+export type ProductReviewImage = {
+  id: string
+  url: string
+}
+
 export type ProductReviewRow = {
   id: string
   product_id: string
@@ -102,8 +126,33 @@ export type ProductReviewRow = {
   rejection_reason: string | null
   verified_purchase: boolean
   helpful_count: number
-  images: unknown
+  /**
+   * Phase 3 / step 5 — see {@link ProductReviewImage}. `null` when the
+   * row has no images (the column is also `null` for legacy rows
+   * created before step 5 because the POST schema rejected `images`).
+   */
+  images: ProductReviewImage[] | null
   customer_name: string
+  /**
+   * Phase 3 / step 4 — admin reply («Ответ магазина»). Three nullable
+   * columns are added to `product_review` via an idempotent
+   * `ALTER TABLE … ADD COLUMN IF NOT EXISTS` in
+   * {@link ensureProductReviewsTables}. The shape is intentionally
+   * column-level (not a separate table) because there is at most one
+   * reply per review and we never need history (plan §9 Phase 3 п.3).
+   *
+   * - `merchant_reply_text` — plain text, 1..1000 chars after trim;
+   *   `null` when no reply has been written yet.
+   * - `merchant_reply_by`   — admin actor id of the moderator who saved
+   *   the reply. Internal-only — NEVER surfaces in the public
+   *   `ProductReviewPublic` shape (see {@link toPublicReview}).
+   * - `merchant_reply_at`   — ISO timestamp of the last reply
+   *   create/update; cleared together with `*_text` / `*_by` on
+   *   {@link clearProductReviewMerchantReply}.
+   */
+  merchant_reply_text: string | null
+  merchant_reply_by: string | null
+  merchant_reply_at: string | null
   created_at: string
   updated_at: string
 }
@@ -129,12 +178,193 @@ export type ProductReviewListResult = {
   pageSize: number
 }
 
+// ---------------------------------------------------------------------------
+// Public-facing whitelisted shapes (hotfix Phase 3 P0).
+//
+// `ProductReviewRow` is the internal storage row and includes fields that
+// must never leak through public Store API responses: `customer_id`,
+// `order_id`, moderation metadata (`status`, `moderated_by`, `moderated_at`,
+// `rejection_reason`).
+//
+// - `ProductReviewPublic` / `toPublicReview`  → for endpoints that anybody
+//   (incl. unauthenticated bots) can hit:
+//     * GET  /store/products/:id/reviews
+//     * GET  /store/reviews/top
+//     * POST /store/products/:id/reviews   (response.review)
+//
+// - `ProductReviewMine` / `toMineReview`      → for the customer-only list
+//   GET /store/customers/me/reviews. The customer's own `customer_id`
+//   is already known on the server (cookie-derived), so we still do NOT
+//   echo it back; we only add `status` + `rejection_reason` so the
+//   `/account/reviews` page can render «На модерации / Опубликован /
+//   Отклонён» (plan §6.5).
+//
+// Admin routes keep `ProductReviewRow` — the moderation UI legitimately
+// needs the full shape.
+// ---------------------------------------------------------------------------
+
+export type ProductReviewPublic = {
+  id: string
+  product_id: string
+  customer_name: string
+  rating: number
+  title: string | null
+  text: string
+  pros: string | null
+  cons: string | null
+  verified_purchase: boolean
+  helpful_count: number
+  /**
+   * Reserved for Phase 3 step 5 (image attachments). The backend currently
+   * stores `null` because the POST schema rejects `images`; the field is
+   * declared on the public shape so future image rollout is non-breaking.
+   * Defensive: only `string[]` arrays are forwarded — any other runtime
+   * shape collapses to `null`.
+   */
+  images: string[] | null
+  /**
+   * Phase 3 / step 4 — admin reply («Ответ магазина»). `null` when the
+   * moderator has not posted a reply, or has cleared a previous one. The
+   * admin actor id (`merchant_reply_by`) is intentionally OMITTED from
+   * the public shape — it is internal moderation metadata, on par with
+   * `moderated_by` (plan §9 Phase 3 п.3 «admin id остаётся серверным
+   * полем»).
+   */
+  merchant_reply: { text: string; created_at: string } | null
+  created_at: string
+  updated_at: string
+}
+
+export type ProductReviewMine = ProductReviewPublic & {
+  status: ProductReviewStatus
+  rejection_reason: string | null
+}
+
+/**
+ * Internal image normalizer. Reads whatever is in the jsonb column —
+ * either the new `Array<{id,url}>` shape (Phase 3 step 5) or, for forward
+ * compatibility, a plain `string[]` of urls — and returns a clean
+ * `ProductReviewImage[]` or `null`.
+ *
+ * Defensive against malformed jsonb rows: anything that does not satisfy
+ * the schema is silently dropped instead of throwing — a poisoned row
+ * must not break the public list endpoint or the admin moderation UI.
+ */
+function normalizeReviewImages(value: unknown): ProductReviewImage[] | null {
+  if (!Array.isArray(value)) {
+    return null
+  }
+  const result: ProductReviewImage[] = []
+  for (const entry of value) {
+    if (typeof entry === "string" && entry.length > 0) {
+      // Legacy / loose shape: just a URL with no id. We still surface it
+      // to the storefront via `toPublicReview` (URLs only), but cleanup
+      // cannot delete it because the file module needs an id. The id
+      // field is filled with the URL itself so callers that only look at
+      // `id` get a stable, non-empty token.
+      result.push({ id: entry, url: entry })
+      continue
+    }
+    if (entry && typeof entry === "object") {
+      const candidate = entry as { id?: unknown; url?: unknown }
+      if (
+        typeof candidate.id === "string" &&
+        candidate.id.length > 0 &&
+        typeof candidate.url === "string" &&
+        candidate.url.length > 0
+      ) {
+        result.push({ id: candidate.id, url: candidate.url })
+      }
+    }
+  }
+  return result.length > 0 ? result : null
+}
+
+/**
+ * Project the internal `Array<{id,url}>` to the public, URL-only `string[]`
+ * shape that the storefront contract advertises (`ProductReviewPublic.images`
+ * / `ProductReviewItem.images`). Internal ids never leak through public or
+ * customer-facing endpoints — they are only used inside admin operations
+ * (delete / cascade / moderation preview).
+ */
+function projectImagesAsPublicUrls(
+  images: ProductReviewImage[] | null
+): string[] | null {
+  if (!images || images.length === 0) {
+    return null
+  }
+  return images.map((image) => image.url)
+}
+
+/**
+ * Whitelist a {@link ProductReviewRow} into the public shape — explicit field
+ * copy so adding a new column to `product_review` cannot accidentally widen
+ * the public contract. Keep changes here and the storefront `ProductReviewItem`
+ * type in lockstep.
+ */
+export function toPublicReview(row: ProductReviewRow): ProductReviewPublic {
+  return {
+    id: row.id,
+    product_id: row.product_id,
+    customer_name: row.customer_name,
+    rating: row.rating,
+    title: row.title,
+    text: row.text,
+    pros: row.pros,
+    cons: row.cons,
+    verified_purchase: row.verified_purchase,
+    helpful_count: row.helpful_count,
+    // Defensive: `row.images` should already be the normalised
+    // `ProductReviewImage[] | null` produced by `normalizeReviewRow`,
+    // but `toPublicReview` is also called on synthetic rows in tests
+    // and may be reused by future code paths that bypass the
+    // normaliser. Re-running `normalizeReviewImages` makes the
+    // boundary idempotent and tolerates either shape.
+    images: projectImagesAsPublicUrls(normalizeReviewImages(row.images)),
+    merchant_reply:
+      row.merchant_reply_text && row.merchant_reply_at
+        ? {
+            text: row.merchant_reply_text,
+            created_at: row.merchant_reply_at,
+          }
+        : null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }
+}
+
+/**
+ * Whitelist a {@link ProductReviewRow} for the customer's own «Мои отзывы»
+ * list — the public shape plus `status` and `rejection_reason`. Still no
+ * `customer_id` / `order_id` / `moderated_by` / `moderated_at`.
+ */
+export function toMineReview(row: ProductReviewRow): ProductReviewMine {
+  return {
+    ...toPublicReview(row),
+    status: row.status,
+    rejection_reason: row.rejection_reason,
+  }
+}
+
 export type ProductReviewCreateInput = {
   rating: number
   text: string
   title?: string | null
   pros?: string | null
   cons?: string | null
+  /**
+   * Phase 3 / step 5 — image attachments uploaded earlier through
+   * `POST /store/products/:id/reviews/upload`. Each entry is a
+   * `{ id, url }` pair returned by that endpoint (which itself wraps the
+   * Medusa file module — see {@link uploadProductReviewImage}). The
+   * route layer is the only producer of this field; the module trusts
+   * that pre-validation on the route side already enforced
+   *   - max length 5,
+   *   - https url,
+   *   - non-empty id.
+   * Empty array / `undefined` / `null` all map to a stored `null`.
+   */
+  images?: ProductReviewImage[] | null
 }
 
 export type ProductReviewAdminFilters = {
@@ -161,6 +391,12 @@ export const PRODUCT_REVIEW_ERROR_CODES = [
   "not_owner",
   "cannot_delete_published",
   "not_found_or_not_approved",
+  "reply_text_required",
+  "reply_text_too_long",
+  // Phase 3 / step 5 hotfix — magic-bytes sniff in
+  // {@link uploadProductReviewImage} mismatched the client-declared
+  // `mime_type`. The route maps this to HTTP 400.
+  "image_mime_mismatch",
 ] as const
 
 export type ProductReviewErrorCode = (typeof PRODUCT_REVIEW_ERROR_CODES)[number]
@@ -325,8 +561,19 @@ function normalizeReviewRow(value: Record<string, unknown>): ProductReviewRow {
         : null,
     verified_purchase: asBoolean(value.verified_purchase, false),
     helpful_count: asInteger(value.helpful_count, 0),
-    images: value.images ?? null,
+    images: normalizeReviewImages(value.images),
     customer_name: customerName,
+    merchant_reply_text:
+      typeof value.merchant_reply_text === "string" &&
+      value.merchant_reply_text.length
+        ? value.merchant_reply_text
+        : null,
+    merchant_reply_by:
+      typeof value.merchant_reply_by === "string" &&
+      value.merchant_reply_by.length
+        ? value.merchant_reply_by
+        : null,
+    merchant_reply_at: normalizeIsoDate(value.merchant_reply_at),
     created_at: normalizeIsoDate(value.created_at) || new Date(0).toISOString(),
     updated_at: normalizeIsoDate(value.updated_at) || new Date(0).toISOString(),
   }
@@ -427,6 +674,29 @@ export async function ensureProductReviewsTables(pgConnection: PgConnectionLike)
   await pgConnection.raw(`
     create index if not exists product_review_order
       on product_review (order_id)
+  `)
+
+  // -------------------------------------------------------------------------
+  // Phase 3 / step 4 — admin reply («Ответ магазина»).
+  //
+  // Pattern (plan §1.1 п.15 + §3.2): three nullable columns added in place
+  // via `ALTER TABLE … ADD COLUMN IF NOT EXISTS` rather than a separate
+  // `product_review_reply` table — there is at most one reply per review
+  // and history is not required (plan §9 Phase 3 п.3).
+  //
+  // Idempotent: `ADD COLUMN IF NOT EXISTS` is a no-op on subsequent runs
+  // (Postgres ≥ 9.6 — predates Medusa's minimum supported version) so the
+  // lazy-ensure pattern keeps working without a one-shot migration step.
+  //
+  // No new index — the columns are written/read from the single locked
+  // row by id during the admin POST/DELETE, so an index would only add
+  // write overhead.
+  // -------------------------------------------------------------------------
+  await pgConnection.raw(`
+    alter table product_review
+      add column if not exists merchant_reply_text text null,
+      add column if not exists merchant_reply_by   text null,
+      add column if not exists merchant_reply_at   timestamptz null
   `)
 }
 
@@ -612,9 +882,44 @@ async function fetchCustomerForReview(
 // ---------------------------------------------------------------------------
 
 /**
+ * Sanitize the route-supplied `images` payload before persisting it.
+ *
+ * The route schema already enforces shape (max 5, https url, non-empty id),
+ * but the module stays defensively resilient: it drops anything that does
+ * not satisfy the contract and returns `null` for empty arrays so the jsonb
+ * column ends up with `null` instead of `[]`. `null` keeps the storefront
+ * empty-state branch (`images === null`) consistent with reviews that have
+ * never had attachments at all.
+ */
+function sanitizeReviewImagesForInsert(
+  value: ProductReviewImage[] | null | undefined
+): ProductReviewImage[] | null {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null
+  }
+  const sanitized: ProductReviewImage[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") {
+      continue
+    }
+    const id = typeof entry.id === "string" ? entry.id.trim() : ""
+    const url = typeof entry.url === "string" ? entry.url.trim() : ""
+    if (id && url) {
+      sanitized.push({ id, url })
+    }
+  }
+  return sanitized.length > 0 ? sanitized : null
+}
+
+/**
  * Create a new review. The payload is expected to be already validated by Zod
- * at the route layer (`images` is dropped at the route per Phase 1 §13 and is
- * not present in this type at all).
+ * at the route layer.
+ *
+ * Phase 3 / step 5 — `payload.images` is now an opt-in `ProductReviewImage[]`
+ * (`{id, url}[]`) populated from the customer's earlier
+ * `POST /store/products/:id/reviews/upload` calls. The route is responsible
+ * for capping at 5 entries and asserting `https://` URLs; the module
+ * `sanitizeReviewImagesForInsert` keeps the boundary resilient regardless.
  *
  * Wraps the verified-purchase lookup, the INSERT, and the optional
  * auto-approve recalc in a single pg transaction so a parallel writer cannot
@@ -682,6 +987,9 @@ export async function createProductReview({
     productId: trimmedProductId,
   })
 
+  const sanitizedImages = sanitizeReviewImagesForInsert(payload.images)
+  const imagesJson = sanitizedImages ? JSON.stringify(sanitizedImages) : null
+
   return await pgConnection.transaction(async (trx) => {
     let insertedRow: ProductReviewRow
 
@@ -701,9 +1009,10 @@ export async function createProductReview({
             status,
             verified_purchase,
             helpful_count,
-            customer_name
+            customer_name,
+            images
           )
-          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?::jsonb)
           returning *
         `,
         [
@@ -719,6 +1028,7 @@ export async function createProductReview({
           status,
           verified,
           customerName,
+          imagesJson,
         ]
       )
 
@@ -746,6 +1056,254 @@ export async function createProductReview({
 
     return insertedRow
   })
+}
+
+// ---------------------------------------------------------------------------
+// 2.3.1 Image attachments — Medusa file module bridge (Phase 3 step 5)
+//
+// The module never imports `@medusajs/medusa/file` runtime — instead it
+// resolves `Modules.FILE` from the request-scoped container exactly the
+// same way other modules do (e.g. notifications). This keeps the module
+// testable: unit tests can hand it a fake container that resolves to a
+// stub file service.
+// ---------------------------------------------------------------------------
+
+type FileModuleServiceLike = {
+  createFiles: (
+    data: { filename: string; mimeType: string; content: string; access?: string }
+  ) => Promise<{ id: string; url: string }>
+  deleteFiles: (ids: string[]) => Promise<void>
+}
+
+function resolveFileModuleService(container: any): FileModuleServiceLike | null {
+  if (!container || typeof container.resolve !== "function") {
+    return null
+  }
+  try {
+    const service = container.resolve(Modules.FILE)
+    if (
+      service &&
+      typeof service.createFiles === "function" &&
+      typeof service.deleteFiles === "function"
+    ) {
+      return service as FileModuleServiceLike
+    }
+  } catch (error) {
+    // The file module is mandatory in `medusa-config.ts`, but if it is
+    // missing for any reason (e.g. tests without a fully wired
+    // container) we surface `null` so callers can decide whether to
+    // 503 (upload) or just skip cleanup (delete paths).
+    return null
+  }
+  return null
+}
+
+/**
+ * Phase 3 / step 5 hotfix — supported magic-byte signatures for the image
+ * MIME types accepted by the upload route. Used by
+ * {@link detectImageMime}. Implemented manually (no `file-type` dep).
+ *
+ * - JPEG: `FF D8 FF` (covers JFIF, EXIF, SPIFF — first 3 bytes are stable
+ *   across all JPEG variants we care about).
+ * - PNG: `89 50 4E 47 0D 0A 1A 0A` (8-byte fixed signature).
+ * - WebP: `RIFF....WEBP` — bytes 0..3 are `RIFF`, bytes 8..11 are `WEBP`.
+ *   The 4-byte little-endian length at 4..7 is intentionally NOT checked
+ *   (we do not trust client-declared length anyway).
+ */
+export type DetectedImageMime = "image/jpeg" | "image/png" | "image/webp"
+
+export function detectImageMime(buffer: Buffer): DetectedImageMime | null {
+  if (!buffer || buffer.length < 12) {
+    return null
+  }
+  // JPEG: FF D8 FF
+  if (
+    buffer[0] === 0xff &&
+    buffer[1] === 0xd8 &&
+    buffer[2] === 0xff
+  ) {
+    return "image/jpeg"
+  }
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return "image/png"
+  }
+  // WebP: 'RIFF' (52 49 46 46) at 0..3 and 'WEBP' (57 45 42 50) at 8..11.
+  if (
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50
+  ) {
+    return "image/webp"
+  }
+  return null
+}
+
+/**
+ * Phase 3 / step 5 — upload a single image attachment via the Medusa file
+ * module. Used by the `POST /store/products/:id/reviews/upload` route.
+ *
+ * Returns the `{id, url}` pair the route then echoes back to the
+ * storefront. The storefront accumulates them in client state and posts
+ * the array as `images` when the customer finally submits the review
+ * (see `createProductReview` / route Zod schema).
+ *
+ * Phase 3 / step 5 hotfix — MIME spoofing defence: the function decodes
+ * the base64 payload and runs {@link detectImageMime} against the magic
+ * bytes. If the detected MIME does not match the client-declared
+ * `mimeType`, we throw `ProductReviewError("image_mime_mismatch")` (the
+ * route maps it to HTTP 400). Without this check a customer could upload
+ * HTML+JS with `mime_type: image/jpeg`; S3 would store it with
+ * `Content-Type: image/jpeg`, but a direct browser hit on the public CDN
+ * URL would still render the file inline because some object storage
+ * providers / browsers ignore the stored Content-Type when sniffing. The
+ * detected MIME is then forwarded to `fileService.createFiles({mimeType})`
+ * so the bucket object is stored with a sanitized Content-Type — even if
+ * the bucket is misconfigured later, we never propagate a client-supplied
+ * value.
+ *
+ * TODO (defence-in-depth — out of scope for this hotfix, infra-side):
+ * configure the S3 bucket lifecycle / response-policy to add
+ * `Content-Disposition: attachment` for keys under the
+ * `review-uploads/` prefix. That fully closes the inline-render risk
+ * regardless of the stored `Content-Type`. The Medusa S3 file provider
+ * does not expose `Content-Disposition` per upload, so we cannot do it
+ * here without forking the provider.
+ */
+export async function uploadProductReviewImage({
+  container,
+  filename,
+  mimeType,
+  contentBase64,
+}: {
+  container: any
+  filename: string
+  mimeType: string
+  contentBase64: string
+}): Promise<ProductReviewImage> {
+  const fileService = resolveFileModuleService(container)
+  if (!fileService) {
+    throw new ProductReviewError(
+      "not_found",
+      "File module is not available; cannot upload review image"
+    )
+  }
+
+  // Decode once and sniff magic bytes BEFORE handing the payload to the
+  // file module. Note: we still pass the original base64 string to
+  // `createFiles` (the file module expects base64); the buffer is only
+  // used for the sniff.
+  const decoded = Buffer.from(contentBase64, "base64")
+  const detectedMime = detectImageMime(decoded)
+  if (!detectedMime || detectedMime !== mimeType) {
+    throw new ProductReviewError(
+      "image_mime_mismatch",
+      "Image content does not match the declared mime_type"
+    )
+  }
+
+  const created = await fileService.createFiles({
+    filename,
+    // Forward the *detected* MIME (not the client-declared one). At this
+    // point we know declared === detected, but using the detected value
+    // documents the intent: the file module / S3 receive a value the
+    // backend itself confirmed by inspecting the bytes.
+    mimeType: detectedMime,
+    content: contentBase64,
+    access: "public",
+  })
+  return { id: created.id, url: created.url }
+}
+
+/**
+ * Best-effort cleanup of S3/local file objects when a review row is
+ * deleted (admin DELETE / product cascade) or anonymized.
+ *
+ * Failures of the file module **do not** propagate — review deletion
+ * must succeed even if S3 is temporarily unreachable, otherwise an
+ * orphaned database row is worse than an orphaned object. The caller
+ * receives `{ ok, attempted, deleted, error? }` so admin routes /
+ * subscribers can log a structured warning and continue.
+ *
+ * Only entries whose `id !== url` are sent to the file module — legacy
+ * URL-only rows (created during early Phase 3 step 5 testing or by
+ * direct DB inserts) cannot be deleted because the file module needs
+ * an opaque id, and the URL is not reversible to one. Those are
+ * reported as `deleted: 0`.
+ */
+export async function deleteReviewImagesViaFileModule({
+  container,
+  images,
+  logger,
+}: {
+  container: any
+  images: ProductReviewImage[] | null
+  logger?: { warn: (message: string) => void }
+}): Promise<{
+  ok: boolean
+  attempted: number
+  deleted: number
+  error?: string
+}> {
+  if (!Array.isArray(images) || images.length === 0) {
+    return { ok: true, attempted: 0, deleted: 0 }
+  }
+
+  const deletableIds = images
+    .filter((image) => image.id && image.id !== image.url)
+    .map((image) => image.id)
+
+  if (deletableIds.length === 0) {
+    return { ok: true, attempted: 0, deleted: 0 }
+  }
+
+  const fileService = resolveFileModuleService(container)
+  if (!fileService) {
+    logger?.warn(
+      `[product-reviews] file module unavailable; skipping image cleanup for ${deletableIds.length} object(s)`
+    )
+    return {
+      ok: false,
+      attempted: deletableIds.length,
+      deleted: 0,
+      error: "file_module_unavailable",
+    }
+  }
+
+  try {
+    await fileService.deleteFiles(deletableIds)
+    return {
+      ok: true,
+      attempted: deletableIds.length,
+      deleted: deletableIds.length,
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "unknown_file_delete_error"
+    logger?.warn(
+      `[product-reviews] image cleanup failed attempted=${deletableIds.length} error=${message}`
+    )
+    return {
+      ok: false,
+      attempted: deletableIds.length,
+      deleted: 0,
+      error: message,
+    }
+  }
 }
 
 /**
@@ -1008,6 +1566,19 @@ export type ProductReviewAdminDeleteResult = {
    */
   customerId: string | null
   recalculated: boolean
+  /**
+   * Phase 3 / step 5 — best-effort S3/file-module cleanup outcome. The
+   * route logs a structured warning but does NOT fail the DELETE if
+   * `imagesCleanup.ok` is `false` — uniform contract: cleanup must not
+   * block core operations (plan §10.3 / step 5 instructions).
+   * `imagesCleanup` is `null` when the row had no images at all.
+   */
+  imagesCleanup: {
+    ok: boolean
+    attempted: number
+    deleted: number
+    error?: string
+  } | null
 }
 
 export async function deleteProductReviewAsAdmin({
@@ -1020,7 +1591,21 @@ export async function deleteProductReviewAsAdmin({
   const pgConnection = getProductReviewsPgConnection(container)
   await ensureProductReviewsTables(pgConnection)
 
-  return await pgConnection.transaction(async (trx) => {
+  let logger: { warn: (m: string) => void } | undefined
+  try {
+    if (container && typeof container.resolve === "function") {
+      logger = container.resolve(ContainerRegistrationKeys.LOGGER) as
+        | { warn: (m: string) => void }
+        | undefined
+    }
+  } catch {
+    logger = undefined
+  }
+
+  // Step 1: delete the DB row inside a transaction. The image objects
+  // are kept on disk/S3 until step 2 — the transaction is short and we
+  // do not want a slow S3 round-trip holding the row lock.
+  const txResult = await pgConnection.transaction(async (trx) => {
     const lockResult = await trx.raw<Record<string, unknown>>(
       `
         select *
@@ -1043,6 +1628,7 @@ export async function deleteProductReviewAsAdmin({
     const productId = lockedRow.product_id
     const customerId = lockedRow.customer_id
     const prevStatus = lockedRow.status
+    const images = lockedRow.images
 
     await trx.raw(
       `
@@ -1062,12 +1648,43 @@ export async function deleteProductReviewAsAdmin({
       productId,
       customerId,
       recalculated,
+      images,
     }
   })
+
+  // Step 2: best-effort cleanup of the file objects. Failure is logged
+  // by the helper but does not roll back the DB delete — orphaned S3
+  // objects are recoverable, an undeleted row is not.
+  const imagesCleanup =
+    txResult.images && txResult.images.length > 0
+      ? await deleteReviewImagesViaFileModule({
+          container,
+          images: txResult.images,
+          logger,
+        })
+      : null
+
+  return {
+    productId: txResult.productId,
+    customerId: txResult.customerId,
+    recalculated: txResult.recalculated,
+    imagesCleanup,
+  }
 }
 
 export type ProductReviewCustomerDeleteResult = {
   productId: string
+  /**
+   * Phase 3 / step 5 — best-effort image cleanup outcome, same shape as
+   * {@link ProductReviewAdminDeleteResult.imagesCleanup}. `null` for
+   * rows without images.
+   */
+  imagesCleanup: {
+    ok: boolean
+    attempted: number
+    deleted: number
+    error?: string
+  } | null
 }
 
 export async function deleteOwnPendingProductReview({
@@ -1082,7 +1699,18 @@ export async function deleteOwnPendingProductReview({
   const pgConnection = getProductReviewsPgConnection(container)
   await ensureProductReviewsTables(pgConnection)
 
-  return await pgConnection.transaction(async (trx) => {
+  let logger: { warn: (m: string) => void } | undefined
+  try {
+    if (container && typeof container.resolve === "function") {
+      logger = container.resolve(ContainerRegistrationKeys.LOGGER) as
+        | { warn: (m: string) => void }
+        | undefined
+    }
+  } catch {
+    logger = undefined
+  }
+
+  const txResult = await pgConnection.transaction(async (trx) => {
     const lockResult = await trx.raw<Record<string, unknown>>(
       `
         select *
@@ -1129,6 +1757,222 @@ export async function deleteOwnPendingProductReview({
     // and neither contributes to product_rating_summary aggregates.
     return {
       productId: lockedRow.product_id,
+      images: lockedRow.images,
+    }
+  })
+
+  const imagesCleanup =
+    txResult.images && txResult.images.length > 0
+      ? await deleteReviewImagesViaFileModule({
+          container,
+          images: txResult.images,
+          logger,
+        })
+      : null
+
+  return {
+    productId: txResult.productId,
+    imagesCleanup,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 2.3.1 Admin merchant reply («Ответ магазина»)
+//
+// Plan §9 Phase 3 п.3: моёодератор может оставить один краткий ответ под
+// отзывом покупателя. Реализовано через nullable-колонки на самом ряде
+// (см. {@link ensureProductReviewsTables}); отдельная таблица
+// `product_review_reply` сознательно НЕ создаётся — нужна максимум одна
+// запись на отзыв и историю не ведём.
+//
+// Reply разрешён для отзыва в любом статусе (pending / approved / rejected).
+// `recalculated` всегда `false` — текст ответа не влияет на рейтинг товара,
+// и `statusChanged` всегда `false` — статус самого отзыва не меняется.
+// ---------------------------------------------------------------------------
+
+/** Hard cap on the merchant reply text length (chars after trim). Enforced
+ *  by the Zod schema at the route layer and re-checked here as defence in
+ *  depth so the module is honest when called directly. */
+export const PRODUCT_REVIEW_MERCHANT_REPLY_MAX = 1000
+
+export interface SetProductReviewMerchantReplyArgs {
+  container: any
+  reviewId: string
+  /** 1..1000 chars after `normalizeReviewText` (trim + collapse whitespace). */
+  text: string
+  /**
+   * Admin actor id of the moderator (`auth_context.actor_id` upstream).
+   * Stored in `merchant_reply_by` for audit purposes — never echoed to the
+   * public `ProductReviewPublic` shape.
+   */
+  authorId: string | null
+}
+
+export interface ClearProductReviewMerchantReplyArgs {
+  container: any
+  reviewId: string
+}
+
+/**
+ * Result of {@link setProductReviewMerchantReply} /
+ * {@link clearProductReviewMerchantReply}. The shape mirrors
+ * {@link ProductReviewModerationResult} so the admin route can reuse the
+ * same revalidation helper, but `recalculated` and `statusChanged` are
+ * always literally `false` — admin reply touches neither the rating
+ * aggregate nor the moderation status.
+ */
+export type SetMerchantReplyResult = {
+  review: ProductReviewRow
+  productId: string
+  recalculated: false
+  statusChanged: false
+}
+
+/**
+ * Persist or update the moderator's reply on the given review.
+ *
+ * Wrapped in a single pg transaction with `SELECT … FOR UPDATE` so the
+ * UPDATE cannot race with concurrent admin moderation actions on the same
+ * row. `text` is trimmed/whitespace-collapsed via `normalizeReviewText`
+ * before length checks — the route's Zod schema already enforces the
+ * 1..1000 bound, but the module re-validates so it is safe to call from
+ * subscribers/scripts directly.
+ */
+export async function setProductReviewMerchantReply({
+  container,
+  reviewId,
+  text,
+  authorId,
+}: SetProductReviewMerchantReplyArgs): Promise<SetMerchantReplyResult> {
+  const pgConnection = getProductReviewsPgConnection(container)
+  await ensureProductReviewsTables(pgConnection)
+
+  const normalizedText = normalizeReviewText(text)
+  if (!normalizedText) {
+    throw new ProductReviewError(
+      "reply_text_required",
+      "merchant reply text is required"
+    )
+  }
+  if (normalizedText.length > PRODUCT_REVIEW_MERCHANT_REPLY_MAX) {
+    throw new ProductReviewError(
+      "reply_text_too_long",
+      `merchant reply text must be at most ${PRODUCT_REVIEW_MERCHANT_REPLY_MAX} chars`
+    )
+  }
+
+  const trimmedAuthor =
+    typeof authorId === "string" && authorId.trim() ? authorId.trim() : null
+
+  return await pgConnection.transaction(async (trx) => {
+    const lockResult = await trx.raw<Record<string, unknown>>(
+      `
+        select *
+        from product_review
+        where id = ?
+        for update
+      `,
+      [reviewId]
+    )
+
+    const lockedRows = getRawRows<Record<string, unknown>>(lockResult)
+    if (!lockedRows.length) {
+      throw new ProductReviewError(
+        "not_found",
+        `Review with id '${reviewId}' was not found`
+      )
+    }
+
+    const updateResult = await trx.raw<Record<string, unknown>>(
+      `
+        update product_review
+        set merchant_reply_text = ?,
+            merchant_reply_by = ?,
+            merchant_reply_at = now(),
+            updated_at = now()
+        where id = ?
+        returning *
+      `,
+      [normalizedText, trimmedAuthor, reviewId]
+    )
+
+    const updatedRows = getRawRows<Record<string, unknown>>(updateResult)
+    if (!updatedRows.length) {
+      throw new ProductReviewError(
+        "not_found",
+        `Review with id '${reviewId}' disappeared during update`
+      )
+    }
+    const updatedReview = normalizeReviewRow(updatedRows[0])
+
+    return {
+      review: updatedReview,
+      productId: updatedReview.product_id,
+      recalculated: false,
+      statusChanged: false,
+    }
+  })
+}
+
+/**
+ * Clear an existing merchant reply (sets all three columns back to NULL).
+ * Idempotent on the SQL layer — the `update` runs unconditionally, so a
+ * call against an already-empty row is a no-op write that bumps
+ * `updated_at`. We accept that to keep the path symmetric with `set`.
+ */
+export async function clearProductReviewMerchantReply({
+  container,
+  reviewId,
+}: ClearProductReviewMerchantReplyArgs): Promise<SetMerchantReplyResult> {
+  const pgConnection = getProductReviewsPgConnection(container)
+  await ensureProductReviewsTables(pgConnection)
+
+  return await pgConnection.transaction(async (trx) => {
+    const lockResult = await trx.raw<Record<string, unknown>>(
+      `
+        select *
+        from product_review
+        where id = ?
+        for update
+      `,
+      [reviewId]
+    )
+
+    const lockedRows = getRawRows<Record<string, unknown>>(lockResult)
+    if (!lockedRows.length) {
+      throw new ProductReviewError(
+        "not_found",
+        `Review with id '${reviewId}' was not found`
+      )
+    }
+
+    const updateResult = await trx.raw<Record<string, unknown>>(
+      `
+        update product_review
+        set merchant_reply_text = null,
+            merchant_reply_by = null,
+            merchant_reply_at = null,
+            updated_at = now()
+        where id = ?
+        returning *
+      `,
+      [reviewId]
+    )
+
+    const updatedRows = getRawRows<Record<string, unknown>>(updateResult)
+    if (!updatedRows.length) {
+      throw new ProductReviewError(
+        "not_found",
+        `Review with id '${reviewId}' disappeared during update`
+      )
+    }
+    const updatedReview = normalizeReviewRow(updatedRows[0])
+
+    return {
+      review: updatedReview,
+      productId: updatedReview.product_id,
+      recalculated: false,
+      statusChanged: false,
     }
   })
 }
@@ -1160,19 +2004,85 @@ async function countReviews(
   return typeof value === "number" ? value : asInteger(value, 0)
 }
 
+/**
+ * Normalise an optional integer rating bound (1..5). `null` / `undefined` /
+ * out-of-range values collapse to `null` so the parameterized SQL evaluates
+ * `($N::int IS NULL OR rating <= $N)` as a no-op and skips the predicate.
+ *
+ * Defensive — Zod at the route already enforces 1..5 — but the module is
+ * exported and may be called from subscribers/scripts.
+ */
+function normalizeRatingBound(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null
+  }
+  const truncated = Math.trunc(value)
+  if (truncated < 1 || truncated > 5) {
+    return null
+  }
+  return truncated
+}
+
+/**
+ * Normalise the optional `verifiedOnly` flag. `undefined` / `null` collapse
+ * to `null` — that disables the predicate. Anything truthy/falsy yields a
+ * concrete boolean. Mirrors `asBoolean` but keeps a tri-state instead of
+ * defaulting to `false`.
+ */
+function normalizeOptionalBoolean(value: unknown): boolean | null {
+  if (value === undefined || value === null) {
+    return null
+  }
+  if (typeof value === "boolean") {
+    return value
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === "true" || normalized === "1") {
+      return true
+    }
+    if (normalized === "false" || normalized === "0") {
+      return false
+    }
+  }
+  return null
+}
+
+export interface ListApprovedProductReviewsArgs {
+  pgConnection: PgConnectionLike
+  productId: string
+  page: number
+  pageSize: number
+  sort: ProductReviewListSort
+  /** Optional inclusive lower bound on `rating` (1..5). */
+  minRating?: number | null
+  /** Optional inclusive upper bound on `rating` (1..5). */
+  maxRating?: number | null
+  /** When `true`, only `verified_purchase = true` rows are returned. */
+  verifiedOnly?: boolean | null
+}
+
+/**
+ * List approved product reviews for the public storefront (plan §4.3).
+ *
+ * Phase 3 / step 2: optional filters `minRating` / `maxRating` /
+ * `verifiedOnly` are applied through a single dynamic WHERE clause built
+ * with positional placeholders. Unset filters become `NULL` so the SQL plan
+ * is stable and the query optimiser can short-circuit each predicate.
+ *
+ * Filtering applies to BOTH the items query AND the count query so `total`
+ * matches the visible page count.
+ */
 export async function listApprovedProductReviews({
   pgConnection,
   productId,
   page,
   pageSize,
   sort,
-}: {
-  pgConnection: PgConnectionLike
-  productId: string
-  page: number
-  pageSize: number
-  sort: ProductReviewListSort
-}): Promise<ProductReviewListResult> {
+  minRating,
+  maxRating,
+  verifiedOnly,
+}: ListApprovedProductReviewsArgs): Promise<ProductReviewListResult> {
   await ensureProductReviewsTables(pgConnection)
 
   const { page: safePage, pageSize: safePageSize } = clampPagination(
@@ -1195,24 +2105,48 @@ export async function listApprovedProductReviews({
       break
   }
 
+  // Resolve the optional filters into stable positional values. Each filter
+  // is a single placeholder; the SQL gates it with `($N::type IS NULL OR …)`
+  // so passing NULL disables the predicate without changing the plan.
+  const minRatingParam = normalizeRatingBound(minRating)
+  const maxRatingParam = normalizeRatingBound(maxRating)
+  const verifiedOnlyParam = normalizeOptionalBoolean(verifiedOnly)
+
+  const filterWhereClause = `
+    where product_id = ?
+      and status = 'approved'
+      and (?::int is null or rating >= ?::int)
+      and (?::int is null or rating <= ?::int)
+      and (?::boolean is null or verified_purchase = ?::boolean)
+  `
+  const filterBindings = [
+    productId,
+    minRatingParam,
+    minRatingParam,
+    maxRatingParam,
+    maxRatingParam,
+    verifiedOnlyParam,
+    verifiedOnlyParam,
+  ]
+
   const itemsResult = await pgConnection.raw<Record<string, unknown>>(
     `
       select *
       from product_review
-      where product_id = ? and status = 'approved'
+      ${filterWhereClause}
       ${orderByClause}
       limit ?
       offset ?
     `,
-    [productId, safePageSize, offset]
+    [...filterBindings, safePageSize, offset]
   )
   const rows = getRawRows<Record<string, unknown>>(itemsResult)
   const items = rows.map((row) => normalizeReviewRow(row))
 
   const total = await countReviews(
     pgConnection,
-    "where product_id = ? and status = 'approved'",
-    [productId]
+    filterWhereClause,
+    filterBindings
   )
 
   return {
@@ -1221,6 +2155,88 @@ export async function listApprovedProductReviews({
     page: safePage,
     pageSize: safePageSize,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 / step 3 — top approved reviews across the whole catalog (homepage
+// «Лучшие отзывы» widget). Aggregation is over all products; no `product_id`
+// filter. The query is intentionally simple: full scan + sort under the tiny
+// approved-review volume of staging/early-prod (plan §9 Phase 3 п.5,
+// «никаких новых индексов на этом шаге»).
+// ---------------------------------------------------------------------------
+
+export interface ListTopApprovedProductReviewsArgs {
+  pgConnection: PgConnectionLike
+  /** 1..50, default 10. Out-of-range values are clamped, not rejected. */
+  limit?: number
+  /** 1..5, default 4 — only ★4 and above qualify as «top». */
+  minRating?: number
+  /**
+   * Window in days to look back from `now()`. Default 90.
+   * `0` / `undefined` / negative → no date filter (i.e. lifetime top).
+   */
+  daysWindow?: number
+}
+
+/**
+ * List the top approved product reviews across the whole catalog. Used by the
+ * storefront homepage «Что говорят покупатели» widget (plan §9 Phase 3 п.5).
+ *
+ * Sorting is `helpful_count DESC, rating DESC, created_at DESC` — social
+ * proof first (most-helpful wins), then rating, then recency as a stable
+ * tie-breaker. The contract intentionally mirrors the per-product `helpful`
+ * sort but adds `rating DESC` as a secondary key so a 5-star review with the
+ * same `helpful_count` outranks a 4-star one.
+ *
+ * Filtering uses the same `($N::int IS NULL OR ...)` guard pattern as
+ * [`listApprovedProductReviews`](medusa-agency-boilerplate/src/modules/product-reviews.ts:1232)
+ * so the SQL plan stays stable when filters are off.
+ */
+export async function listTopApprovedProductReviewsAcrossCatalog({
+  pgConnection,
+  limit,
+  minRating,
+  daysWindow,
+}: ListTopApprovedProductReviewsArgs): Promise<ProductReviewRow[]> {
+  await ensureProductReviewsTables(pgConnection)
+
+  const safeLimit = Math.min(
+    50,
+    Math.max(1, asInteger(limit ?? 10, 10) || 10)
+  )
+
+  const minRatingParam = normalizeRatingBound(minRating ?? 4) ?? 4
+  const daysWindowRaw = asInteger(daysWindow ?? 90, 90)
+  // 0 (or any non-positive) disables the date filter — passed as NULL.
+  const daysWindowParam = daysWindowRaw > 0 ? daysWindowRaw : null
+
+  const result = await pgConnection.raw<Record<string, unknown>>(
+    `
+      select id, product_id, customer_id, customer_name, rating, title, text,
+             pros, cons, status, moderated_by, moderated_at, rejection_reason,
+             verified_purchase, helpful_count, images, order_id,
+             merchant_reply_text, merchant_reply_by, merchant_reply_at,
+             created_at, updated_at
+      from product_review
+      where status = 'approved'
+        and (?::int is null or rating >= ?::int)
+        and (
+          ?::int is null
+          or created_at >= now() - (?::int || ' days')::interval
+        )
+      order by helpful_count desc, rating desc, created_at desc, id desc
+      limit ?
+    `,
+    [
+      minRatingParam,
+      minRatingParam,
+      daysWindowParam,
+      daysWindowParam,
+      safeLimit,
+    ]
+  )
+  const rows = getRawRows<Record<string, unknown>>(result)
+  return rows.map((row) => normalizeReviewRow(row))
 }
 
 export async function getProductRatingSummary({
@@ -1517,6 +2533,31 @@ export type AnonymizeCustomerResult = {
   helpfulVotesDeleted: number
 }
 
+/**
+ * Анонимизация customer (GDPR right-to-erasure).
+ *
+ * Делает две вещи в рамках текущего соединения (без транзакции — обе
+ * команды идемпотентны и независимы):
+ *  1) `update product_review set customer_id = null, customer_name = 'Покупатель'`
+ *     — отвязываем review-rows от удалённого customer-а;
+ *  2) `delete from product_review_helpful where customer_id = ?` —
+ *     убираем personal voting trail.
+ *
+ * IMAGES TRADE-OFF: фото-вложения отзыва НЕ удаляются.
+ * - PRO: текст и фото остаются как content за анонимизированным
+ *   "Покупатель" — UX consistency, рейтинг товара не «прыгает», другие
+ *   покупатели по-прежнему видят опубликованный отзыв.
+ * - CONTRA: фото с лицом / номером машины / иными identifying данными —
+ *   это PII. С точки зрения GDPR Art. 17 (right to erasure) такая фотка
+ *   после анонимизации формально остаётся в S3 и достижима по публичному
+ *   CDN-URL, что создаёт юридический риск.
+ *
+ * Если по compliance потребуется жёсткое удаление, ввести env-flag
+ * `REVIEWS_ANONYMIZE_DELETES_IMAGES` (default `false`) и при `true` —
+ * собрать `images` массивы по customer_id ДО UPDATE и вызвать
+ * {@link deleteReviewImagesViaFileModule} перед коммитом. Сейчас
+ * сознательно не реализуем — оставляем за будущим compliance-тикетом.
+ */
 export async function anonymizeCustomerInProductReviews({
   pgConnection,
   customerId,
@@ -1557,35 +2598,124 @@ export async function anonymizeCustomerInProductReviews({
 
 export type DeleteAllProductReviewsForProductResult = {
   reviewsDeleted: number
+  /**
+   * Phase 3 / step 5 — best-effort image cleanup outcome aggregated
+   * across all deleted rows. `null` when no review had attachments OR
+   * when the caller did not pass a `container` (the cascade still runs,
+   * S3 objects just get orphaned — same uniform contract as
+   * {@link deleteProductReviewAsAdmin}).
+   */
+  imagesCleanup: {
+    ok: boolean
+    attempted: number
+    deleted: number
+    error?: string
+  } | null
 }
 
 export async function deleteAllProductReviewsForProduct({
   pgConnection,
   productId,
+  container,
 }: {
   pgConnection: PgConnectionLike
   productId: string
+  /**
+   * Phase 3 / step 5 — optional Medusa container. When supplied, the
+   * function gathers all `images` arrays before the DELETE and forwards
+   * them to {@link deleteReviewImagesViaFileModule} after the row delete
+   * commits. The subscriber in
+   * [`product-deleted-product-reviews.ts`](medusa-agency-boilerplate/src/subscribers/product-deleted-product-reviews.ts:1)
+   * passes the container; direct callers (e.g. tests) can omit it.
+   */
+  container?: any
 }): Promise<DeleteAllProductReviewsForProductResult> {
   await ensureProductReviewsTables(pgConnection)
 
-  const reviewsResult = await pgConnection.raw(
-    `
-      delete from product_review
-      where product_id = ?
-    `,
-    [productId]
-  )
-  const reviewsDeleted = getRawRowCount(reviewsResult)
+  let logger: { warn: (m: string) => void } | undefined
+  if (container && typeof container.resolve === "function") {
+    try {
+      logger = container.resolve(ContainerRegistrationKeys.LOGGER) as
+        | { warn: (m: string) => void }
+        | undefined
+    } catch {
+      logger = undefined
+    }
+  }
 
-  await pgConnection.raw(
-    `
-      delete from product_rating_summary
-      where product_id = ?
-    `,
-    [productId]
-  )
+  // Phase 3 / step 5 hotfix (P1.3) — DB cleanup runs inside a single
+  // transaction (mirrors {@link deleteProductReviewAsAdmin}). All three
+  // statements (SELECT images / DELETE product_review / DELETE
+  // product_rating_summary) succeed or none do. The S3 cleanup is
+  // deliberately performed AFTER commit — orphaned objects are
+  // recoverable, but a partial DB state where reviews are gone yet the
+  // rating summary lingers is not.
+  const txResult = await pgConnection.transaction(async (trx) => {
+    // Step 1: collect image references before the DELETE so we can hand
+    // them off to the file module for best-effort cleanup. We
+    // intentionally do this in a separate SELECT (instead of a
+    // `RETURNING images` on the DELETE) because the result set is
+    // bounded by the number of reviews on a single product (typically
+    // <100) and a plain SELECT keeps the SQL legible.
+    let collected: ProductReviewImage[] = []
+    if (container) {
+      const imagesResult = await trx.raw<{ images: unknown }>(
+        `
+          select images
+          from product_review
+          where product_id = ?
+            and images is not null
+        `,
+        [productId]
+      )
+      const imageRows = getRawRows<{ images: unknown }>(imagesResult)
+      for (const row of imageRows) {
+        const normalized = normalizeReviewImages(row.images)
+        if (normalized) {
+          collected = collected.concat(normalized)
+        }
+      }
+    }
+
+    const reviewsResult = await trx.raw(
+      `
+        delete from product_review
+        where product_id = ?
+      `,
+      [productId]
+    )
+    const reviewsDeleted = getRawRowCount(reviewsResult)
+
+    await trx.raw(
+      `
+        delete from product_rating_summary
+        where product_id = ?
+      `,
+      [productId]
+    )
+
+    return {
+      reviewsDeleted,
+      collectedImages: collected,
+    }
+  })
+
+  // Step 2: best-effort S3/local cleanup AFTER the DB transaction has
+  // committed. Failure here is logged by the helper and surfaces in the
+  // returned `imagesCleanup` shape but does not roll back the DB
+  // delete — orphaned S3 objects can be reaped later, an undeleted row
+  // is permanent.
+  const imagesCleanup =
+    container && txResult.collectedImages.length > 0
+      ? await deleteReviewImagesViaFileModule({
+          container,
+          images: txResult.collectedImages,
+          logger,
+        })
+      : null
 
   return {
-    reviewsDeleted,
+    reviewsDeleted: txResult.reviewsDeleted,
+    imagesCleanup,
   }
 }

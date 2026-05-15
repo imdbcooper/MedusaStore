@@ -6,9 +6,17 @@ import { Button, Heading } from "@medusajs/ui"
 import { storefrontConfig } from "@lib/storefront-config"
 import {
   submitProductReview,
+  uploadProductReviewImage,
   type ProductReviewSubmitCode,
   type ProductReviewSubmitResult,
 } from "@lib/data/product-reviews"
+import {
+  PRODUCT_REVIEW_IMAGE_ALLOWED_MIME_TYPES,
+  PRODUCT_REVIEW_IMAGE_MAX_BYTES,
+  PRODUCT_REVIEW_IMAGE_MAX_COUNT,
+  type ProductReviewImageRef,
+  type ProductReviewUploadCode,
+} from "@lib/data/product-reviews-images-constants"
 import Modal from "@modules/common/components/modal"
 import ReviewStarsInput from "@modules/common/components/review-stars/input"
 
@@ -82,6 +90,15 @@ const INITIAL_VALUES: FormValues = {
 }
 
 /**
+ * Phase 3 / step 5 — uploaded image previews kept in form state until
+ * the customer submits the review. Each entry has the backend-issued
+ * `id` / `url` plus a transient `localKey` used only as a stable React
+ * key while the file is uploading (the backend `id` is not yet known
+ * during the upload promise).
+ */
+type FormImage = ProductReviewImageRef & { localKey: string }
+
+/**
  * Maps a `submitProductReview` server-action error code to the right copy
  * key under `reviews.form.*`. The fallthrough is `form.error` so an
  * unexpected backend status never leaves the user without feedback.
@@ -104,6 +121,28 @@ function pickErrorCopy(code: ProductReviewSubmitCode): string {
   }
 }
 
+function pickUploadErrorCopy(
+  code: ProductReviewUploadCode,
+  details?: { sizeMb?: number }
+): string {
+  const imagesCopy = storefrontConfig.copy.reviews.form.images
+  const sizeMb =
+    details?.sizeMb ?? Math.round(PRODUCT_REVIEW_IMAGE_MAX_BYTES / (1024 * 1024))
+  switch (code) {
+    case "auth_required":
+      return imagesCopy.errors.authRequired
+    case "rate_limited":
+      return imagesCopy.errors.rateLimited
+    case "payload_too_large":
+      return imagesCopy.errors.tooLarge.replace("{size}", String(sizeMb))
+    case "validation_error":
+      return imagesCopy.errors.invalidType
+    case "unknown":
+    default:
+      return imagesCopy.errors.uploadFailed
+  }
+}
+
 const ProductReviewForm: React.FC<ProductReviewFormProps> = ({
   productId,
   open,
@@ -111,11 +150,26 @@ const ProductReviewForm: React.FC<ProductReviewFormProps> = ({
 }) => {
   const formCopy = storefrontConfig.copy.reviews.form
 
+  const imagesCopy = formCopy.images
+  const imagesMaxMb = Math.round(
+    PRODUCT_REVIEW_IMAGE_MAX_BYTES / (1024 * 1024)
+  )
+
   const [values, setValues] = React.useState<FormValues>(INITIAL_VALUES)
   const [errors, setErrors] = React.useState<FormErrors>({})
   const [submitError, setSubmitError] = React.useState<string | null>(null)
   const [submitSuccess, setSubmitSuccess] = React.useState<boolean>(false)
   const [isPending, startTransition] = React.useTransition()
+
+  // Phase 3 / step 5 — uploaded image attachments. The form keeps the
+  // backend-issued `{id, url}` pairs in state and posts them as part of
+  // the review payload. `imagesUploading` is a counter of in-flight
+  // uploads so the submit button stays disabled while images are still
+  // being sent to S3.
+  const [images, setImages] = React.useState<FormImage[]>([])
+  const [imagesError, setImagesError] = React.useState<string | null>(null)
+  const [imagesUploading, setImagesUploading] = React.useState<number>(0)
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null)
 
   // Reset form whenever the modal closes — opens with a clean slate next
   // time. The reset is delayed slightly so the success message stays
@@ -127,6 +181,9 @@ const ProductReviewForm: React.FC<ProductReviewFormProps> = ({
         setErrors({})
         setSubmitError(null)
         setSubmitSuccess(false)
+        setImages([])
+        setImagesError(null)
+        setImagesUploading(0)
       }, 200)
       return () => window.clearTimeout(id)
     }
@@ -192,6 +249,12 @@ const ProductReviewForm: React.FC<ProductReviewFormProps> = ({
       return
     }
 
+    // Phase 3 / step 5 — block the submit while uploads are still in
+    // flight; the user must either wait or remove the pending image.
+    if (imagesUploading > 0) {
+      return
+    }
+
     startTransition(async () => {
       const result: ProductReviewSubmitResult = await submitProductReview({
         productId,
@@ -201,6 +264,10 @@ const ProductReviewForm: React.FC<ProductReviewFormProps> = ({
         pros: values.pros.trim() || undefined,
         cons: values.cons.trim() || undefined,
         website: values.website,
+        images:
+          images.length > 0
+            ? images.map((image) => ({ id: image.id, url: image.url }))
+            : undefined,
       })
 
       if (result.ok) {
@@ -217,6 +284,127 @@ const ProductReviewForm: React.FC<ProductReviewFormProps> = ({
       setSubmitError(pickErrorCopy(result.code))
     })
   }
+
+  // Phase 3 / step 5 — file picker handler. Accepts multiple files in
+  // one shot (the input is `multiple`), filters by mime / size on the
+  // client, and uploads each through `uploadProductReviewImage`. The
+  // upload runs in parallel via `Promise.allSettled` so a single
+  // failing file does not block the rest. The form input is reset on
+  // entry so the same file can be picked again after removal (the
+  // browser reuses the value otherwise).
+  const handleFilesChange = React.useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const fileList = event.target.files
+      if (!fileList || fileList.length === 0) {
+        return
+      }
+
+      setImagesError(null)
+      const incoming = Array.from(fileList)
+      // Reset the input first thing — even if validation rejects everything,
+      // the user can re-pick the same file after a fix.
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
+
+      const remainingSlots =
+        PRODUCT_REVIEW_IMAGE_MAX_COUNT - images.length - imagesUploading
+      if (remainingSlots <= 0) {
+        setImagesError(
+          imagesCopy.errors.tooMany.replace(
+            "{max}",
+            String(PRODUCT_REVIEW_IMAGE_MAX_COUNT)
+          )
+        )
+        return
+      }
+
+      const accepted: File[] = []
+      let perFileError: string | null = null
+      for (const file of incoming) {
+        if (
+          !(PRODUCT_REVIEW_IMAGE_ALLOWED_MIME_TYPES as readonly string[]).includes(
+            file.type
+          )
+        ) {
+          perFileError = imagesCopy.errors.invalidType
+          continue
+        }
+        if (file.size > PRODUCT_REVIEW_IMAGE_MAX_BYTES) {
+          perFileError = imagesCopy.errors.tooLarge.replace(
+            "{size}",
+            String(imagesMaxMb)
+          )
+          continue
+        }
+        if (accepted.length >= remainingSlots) {
+          perFileError = imagesCopy.errors.tooMany.replace(
+            "{max}",
+            String(PRODUCT_REVIEW_IMAGE_MAX_COUNT)
+          )
+          break
+        }
+        accepted.push(file)
+      }
+
+      if (accepted.length === 0) {
+        if (perFileError) setImagesError(perFileError)
+        return
+      }
+      if (perFileError) setImagesError(perFileError)
+
+      setImagesUploading((prev) => prev + accepted.length)
+
+      void Promise.allSettled(
+        accepted.map(async (file) => {
+          const buffer = await file.arrayBuffer()
+          const result = await uploadProductReviewImage({
+            productId,
+            filename: file.name,
+            mimeType: file.type,
+            content: buffer,
+          })
+          return result
+        })
+      ).then((settled) => {
+        setImagesUploading((prev) => Math.max(0, prev - accepted.length))
+        const newImages: FormImage[] = []
+        let lastError: ProductReviewUploadCode | null = null
+        for (const entry of settled) {
+          if (entry.status === "fulfilled" && entry.value.ok) {
+            newImages.push({
+              id: entry.value.image.id,
+              url: entry.value.image.url,
+              localKey: `${entry.value.image.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            })
+          } else if (entry.status === "fulfilled" && !entry.value.ok) {
+            lastError = entry.value.code
+          } else {
+            lastError = "unknown"
+          }
+        }
+        if (newImages.length > 0) {
+          setImages((prev) => [...prev, ...newImages])
+        }
+        if (lastError) {
+          setImagesError(pickUploadErrorCopy(lastError, { sizeMb: imagesMaxMb }))
+        }
+      })
+    },
+    [images.length, imagesUploading, imagesCopy, imagesMaxMb, productId]
+  )
+
+  const removeImage = React.useCallback((localKey: string) => {
+    // Phase 3 / step 5 — purely client-side removal: we DO NOT call any
+    // server cleanup endpoint here because the file has not yet been
+    // attached to a review row. If the customer removes a photo and
+    // never submits, the orphaned S3 object stays until a janitorial
+    // sweep (out of scope for Phase 3). On submit the customer's
+    // remaining images are persisted; on admin DELETE / product cascade
+    // we run the file-module cleanup (see backend module).
+    setImages((prev) => prev.filter((image) => image.localKey !== localKey))
+    setImagesError(null)
+  }, [])
 
   const update = <K extends keyof FormValues>(key: K, value: FormValues[K]) => {
     setValues((prev) => ({ ...prev, [key]: value }))
@@ -446,6 +634,109 @@ const ProductReviewForm: React.FC<ProductReviewFormProps> = ({
               </div>
             </div>
 
+            {/* Phase 3 / step 5 — Images */}
+            <div className="flex flex-col gap-y-2" data-testid="product-review-form-images">
+              <div className="flex items-baseline justify-between gap-2">
+                <label
+                  htmlFor="product-review-images"
+                  className="text-sm font-medium text-ui-fg-base"
+                >
+                  {imagesCopy.label}
+                </label>
+                <span className="text-xs text-ui-fg-subtle tabular-nums">
+                  {imagesCopy.counter
+                    .replace("{count}", String(images.length))
+                    .replace("{max}", String(PRODUCT_REVIEW_IMAGE_MAX_COUNT))}
+                </span>
+              </div>
+              <p className="text-xs text-ui-fg-subtle">
+                {imagesCopy.hint
+                  .replace("{max}", String(PRODUCT_REVIEW_IMAGE_MAX_COUNT))
+                  .replace("{size}", String(imagesMaxMb))}
+              </p>
+
+              {images.length > 0 ? (
+                <ul
+                  className="grid grid-cols-3 gap-2 sm:grid-cols-5"
+                  data-testid="product-review-form-images-grid"
+                >
+                  {images.map((image) => (
+                    <li
+                      key={image.localKey}
+                      className="group relative aspect-square overflow-hidden rounded-md border border-ui-border-base bg-ui-bg-subtle"
+                    >
+                      {/*
+                        Plain `<img>` (not `next/image`) — the URLs are
+                        served from our own CDN and the form is short-
+                        lived; introducing `next/image` here would force
+                        every reviewer's CDN to be added to the
+                        `images.remotePatterns` of `next.config.js`.
+                      */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={image.url}
+                        alt={imagesCopy.previewAlt}
+                        className="h-full w-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeImage(image.localKey)}
+                        disabled={isPending || submitSuccess}
+                        aria-label={imagesCopy.remove}
+                        className="absolute right-1 top-1 rounded-full bg-ui-bg-base/90 px-2 py-0.5 text-xs font-medium text-ui-fg-base shadow-sm hover:bg-ui-bg-base disabled:opacity-60"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  id="product-review-images"
+                  type="file"
+                  accept={(PRODUCT_REVIEW_IMAGE_ALLOWED_MIME_TYPES as readonly string[]).join(
+                    ","
+                  )}
+                  multiple
+                  className="sr-only"
+                  onChange={handleFilesChange}
+                  disabled={
+                    isPending ||
+                    submitSuccess ||
+                    images.length + imagesUploading >= PRODUCT_REVIEW_IMAGE_MAX_COUNT
+                  }
+                  data-testid="product-review-form-images-input"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="small"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={
+                    isPending ||
+                    submitSuccess ||
+                    images.length + imagesUploading >= PRODUCT_REVIEW_IMAGE_MAX_COUNT
+                  }
+                  data-testid="product-review-form-images-add"
+                >
+                  {imagesUploading > 0 ? imagesCopy.uploading : imagesCopy.add}
+                </Button>
+              </div>
+
+              {imagesError ? (
+                <p
+                  className="text-sm text-rose-500"
+                  role="alert"
+                  data-testid="product-review-form-images-error"
+                >
+                  {imagesError}
+                </p>
+              ) : null}
+            </div>
+
             {/* Submit feedback (server-side) */}
             {submitSuccess ? (
               <div
@@ -484,7 +775,7 @@ const ProductReviewForm: React.FC<ProductReviewFormProps> = ({
               type="submit"
               size="large"
               isLoading={isPending}
-              disabled={isPending || submitSuccess}
+              disabled={isPending || submitSuccess || imagesUploading > 0}
               data-testid="product-review-form-submit"
             >
               {submitLabel}
