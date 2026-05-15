@@ -41,6 +41,18 @@ admin.slavx.ru {
         Referrer-Policy "strict-origin-when-cross-origin"
     }
 
+    handle / {
+        redir * /app 308
+    }
+
+    handle /admin {
+        redir * /app 308
+    }
+
+    handle /admin/ {
+        redir * /app 308
+    }
+
     handle {
         reverse_proxy medusa-backend:9000
     }
