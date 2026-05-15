@@ -5,6 +5,8 @@ import ProductActions from "@modules/products/components/product-actions"
 import ProductNicheSelector from "@modules/products/components/product-niche-selector"
 import ProductOfferBenefits from "@modules/products/components/product-offer-benefits"
 import ProductTabs from "@modules/products/components/product-tabs"
+import ProductReviewsSummary from "@modules/products/components/product-reviews-summary"
+import ProductReviewsList from "@modules/products/components/product-reviews-list"
 import RelatedProducts from "@modules/products/components/related-products"
 import ProductInfo from "@modules/products/templates/product-info"
 import ProductSupportHighlights from "@modules/storefront-customization/components/product-support-highlights"
@@ -12,6 +14,8 @@ import { StitchProductTechSpecs } from "@modules/storefront-customization/compon
 import SkeletonRelatedProducts from "@modules/skeletons/templates/skeleton-related-products"
 import { notFound } from "next/navigation"
 import { HttpTypes } from "@medusajs/types"
+
+import { retrieveCustomer } from "@lib/data/customer"
 
 import ProductActionsWrapper from "./product-actions-wrapper"
 
@@ -22,15 +26,38 @@ type ProductTemplateProps = {
   images: HttpTypes.StoreProductImage[]
 }
 
-const ProductTemplate: React.FC<ProductTemplateProps> = ({
+const ProductTemplate = async ({
   product,
   region,
   countryCode,
   images,
-}) => {
+}: ProductTemplateProps) => {
   if (!product || !product.id) {
     return notFound()
   }
+
+  // Phase 1 / step 8 — fetch the authenticated customer (if any) once so the
+  // reviews CTA can decide whether to enable the «Написать отзыв» button or
+  // disable it with the `reviews.form.authRequired` hint (plan §6.4).
+  // `retrieveCustomer` returns `null` for anonymous visitors and never
+  // throws. The page already opts into runtime rendering via
+  // `dynamic = "force-dynamic"` in
+  // [`page.tsx`](medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/products/[handle]/page.tsx:4),
+  // so reading auth headers here does not change the page's static/dynamic
+  // contract.
+  const customer = await retrieveCustomer().catch(() => null)
+
+  // Phase 1 / step 6 — assemble the «Отзывы» tab content as a server
+  // `ReactNode` and hand it to the client `ProductTabs` via prop. Both
+  // children are server components, so they fetch with the
+  // `product-rating-${id}` / `product-reviews-${id}` cache tags before the
+  // client tab switcher hydrates (plan §6.1, §6.6).
+  const reviewsContent = (
+    <div className="flex flex-col gap-y-8 py-8">
+      <ProductReviewsSummary productId={product.id} customer={customer} />
+      <ProductReviewsList productId={product.id} />
+    </div>
+  )
 
   return (
     <>
@@ -64,7 +91,7 @@ const ProductTemplate: React.FC<ProductTemplateProps> = ({
           <ProductOfferBenefits product={product} />
         </div>
       </section>
-      <ProductTabs product={product} />
+      <ProductTabs product={product} reviewsContent={reviewsContent} />
       <StitchProductTechSpecs
         title="Описание и характеристики"
         description={`Подробная информация о технической основе и функциональных возможностях ${product.title}.`}

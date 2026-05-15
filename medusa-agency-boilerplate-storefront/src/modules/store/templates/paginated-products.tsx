@@ -1,3 +1,4 @@
+import { getProductRatingSummariesByIds } from "@lib/data/product-reviews"
 import { listProductsWithSort } from "@lib/data/products"
 import { getRegion } from "@lib/data/regions"
 import { clx } from "@medusajs/ui"
@@ -67,6 +68,15 @@ export default async function PaginatedProducts({
 
   const totalPages = Math.ceil(count / PRODUCT_LIMIT)
 
+  // Plan §6.3 / step 4 — pre-fetch rating summaries for the whole grid in
+  // parallel so each `ProductRatingBadge` (variant="thumbnail") can render
+  // without spawning its own server fetch. `getProductRatingSummariesByIds`
+  // re-uses the per-product `product-rating-${productId}` cache tag, so
+  // existing revalidation on review approval still flows through.
+  const ratingSummaries = await getProductRatingSummariesByIds(
+    products.map((p) => p.id)
+  )
+
   return (
     <>
       <ul
@@ -84,7 +94,12 @@ export default async function PaginatedProducts({
                 isFeatured ? "md:col-span-8" : "md:col-span-4"
               )}
             >
-              <ProductPreview product={p} region={region} isFeatured={isFeatured} />
+              <ProductPreview
+                product={p}
+                region={region}
+                isFeatured={isFeatured}
+                ratingSummary={ratingSummaries[p.id] ?? null}
+              />
             </li>
           )
         })}

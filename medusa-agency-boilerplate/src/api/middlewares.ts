@@ -46,6 +46,8 @@ import { StoreYooKassaPaymentStatusSchema } from "./store/payment/yookassa/route
 import { StoreYooKassaReturnSchema } from "./store/payment/yookassa/return/route"
 import { StoreVkIdCallbackSchema } from "./store/vk-id/callback/route"
 import { StoreOnboardingSchema } from "./store/customers/me/onboarding/route"
+import { StoreCreateProductReviewSchema } from "./store/products/[id]/reviews/route"
+import { AdminRejectProductReviewSchema } from "./admin/reviews/[id]/reject/route"
 
 const adminAuth = authenticate("user", ["session", "bearer", "api-key"])
 
@@ -155,6 +157,35 @@ export default defineMiddlewares({
       matcher: "/admin/marketing/campaigns/:id",
       methods: ["POST"],
       middlewares: [adminAuth],
+    },
+    {
+      // Phase 1 / step 4: product reviews module — Admin API.
+      // Plan §4.2 / §5.2: all `/admin/reviews*` paths use the standard
+      // admin auth chain. The `api-key` branch is required so Payload can
+      // call us with `Authorization: Basic <base64(sk_xxx:)>` against the
+      // Medusa Secret Admin API Key (plan §5.2). No `publicRateLimit` —
+      // admin is trusted.
+      matcher: "/admin/reviews",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/reviews/:id",
+      methods: ["GET", "DELETE"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/reviews/:id/approve",
+      methods: ["POST"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/reviews/:id/reject",
+      methods: ["POST"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformBody(AdminRejectProductReviewSchema),
+      ],
     },
     {
       matcher: "/admin/notifications/smoke",
@@ -308,6 +339,56 @@ export default defineMiddlewares({
         authenticate("customer", ["session", "bearer"]),
         validateAndTransformBody(StoreOnboardingSchema),
       ],
+    },
+    {
+      // Phase 1 / step 3: product reviews module — Store API.
+      // Plan §10.1: POST /store/products/:id/reviews is rate-limited at
+      // 5/min and 30/hour (IP+customer keyed via the public limiter).
+      // Customer auth is required; the route reads `req.auth_context.actor_id`.
+      // GET on the same matcher is public (list of approved reviews) and is
+      // intentionally NOT registered here — Medusa applies route-level
+      // middlewares only when the method matches.
+      matcher: "/store/products/:id/reviews",
+      methods: ["POST"],
+      middlewares: [
+        publicRateLimit({
+          bucketKey: "product-reviews-create-minute",
+          limit: 5,
+          windowMs: 60_000,
+        }),
+        publicRateLimit({
+          bucketKey: "product-reviews-create-hour",
+          limit: 30,
+          windowMs: 60 * 60_000,
+        }),
+        authenticate("customer", ["session", "bearer"]),
+        validateAndTransformBody(StoreCreateProductReviewSchema),
+      ],
+    },
+    {
+      // Plan §10.1: helpful vote — 30/min IP+customer.
+      matcher: "/store/reviews/:id/helpful",
+      methods: ["POST"],
+      middlewares: [
+        publicRateLimit({
+          bucketKey: "product-reviews-helpful-minute",
+          limit: 30,
+          windowMs: 60_000,
+        }),
+        authenticate("customer", ["session", "bearer"]),
+      ],
+    },
+    {
+      // GET my reviews — customer-only, no rate-limit (plan §10.1).
+      matcher: "/store/customers/me/reviews",
+      methods: ["GET"],
+      middlewares: [authenticate("customer", ["session", "bearer"])],
+    },
+    {
+      // DELETE my review — customer-only, no rate-limit (plan §10.1).
+      matcher: "/store/customers/me/reviews/:id",
+      methods: ["DELETE"],
+      middlewares: [authenticate("customer", ["session", "bearer"])],
     },
     {
       matcher: "/admin/customers/:id/send-password-reset",

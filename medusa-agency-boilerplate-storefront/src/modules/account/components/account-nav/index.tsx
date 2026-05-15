@@ -36,6 +36,30 @@ const HomeIcon: React.FC<IconProps> = ({
   </svg>
 )
 
+// Phase 2 / step 5 — sidebar entry «Мои отзывы». Inline like HomeIcon to
+// avoid pulling in another icons file for a single use.
+const ReviewsIcon: React.FC<IconProps> = ({
+  size = 18,
+  color = "currentColor",
+  ...attributes
+}) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth="1.75"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    {...attributes}
+  >
+    <path d="M12 2.25l2.92 6.18 6.83.79-5.05 4.66 1.39 6.62L12 17.27l-6.09 3.23 1.39-6.62L2.25 9.22l6.83-.79L12 2.25z" />
+  </svg>
+)
+
 const AccountNav = ({
   customer,
 }: {
@@ -94,6 +118,17 @@ const AccountNav = ({
           label: accountCopy.orders,
           icon: Package,
           testId: "orders-link",
+        },
+      ],
+    },
+    {
+      label: accountCopy.reviews,
+      items: [
+        {
+          href: "/account/reviews",
+          label: accountCopy.reviews,
+          icon: ReviewsIcon,
+          testId: "reviews-link",
         },
       ],
     },
