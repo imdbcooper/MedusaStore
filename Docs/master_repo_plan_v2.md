@@ -1,8 +1,10 @@
 # Master Repo Plan v2
 
-> Delivery baseline status: ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship` is the current fresh-template delivery baseline; direct `/store/apiship/*` is canonical. Delivery Hub/direct Yandex is previous-baseline historical/quarantined context, and old databases may still contain operator-cleanup residue.
+> Delivery baseline status: ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship` is the current fresh-template delivery baseline; direct `/store/apiship/*` is canonical.
+>
+> Operational source-of-truth note: this is a roadmap/background document. Current runtime/deploy facts live in [`README.md`](../README.md), [`architecture.md`](./architecture.md), [`production_runbook.md`](./production_runbook.md), [`local_development.md`](./local_development.md), [`staging_runbook.md`](./staging_runbook.md), [`troubleshooting.md`](./troubleshooting.md), and [`current_work.md`](./current_work.md).
 
-> Статус документа: рабочий план, синхронизированный с проверенным состоянием репозитория по состоянию на `2026-04-19`
+> Статус документа: рабочий план, синхронизированный с проверенным состоянием репозитория по состоянию на `2026-04-19`; поздние operational/runtime изменения фиксируются в текущих source-of-truth документах выше.
 >
 > Назначение: заменить прежний оптимистичный план на проверенную дорожную карту, которая ведет проект к состоянию тиражируемого репозитория-шаблона для интернет-магазинов.
 
@@ -70,8 +72,8 @@
 - все core-решения первой версии по умолчанию выбираются для типового интернет-магазина в РФ;
 - пригодность для российского рынка важнее, чем наличие у Medusa более подробно задокументированного или более удобного first-party примера;
 - для payment track текущим направлением v1 считается **YooKassa-first path**;
-- исторические `provider_aware_v1` и Delivery Hub/direct Yandex slices остаются подтвержденными промежуточными результатами, но current fresh-template shipping baseline теперь **ApiShip/Gorgo через `@gorgo/medusa-fulfillment-apiship`**;
-- принятое направление Delivery Hub rework `2026-04-30` теперь является previous-baseline history; current delivery direction and evidence are [`apiship_direct_migration_plan.md`](./apiship_direct_migration_plan.md) and [`apiship_baseline_smoke_evidence.md`](./apiship_baseline_smoke_evidence.md);
+- current fresh-template shipping baseline теперь **ApiShip/Gorgo через `@gorgo/medusa-fulfillment-apiship`**;
+- current delivery direction and evidence are [`apiship_direct_migration_plan.md`](./apiship_direct_migration_plan.md) and [`apiship_baseline_smoke_evidence.md`](./apiship_baseline_smoke_evidence.md);
 - нецелевые для РФ решения можно изучать как reference pattern для архитектуры Medusa, но нельзя выбирать как `default v1 choice`, если пользователь явно не сменил рынок проекта.
 
 ---
@@ -116,7 +118,7 @@
 
 Следующие вещи **не считаются уже подтвержденными как готовое решение**, и поэтому входят в план через отдельную фазу верификации:
 - наличие подходящего и поддерживаемого first-party решения Medusa для YooKassa;
-- наличие подходящего и поддерживаемого first-party решения Medusa для legacy provider;
+- наличие подходящего и поддерживаемого first-party решения Medusa для не-ApiShip delivery provider; текущий baseline — ApiShip/Gorgo direct `/store/apiship/*`;
 - наличие готового и безопасного SMTP-провайдера именно под наш сценарий без дополнительной доработки;
 - необходимость немедленной миграции текущей структуры в workspace/monorepo;
 - необходимость нескольких полноценных шаблонов фронта в первой версии.
@@ -208,7 +210,7 @@ Payload CMS рассматривается как **отдельный headless 
 - если решение не подходит для российского рынка, оно не может считаться default path для этого репозитория;
 - Stripe и другие нецелевые для РФ payment providers допустимо использовать как reference implementation паттерна Medusa, но не как шаблонный payment choice по умолчанию;
 - для текущего payment track не переоткрываем выбор в сторону нецелевых для РФ провайдеров, пока пользователь явно не меняет market scope;
-- для следующего shipping track по умолчанию строится **собственный delivery-layer**; первым adapter в нём должен быть **`Yandex Delivery`**, а не новый агрегатор по умолчанию.
+- для текущего shipping track по умолчанию используется **ApiShip/Gorgo**, а не новый агрегатор по умолчанию.
 
 ---
 
@@ -250,12 +252,14 @@ Payload CMS рассматривается как **отдельный headless 
 
 ### 6.2. Открытые блокеры шаблонного ядра
 
-- payment path v1 еще не утвержден как runtime-confirmed шаблонное решение, хотя текущий практический путь уже зафиксирован как YooKassa-first;
-- shipping path v1 еще не утвержден как шаблонное решение; целевой следующий кандидат по market scope — historical provider-aware;
-- общий end-to-end integration layer еще не собран полностью;
-- storefront все еще визуально и смыслово остается starter-проектом Medusa;
-- в проекте пока нет завершенного client configuration layer;
-- отдельный content layer на базе Payload CMS еще не реализован.
+> Актуализация: пункты ниже являются историческим roadmap-срезом. Для текущего операционного статуса см. [`current_work.md`](./current_work.md). На текущем baseline payment path — YooKassa-first, delivery path — ApiShip/Gorgo direct `/store/apiship/*`, Payload CMS материализован как отдельный runtime, а storefront visual baseline ведётся через StudioPro/Stitch gap log.
+
+- payment path v1 больше не считается открытым для текущего RU baseline: практический путь зафиксирован как YooKassa-first;
+- shipping path v1 больше не считается provider-neutral/historical target: текущий fresh-template delivery baseline — ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship` и direct `/store/apiship/*`;
+- общий end-to-end integration layer еще требует scoped release-grade verification перед тиражированием;
+- storefront visual baseline больше не читается как starter-only: текущая поверхность — StudioPro/Stitch alignment, см. [`stitch_frontend_gap_log.md`](./stitch_frontend_gap_log.md);
+- client configuration layer и release-grade packaging остаются roadmap/hardening темами;
+- Payload CMS content layer материализован как отдельное приложение/runtime; lifecycle описан в [`payload_cms_runbook.md`](./payload_cms_runbook.md).
 
 ### 6.3. Открытые блокеры template release
 
@@ -266,7 +270,7 @@ Payload CMS рассматривается как **отдельный headless 
 
 Обновление по ранним фазам:
 - clean-state bootstrap path `cp .env.example .env` → `npm run bootstrap` → `npm run preflight` → `npm run dev` уже подтвержден;
-- канонический bootstrap уже опирается на Medusa migrations + application-level seed, а не на [medusa-dump.sql](medusa-dump.sql), для verified clean-state path;
+- канонический bootstrap уже опирается на Medusa migrations + application-level seed, а не на локальный ignored SQL dump, для verified clean-state path;
 - Gate A и Gate B не считаются открытыми, если речь идет о проверенном clean local onboarding и template-ready RU baseline.
 
 ---
@@ -582,9 +586,9 @@ Commerce-flow не должен переписываться для типово
   - продолжать текущий YooKassa-first path и подтвердить его для нужного рынка через POC/runtime validation.
 - для доставки:
   - использовать пригодность для РФ как главный критерий отбора;
-  - по умолчанию идти в historical provider-aware исследование и validation track;
-  - зафиксировать, будет ли это custom module/provider, адаптер к внешнему API или проверенный внешний пакет;
-  - отдельно подтвердить получение тарифов, выбор ПВЗ, создание отправления, webhook/status update.
+  - текущий fresh-template baseline — ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship` и direct `/store/apiship/*`;
+  - не возвращаться к historical provider-aware/provider-neutral фасаду без нового multi-provider requirement;
+  - separately scoped follow-up может подтвердить live browser checkout, online credential validation, shipment creation, webhook/status update; live shipment execution remains default-off unless `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` is explicitly approved.
 - для каждого кандидата выполнить техническую верификацию:
   - совместимость с текущей версией Medusa;
   - активность поддержки;
@@ -696,7 +700,7 @@ Commerce-flow не должен переписываться для типово
   - YooKassa-first checkout path;
   - manual fallback;
   - optional Stripe-compatible reference adapter при наличии соответствующего backend provider;
-  - legacy provider `cheapest_only_v1` delivery semantics;
+  - ApiShip/Gorgo direct `/store/apiship/*` delivery semantics with standard Medusa shipping-method commit and `apishipData`;
 - starter/demo/admin-onboarding cleanup в shopper-visible surfaces и storefront docs.
 
 ### Что закрываем в первую очередь
@@ -772,7 +776,7 @@ Commerce-flow не должен переписываться для типово
 - статическая проверка shopper-facing entrypoints на отсутствие `demo`, `onboarding`, admin setup CTA и starter-branding там, где это больше не часть baseline;
 - regression review для home, catalog, product, cart, checkout, account и confirmed order surfaces;
 - отдельная проверка region switching и optional locale fallback semantics;
-- отдельная проверка того, что YooKassa-first checkout path и legacy provider `cheapest_only_v1` semantics не ломаются storefront cleanup-изменениями;
+- отдельная проверка того, что YooKassa-first checkout path и ApiShip/Gorgo direct delivery semantics не ломаются storefront cleanup-изменениями;
 - storefront build/lint/runtime smoke остаются implementation-stage validation surface, но не превращают workstream в новый integration track.
 
 ### Definition of Done
@@ -1057,7 +1061,7 @@ Truthfully closed after valid reopen and remediation: all sanctioned base slices
 - GitHub Actions workflow [`integrity-baseline.yml`](../.github/workflows/integrity-baseline.yml) materialized как минимальный CI boundary;
 - local static pass и local runtime smoke pass подтверждены `2026-04-20`;
 - remaining open scope `Фазы 8` теперь truthfully ограничен staging, deploy path, rollback, backup/restore, monitoring и broader production-readiness contour.
-- Для delivery-specific production readiness canonical source-of-truth теперь лежит в [`delivery_hub_spec.md`](./delivery_hub_spec.md) §16.17.1 `Production-readiness roadmap checkpoint`: общий `Фаза 8` contour должен ссылаться на этот `delivery-hub` roadmap для sequencing around accepted shipment lifecycle read-model, Yandex status polling v1, admin shipment operations, cancel/manual retry policy, live validation, legacy cutover and release-grade readiness gates, without claiming those planned tranches are already implemented.
+- Для delivery-specific readiness canonical source-of-truth теперь лежит в [`apiship_direct_migration_plan.md`](./apiship_direct_migration_plan.md) и [`apiship_baseline_smoke_evidence.md`](./apiship_baseline_smoke_evidence.md).
 
 ### Цель
 
@@ -1298,35 +1302,37 @@ Truthfully closed after valid reopen and remediation: all sanctioned base slices
 
 В проекте фиксируется такой порядок источников правды:
 
-1. `Docs/current_work.md`
+1. `README.md`
+   Первый операционный вход в репозиторий. Здесь хранится краткая текущая runtime/deploy карта, env/secrets policy и ссылки на актуальные runbooks.
+2. `Docs/current_work.md`
    Канонический оперативный статус проекта. Здесь хранится:
    - что делаем прямо сейчас;
    - какая фаза активна;
    - где находится текущая рабочая поверхность;
    - в каком порядке агент должен продолжать работу с пустого контекста.
-2. `Docs/master_repo_plan_v2.md`
+3. `Docs/architecture.md`, `Docs/production_runbook.md`, `Docs/local_development.md`, `Docs/staging_runbook.md`, `Docs/troubleshooting.md`
+   Текущие operational source-of-truth документы для topology, deploy, local/staging split и troubleshooting.
+4. `Docs/master_repo_plan_v2.md`
    Главная дорожная карта проекта. Здесь хранится:
    - целевое состояние;
    - фазы;
    - контрольные ворота;
    - проектные решения;
    - правила обновления документов.
-3. `Docs/plan_analysis.md`
-   Аудит текущего состояния. Здесь хранится:
+5. `Docs/plan_analysis.md`
+   Аудит/история текущего состояния. Здесь хранится:
    - что реально подтверждено;
    - что завышено в старых документах;
    - какие блокеры и разрывы есть на текущий момент.
-4. `.kilocode/skills/medusa-master-repo/SKILL.md`
+6. `.kilocode/skills/medusa-master-repo/SKILL.md`
    Быстрый ориентир для Kilo Code. Здесь хранится:
    - куда смотреть в первую очередь;
    - какие документы считать основными;
    - какие факты уже известны;
    - что обновлять после изменений.
-5. `Docs/master_repo_guide.md`
-   Исторический и бизнесовый документ. Не считается главным источником статусов, пока специально не синхронизирован с `master_repo_plan_v2.md`.
-6. `Docs/medusa_project_summary.md` и `Docs/Medusa.md`
-   Фоновые и обзорные материалы. Используются как справка, а не как основной журнал проекта.
-7. `Docs/env_contract.md`
+7. `Docs/master_repo_guide.md`, `Docs/medusa_project_summary.md`, `Docs/Medusa.md`
+   Historical/deprecated snapshots и фоновые материалы. Используются как справка, а не как operational source of truth.
+8. `Docs/env_contract.md`
    Рабочая спецификация env-слоев и root-команд запуска. Используется как техническая памятка по локальному циклу.
 
 ### 14.2. Когда обновление документов обязательно
@@ -1411,18 +1417,25 @@ Truthfully closed after valid reopen and remediation: all sanctioned base slices
 
 ### Локальные источники
 
+- `README.md`
 - `Docs/current_work.md`
+- `Docs/architecture.md`
+- `Docs/production_runbook.md`
+- `Docs/local_development.md`
+- `Docs/staging_runbook.md`
+- `Docs/troubleshooting.md`
 - `Docs/env_contract.md`
 - `Docs/plan_analysis.md`
-- `Docs/master_repo_guide.md`
 - `Docs/master_repo_plan_v2.md`
 - `.kilocode/skills/medusa-master-repo/SKILL.md`
 - `package.json`
 - `scripts/`
 - `docker-compose.yml:1-77`
+- `docker-compose.prod.yml`
+- `docker/caddy/Caddyfile`
 - `medusa-agency-boilerplate/medusa-config.ts:1-17`
 - `medusa-agency-boilerplate/src/scripts/seed.ts:66-320`
-- `medusa-agency-boilerplate-storefront/.env.local:1-27`
+- ignored local `medusa-agency-boilerplate-storefront/.env.local` only for developer-machine diagnostics, never as committed source-of-truth;
 - `medusa-agency-boilerplate-storefront/src/modules/home/components/hero/index.tsx:1-36`
 - `medusa-agency-boilerplate-storefront/src/middleware.ts:4-159`
 

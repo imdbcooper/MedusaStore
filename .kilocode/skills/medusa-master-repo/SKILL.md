@@ -1,6 +1,6 @@
 ---
 name: medusa-master-repo
-description: Use when working in this MedusaStore repository on planning, implementation, architecture, integrations, storefront strategy, staging Docker/Caddy runtime, GitHub Actions deployment, local/staging distinctions, ApiShip/Gorgo delivery baseline, Delivery Hub historical context, or documentation governance. This project-level Kilo Code skill defines current source-of-truth documents, verified operational reality, and mandatory doc-update rules.
+description: Use when working in this MedusaStore repository on planning, implementation, architecture, integrations, storefront strategy, staging Docker/Caddy runtime, GitHub Actions deployment, local/staging distinctions, ApiShip/Gorgo delivery baseline, removed-provider cleanup, or documentation governance. This project-level Kilo Code skill defines current source-of-truth documents, verified operational reality, and mandatory doc-update rules.
 ---
 
 # Medusa Master Repo
@@ -42,10 +42,7 @@ Read documents and implementation sources in this order:
     - `Docs/current_work.md`
     - `Docs/apiship_direct_migration_plan.md`
     - `Docs/apiship_baseline_smoke_evidence.md`
-11. Delivery Hub historical/quarantine docs:
-    - `Docs/delivery_hub_physical_cleanup_manifest.md`
-    - `Docs/delivery_hub_documentation_index.md`
-12. Roadmap/audit/background only:
+11. Roadmap/audit/background only:
     - `Docs/master_repo_plan_v2.md`
     - `Docs/plan_analysis.md`
     - `Docs/master_repo_guide.md`
@@ -101,7 +98,7 @@ Before making claims, keep these verified facts in mind:
 - The hosted YooKassa checkout return path was validated through review, order placement, and confirmed order page.
 - Current delivery baseline is ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship`.
 - Direct `/store/apiship/*` is the canonical Store API contract for normal checkout.
-- Delivery Hub/direct Yandex is previous-baseline/historical/quarantined context, not the fresh-template baseline.
+- Delivery legacy docs/materials were removed from active docs; ApiShip/Gorgo is the only documented fresh-template delivery baseline.
 - Old local/staging databases may contain historical delivery rows/provider ids. Treat them as operator-approved cleanup work, not active template behavior.
 - The preset-driven storefront customization stack is closed. Do not reopen it without new regression evidence.
 
@@ -212,20 +209,13 @@ Current ApiShip/Gorgo baseline is governed by:
 
 Current delivery status:
 
-- Delivery Hub -> ApiShip/Gorgo migration is completed and confirmed for the committed baseline.
 - ApiShip/Gorgo via `@gorgo/medusa-fulfillment-apiship` is the fresh-template delivery baseline.
 - Direct `/store/apiship/*` endpoints are the canonical Store API contract for normal checkout.
-- Do not reintroduce `/store/delivery/*` as the first-version facade.
+- Do not reintroduce a removed provider-neutral delivery facade as the first-version Store API.
 - `APISHIP_SHIPMENT_EXECUTION_ENABLED=false` is the safe default.
 - Live external shipment execution requires the exact opt-in value `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` plus the existing readiness/idempotency guardrails.
 - Final baseline evidence is `Docs/apiship_baseline_smoke_evidence.md`.
 
-Delivery Hub previous-baseline status:
-
-- Delivery Hub/direct Yandex is historical/quarantined context, not current fresh-template guidance.
-- Runtime residue cleanup is recorded in `Docs/delivery_hub_physical_cleanup_manifest.md`.
-- Historical doc roles are indexed in `Docs/delivery_hub_documentation_index.md`.
-- Older Delivery Hub plans/specs/evidence may remain useful for audit history, but must not be copied as current operational instructions.
 
 ## Working Rules
 
@@ -235,10 +225,10 @@ Delivery Hub previous-baseline status:
 - Do not mark work complete unless its Definition of Done and validation evidence are satisfied.
 - Do not copy stale statuses from historical docs into current reports.
 - Do not describe closed workstreams as open without new evidence.
-- Do not expose or write real credentials, tokens, auth headers, ciphertext, raw provider request/response bodies, raw Yandex DTOs, raw quote keys, raw offer ids, publishable key values, secret admin keys, private keys, or database passwords into docs, logs, tests, admin responses, or storefront responses.
+- Do not expose or write real credentials, tokens, auth headers, ciphertext, raw provider request/response bodies, raw quote keys, raw offer ids, publishable key values, secret admin keys, private keys, or database passwords into docs, logs, tests, admin responses, or storefront responses.
 - Do not silently flip local/dev provider traffic to live.
 - Do not enable `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` by default; the only live-shipment opt-in is the exact value `true`.
-- Do not reintroduce Delivery Hub/direct Yandex or `/store/delivery/*` as an active checkout path.
+- Do not reintroduce removed delivery providers or removed provider-neutral delivery facades as active checkout paths.
 - Do not patch or fork official Medusa Admin unless explicitly scoped.
 - Do not call `studio.slavx.ru` production. It is staging. Real production is not provisioned yet.
 - Do not infer staging topology from local compose alone.
@@ -283,23 +273,17 @@ Delivery/current work docs:
   - Accepted ApiShip/Gorgo baseline migration plan and direct Store API decision.
 - `Docs/apiship_baseline_smoke_evidence.md`
   - Final deterministic baseline smoke/evidence for ApiShip/Gorgo.
-- `Docs/delivery_hub_physical_cleanup_manifest.md`
-  - Cleanup/quarantine manifest for removed Delivery Hub runtime residue.
-- `Docs/delivery_hub_documentation_index.md`
-  - Delivery Hub historical/evidence doc map.
-- `Docs/delivery_hub_rework_plan.md`
-  - Previous-baseline Delivery Hub accepted phase plan; historical unless explicitly referenced for audit.
-- `Docs/delivery_hub_spec.md`
-  - Detailed previous-baseline Delivery Hub architecture/reference. Treat as historical unless a current doc says otherwise.
 
 Roadmap/audit/background docs:
 
 - `Docs/master_repo_plan_v2.md`
-  - Main repository roadmap.
+  - Main repository roadmap/background; current operational docs win for runtime/deploy facts.
 - `Docs/plan_analysis.md`
-  - Audit and historical reality check.
+  - Audit and historical reality check; not the current runtime source of truth.
 - `Docs/template_readiness_regression.md`
   - Canonical regression pack for template readiness.
+- `Docs/master_repo_guide.md`, `Docs/medusa_project_summary.md`, `Docs/Medusa.md`
+  - Historical/deprecated snapshots and background only; do not use as operational source of truth.
 - `.kilocode/skills/medusa-master-repo/SKILL.md`
   - This Kilo Code project-level skill and fast onboarding context.
 
@@ -327,17 +311,10 @@ Update `Docs/current_work.md` when:
 - validation status materially changes;
 - the answer to "what should the next agent do first?" changes.
 
-Update `Docs/delivery_hub_documentation_index.md` when:
-
-- Delivery Hub historical/evidence document roles change;
-- a Delivery Hub document is archived, removed, quarantined, or reclassified;
-- historical/evidence-only classification changes.
-
 Update `Docs/apiship_direct_migration_plan.md` / `Docs/apiship_baseline_smoke_evidence.md` when:
 
 - ApiShip/Gorgo baseline decisions, Store API shape, evidence, or validation policy changes.
 
-Update Delivery Hub historical docs only when previous-baseline evidence/classification changes; do not make them current runtime guidance.
 
 Update `Docs/master_repo_plan_v2.md` when:
 
@@ -374,11 +351,10 @@ When the user asks what is done, what is next, where to look, or asks for a prom
 2. Use `Docs/architecture.md`, `Docs/production_runbook.md`, `Docs/local_development.md`, `Docs/staging_runbook.md`, and `Docs/troubleshooting.md` for current operational behavior.
 3. Use `Docs/current_work.md` for current active workstream status when it is present and newer than historical plans.
 4. Use `Docs/apiship_direct_migration_plan.md` and `Docs/apiship_baseline_smoke_evidence.md` for current delivery baseline direction/evidence.
-5. Use `Docs/delivery_hub_physical_cleanup_manifest.md` and `Docs/delivery_hub_documentation_index.md` for Delivery Hub quarantine/history.
-6. Use `Docs/master_repo_plan_v2.md` for broader roadmap direction.
-7. Use `Docs/plan_analysis.md` only for audit/history.
-8. Verify code/tests/config before making fresh technical claims.
+5. Use `Docs/master_repo_plan_v2.md` for broader roadmap direction.
+6. Use `Docs/plan_analysis.md` only for audit/history.
+7. Verify code/tests/config before making fresh technical claims.
 
 Current default staging answer: the single staging environment runs through `docker-compose.prod.yml` on `som@studio.slavx.ru:/home/som/MedusaStore`, Caddy is the only public reverse proxy, deploy is the `Deploy Staging` GitHub Actions workflow for repo `imdbcooper/MedusaStore` branch `main`, secrets flow only through GitHub Secrets/Variables, Payload CMS is a staging container, product pages are dynamic runtime-rendered, and storefront SSR must prefer internal `MEDUSA_BACKEND_URL` over public browser URLs. Real production is not provisioned yet.
 
-Current default delivery answer: ApiShip/Gorgo is the baseline, direct `/store/apiship/*` is canonical, Delivery Hub is previous-baseline/quarantined, and live ApiShip shipment execution stays default-off unless `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` is explicitly set.
+Current default delivery answer: ApiShip/Gorgo is the baseline, direct `/store/apiship/*` is canonical, removed legacy delivery providers are not active docs/runtime guidance, and live ApiShip shipment execution stays default-off unless `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` is explicitly set.
