@@ -240,6 +240,25 @@ export const moderationCopy = {
       generic: 'Не удалось загрузить счётчик.',
     },
   },
+  /**
+   * Phase 4 / step 6 — copy for the product-detail side widget mounted
+   * on `product.details.side.after`. The widget surfaces the latest
+   * reviews of the product currently being viewed plus an approximate
+   * pending count, with deep links into
+   * [`routes/product-reviews/page.tsx`](medusa-agency-boilerplate/src/admin/routes/product-reviews/page.tsx:1)
+   * (filtered list) and
+   * [`routes/product-reviews/[id]/page.tsx`](medusa-agency-boilerplate/src/admin/routes/product-reviews/[id]/page.tsx:1)
+   * (detail). Errors reuse `dashboardWidget.errors.*` because the
+   * failure modes (unauthorized / transport / generic) are identical.
+   */
+  productDetailWidget: {
+    title: 'Отзывы товара',
+    empty: 'У товара пока нет отзывов',
+    total: 'Всего отзывов',
+    pending: 'На модерации',
+    actionQueue: 'Открыть очередь модерации',
+    actionAll: 'Все отзывы товара',
+  },
 } as const
 
 export type ModerationCopy = typeof moderationCopy
