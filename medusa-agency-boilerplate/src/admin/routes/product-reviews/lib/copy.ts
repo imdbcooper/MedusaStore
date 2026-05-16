@@ -2,9 +2,15 @@
  * Static copy for the Medusa Admin product-reviews moderation views.
  *
  * Phase 4 / step 2 — ported one-to-one from
- * [`payload-cms/src/views/product-reviews-moderation/copy.ts`](payload-cms/src/views/product-reviews-moderation/copy.ts:1)
- * minus the Payload-only `dashboardWidget` block (the Medusa counter
- * widget is added later, in Phase 4 / step 5, with its own copy).
+ * [`payload-cms/src/views/product-reviews-moderation/copy.ts`](payload-cms/src/views/product-reviews-moderation/copy.ts:1).
+ *
+ * Phase 4 / step 5 — added the `dashboardWidget` block (re-instated
+ * from the Payload original) consumed by
+ * [`product-reviews-pending-counter.tsx`](medusa-agency-boilerplate/src/admin/widgets/product-reviews-pending-counter.tsx:1).
+ * The widget is mounted on Medusa's `product.list.before` zone
+ * because Medusa 2.13.6 ships no `dashboard.*` injection-zone — see
+ * [`@medusajs/admin-shared`](medusa-agency-boilerplate/node_modules/@medusajs/admin-shared/dist/index.d.ts:63)
+ * `INJECTION_ZONES` for the full list.
  *
  * Plan §10.2 mandates plain-text rendering everywhere — these strings
  * are shown via React's normal text interpolation, never via
@@ -212,6 +218,27 @@ export const moderationCopy = {
   },
   rating: {
     starsAria: (n: number) => `Рейтинг ${n} из 5`,
+  },
+  /**
+   * Phase 4 / step 5 — copy for the pending-reviews counter widget
+   * mounted on `product.list.before`. The plan deliberately skips a
+   * Russian plural rule (1 / few / many) here: the moderator audience
+   * is small and the «{count} ждут модерации» phrasing reads naturally
+   * even when `count === 1`. The `{count}` placeholder is substituted
+   * client-side via `String.replace`, mirroring the `rating.starsAria`
+   * convention used elsewhere in this module.
+   */
+  dashboardWidget: {
+    title: 'Отзывы на модерации',
+    empty: 'Нет отзывов на модерации',
+    action: 'Перейти к очереди',
+    actionAll: 'Все отзывы',
+    countSubtitle: '{count} ждут модерации',
+    errors: {
+      unauthorized: 'Нет доступа. Проверьте роль admin у API-ключа.',
+      transport: 'Не удалось связаться с Medusa.',
+      generic: 'Не удалось загрузить счётчик.',
+    },
   },
 } as const
 
