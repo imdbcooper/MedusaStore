@@ -8,6 +8,9 @@ logs
 !*.env.example
 !**/*.env.example
 .logs
+/*.sql
+/*.dump
+/*.backup
 node_modules
 **/node_modules
 **/.next
