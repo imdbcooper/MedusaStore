@@ -119,7 +119,8 @@ if [[ ${#compose_profiles[@]} -gt 0 ]]; then
 fi
 # Force recreation keeps staging deploy idempotent after interrupted or partially
 # completed compose recreates, which can leave replace-labeled containers behind.
-docker compose -p "$project_name" -f "$compose_file" --env-file .env "${compose_profiles[@]}" up -d --force-recreate --remove-orphans "${app_services[@]}"
+run_with_heartbeat "Application containers up" \
+  docker compose -p "$project_name" -f "$compose_file" --env-file .env "${compose_profiles[@]}" up -d --force-recreate --remove-orphans "${app_services[@]}"
 
 echo "Pruning dangling Docker images..."
 docker image prune -f >/dev/null || true
@@ -150,6 +151,6 @@ if [[ -z "${SMOKE_PAYLOAD_URL:-}" ]]; then
   export SMOKE_PAYLOAD_URL="${smoke_payload_url:-$payload_base_url/api/pages}"
 fi
 
-bash ./scripts/staging-container-smoke.sh
+run_with_heartbeat "Smoke checks" bash ./scripts/staging-container-smoke.sh
 
 echo "Deployment complete."

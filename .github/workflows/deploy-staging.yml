@@ -209,8 +209,8 @@ jobs:
         run: |
           set -euo pipefail
           remote_tmp="${DEPLOY_PATH}/.env.tmp-${{ github.run_id }}-${{ github.run_attempt }}"
-          scp .env.staging.generated "${DEPLOY_USER}@${DEPLOY_HOST}:${remote_tmp}"
-          ssh "${DEPLOY_USER}@${DEPLOY_HOST}"             "set -euo pipefail; chmod 600 '${remote_tmp}'; mv '${remote_tmp}' '${DEPLOY_PATH}/.env'; echo 'Rendered staging .env uploaded'"
+          scp -o ServerAliveInterval=30 -o ServerAliveCountMax=20 .env.staging.generated "${DEPLOY_USER}@${DEPLOY_HOST}:${remote_tmp}"
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 "${DEPLOY_USER}@${DEPLOY_HOST}"             "set -euo pipefail; chmod 600 '${remote_tmp}'; mv '${remote_tmp}' '${DEPLOY_PATH}/.env'; echo 'Rendered staging .env uploaded'"
 
       - name: Run remote staging deploy
         env:
@@ -219,4 +219,9 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           DEPLOY_BRANCH: ${{ github.event.inputs.branch || github.ref_name }}
         run: |
-          ssh "${DEPLOY_USER}@${DEPLOY_HOST}"             "DEPLOY_PATH='${DEPLOY_PATH}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash '${DEPLOY_PATH}/scripts/github-deploy-staging.sh'"
+          # ServerAliveInterval/CountMax keep the SSH session alive during long
+          # silent steps on the remote (docker compose up -d --force-recreate
+          # produces no stdout while waiting for healthchecks). Without this the
+          # GH runner's NAT idle timeout (~4 min) drops the TCP connection and
+          # ssh exits 255 even though the remote script is still running.
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=20 "${DEPLOY_USER}@${DEPLOY_HOST}"             "DEPLOY_PATH='${DEPLOY_PATH}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash '${DEPLOY_PATH}/scripts/github-deploy-staging.sh'"
