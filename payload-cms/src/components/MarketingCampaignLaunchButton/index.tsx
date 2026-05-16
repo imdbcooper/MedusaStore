@@ -51,13 +51,15 @@ export const MarketingCampaignLaunchButton: React.FC = () => {
     medusaCampaignId?: string | null
   }
 
-  // Only show the button for fresh drafts.
-  if (!id) return null
-  if (docState.medusaCampaignId) return null
-  if (docState.status && docState.status !== 'draft') return null
-
+  // IMPORTANT: all hooks (including useCallback) must run on every render to
+  // satisfy the Rules of Hooks. Earlier versions short-circuited with `return
+  // null` _before_ the useCallback, so once router.refresh() populated
+  // medusaCampaignId React saw the hook count drop and threw the minified
+  // production error #300/#310, crashing the whole admin view even though
+  // the backend launch succeeded. Visibility is now controlled inside the
+  // JSX return below.
   const handleClick = React.useCallback(async () => {
-    if (pending) return
+    if (!id || pending) return
 
     const confirmed = window.confirm(
       'Отправка кампании необратима — backend сразу разошлёт письма выбранной аудитории. Продолжить?',
@@ -143,6 +145,15 @@ export const MarketingCampaignLaunchButton: React.FC = () => {
       setPending(false)
     }
   }, [id, pending, router])
+
+  // Visibility check is performed AFTER all hooks have run. This is the
+  // crucial difference from the previous implementation.
+  const shouldRender =
+    Boolean(id) &&
+    !docState.medusaCampaignId &&
+    (!docState.status || docState.status === 'draft')
+
+  if (!shouldRender) return null
 
   return (
     <div style={{ marginBottom: '1.5rem' }}>
