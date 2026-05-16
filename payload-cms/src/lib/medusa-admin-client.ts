@@ -3,6 +3,22 @@ import 'server-only'
 /**
  * Generic server-to-server fetch helper from Payload to Medusa Admin API.
  *
+ * History / status:
+ *   - Phase 2 — was used by product-reviews moderation UI (Payload custom
+ *     views). Phase 4 step 7 moved moderation to Medusa Admin
+ *     (`/app/product-reviews`), so the only previous consumer
+ *     (`product-reviews-admin-client.ts`) is gone.
+ *   - Phase 5+ (planned) — marketing UI in Payload will reuse this helper
+ *     for Payload → Medusa Admin API calls; see
+ *     `plans/marketing-ui-payload-cms.md` §9.
+ *
+ * The helper currently has no runtime callers. It is intentionally kept
+ * (along with `MEDUSA_ADMIN_SECRET_API_KEY` env and the
+ * docker-compose.prod.yml `MEDUSA_BACKEND_URL` override hotfix) so the
+ * marketing-UI plan can adopt it without re-introducing the same
+ * boilerplate. Do not delete until that plan is migrated or an
+ * alternative implementation lands.
+ *
  * Auth contract (plan §5.2):
  *   Authorization: Basic <base64(MEDUSA_ADMIN_SECRET_API_KEY + ':')>
  * The trailing colon is mandatory — Medusa v2 secret admin API keys use
@@ -11,12 +27,6 @@ import 'server-only'
  * Env contract (plan §11):
  *   - MEDUSA_BACKEND_URL          base URL of Medusa backend
  *   - MEDUSA_ADMIN_SECRET_API_KEY sk_* token from createSecretAdminApiKey
- *
- * The same helper backs both upcoming Payload → Medusa integrations:
- * marketing campaigns (plan plans/marketing-ui-payload-cms.md §9) and
- * product-review moderation (this file's primary consumer). Marketing
- * Phase 1 has not been implemented yet, so we own this file and document
- * its reuse intent here.
  *
  * Behaviour:
  *   - Never throws. Returns a discriminated union; callers branch on `ok`.
