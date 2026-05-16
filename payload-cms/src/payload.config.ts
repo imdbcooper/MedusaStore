@@ -7,6 +7,7 @@ import sharp from 'sharp'
 import { Footer } from './globals/Footer.ts'
 import { Navigation } from './globals/Navigation.ts'
 import { SiteSettings } from './globals/SiteSettings.ts'
+import { MarketingCampaigns } from './collections/MarketingCampaigns/index.ts'
 import { Media } from './collections/Media.ts'
 import { Pages } from './collections/Pages.ts'
 import { Posts } from './collections/Posts.ts'
@@ -29,7 +30,7 @@ export default buildConfig({
     },
   }),
   editor: lexicalEditor(),
-  collections: [Users, Media, Pages, Posts],
+  collections: [Users, Media, Pages, Posts, MarketingCampaigns],
   globals: [SiteSettings, Navigation, Footer],
   admin: {
     user: Users.slug,

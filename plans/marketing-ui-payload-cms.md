@@ -1,8 +1,26 @@
 # План: UI маркетинговых рассылок в Payload CMS
 
-> Статус: обновлённый план для простой Phase 1  
-> Дата: 2026-05-15  
+> Статус: обновлённый план для простой Phase 1
+> Дата: 2026-05-15
 > Решение: сначала делаем минимальную рабочую email-версию без сложной синхронизации, сегментов и rich-text конвертации.
+
+## Status
+
+- **Phase 1 — Done.** Дата: 2026-05-16.
+  - Коллекция: [`payload-cms/src/collections/MarketingCampaigns/index.ts`](../payload-cms/src/collections/MarketingCampaigns/index.ts:1)
+  - Launch endpoint: [`payload-cms/src/collections/MarketingCampaigns/launch-endpoint.ts`](../payload-cms/src/collections/MarketingCampaigns/launch-endpoint.ts:1)
+  - Launch button: [`payload-cms/src/components/MarketingCampaignLaunchButton/index.tsx`](../payload-cms/src/components/MarketingCampaignLaunchButton/index.tsx:1)
+  - Регистрация в Payload config: [`payload-cms/src/payload.config.ts`](../payload-cms/src/payload.config.ts:14)
+  - Миграция БД: [`payload-cms/src/migrations/20260516_062031_marketing_campaigns.ts`](../payload-cms/src/migrations/20260516_062031_marketing_campaigns.ts:1) (зарегистрирована в [`payload-cms/src/migrations/index.ts`](../payload-cms/src/migrations/index.ts:1))
+  - CLI helper для миграций без TLA-падения: [`payload-cms/scripts/migrate.mjs`](../payload-cms/scripts/migrate.mjs:1)
+  - Регенерированы: [`payload-cms/src/payload-types`](../payload-cms/src/payload-types:1) и [`payload-cms/src/app/(payload)/importMap.js`](../payload-cms/src/app/(payload)/importMap.js:1).
+  - Verify: `cd payload-cms && npx tsc --noEmit -p tsconfig.json` — без ошибок.
+- **Не входило в Phase 1 (отдельные todo для Phase 1.1+):**
+  - `Idempotency-Key` header на launch endpoint (сейчас только lite re-read guard);
+  - rate-limit на launch endpoint;
+  - read-only журнал доставки прямо в карточке кампании;
+  - перенос отправки в очередь (Phase 4);
+  - статус-документ в `Docs/marketing_ui_status.md`.
 
 ---
 

@@ -9,6 +9,7 @@
     "payload": "payload",
     "payload:generate:types": "node ./scripts/generate-types.mjs",
     "payload:generate:importmap": "node ./scripts/generate-importmap.mjs",
+    "payload:migrate": "node ./scripts/migrate.mjs",
     "seed": "node ./scripts/seed-marketing-content.mjs"
   },
   "dependencies": {

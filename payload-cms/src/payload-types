@@ -71,6 +71,7 @@ export interface Config {
     media: Media;
     pages: Page;
     posts: Post;
+    'marketing-campaigns': MarketingCampaign;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -82,6 +83,7 @@ export interface Config {
     media: MediaSelect<false> | MediaSelect<true>;
     pages: PagesSelect<false> | PagesSelect<true>;
     posts: PostsSelect<false> | PostsSelect<true>;
+    'marketing-campaigns': MarketingCampaignsSelect<false> | MarketingCampaignsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
@@ -371,6 +373,80 @@ export interface Post {
   _status?: ('draft' | 'published') | null;
 }
 /**
+ * Email-рассылки. Сначала создаём черновик, заполняем содержимое и аудиторию, потом нажимаем «Отправить». До запуска документ можно править свободно; после — он становится read-only.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "marketing-campaigns".
+ */
+export interface MarketingCampaign {
+  id: number;
+  /**
+   * Внутреннее имя кампании. Не показывается получателям.
+   */
+  name: string;
+  /**
+   * Subject строка email — то, что увидит получатель в инбоксе.
+   */
+  subject: string;
+  /**
+   * В Phase 1 поддерживается только email.
+   */
+  channel: 'email';
+  /**
+   * Готовый HTML email. В Phase 1 редактор HTML отсутствует, вставляется текстом.
+   */
+  htmlContent: string;
+  /**
+   * Резервный plain-text вариант для клиентов без HTML. Если пусто, backend возьмёт текст из HTML.
+   */
+  plainText?: string | null;
+  /**
+   * email_consent — только подписанные на email; all — все с email; manual — указанные customer_id.
+   */
+  audienceType: 'all' | 'email_consent' | 'manual';
+  /**
+   * Список Medusa customer_id, по одному на строку.
+   */
+  audienceCustomerIds?:
+    | {
+        id: string;
+      }[]
+    | null;
+  /**
+   * Период, в котором действует ограничение по числу отправок одному клиенту.
+   */
+  frequencyCapHours?: number | null;
+  /**
+   * Сколько писем максимум одному клиенту в окне выше.
+   */
+  frequencyCapCount?: number | null;
+  /**
+   * Управляется автоматически кнопкой «Отправить» и backend-launch.
+   */
+  status: 'draft' | 'launching' | 'completed' | 'failed';
+  medusaCampaignId?: string | null;
+  idempotencyKey?: string | null;
+  medusaStatus?: string | null;
+  totalSelected?: number | null;
+  totalSent?: number | null;
+  totalSkipped?: number | null;
+  totalFailed?: number | null;
+  launchedAt?: string | null;
+  completedAt?: string | null;
+  lastError?: string | null;
+  launchResult?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
@@ -409,6 +485,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'posts';
         value: number | Post;
+      } | null)
+    | ({
+        relationTo: 'marketing-campaigns';
+        value: number | MarketingCampaign;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -667,6 +747,39 @@ export interface PostsSelect<T extends boolean = true> {
   updatedAt?: T;
   createdAt?: T;
   _status?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "marketing-campaigns_select".
+ */
+export interface MarketingCampaignsSelect<T extends boolean = true> {
+  name?: T;
+  subject?: T;
+  channel?: T;
+  htmlContent?: T;
+  plainText?: T;
+  audienceType?: T;
+  audienceCustomerIds?:
+    | T
+    | {
+        id?: T;
+      };
+  frequencyCapHours?: T;
+  frequencyCapCount?: T;
+  status?: T;
+  medusaCampaignId?: T;
+  idempotencyKey?: T;
+  medusaStatus?: T;
+  totalSelected?: T;
+  totalSent?: T;
+  totalSkipped?: T;
+  totalFailed?: T;
+  launchedAt?: T;
+  completedAt?: T;
+  lastError?: T;
+  launchResult?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
