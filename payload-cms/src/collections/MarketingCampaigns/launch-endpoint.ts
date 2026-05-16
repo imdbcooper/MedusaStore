@@ -47,19 +47,32 @@ type MedusaCreateResponse = {
   }
 }
 
+/**
+ * Medusa returns the workflow output as `{ ok: true, result: WorkflowOutput }`,
+ * and the workflow itself wraps the step output as `WorkflowResponse({ result })`,
+ * so the actual `SendMarketingCampaignResult` lives at `result.result`.
+ *
+ * Earlier versions of this endpoint read `data.result.status` directly, which
+ * always landed on `undefined` and forced `finalStatus = 'failed'` with all
+ * totals at 0 — even when the workflow finished `completed` with real numbers.
+ */
+type MedusaLaunchResult = {
+  status?: 'completed' | 'failed'
+  reason?: string | null
+  campaign_id?: string
+  campaign_status?: string | null
+  total_selected?: number
+  total_sent?: number
+  total_skipped?: number
+  total_failed?: number
+  launched_at?: string | null
+  journal?: unknown[]
+}
+
 type MedusaLaunchResponse = {
   ok?: boolean
   result?: {
-    status?: 'completed' | 'failed'
-    reason?: string | null
-    campaign_id?: string
-    campaign_status?: string | null
-    total_selected?: number
-    total_sent?: number
-    total_skipped?: number
-    total_failed?: number
-    launched_at?: string | null
-    journal?: unknown[]
+    result?: MedusaLaunchResult
   }
 }
 
@@ -425,7 +438,7 @@ export const launchEndpoint: Omit<Endpoint, 'root'> = {
       )
     }
 
-    const result = launchResult.data?.result
+    const result = launchResult.data?.result?.result
     const medusaStatus =
       typeof result?.campaign_status === 'string'
         ? result.campaign_status
