@@ -1,8 +1,8 @@
 # Phase 4: Перенос UI модерации отзывов из Payload в Medusa Admin
 
-> Статус: черновик (16.05.2026)
+> Статус: implemented (date 2026-05-16). All 7 of 10 steps completed. Steps 8-10 are deployment ops.
 > Зависимости: Phase 1–3 завершены и в production (`main` после двух P0 hotfix'ов, последний коммит `f3b1031`)
-> Branch: `feat/product-reviews-phase-4-medusa-admin-refactor`
+> Branch: `feat/product-reviews-phase-4-medusa-admin-refactor` (последний коммит `645e87f`)
 
 ---
 
@@ -244,13 +244,13 @@ Payload использует один `Page.tsx` с веткой по `params.se
 
 > Каждый шаг должен заканчиваться чистым `tsc --noEmit`, чистым `npm run typecheck` в обоих проектах (`medusa-agency-boilerplate` и `payload-cms`), и (для шагов 3–6) ручным smoke-тестом против локального backend.
 
-### Шаг 1 — branch + плейсхолдеры
+### Шаг 1 ✅ done — branch + плейсхолдеры
 - Создать ветку `feat/product-reviews-phase-4-medusa-admin-refactor` от `main` (`f3b1031`).
 - Создать пустые директории `src/admin/routes/product-reviews/`, `src/admin/widgets/`.
 - Никакого кода — просто структура и `.gitkeep`/README-stub.
 - Acceptance: `git status` показывает только новые директории.
 
-### Шаг 2 — admin client + helpers + copy
+### Шаг 2 ✅ done (commit `cb90609`) — admin client + helpers + copy
 Создать утилиты, изолированные от React:
 - `src/admin/routes/product-reviews/lib/api.ts`:
   - `listProductReviews(filters)` → `GET /admin/reviews` (filter маппинг snake_case `product_id`).
@@ -272,7 +272,7 @@ Payload использует один `Page.tsx` с веткой по `params.se
 - Опциональный mini-test (jest unit) для `helpers.ts` (`normalizeAdminReviewImageUrls`, `formatStarRating`, `truncateText`) — это уже есть как контракт в Payload-версии, переносим вместе.
 - Acceptance: `tsc --noEmit` чистый, helpers покрыты unit-тестами на парность с Payload-версией.
 
-### Шаг 3 — список + фильтры + quick actions
+### Шаг 3 ✅ done (commit `681473e`) — список + фильтры + quick actions
 Файл: `src/admin/routes/product-reviews/page.tsx`.
 - Component-level:
   - `defineRouteConfig({ label: copy.nav.label, icon: ChatBubbleLeftRight })` — sidebar entry.
@@ -289,7 +289,7 @@ Payload использует один `Page.tsx` с веткой по `params.se
   - Quick reject = open mini-prompt (через `usePrompt`) с `<Textarea>` для reason, на confirm — `rejectProductReview(id, reason)`.
 - Acceptance: на `https://localhost:9000/app/product-reviews` (или dev port) виден список pending-отзывов; фильтры status/rating/dates работают; quick approve меняет status в БД и список обновляется без перезагрузки.
 
-### Шаг 4 — детали + полный action panel + reply CRUD
+### Шаг 4 ✅ done (commit `0d22a24`) — детали + полный action panel + reply CRUD
 Файл: `src/admin/routes/product-reviews/[id]/page.tsx`.
 - Component-level:
   - `useParams<{ id: string }>()` → reviewId.
@@ -310,7 +310,7 @@ Payload использует один `Page.tsx` с веткой по `params.se
 - После успешного delete — `navigate('/product-reviews')`.
 - Acceptance: full UX parity с Payload-версией; approve/reject/delete/reply работают; photo grid рендерится; warning при delete с images; reject валидирует 500-char limit; reply валидирует 1000-char limit.
 
-### Шаг 5 — счётчик pending в зоне `product.list.before`
+### Шаг 5 ✅ done (commit `4e6604f`) — счётчик pending в зоне `product.list.before`
 Файл: `src/admin/widgets/product-reviews-pending-counter.tsx`.
 - `defineWidgetConfig({ zone: 'product.list.before' })`.
 - `useQuery({ queryKey: pendingReviewsCountKey, queryFn: () => listProductReviews({ status: 'pending', page: 1, pageSize: 1 }), staleTime: 30_000 })` — короткий stale, no aggressive refetch.
@@ -319,7 +319,7 @@ Payload использует один `Page.tsx` с веткой по `params.se
 - Error fallback — короткий error-banner с copy из `dashboardWidget.errors`.
 - Acceptance: на `/app/products` сверху появляется карточка с числом pending-отзывов; click ведёт в очередь модерации.
 
-### Шаг 6 (optional) — product-detail widget
+### Шаг 6 ✅ done (commit `426be74`) — product-detail widget
 Файл: `src/admin/widgets/product-reviews-on-product-detail.tsx`.
 - `defineWidgetConfig({ zone: 'product.details.side.after' })`.
 - `data: AdminProduct` — берём `data.id` как productId.
@@ -327,7 +327,7 @@ Payload использует один `Page.tsx` с веткой по `params.se
 - Render: `<Container>` → `<Heading>` «Отзывы товара» → list (Star + truncated text + StatusBadge + дата) → `<Link to={`/product-reviews?productId=${data.id}`}>Открыть полную модерацию</Link>`.
 - Acceptance: на странице любого товара справа виден список последних 5 отзывов с переходом в полную модерацию.
 
-### Шаг 7 — удаление Payload-версии
+### Шаг 7 ✅ done (commit `645e87f`) — удаление Payload-версии
 - В [`payload-cms/src/payload.config.ts`](payload-cms/src/payload.config.ts:1) убрать:
   - `admin.components.views.ProductReviewsModerationView` (обе entry: top-level + `:id`).
   - Запись в `admin.components.beforeNavLinks`, ссылающуюся на `NavLink.tsx`.
@@ -339,20 +339,18 @@ Payload использует один `Page.tsx` с веткой по `params.se
 - Smoke: `cms.slavx.ru/admin/product-reviews/moderation` отвечает 404; sidebar Payload не содержит «Модерация отзывов»; dashboard Payload не содержит счётчик; остальной Payload UI работает.
 - Acceptance: typecheck чистый, ручная smoke-проверка зелёная.
 
-### Шаг 8 — env / docker-compose cleanup
-- Перепроверить usage `MEDUSA_ADMIN_SECRET_API_KEY` в `payload-cms/`.
-- Если он остался ТОЛЬКО для marketing UI — оставить переменную в env.
-- Если usage не осталось — удалить из `.env.example` обоих проектов и [`Docs/env_contract.md`](Docs/env_contract.md:1), также из staging-secrets workflow.
-- Hotfix `abc0a19` (override `MEDUSA_BACKEND_URL` для payload-cms): откатить **только** если marketing UI больше не делает server-side calls к Medusa.
-- Acceptance: только подтверждённые удаления, никаких поломок marketing flow.
+### Шаг 8 ⏭ skipped — env / docker-compose cleanup
+- Marketing UI **остаётся в Payload** — `MEDUSA_ADMIN_SECRET_API_KEY` нужен для marketing campaigns. Переменная НЕ удаляется.
+- Hotfix `abc0a19` (override `MEDUSA_BACKEND_URL` для payload-cms) — НЕ откатываем: marketing UI всё ещё делает server-side calls к Medusa из Payload.
+- Никаких изменений в `.env.example` / [`Docs/env_contract.md`](Docs/env_contract.md:1) / staging-secrets для этого Phase. Cleanup отложен до миграции marketing UI.
 
-### Шаг 9 — обновить план §5 product-reviews-module.md
+### Шаг 9 ⏳ in progress — обновить план §5 product-reviews-module.md
 - Открыть `plans/product-reviews-module.md` (root project plan).
 - Заменить упоминания «UI модерации в Payload» на «UI модерации в Medusa Admin (`src/admin/routes/product-reviews/`)».
 - Добавить пометку о завершении Phase 4 в журнал плана.
 - Acceptance: план синхронизирован с реальностью.
 
-### Шаг 10 — sweep + merge + redeploy
+### Шаг 10 ⏳ pending — sweep + merge + redeploy
 - `npm run typecheck` в `medusa-agency-boilerplate/` и `payload-cms/`.
 - Полный test pass (700+ unit + integration на backend).
 - Manual smoke-checklist (см. §9 Acceptance Criteria).
@@ -365,20 +363,22 @@ Payload использует один `Page.tsx` с веткой по `params.se
 
 ## 7. Риски и митигации
 
-1. **TanStack Query availability в admin-extensions context**
+1. **TanStack Query availability в admin-extensions context** ✅ resolved
    - Risk: `@tanstack/react-query` транзитивный, не peerDependency `@medusajs/admin-sdk`. Возможен Vite-bundle conflict.
    - Mitigation: Шаг 2 — попробовать `import { useQuery } from '@tanstack/react-query'`. Если упадёт — добавить в `package.json` (devDep) и зафиксировать версию из `@medusajs/dashboard` (чтобы не расходились client'ы).
    - Fallback: использовать обычные `useEffect + useState` если query-react не работает; cost — больше boilerplate, но функционально парно.
+   - **Outcome**: транзитивный импорт сработал — `useQuery`/`useMutation` доступны через `@tanstack/react-query` без отдельного `npm install`. Версия совпадает с той, что подтянулась через `@medusajs/dashboard`. Vite-bundle conflict не проявился.
 
 2. **Session-cookie auth на cross-origin staging**
    - Risk: если admin-UI и admin-API на разных host'ах (`admin.slavx.ru` vs `api.slavx.ru`) — cookie `connect.sid` не уйдёт без `credentials: 'include'` + правильный CORS + `SameSite=None; Secure`.
    - Mitigation: проверить текущий [`medusa-config.ts`](medusa-agency-boilerplate/medusa-config.ts:1) — `adminCors`, `authCors` настроены, и Medusa Admin UI хостится на том же домене что и API. Если не так — fallback на bearer-token (Medusa Admin UI имеет рабочий login flow).
    - Test gate: в Шаге 3 локально + staging проверить devtools network tab — что cookie реально летит.
 
-3. **Marketing UI parallel migration**
+3. **Marketing UI parallel migration** ⚠ materialized — оставлен в Payload
    - Risk: marketing UI ([`plans/marketing-ui-payload-cms.md`](plans/marketing-ui-payload-cms.md:1)) использует тот же `medusa-admin-client.ts` и тот же `MEDUSA_ADMIN_SECRET_API_KEY`. Если этот план игнорирует marketing, env/docker cleanup (Шаги 8) частичен и hotfix `abc0a19` нельзя откатить.
    - Mitigation: **до старта реализации** запросить у пользователя решение — переносим ли в этот же спринт marketing UI (и тогда план расширяется), или оставляем marketing в Payload (и тогда env/secret cleanup deferred).
    - Open question — см. §8.
+   - **Outcome**: marketing UI **остался в Payload** в этом спринте. Следствия: Шаг 8 пропущен; `MEDUSA_ADMIN_SECRET_API_KEY` сохранён в env-контракте; hotfix `abc0a19` (override `MEDUSA_BACKEND_URL`) НЕ откатываем — marketing-server-component в Payload всё ещё делает Medusa Admin calls. Cleanup отложен до отдельного Phase миграции marketing UI.
 
 4. **Widget zone compatibility (нет `dashboard.*`)**
    - Risk: пользователь явно просил счётчик «на дашборде» (как сейчас в Payload). У Medusa 2.13.6 dashboard-zone не существует.
