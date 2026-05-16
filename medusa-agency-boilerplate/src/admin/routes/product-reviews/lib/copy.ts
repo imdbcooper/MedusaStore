@@ -1,15 +1,25 @@
 /**
- * Static copy for the product-reviews moderation view.
+ * Static copy for the Medusa Admin product-reviews moderation views.
  *
- * Plan §10.2 mandates plain-text rendering everywhere — these strings are
- * shown via React's normal text interpolation, never via
- * `dangerouslySetInnerHTML`, so XSS protection is enforced by the
- * framework's automatic escaping.
+ * Phase 4 / step 2 — ported one-to-one from
+ * [`payload-cms/src/views/product-reviews-moderation/copy.ts`](payload-cms/src/views/product-reviews-moderation/copy.ts:1).
  *
- * Payload CMS does not yet have a project-wide i18n facility for custom
- * view labels; if/when one lands (likely shared with marketing UI per
- * plans/marketing-ui-payload-cms.md), this object becomes the migration
- * source.
+ * Phase 4 / step 5 — added the `dashboardWidget` block (re-instated
+ * from the Payload original) consumed by
+ * [`product-reviews-pending-counter.tsx`](medusa-agency-boilerplate/src/admin/widgets/product-reviews-pending-counter.tsx:1).
+ * The widget is mounted on Medusa's `product.list.before` zone
+ * because Medusa 2.13.6 ships no `dashboard.*` injection-zone — see
+ * [`@medusajs/admin-shared`](medusa-agency-boilerplate/node_modules/@medusajs/admin-shared/dist/index.d.ts:63)
+ * `INJECTION_ZONES` for the full list.
+ *
+ * Plan §10.2 mandates plain-text rendering everywhere — these strings
+ * are shown via React's normal text interpolation, never via
+ * `dangerouslySetInnerHTML`, so XSS protection is enforced by React's
+ * automatic escaping.
+ *
+ * The export name `moderationCopy` is intentionally preserved so the
+ * eventual move of the Payload-side imports to this module is a single
+ * specifier change.
  */
 export const moderationCopy = {
   meta: {
@@ -61,12 +71,10 @@ export const moderationCopy = {
       total: (total: number) => `Всего: ${total}`,
     },
     error: {
-      configMissing:
-        'Не удалось загрузить. Проверьте конфигурацию (MEDUSA_BACKEND_URL / MEDUSA_ADMIN_SECRET_API_KEY).',
       transport:
-        'Не удалось связаться с Medusa. Проверьте, что бэкенд запущен и доступен.',
+        'Не удалось связаться с сервером. Проверьте соединение и попробуйте ещё раз.',
       unauthorized:
-        'Нет доступа. Проверьте, что у MEDUSA_ADMIN_SECRET_API_KEY роль admin.',
+        'Сессия истекла или недостаточно прав. Перезайдите в админку.',
       generic: 'Не удалось загрузить отзывы.',
       retry: 'Повторить',
     },
@@ -82,7 +90,6 @@ export const moderationCopy = {
       review: 'Отзыв',
       meta: 'Метаданные',
       customer: 'Покупатель',
-      // Phase 3 / step 5 — image attachments shown as a thumbnail grid.
       images: 'Фотографии',
     },
     fields: {
@@ -105,8 +112,6 @@ export const moderationCopy = {
       none: '—',
       yes: 'Да',
       no: 'Нет',
-      // Phase 3 / step 5 — alt text used for screen readers on the
-      // moderation thumbnail grid. `{index}` is substituted client-side.
       imageAltLabel: 'Фото №{index}',
       imageOpenLabel: 'Открыть в новой вкладке',
     },
@@ -115,9 +120,28 @@ export const moderationCopy = {
       reject: 'Отклонить',
       delete: 'Удалить',
     },
+    /**
+     * Phase 4 / step 2 — exposed under `detail.reject.*` to mirror the
+     * Payload `detail.rejectForm.*` namespace verbatim. The shorter
+     * `reject` key here matches the user-supplied
+     * [`error-mapping.ts`](medusa-agency-boilerplate/src/admin/routes/product-reviews/lib/error-mapping.ts:1)
+     * spec, while `rejectForm` is kept as an alias so future component
+     * code can import either label set without churn.
+     */
+    reject: {
+      heading: 'Причина отклонения',
+      placeholder:
+        'Опишите, почему отзыв отклонён (видно только модераторам)',
+      submit: 'Отклонить отзыв',
+      cancel: 'Отмена',
+      hint: 'Обязательно. Не более 500 символов.',
+      reasonRequired: 'Введите причину отклонения.',
+      reasonTooLong: 'Причина не должна превышать 500 символов.',
+    },
     rejectForm: {
       heading: 'Причина отклонения',
-      placeholder: 'Опишите, почему отзыв отклонён (видно только модераторам)',
+      placeholder:
+        'Опишите, почему отзыв отклонён (видно только модераторам)',
       submit: 'Отклонить отзыв',
       cancel: 'Отмена',
       hint: 'Обязательно. Не более 500 символов.',
@@ -125,11 +149,9 @@ export const moderationCopy = {
       validationLength: 'Причина не должна превышать 500 символов.',
     },
     /**
-     * Phase 3 / step 4 — «Ответ магазина» секция в детальной view.
-     * Текст храниться в едином `moderationCopy` объекте, чтобы будущая
-     * миграция на i18n затронула один файл (см. comment в `copy.ts`).
-     * `{current}` / `{max}` подставляются client-side через
-     * `String.replace`, как и `rating.starsAria(n)`.
+     * «Ответ магазина» секция в детальной view. `{current}` / `{max}`
+     * подставляются client-side через `String.replace`, как и
+     * `rating.starsAria(n)`.
      */
     reply: {
       title: 'Ответ магазина',
@@ -158,10 +180,6 @@ export const moderationCopy = {
     deleteConfirm: {
       heading: 'Удалить отзыв?',
       body: 'Действие необратимо. Если отзыв был опубликован, рейтинг товара будет пересчитан.',
-      // Phase 3 / step 5 — extra warning appended to the body when the
-      // review has at least one image attached. Surfaced on top of the
-      // existing `body` copy so a moderator deleting a photo-bearing
-      // review knows S3 cleanup will run.
       bodyWithImages:
         'У отзыва прикреплены фотографии — они также будут удалены из хранилища.',
       confirm: 'Удалить',
@@ -174,13 +192,18 @@ export const moderationCopy = {
       replySaved: 'Ответ сохранён.',
       replyRemoved: 'Ответ удалён.',
     },
+    /**
+     * Phase 4 / step 2 — error namespace consumed by
+     * [`error-mapping.ts`](medusa-agency-boilerplate/src/admin/routes/product-reviews/lib/error-mapping.ts:1).
+     * `transport` is new to the Medusa port (Payload had it under the
+     * `list.error.transport` namespace only) and surfaces both
+     * `transport_error` and `aborted` cases from the shared fetch wrapper.
+     */
     error: {
       notFound: 'Отзыв не найден.',
-      configMissing:
-        'Не удалось выполнить действие. Проверьте MEDUSA_BACKEND_URL / MEDUSA_ADMIN_SECRET_API_KEY.',
-      transport: 'Не удалось связаться с Medusa.',
+      transport: 'Не удалось связаться с сервером.',
       unauthorized:
-        'Нет доступа. Проверьте, что у MEDUSA_ADMIN_SECRET_API_KEY роль admin.',
+        'Сессия истекла или недостаточно прав. Перезайдите в админку.',
       generic: 'Не удалось выполнить действие.',
     },
     notFoundView: {
@@ -197,22 +220,44 @@ export const moderationCopy = {
     starsAria: (n: number) => `Рейтинг ${n} из 5`,
   },
   /**
-   * Plan §5.3 + §9 Phase 2 step 3 — мини-виджет «Отзывы на модерации: N»
-   * на дашборде Payload. Полностью статичная копия; счётчик и ссылка
-   * формируются в server component
-   * [`DashboardWidget.tsx`](payload-cms/src/views/product-reviews-moderation/DashboardWidget.tsx:1).
+   * Phase 4 / step 5 — copy for the pending-reviews counter widget
+   * mounted on `product.list.before`. The plan deliberately skips a
+   * Russian plural rule (1 / few / many) here: the moderator audience
+   * is small and the «{count} ждут модерации» phrasing reads naturally
+   * even when `count === 1`. The `{count}` placeholder is substituted
+   * client-side via `String.replace`, mirroring the `rating.starsAria`
+   * convention used elsewhere in this module.
    */
   dashboardWidget: {
     title: 'Отзывы на модерации',
     empty: 'Нет отзывов на модерации',
     action: 'Перейти к очереди',
+    actionAll: 'Все отзывы',
+    countSubtitle: '{count} ждут модерации',
     errors: {
-      configMissing:
-        'Не настроено: MEDUSA_BACKEND_URL / MEDUSA_ADMIN_SECRET_API_KEY',
-      transport: 'Не удалось связаться с Medusa',
       unauthorized: 'Нет доступа. Проверьте роль admin у API-ключа.',
-      generic: 'Не удалось загрузить счётчик',
+      transport: 'Не удалось связаться с Medusa.',
+      generic: 'Не удалось загрузить счётчик.',
     },
+  },
+  /**
+   * Phase 4 / step 6 — copy for the product-detail side widget mounted
+   * on `product.details.side.after`. The widget surfaces the latest
+   * reviews of the product currently being viewed plus an approximate
+   * pending count, with deep links into
+   * [`routes/product-reviews/page.tsx`](medusa-agency-boilerplate/src/admin/routes/product-reviews/page.tsx:1)
+   * (filtered list) and
+   * [`routes/product-reviews/[id]/page.tsx`](medusa-agency-boilerplate/src/admin/routes/product-reviews/[id]/page.tsx:1)
+   * (detail). Errors reuse `dashboardWidget.errors.*` because the
+   * failure modes (unauthorized / transport / generic) are identical.
+   */
+  productDetailWidget: {
+    title: 'Отзывы товара',
+    empty: 'У товара пока нет отзывов',
+    total: 'Всего отзывов',
+    pending: 'На модерации',
+    actionQueue: 'Открыть очередь модерации',
+    actionAll: 'Все отзывы товара',
   },
 } as const
 

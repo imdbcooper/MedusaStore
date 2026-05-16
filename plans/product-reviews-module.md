@@ -10,7 +10,7 @@
 
 Реализовать систему отзывов о товарах:
 - Покупатели оставляют отзывы с рейтингом и текстом.
-- Отзывы проходят модерацию в Payload CMS.
+- Отзывы проходят модерацию в Medusa Admin (с Phase 4 — см. [`plans/product-reviews-phase-4-medusa-admin.md`](plans/product-reviews-phase-4-medusa-admin.md:1); до Phase 4 UI модерации жил в Payload Admin).
 - На карточке товара отображаются одобренные отзывы и средний рейтинг.
 - Отзыв можно оставить только после покупки товара (verified purchase).
 
@@ -25,7 +25,7 @@
 3. **Атомарный пересчёт `product_rating_summary`** — единый `INSERT ... ON CONFLICT DO UPDATE` из агрегации, вызывается при approve / reject (бывший approved) / delete (бывший approved) / auto-approve (см. §4.3 «Пересчёт summary»). Никаких read-modify-write.
 4. **Atomic increment `helpful_count`** — `UPDATE ... SET helpful_count = helpful_count + 1` после `INSERT ... ON CONFLICT DO NOTHING` в `product_review_helpful` (см. §4.3 «Голос Полезно»).
 5. **Recalc summary при reject/delete** — пересчёт обязателен, если предыдущий статус был `approved`; не только при approve (см. §4.3).
-6. **Авторизация Payload → Medusa** — Secret Admin API Key Medusa v2 (`sk_*`), заголовок `Authorization: Basic <base64(sk_xxx:)>`, env `MEDUSA_ADMIN_SECRET_API_KEY` (НЕ `MEDUSA_ADMIN_API_KEY`, НЕ publishable `pk_*` сторфронта). Унифицирован с маркетингом (см. §5.2 и §11).
+6. **Авторизация Medusa Admin (после Phase 4)**: UI модерации работает через session-cookie Medusa Admin — никаких секретов в client bundle. Server-to-server `MEDUSA_ADMIN_SECRET_API_KEY` (формат `Authorization: Basic <base64(sk_xxx:)>`) остаётся для marketing UI и других Payload→Medusa интеграций (см. [`plans/marketing-ui-payload-cms.md`](plans/marketing-ui-payload-cms.md:1)). Историческая справка: до Phase 4 этот же ключ использовался Payload-вью модерации; после Phase 4 — только marketing flow. См. §5 и §11.
 7. **GDPR / удаление сущностей** — subscriber на `customer.deleted` (анонимизация: `customer_id=NULL`, `customer_name='Покупатель'`) и `product.deleted` (cascade-удаление review/summary). См. §10.3.
 8. **Anti-spam защита формы** — public rate-limit middleware (как для VK ID) на `POST /store/products/:id/reviews` и `/store/reviews/:id/helpful` + honeypot-поле в форме + pending-by-default. CAPTCHA — Phase 2 опция (env `REVIEWS_CAPTCHA_PROVIDER`). См. §10.1.
 
@@ -52,6 +52,8 @@
 ---
 
 ## 2. Текущее состояние
+
+> Снимок «как было до Phase 1». Актуальное состояние после Phase 4 — см. блок «Историческая справка» в §5: UI модерации сейчас в Medusa Admin (`admin.slavx.ru/app/product-reviews`).
 
 - Модуля отзывов в проекте нет.
 - Официального модуля от Medusa v2 нет.
@@ -291,46 +293,50 @@ approve / reject (бывший approved) / delete (бывший approved) / со
 
 ---
 
-## 5. Payload CMS: UI модерации
+## 5. Medusa Admin: UI модерации (после Phase 4)
 
-### 5.1 Custom View: Модерация отзывов
+> Историческая справка: Phase 1-3 размещали UI модерации в Payload Admin (`cms.slavx.ru/admin/product-reviews/moderation`).
+> Phase 4 (рефакторинг) перенёс UI в Medusa Admin (`admin.slavx.ru/app/product-reviews`),
+> чтобы модерация жила рядом с продуктами/заказами в коммерс-админке.
+> См. [`plans/product-reviews-phase-4-medusa-admin.md`](plans/product-reviews-phase-4-medusa-admin.md:1).
 
-Отдельная страница в Payload Admin (не коллекция, а custom view), потому что данные живут в Medusa DB.
+### 5.1 Custom routes в Medusa Admin
 
-**Список отзывов:**
-- Таблица: Товар, Покупатель, Рейтинг (★), Текст (preview), Статус, Дата.
-- Фильтры: статус (pending/approved/rejected), рейтинг, дата.
-- По умолчанию показывает `pending` — очередь на модерацию.
+Маршруты регистрируются через `defineRouteConfig` в [`medusa-agency-boilerplate/src/admin/`](medusa-agency-boilerplate/src/admin/):
 
-**Детали отзыва:**
-- Полный текст, pros/cons, фото.
-- Информация о покупателе (имя, email).
-- Verified purchase badge.
-- Кнопки: «Одобрить», «Отклонить» (с полем причины).
+- **Список модерации**: `/admin/product-reviews` — таблица с фильтрами (status/rating/dateFrom/dateTo/productId), pagination, quick approve/reject.
+- **Детальная**: `/admin/product-reviews/:id` — полная карточка отзыва, approve/reject (textarea reason)/delete (confirm)/reply (CRUD).
 
-### 5.2 Интеграция Payload → Medusa
+Sidebar entry — единый top-level пункт «Модерация отзывов» через `defineRouteConfig({ label, icon: ChatBubbleLeftRight })`.
 
-- Payload custom view запрашивает `GET /admin/reviews?status=pending` через Medusa Admin API.
-- Кнопки модерации вызывают `POST /admin/reviews/:id/approve` или `/reject`.
-- Авторизация — Secret Admin API Key Medusa v2 (`sk_*` token), сгенерированный helper-ом
-  [`createSecretAdminApiKey()`](medusa-agency-boilerplate/src/scripts/create-secret-admin-api-key.ts:22).
-  Формат заголовка: `Authorization: Basic <base64(secret_api_key:)>` (двоеточие после ключа обязательно,
-  пароль — пустая строка). Контракт совпадает с notification smoke-path
-  ([Docs/env_contract.md](Docs/env_contract.md:429) §«Secret admin API key smoke»).
-- Переменная окружения для Payload backend: `MEDUSA_ADMIN_SECRET_API_KEY` (одна и та же для всех Payload→Medusa
-  интеграций — модерация отзывов и маркетинг). Имя `MEDUSA_ADMIN_API_KEY` из текущего
-  [`plans/marketing-ui-payload-cms.md`](plans/marketing-ui-payload-cms.md:225) переименовать в `MEDUSA_ADMIN_SECRET_API_KEY`
-  при ближайшем апдейте, чтобы не плодить два секрета.
-- НЕ путать с `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_API_KEY` сторфронта (`pk_*`): publishable key — для Store API,
-  не даёт доступа к `/admin/*` и в Payload не используется.
-- Защита `/admin/reviews/*` на стороне Medusa — стандартный middleware
-  [`authenticate("user", ["session", "bearer", "api-key"])`](medusa-agency-boilerplate/src/api/middlewares.ts:1)
-  (см. файл middlewares в проекте), `api-key` ветка покрывает Basic-auth вызовы из Payload.
+### 5.2 Widgets
 
-### 5.3 Dashboard Widget (опционально)
+- `widgets/product-reviews-pending-counter.tsx` — zone `product.list.before`. Счётчик "Отзывы на модерации: N" с ссылкой в очередь pending. Виден при заходе в раздел Products. (Medusa 2.13.6 не имеет dashboard.* zone, поэтому не на главной.)
+- `widgets/product-reviews-on-product-detail.tsx` — zone `product.details.side.after`. Inline-секция в боковой колонке страницы товара: total / pending count + 5 последних отзывов + ссылка на отфильтрованную очередь.
 
-- На главной Payload: виджет «Отзывы на модерации: N».
-- Клик → переход на страницу модерации.
+### 5.3 Интеграция Medusa Admin → API
+
+Маршруты Medusa Admin делают HTTP-вызовы к собственному backend через session-cookie auth — **никаких Basic auth и `MEDUSA_ADMIN_SECRET_API_KEY` для UI не используется**. Это снимает riski credential leak и упрощает onboarding администраторов (стандартный flow «логин в Medusa Admin → сразу есть доступ к модерации»).
+
+Server-to-server вызовы Payload → Medusa Admin (`MEDUSA_ADMIN_SECRET_API_KEY` через Basic auth) **остаются** для других интеграций — например, marketing UI (см. [`plans/marketing-ui-payload-cms.md`](plans/marketing-ui-payload-cms.md:1)).
+
+### 5.4 i18n / copy
+
+Все UI-строки централизованы в [`medusa-agency-boilerplate/src/admin/routes/product-reviews/lib/copy.ts`](medusa-agency-boilerplate/src/admin/routes/product-reviews/lib/copy.ts:1). Структура:
+
+- `nav.label` — sidebar entry.
+- `list.*` — заголовки списка, фильтры, empty/error/loading.
+- `detail.*` — заголовки деталей, секции (текст / фото / ответ магазина), reject form, delete confirm, reply CRUD.
+- `dashboardWidget.*` — pending-counter widget (название наследовано из Phase 2 Payload).
+- `productDetailWidget.*` — product-detail widget (новый Phase 4).
+- `actions.*` — общие тексты кнопок approve/reject/delete/cancel.
+- `errors.*` — маппинг кодов API → user-facing messages.
+
+### 5.5 Cache / state
+
+UI-слой использует `useQuery` / `useMutation` из `@tanstack/react-query` (доступен через `@medusajs/dashboard` без отдельного npm-install). Mutations approve/reject/delete/setReply/clearReply делают `queryClient.invalidateQueries({ queryKey: productReviewQueryKeys.all })` — список и детали refresh'ятся в lockstep.
+
+`staleTime` — 10 секунд для списка, 5 для деталей, 30 для widget'ов.
 
 ---
 
@@ -491,9 +497,11 @@ Modal или inline-форма:
 
 ### Phase 2: Модерация в Payload + UX
 
-1. Создать Payload custom view «Модерация отзывов».
-2. Интеграция Payload → Medusa Admin API (list, approve, reject) через `MEDUSA_ADMIN_SECRET_API_KEY` (см. §5.2).
-3. Dashboard widget «Отзывы на модерации».
+> Историческая справка: исходно Phase 2 ставила UI модерации в Payload Admin. Эта реализация была завершена (commits Phase 2 / hotfix `abc0a19`) и работала в production до Phase 4. После Phase 4 Payload-вью удалена, актуальный UI модерации — Medusa Admin (§5). Описание ниже сохранено для исторической трассировки решений.
+
+1. Создать Payload custom view «Модерация отзывов». _(Phase 4: удалено, перенесено в Medusa Admin.)_
+2. Интеграция Payload → Medusa Admin API (list, approve, reject) через `MEDUSA_ADMIN_SECRET_API_KEY` (см. §5.2). _(Phase 4: UI больше не использует этот ключ; ключ остаётся только для marketing UI.)_
+3. Dashboard widget «Отзывы на модерации». _(Phase 4: переехал в Medusa Admin как `product.list.before` widget.)_
 4. Добавить рейтинг в каталог (product cards) — `ProductRatingBadge` в `Thumbnail`.
 5. Страница «Мои отзывы» в account, с invalidate-tag `customer-reviews-${id}` после approve/reject своих отзывов.
 6. Транзакционные email-уведомления «Ваш отзыв опубликован» / «отклонён» через [`notification-email.ts`](medusa-agency-boilerplate/src/modules/notification-email.ts:1) и шаблоны в [`email-template.ts`](medusa-agency-boilerplate/src/modules/email-template.ts:1) (стиль `order-email-templates.ts`); НЕ зависят от marketing consent — это transactional channel.
@@ -562,11 +570,12 @@ REVIEWS_MAX_TEXT_LENGTH=2000
 REVIEWS_MAX_IMAGES=5
 REVIEWS_REQUIRE_PURCHASE=false          # true = только verified purchase могут оставлять отзывы
 
-# Payload (для модерации)
+# Payload (server-to-server вызовы к Medusa)
 MEDUSA_BACKEND_URL=http://medusa-backend:9000
 # Secret Admin API Key Medusa v2 (sk_* token), формат заголовка Authorization: Basic <base64(sk_xxx:)>.
 # Генерируется helper-ом createSecretAdminApiKey() (см. medusa-agency-boilerplate/src/scripts).
-# Унифицирован с marketing-ui-payload-cms.md — единый секрет для всех Payload→Medusa интеграций.
+# После Phase 4: НЕ используется UI модерации отзывов (Medusa Admin ходит через session-cookie).
+# Остаётся актуальным для marketing UI и других Payload→Medusa интеграций (см. plans/marketing-ui-payload-cms.md).
 # НЕ путать с NEXT_PUBLIC_MEDUSA_PUBLISHABLE_API_KEY (pk_*) — это ключ сторфронта для Store API.
 MEDUSA_ADMIN_SECRET_API_KEY=<sk_...>
 ```
@@ -587,8 +596,8 @@ MEDUSA_ADMIN_SECRET_API_KEY=<sk_...>
 - Без фото: поле `images` в БД зарезервировано, но `POST /store/products/:id/reviews` отбрасывает его на уровне strict Zod-схемы (попытка передать → 400). UI-поле upload скрыто. Cleanup S3 — TODO Phase 3.
 - Без ответа магазина (Phase 3).
 - Без SEO structured data (Phase 3, JSON-LD `AggregateRating` + `Review`).
-- Модерация через Admin API (curl/Postman) до реализации Payload UI в Phase 2; вызов через `Authorization: Basic <base64(sk_xxx:)>`.
+- Модерация через Admin API (curl/Postman) до реализации UI модерации (Phase 2 — Payload custom view, после Phase 4 — Medusa Admin routes); вызов через `Authorization: Basic <base64(sk_xxx:)>`.
 - Без email-уведомлений о статусе отзыва (Phase 2). В Phase 1 покупатель видит статус только в `/account/reviews` (если эта страница включена) или после реализации в Phase 2.
 - Без CAPTCHA (Phase 2 опция при росте спама); Phase 1 опирается на public rate-limit + honeypot + pending-by-default.
-- Без виджета «Отзывы на модерации» в каталоге/Payload dashboard (Phase 2).
+- Без виджета «Отзывы на модерации» в каталоге/admin dashboard (Phase 2 — изначально Payload dashboard, после Phase 4 — Medusa Admin widget в `product.list.before`).
 - Без рейтинга на превью товара (`Thumbnail`) — добавляется в Phase 2 вместе со страницей «Мои отзывы».
