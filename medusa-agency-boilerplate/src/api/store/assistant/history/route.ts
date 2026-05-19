@@ -66,6 +66,14 @@ export async function POST(req: MedusaRequest<StoreAssistantHistoryBody>, res: M
       messages: sanitizeMessages(history.messages),
     })
   } catch (error) {
+    if (isMissingScopedHistoryError(error)) {
+      res.status(200).json({
+        session_id: sessionId,
+        messages: [],
+      })
+      return
+    }
+
     errorResponse(res, error)
   }
 }
@@ -116,4 +124,9 @@ function extractAuthenticatedCustomerId(req: MedusaRequest<StoreAssistantHistory
     return undefined
   }
   return authContext?.actor_id?.trim() || undefined
+}
+
+function isMissingScopedHistoryError(error: unknown) {
+  const assistantError = error as { status?: number; code?: string }
+  return assistantError.status === 404 && assistantError.code === "SESSION_HISTORY_NOT_FOUND"
 }
