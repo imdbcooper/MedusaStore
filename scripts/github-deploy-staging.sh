@@ -79,9 +79,14 @@ else
   echo "AI Assistant disabled; skipping ai-assistant profile."
 fi
 
+build_services=(medusa-backend payload-cms storefront)
+if [[ ${#compose_profiles[@]} -gt 0 ]]; then
+  build_services+=(ai-assistant)
+fi
+
 echo "Building production images..."
 run_with_heartbeat "Docker image build" \
-  docker compose -p "$project_name" -f "$compose_file" --env-file .env "${compose_profiles[@]}" build
+  docker compose -p "$project_name" -f "$compose_file" --env-file .env "${compose_profiles[@]}" build "${build_services[@]}"
 
 echo "Starting database and redis..."
 docker compose -p "$project_name" -f "$compose_file" --env-file .env up -d medusa-db medusa-redis
