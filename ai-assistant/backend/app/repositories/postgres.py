@@ -502,7 +502,7 @@ class PostgresAssistantRepository:
                 max_attempts,
                 json.dumps(metadata or {}),
             )
-        return dict(row)
+        return _normalize_reindex_intent_row(dict(row))
 
     async def list_reindex_intents(self, *, status: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
         filters = []
@@ -522,7 +522,7 @@ class PostgresAssistantRepository:
                 """,
                 *args,
             )
-        return [dict(row) for row in rows]
+        return [_normalize_reindex_intent_row(dict(row)) for row in rows]
 
     async def claim_reindex_intents(self, *, limit: int = 10) -> list[dict[str, Any]]:
         async with self.pool.acquire() as conn:
@@ -544,7 +544,7 @@ class PostgresAssistantRepository:
                 """,
                 limit,
             )
-        return [dict(row) for row in rows]
+        return [_normalize_reindex_intent_row(dict(row)) for row in rows]
 
     async def complete_reindex_intent(
         self,
@@ -586,7 +586,7 @@ class PostgresAssistantRepository:
                 assistant_job_id,
                 retry_backoff_seconds,
             )
-        return dict(row)
+        return _normalize_reindex_intent_row(dict(row))
 
     async def reindex_intent_stats(self) -> dict[str, int]:
         async with self.pool.acquire() as conn:
@@ -625,6 +625,13 @@ def _normalize_message_row(row: dict[str, Any]) -> dict[str, Any]:
     for field in ("citations", "products", "actions", "tool_calls"):
         normalized[field] = _json_field_or_default(normalized.get(field), [])
     normalized["token_usage"] = _json_field_or_default(normalized.get("token_usage"), {})
+    return normalized
+
+
+def _normalize_reindex_intent_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    normalized["product_ids"] = _json_field_or_default(normalized.get("product_ids"), [])
+    normalized["metadata"] = _json_field_or_default(normalized.get("metadata"), {})
     return normalized
 
 

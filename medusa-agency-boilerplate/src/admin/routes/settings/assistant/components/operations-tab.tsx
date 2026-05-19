@@ -64,14 +64,40 @@ function parseProductIds(value: string): string[] {
   )
 }
 
+function stringList(value: unknown): string[] {
+  const candidate = typeof value === "string" ? parseJson(value) : value
+  if (!Array.isArray(candidate)) {
+    return []
+  }
+  return candidate
+    .map((item) => (typeof item === "string" ? item : String(item || "")))
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+}
+
+function recordOf(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
 function formatIntentProducts(intent: AssistantReindexIntent): string {
-  if (!intent.product_ids.length) {
+  const productIds = stringList(intent.product_ids)
+  if (!productIds.length) {
     return assistantCopy.common.none
   }
-  if (intent.product_ids.length <= 2) {
-    return intent.product_ids.join(", ")
+  if (productIds.length <= 2) {
+    return productIds.join(", ")
   }
-  return `${intent.product_ids.slice(0, 2).join(", ")} +${intent.product_ids.length - 2}`
+  return `${productIds.slice(0, 2).join(", ")} +${productIds.length - 2}`
 }
 
 function safeJson(value: unknown): string {
@@ -307,9 +333,12 @@ export const OperationsTab = () => {
       return result.data
     },
     onSuccess: (data) => {
-      toast.success(copy.toasts.queueProcessed(data.result.claimed))
-      const firstJobId = data.result.processed
-        .map((item) => item.assistant_job_id)
+      const result = recordOf(data.result)
+      const claimed = typeof result.claimed === "number" ? result.claimed : 0
+      const processed = Array.isArray(result.processed) ? result.processed : []
+      toast.success(copy.toasts.queueProcessed(claimed))
+      const firstJobId = processed
+        .map((item) => recordOf(item).assistant_job_id)
         .find((item): item is string => typeof item === "string" && item.length > 0)
       if (firstJobId) {
         setSelectedJobId(firstJobId)
@@ -833,21 +862,31 @@ export const OperationsTab = () => {
                 </Table.Row>
               </Table.Header>
               <Table.Body>
-                {componentEntries.map(([name, value]) => (
-                  <Table.Row key={name}>
-                    <Table.Cell>{name}</Table.Cell>
-                    <Table.Cell>
-                      <StatusBadge color={statusColor(String(value?.status || "disabled"))}>
-                        {String(value?.status || "disabled")}
-                      </StatusBadge>
-                    </Table.Cell>
-                    <Table.Cell>
-                      <span className="text-ui-fg-subtle text-xs">
-                        {String(value?.detail || value?.error || value?.status_code || assistantCopy.common.none)}
-                      </span>
-                    </Table.Cell>
-                  </Table.Row>
-                ))}
+                {componentEntries.map(([name, value]) => {
+                  const component = recordOf(value)
+                  const status = String(component.status || "disabled")
+                  const detail = String(
+                    component.detail ||
+                      component.error ||
+                      component.status_code ||
+                      assistantCopy.common.none,
+                  )
+                  return (
+                    <Table.Row key={name}>
+                      <Table.Cell>{name}</Table.Cell>
+                      <Table.Cell>
+                        <StatusBadge color={statusColor(status)}>
+                          {status}
+                        </StatusBadge>
+                      </Table.Cell>
+                      <Table.Cell>
+                        <span className="text-ui-fg-subtle text-xs">
+                          {detail}
+                        </span>
+                      </Table.Cell>
+                    </Table.Row>
+                  )
+                })}
               </Table.Body>
             </Table>
           </>
