@@ -1,10 +1,10 @@
 # AI Assistant Production Deployment
 
-This document describes the standalone `ai-assistant/` service and its current repository integration. The current repository now has an optional disabled-by-default root production Compose `ai-assistant` profile, an installed Medusa backend adapter, and an installed storefront widget. Production enablement still requires explicit env/profile opt-in plus review/validation.
+This document describes the standalone `ai-assistant/` service and its current repository integration. The current repository now has an optional disabled-by-default root staging production-mode Compose `ai-assistant` profile, an installed Medusa backend adapter, and an installed storefront widget. Production enablement still requires explicit env/profile opt-in plus review/validation.
 
 ## Deployment shape
 
-Recommended production topology:
+Recommended future real-production topology:
 
 ```text
 Storefront browser
@@ -18,7 +18,7 @@ Storefront browser
 
 Public browser traffic should use storefront/Medusa proxy routes for chat. Privileged endpoints require `AI_ASSISTANT_API_TOKEN` and reject browser-origin requests.
 
-For this repository's first production step, keep one assistant replica and expose it only to the Docker network. The in-memory limiter is process-local and acceptable for one replica. Multi-replica production must add Redis-backed distributed rate limiting or gateway/load-balancer limits, otherwise each replica enforces its own counter and the effective limit grows with replica count.
+For this repository's first real production step, keep one assistant replica and expose it only to the Docker network. The in-memory limiter is process-local and acceptable for one replica. Multi-replica production must add Redis-backed distributed rate limiting or gateway/load-balancer limits, otherwise each replica enforces its own counter and the effective limit grows with replica count.
 
 ## Build
 
@@ -48,7 +48,7 @@ docker compose -f docker-compose.ai.yml --profile ai-assistant-lightrag up assis
 
 ## Environment and secrets
 
-Required production variables:
+Required real-production variables:
 
 ```env
 AI_ASSISTANT_ENV=production
@@ -72,9 +72,9 @@ OPENAI_MODEL=gpt-compatible-mini
 
 Leave `OPENAI_BASE_URL` empty for the default OpenAI host. Never expose `AI_ASSISTANT_API_TOKEN` or provider API keys to the browser. Storefront chat should call a same-origin route or Medusa store proxy.
 
-## Root production integration notes
+## Root staging production-mode integration notes
 
-The root production Compose already contains an optional assistant service behind profile `ai-assistant`. The installed Medusa backend adapter is still exact opt-in through `AI_ASSISTANT_ENABLED=true`, and the installed storefront widget is default-off through `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=false`. Browser traffic should go through `/store/assistant/chat` and `/store/assistant/history` on the Medusa backend adapter; do not publish the assistant container directly through Caddy unless a separate auth/rate-limit review is completed.
+The root staging production-mode Compose already contains an optional assistant service behind profile `ai-assistant`. The installed Medusa backend adapter is still exact opt-in through `AI_ASSISTANT_ENABLED=true`, and the installed storefront widget is default-off through `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=false`. Browser traffic should go through `/store/assistant/chat` and `/store/assistant/history` on the Medusa backend adapter; do not publish the assistant container directly through Caddy unless a separate auth/rate-limit review is completed.
 
 Recommended first launch:
 

@@ -6,9 +6,9 @@ Safe production-launch preparation and audit artifact for the AI Assistant Medus
 
 - Source templates live under `ai-assistant/medusa-adapter/src/`.
 - Target backend is `medusa-agency-boilerplate/src/`.
-- The target backend already has a large `src/api/middlewares.ts` with ApiShip/Gorgo guards, Delivery Hub quarantine guards, marketing routes, notification smoke routes, VK ID routes, and YooKassa query validators.
+- The target backend already has a large `src/api/middlewares.ts` with ApiShip/Gorgo guards, marketing routes, notification smoke routes, VK ID routes, and YooKassa query validators.
 - The target backend package exposes `npm run typecheck`, `npm run build`, `npm run test:unit`, `npm run test:integration:http`, and `npm run test:integration:modules`.
-- Production backend container is `medusastore-backend`, built from `docker/medusa-backend/Dockerfile` and attached to the `medusastore` Docker network.
+- Staging backend container is `medusastore-backend`, built from `docker/medusa-backend/Dockerfile` and attached to the `medusastore` Docker network.
 
 This document no longer describes a not-yet-started copy for the current repository; it records the installed target state and remains useful as a copy map for future template reuse.
 
@@ -94,7 +94,7 @@ No middleware is needed for `/store/assistant/chat` or `/store/assistant/history
 - Subscriber event names are template assumptions for Medusa v2 product/catalog events. Confirm against the exact Medusa `2.13.6` runtime and any project-specific product modules before relying on freshness automation.
 - Subscribers are log/enqueue-intent-only templates. Production copy still needs an explicit durable queue/job/stale-marker implementation before broad catalog updates are considered reliable.
 - Store chat route intentionally does not forward browser-supplied `cart_id`. Keep this behavior until a trusted server-side cart ownership resolver exists.
-- Do not introduce `/store/delivery/*` assistant paths; current delivery baseline is ApiShip/Gorgo direct `/store/apiship/*`, and Delivery Hub routes are quarantined historical context.
+- Do not introduce assistant-specific delivery paths; current delivery baseline is ApiShip/Gorgo direct `/store/apiship/*`.
 
 ## Backend env additions
 
@@ -110,7 +110,7 @@ AI_ASSISTANT_TIMEOUT_MS=60000
 Production placement notes:
 
 - `AI_ASSISTANT_SERVER_TOKEN` is backend-only and must never appear in storefront public env or browser network responses.
-- `AI_ASSISTANT_BASE_URL` must resolve from `medusastore-backend` to the assistant service on the production Docker network. If the assistant is added as a Compose service, attach it to `medusastore` and use `http://ai-assistant:8000/api/v1` or the final service name.
+- `AI_ASSISTANT_BASE_URL` must resolve from `medusastore-backend` to the assistant service on the staging Docker network. If the assistant is added as a Compose service, attach it to `medusastore` and use `http://ai-assistant:8000/api/v1` or the final service name.
 - Root `.env.prod.example`, backend `.env.template`, and deploy docs should be updated in the real integration patch if env names are added to production contracts.
 
 ## Post-copy local validation commands
@@ -170,7 +170,7 @@ curl -N -X POST http://localhost:9000/store/assistant/chat \
   -d '{"message":"Подбери товар","store_id":"default","locale":"ru","mode":"auto"}'
 ```
 
-Production container smoke after an approved Compose/deploy patch:
+Staging container smoke after an approved Compose/deploy patch:
 
 ```bash
 docker exec medusastore-backend printenv AI_ASSISTANT_BASE_URL
@@ -180,7 +180,7 @@ bash ./scripts/prod-container-smoke.sh
 
 ## Risks and assumptions
 
-- The root production Compose already has an optional `ai-assistant` profile, but production enablement still requires explicit profile/env opt-in and reviewed infrastructure ownership.
+- The root staging production-mode Compose already has an optional `ai-assistant` profile, but production enablement still requires explicit profile/env opt-in and reviewed infrastructure ownership.
 - PostgreSQL/Qdrant ownership for assistant data is still a launch decision: reuse production PostgreSQL with a separate `assistant` database/user, or provision managed services.
 - In-memory assistant rate limiting is not distributed; multi-replica production needs Redis/gateway rate limiting before scale-out.
 - Automatic PostgreSQL schema initialization exists in the assistant; stricter production launch should extract managed migrations first.

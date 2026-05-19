@@ -8,13 +8,13 @@ Prepared and validated in `ai-assistant/`:
 
 - Standalone FastAPI assistant implementation exists.
 - Medusa adapter templates are copy-ready under `ai-assistant/medusa-adapter/`.
-- Production deployment docs and operational runbooks exist under `ai-assistant/docs/`.
+- Production-readiness deployment docs and operational runbooks exist under `ai-assistant/docs/`; current repository runtime remains staging-only unless the optional profile/env flags are explicitly enabled.
 - Exact integration copy maps now exist under `ai-assistant/integration-plan/`.
-- The preferred first browser path is `POST /store/assistant/chat` through the Medusa adapter; this avoids exposing server tokens to the browser and matches the existing production Caddy `/store/*` route.
+- The preferred first browser path is `POST /store/assistant/chat` through the Medusa adapter; this avoids exposing server tokens to the browser and matches the existing staging Caddy `/store/*` route.
 
 Current integration patch status after explicit approval:
 
-- Assistant service has a root production Compose profile artifact, but remains disabled unless `AI_ASSISTANT_ENABLED=true` and the `ai-assistant` profile are used.
+- Assistant service has a root staging production-mode Compose profile artifact, but remains disabled unless `AI_ASSISTANT_ENABLED=true` and the `ai-assistant` profile are used.
 - Adapter files are copied into the real Medusa backend and middleware is merged for admin auth/validation.
 - A minimal storefront widget is implemented and gated by `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=false` by default.
 - Trusted anonymous-to-authenticated assistant session binding is implemented through a privileged server-to-server assistant endpoint and Medusa proxy bind call.
@@ -44,14 +44,14 @@ Do not write real values into committed docs, env examples, logs, tests, screens
 
 Production launch requires a concrete runtime topology for:
 
-- AI Assistant FastAPI service on the production Docker network or managed runtime.
+- AI Assistant FastAPI service on the staging Docker network or managed runtime.
 - PostgreSQL for assistant sessions/messages/sources/chunks/jobs/feedback.
 - Qdrant for vector retrieval if `AI_ASSISTANT_RETRIEVAL_MODE=vector` or `auto` with vector enabled.
-- Medusa backend reachability from assistant via Docker-network URL, expected `http://medusa-backend:9000` in current production Compose.
+- Medusa backend reachability from assistant via Docker-network URL, expected `http://medusa-backend:9000` in the current staging production-mode Compose. Real production runtime/env ownership is still a launch decision.
 - LLM provider and embedding provider outbound network access from the assistant container/runtime.
 - Optional Neo4j/LightRAG only if explicitly enabled; current safe default is disabled.
 
-Current root production topology has the baseline services plus an optional disabled-by-default assistant profile:
+Current root staging topology has the baseline services plus an optional disabled-by-default assistant profile:
 
 - `medusastore-db`;
 - `medusastore-redis`;
@@ -61,7 +61,7 @@ Current root production topology has the baseline services plus an optional disa
 - `medusastore-caddy`;
 - optional `medusastore-ai-assistant` only when the `ai-assistant` profile and required env are explicitly enabled.
 
-The root Compose profile exists, but production launch still requires decisions for assistant PostgreSQL ownership, Qdrant/container or managed endpoint, volumes, healthchecks, backups/snapshots, rate limiting, and worker scheduling. Do not treat the profile's existence as completed production readiness.
+The root staging production-mode Compose profile exists, but production launch still requires decisions for assistant PostgreSQL ownership, Qdrant/container or managed endpoint, volumes, healthchecks, backups/snapshots, rate limiting, and worker scheduling. Do not treat the profile's existence as completed production readiness.
 
 ## Blocker 3 — Redis/gateway rate limit decision for multi-replica production
 
@@ -92,7 +92,7 @@ The backend patch used `ai-assistant/integration-plan/MEDUSA_BACKEND_COPY_MAP.md
 - verify typecheck/build;
 - smoke `/admin/assistant/reindex`, `/admin/assistant/reindex/process`, `/admin/assistant/reindex/intents`, `/admin/assistant/jobs/:id`, `/admin/assistant/stats`, `/store/assistant/chat`, `/store/assistant/history`, and SSE passthrough;
 - keep `cart_id` untrusted until a trusted ownership resolver is implemented;
-- avoid reintroducing Delivery Hub/direct Yandex active checkout routes.
+- avoid reintroducing obsolete provider active checkout routes.
 
 ## Blocker 5 — storefront widget review after copy
 

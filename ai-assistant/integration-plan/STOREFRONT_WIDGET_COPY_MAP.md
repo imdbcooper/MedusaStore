@@ -7,7 +7,7 @@ Safe production-launch preparation and audit artifact for the AI Assistant chat 
 - Target storefront is `medusa-agency-boilerplate-storefront/`.
 - The storefront is Next.js `15.3.9`, React `19.0.5`, and uses the App Router under `src/app/[countryCode]/`.
 - Main shopper shell is `src/app/[countryCode]/(main)/layout.tsx`, which renders `Nav`, optional cart banners/nudges, page children, and `Footer`.
-- Current public proxy routes in production Caddy send `/store/*` to Medusa backend and `/api/content/*` to storefront. There is no current `/api/assistant/*` Caddy special case.
+- Current public proxy routes in staging Caddy send `/store/*` to Medusa backend and `/api/content/*` to storefront. There is no current `/api/assistant/*` Caddy special case.
 - Storefront server-side Medusa URL resolution already prefers `MEDUSA_BACKEND_URL` over `NEXT_PUBLIC_MEDUSA_BACKEND_URL` in `src/lib/env.ts`.
 
 This document no longer describes a not-yet-started widget for the current repository; it records the installed target state and remains useful as a copy map for future template reuse.
@@ -172,7 +172,7 @@ Browser smoke checklist:
 - Browser DevTools show no `AI_ASSISTANT_API_TOKEN` or `AI_ASSISTANT_SERVER_TOKEN` in JavaScript bundles, network requests, or responses.
 - Excess chat requests eventually return `429`/`Retry-After` if rate limits are configured.
 
-Production smoke after approved deploy:
+Staging smoke after approved deploy:
 
 ```bash
 curl -I https://studio.slavx.ru/healthz

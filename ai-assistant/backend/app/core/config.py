@@ -68,7 +68,32 @@ class Settings(BaseSettings):
     chunk_overlap_chars: int = Field(default=150, alias="MARKDOWN_CHUNK_OVERLAP_CHARS")
 
     medusa_backend_url: str | None = Field(default=None, alias="MEDUSA_BACKEND_URL")
+    medusa_internal_url: str | None = Field(default=None, alias="MEDUSA_INTERNAL_URL")
     medusa_admin_api_token: str | None = Field(default=None, alias="MEDUSA_ADMIN_API_TOKEN")
+    ai_assistant_server_token: str | None = Field(
+        default=None,
+        alias="AI_ASSISTANT_SERVER_TOKEN",
+    )
+    assistant_settings_ttl_seconds: float = Field(
+        default=30.0,
+        alias="ASSISTANT_SETTINGS_TTL_SECONDS",
+    )
+    assistant_settings_stale_after_seconds: float = Field(
+        default=600.0,
+        alias="ASSISTANT_SETTINGS_STALE_AFTER_SECONDS",
+    )
+    assistant_settings_timeout_seconds: float = Field(
+        default=5.0,
+        alias="ASSISTANT_SETTINGS_TIMEOUT_SECONDS",
+    )
+    assistant_settings_retries: int = Field(
+        default=3,
+        alias="ASSISTANT_SETTINGS_RETRIES",
+    )
+    assistant_settings_retry_backoff_seconds: float = Field(
+        default=0.25,
+        alias="ASSISTANT_SETTINGS_RETRY_BACKOFF_SECONDS",
+    )
     medusa_store_publishable_key: str | None = Field(
         default=None,
         alias="MEDUSA_STORE_PUBLISHABLE_KEY",
@@ -122,6 +147,21 @@ class Settings(BaseSettings):
         if self.is_production_like:
             return [origin for origin in self.cors_origins if origin != "*"]
         return self.cors_origins
+
+    @property
+    def assistant_settings_endpoint(self) -> str | None:
+        """Internal Medusa endpoint for the assistant settings snapshot.
+
+        Falls back to the public Store API base URL when no dedicated internal
+        URL is configured — the route itself is the same path on the same
+        Medusa instance, the variable just allows splitting the hostname when
+        the internal traffic is routed through a private network.
+        """
+
+        base = self.medusa_internal_url or self.medusa_backend_url
+        if not base:
+            return None
+        return base.rstrip("/") + "/internal/assistant/settings/effective"
 
     @property
     def llm_provider_config(self) -> dict[str, str | bool | None]:

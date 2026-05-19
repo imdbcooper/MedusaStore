@@ -215,9 +215,25 @@ function deriveStaging(map, sources = new Map()) {
   putDefault(map, "YOOKASSA_STOREFRONT_RETURN_ORIGINS", publicBaseUrl)
   putDefault(map, "YOOKASSA_WEBHOOK_URL", `${publicBaseUrl}/yookassa/webhook`)
   putDefault(map, "AI_ASSISTANT_BASE_URL", "http://ai-assistant:8000/api/v1")
+  putDefault(map, "MEDUSA_INTERNAL_URL", "http://medusa-backend:9000")
   putDefault(map, "AI_ASSISTANT_TIMEOUT_MS", "60000")
   putDefault(map, "AI_ASSISTANT_CORS_ORIGINS", publicBaseUrl)
+  putDefault(map, "ASSISTANT_SETTINGS_TTL_SECONDS", "30")
+  putDefault(map, "ASSISTANT_SETTINGS_STALE_AFTER_SECONDS", "600")
+  putDefault(map, "ASSISTANT_SETTINGS_TIMEOUT_SECONDS", "5")
+  putDefault(map, "ASSISTANT_SETTINGS_RETRIES", "3")
+  putDefault(map, "ASSISTANT_SETTINGS_RETRY_BACKOFF_SECONDS", "0.25")
   putDefault(map, "NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT", "/store/assistant/chat")
+
+  if (
+    !present(get(map, "AI_ASSISTANT_API_TOKEN")) &&
+    present(get(map, "AI_ASSISTANT_SERVER_TOKEN"))
+  ) {
+    put(map, "AI_ASSISTANT_API_TOKEN", get(map, "AI_ASSISTANT_SERVER_TOKEN"))
+    if (sources.get("AI_ASSISTANT_SERVER_TOKEN") === "env") {
+      sources.set("AI_ASSISTANT_API_TOKEN", "env")
+    }
+  }
 
   if (
     !present(effectiveForSource(map, sources, "REVALIDATE_SECRET")) &&
@@ -270,8 +286,21 @@ function deriveLocal(map) {
   putDefault(map, "STORE_CORS", `${storefrontUrl},https://docs.medusajs.com`)
   putDefault(map, "ADMIN_CORS", `http://localhost:5173,${backendUrl},https://docs.medusajs.com`)
   putDefault(map, "AUTH_CORS", `http://localhost:5173,${backendUrl},${storefrontUrl},https://docs.medusajs.com`)
+  putDefault(map, "MEDUSA_INTERNAL_URL", backendUrl)
+  putDefault(map, "ASSISTANT_SETTINGS_TTL_SECONDS", "30")
+  putDefault(map, "ASSISTANT_SETTINGS_STALE_AFTER_SECONDS", "600")
+  putDefault(map, "ASSISTANT_SETTINGS_TIMEOUT_SECONDS", "5")
+  putDefault(map, "ASSISTANT_SETTINGS_RETRIES", "3")
+  putDefault(map, "ASSISTANT_SETTINGS_RETRY_BACKOFF_SECONDS", "0.25")
   putDefault(map, "YOOKASSA_STOREFRONT_RETURN_ORIGINS", storefrontUrl)
   putDefault(map, "VK_ID_STOREFRONT_RETURN_ORIGINS", storefrontUrl)
+
+  if (
+    !present(get(map, "AI_ASSISTANT_API_TOKEN")) &&
+    present(get(map, "AI_ASSISTANT_SERVER_TOKEN"))
+  ) {
+    put(map, "AI_ASSISTANT_API_TOKEN", get(map, "AI_ASSISTANT_SERVER_TOKEN"))
+  }
 
   if (!present(get(map, "REVALIDATE_SECRET")) && present(get(map, "STOREFRONT_REVALIDATE_SECRET"))) {
     put(map, "REVALIDATE_SECRET", get(map, "STOREFRONT_REVALIDATE_SECRET"))

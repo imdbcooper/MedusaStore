@@ -18,6 +18,7 @@ class DeepHealthService:
         embedding_provider=None,
         medusa_client=None,
         lightrag_adapter=None,
+        settings_provider=None,
     ) -> None:
         self.settings = settings
         self.repository = repository
@@ -26,6 +27,7 @@ class DeepHealthService:
         self.embedding_provider = embedding_provider
         self.medusa_client = medusa_client
         self.lightrag_adapter = lightrag_adapter
+        self.settings_provider = settings_provider
 
     async def check(self) -> dict[str, Any]:
         postgres = await self._check_postgres()
@@ -33,6 +35,7 @@ class DeepHealthService:
         medusa = await self._check_medusa()
         llm = await self._check_llm()
         lightrag = await self._check_lightrag()
+        settings_provider = await self._check_settings_provider()
         stats = await self.repository.stats()
         components = {
             "postgres": postgres,
@@ -40,6 +43,7 @@ class DeepHealthService:
             "medusa": medusa,
             "llm_provider": llm,
             "lightrag": lightrag,
+            "settings_provider": settings_provider,
         }
         status = "ok"
         if any(value.get("status") == "error" for value in components.values()):
@@ -103,3 +107,18 @@ class DeepHealthService:
             return await self.lightrag_adapter.health()
         except Exception as exc:
             return {"status": "error", "error": str(exc)}
+
+    async def _check_settings_provider(self) -> dict[str, Any]:
+        provider = self.settings_provider
+        if provider is None:
+            return {"status": "disabled", "detail": "AI_ASSISTANT_SERVER_TOKEN is not configured"}
+        try:
+            snapshot = await provider.get()
+        except Exception as exc:
+            return {"status": "degraded", "error": str(exc)}
+        return {
+            "status": "ok",
+            "version": snapshot.version,
+            "active_provider_id": snapshot.active.id if snapshot.active else None,
+            "fallback_count": len(snapshot.fallback),
+        }

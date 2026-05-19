@@ -139,9 +139,16 @@
 - `AI_ASSISTANT_BASE_URL`
 - `AI_ASSISTANT_SERVER_TOKEN`
 - `AI_ASSISTANT_TIMEOUT_MS`
+- `ASSISTANT_SETTINGS_ENCRYPTION_KEY`
 - `AI_ASSISTANT_API_TOKEN`
 - `AI_ASSISTANT_ENV`
 - `AI_ASSISTANT_CORS_ORIGINS`
+- `MEDUSA_INTERNAL_URL`
+- `ASSISTANT_SETTINGS_TTL_SECONDS`
+- `ASSISTANT_SETTINGS_STALE_AFTER_SECONDS`
+- `ASSISTANT_SETTINGS_TIMEOUT_SECONDS`
+- `ASSISTANT_SETTINGS_RETRIES`
+- `ASSISTANT_SETTINGS_RETRY_BACKOFF_SECONDS`
 - `ASSISTANT_POSTGRES_URI`
 - `QDRANT_URL`
 - `QDRANT_API_KEY`
@@ -196,9 +203,10 @@ Customers, созданные до Phase 4 (без `customer.metadata.marketing.
 - `YOOKASSA_WEBHOOK_SECRET` больше не означает permissive webhook baseline при пустом значении: unsigned webhook по умолчанию должен отклоняться, а controlled local/dev override допускается только через явный `YOOKASSA_ALLOW_UNSIGNED_WEBHOOKS=true`;
 - `YOOKASSA_WEBHOOK_URL` — optional operator-facing URL для настройки уведомлений в YooKassa; root orchestration синхронизирует его в backend env, но startup и baseline onboarding не должны требовать непустого значения;
 - AI Assistant staging production-mode profile is optional/default-off in root staging Compose: the assistant service starts only when the `ai-assistant` profile is used, the backend adapter is active only with exact `AI_ASSISTANT_ENABLED=true`, and the storefront widget remains hidden unless `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=true` is explicitly configured;
-- `AI_ASSISTANT_BASE_URL`, `AI_ASSISTANT_TIMEOUT_MS`, `AI_ASSISTANT_ENV`, `AI_ASSISTANT_CORS_ORIGINS`, `ASSISTANT_POSTGRES_URI`, `QDRANT_URL`, `QDRANT_API_KEY`, `AI_ASSISTANT_RETRIEVAL_MODE`, and LLM provider variables describe optional assistant service/backend connectivity and must not become clean-clone baseline requirements;
-- `AI_ASSISTANT_SERVER_TOKEN` is backend-only for the Medusa adapter, while `AI_ASSISTANT_API_TOKEN` belongs to the assistant service; they must be managed as secrets and never copied into public storefront env;
-- AI Assistant LLM runtime is optional and controlled by `LLM_PROVIDER`; for OpenAI-compatible providers the assistant reads `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, and `OPENAI_MODEL`; `OPENAI_BASE_URL` must point to a provider-compatible `/v1` endpoint when set, while API keys remain secrets and must not be committed;
+- `AI_ASSISTANT_BASE_URL`, `AI_ASSISTANT_TIMEOUT_MS`, `AI_ASSISTANT_ENV`, `AI_ASSISTANT_CORS_ORIGINS`, `MEDUSA_INTERNAL_URL`, `ASSISTANT_SETTINGS_TTL_SECONDS`, `ASSISTANT_SETTINGS_STALE_AFTER_SECONDS`, `ASSISTANT_SETTINGS_TIMEOUT_SECONDS`, `ASSISTANT_SETTINGS_RETRIES`, `ASSISTANT_SETTINGS_RETRY_BACKOFF_SECONDS`, `ASSISTANT_POSTGRES_URI`, `QDRANT_URL`, `QDRANT_API_KEY`, `AI_ASSISTANT_RETRIEVAL_MODE`, and legacy LLM provider variables describe optional assistant service/backend connectivity and must not become clean-clone baseline requirements;
+- `ASSISTANT_SETTINGS_ENCRYPTION_KEY` is Medusa-backend-only, required before saving managed provider API keys from Admin, must be generated as 32 random bytes encoded with base64, and must never be copied into public storefront env;
+- `AI_ASSISTANT_SERVER_TOKEN` is backend-only for both Medusa internal settings endpoint auth and Medusa-to-assistant adapter auth, while `AI_ASSISTANT_API_TOKEN` belongs to the assistant service privileged API surface; they must be managed as secrets and never copied into public storefront env;
+- AI Assistant LLM runtime is now primarily managed through Medusa Admin settings stored in the Medusa DB; legacy variables such as `LLM_PROVIDER`, `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, and `OPENAI_MODEL` remain only bootstrap/dev/fallback inputs and are deprecated as the production source of truth;
 - в документации и шаблонах допустимо фиксировать только сами имена переменных и их роль, но нельзя записывать реальный пользовательский токен, API key или другой секрет.
 
 ---
@@ -268,6 +276,7 @@ Customers, созданные до Phase 4 (без `customer.metadata.marketing.
 - `AI_ASSISTANT_BASE_URL`
 - `AI_ASSISTANT_SERVER_TOKEN`
 - `AI_ASSISTANT_TIMEOUT_MS`
+- `ASSISTANT_SETTINGS_ENCRYPTION_KEY`
 - historical DB residue from removed delivery providers (operator note only; no env activation keys or mode flags)
 - `NOTIFICATION_SMS_PROVIDER`
 - `MTS_EXOLVE_API_KEY`
@@ -530,18 +539,42 @@ Route [`POST()`](../medusa-agency-boilerplate/src/api/admin/notifications/smoke/
 - no rate limiting: ни `forgot-password`, ни `reset-password`, ни `me/password`, ни admin `send-password-reset` не имеют встроенного rate-limit layer; защита полагается на ingress/Caddy и SMTP provider limits;
 - no `customer.updated` subscriber: смена пароля через любой путь сейчас не эмитит отдельное Notification-событие ("your password was changed"); клиент узнаёт о смене только через UI success state; отложено до будущей итерации.
 
-#### AI Assistant optional/default-off env contract
+#### AI Assistant optional/default-off env contract and managed settings
 
+Managed LLM settings are controlled from **Medusa Admin → Settings → AI Ассистент**. The Admin UI stores provider configuration in the Medusa database, while the Python assistant service consumes the effective active/fallback provider chain server-to-server.
+
+Medusa backend env:
+
+- `ASSISTANT_SETTINGS_ENCRYPTION_KEY` is required before saving provider API keys in Admin. It is Medusa-backend-only, must be a base64-encoded 32-byte value generated for example with `openssl rand -base64 32`, and must never be exposed as `NEXT_PUBLIC_*`.
+- `AI_ASSISTANT_SERVER_TOKEN` is required both by Medusa backend and the Python assistant service. Medusa uses it to protect `GET /internal/assistant/settings/effective`; Python sends it as `X-Assistant-Server-Token` when fetching effective settings. Rotation requires updating both services at the same time.
 - Backend adapter variables are backend-only: `AI_ASSISTANT_ENABLED`, `AI_ASSISTANT_BASE_URL`, `AI_ASSISTANT_SERVER_TOKEN`, and `AI_ASSISTANT_TIMEOUT_MS` belong to Medusa backend runtime and must not be exposed to the browser.
 - `AI_ASSISTANT_ENABLED` is exact opt-in: only literal `true` enables backend adapter calls. Empty value, `false`, `1`, `yes`, or `on` must be treated as disabled.
-- `AI_ASSISTANT_SERVER_TOKEN` is the Medusa backend server-to-server token. It should match or intentionally correspond to the assistant service `AI_ASSISTANT_API_TOKEN`, but only the backend/worker boundary may use it.
-- Service-side assistant variables include `AI_ASSISTANT_API_TOKEN`, `AI_ASSISTANT_ENV`, `AI_ASSISTANT_CORS_ORIGINS`, `ASSISTANT_POSTGRES_URI`, `QDRANT_URL`, optional `QDRANT_API_KEY`, `AI_ASSISTANT_RETRIEVAL_MODE`, and LLM provider keys such as `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, and `OPENAI_MODEL`.
-- `ASSISTANT_POSTGRES_URI`, `QDRANT_URL`, Qdrant credentials, and LLM provider keys are secrets or infrastructure coordinates for the assistant service and must not be written into `NEXT_PUBLIC_*` values.
+- `AI_ASSISTANT_BASE_URL` points from Medusa backend to the Python assistant API, usually `http://localhost:8000/api/v1` for local ad-hoc development or `http://ai-assistant:8000/api/v1` on the Compose network.
+- `AI_ASSISTANT_TIMEOUT_MS` controls Medusa adapter request timeout for assistant calls and should remain finite.
+
+Python `ai-assistant` env:
+
+- `AI_ASSISTANT_SERVER_TOKEN` must match the Medusa backend value and is used for the managed settings fetch.
+- `MEDUSA_INTERNAL_URL` is optional; when set, the Python service uses it for `GET /internal/assistant/settings/effective`, otherwise it falls back to `MEDUSA_BACKEND_URL`.
+- `ASSISTANT_SETTINGS_TTL_SECONDS`, `ASSISTANT_SETTINGS_STALE_AFTER_SECONDS`, `ASSISTANT_SETTINGS_TIMEOUT_SECONDS`, `ASSISTANT_SETTINGS_RETRIES`, and `ASSISTANT_SETTINGS_RETRY_BACKOFF_SECONDS` control the Python `SettingsProvider` cache, stale-while-error window, request timeout, retry count, and backoff.
+- Service-side assistant variables still include `AI_ASSISTANT_API_TOKEN`, `AI_ASSISTANT_ENV`, `AI_ASSISTANT_CORS_ORIGINS`, `ASSISTANT_POSTGRES_URI`, `QDRANT_URL`, optional `QDRANT_API_KEY`, and `AI_ASSISTANT_RETRIEVAL_MODE`.
+- Legacy LLM provider envs such as `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `ANTHROPIC_*`, `GOOGLE_*`, and `POLZA_*` are deprecated for production as the primary settings source. They may remain for bootstrap, local development, tests, or controlled fallback, but Medusa Admin/DB managed settings have priority.
+
+Security rules:
+
+- No `NEXT_PUBLIC_*` variable may contain `ASSISTANT_SETTINGS_ENCRYPTION_KEY`, `AI_ASSISTANT_API_TOKEN`, `AI_ASSISTANT_SERVER_TOKEN`, provider API keys, database URLs, Qdrant API keys, or any other secret-bearing value.
+- `/internal/assistant/settings/effective` must be internal-only and protected by `X-Assistant-Server-Token`; it returns plaintext provider `api_key` values for the Python service and must not be routed to browsers or public clients.
+- Provider `api_key` values are stored encrypted in the Medusa database with AES-256-GCM and are plaintext only inside server-side Admin/service flows and the internal effective-settings response.
+- `ASSISTANT_POSTGRES_URI`, `QDRANT_URL`, Qdrant credentials, and provider keys are secrets or infrastructure coordinates for the assistant service and must not be written into `NEXT_PUBLIC_*` values.
 - Public storefront flags are limited to browser-safe values: `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED` and `NEXT_PUBLIC_AI_ASSISTANT_CHAT_ENDPOINT`.
-- No `NEXT_PUBLIC_*` variable may contain `AI_ASSISTANT_API_TOKEN`, `AI_ASSISTANT_SERVER_TOKEN`, provider API keys, database URLs, Qdrant API keys, or any other secret-bearing value.
+
+Operational notes:
+
+- Rotating `ASSISTANT_SETTINGS_ENCRYPTION_KEY` requires a future re-encryption migration for existing provider secrets; this is not part of the current MVP. Treat the key as long-lived until that migration exists.
+- Rotating `AI_ASSISTANT_SERVER_TOKEN` requires coordinated update of Medusa backend and Python assistant service; otherwise settings fetches will return `401` and managed LLM routing will fall back.
 - Browser requests to `/store/assistant/chat` and `/store/assistant/history` may send only safe session/context data such as `message`, anonymous assistant `session_id`, `store_id`, `locale`, `region_id`, `currency_code`, and page context.
 - Browser-provided `cart_id` is untrusted and is discarded by the current backend adapter. Cart-aware answers require a future trusted server-side cart ownership resolver before cart context can be forwarded.
-- `/store/assistant/history` is a scoped proxy for the active assistant session. It must not expose privileged assistant endpoints, server tokens, cross-session history, or raw backend-only diagnostics.
+- `/store/assistant/history` is a scoped proxy for the active assistant session. It must not expose privileged assistant endpoints, server tokens, cross-session history, raw provider keys, or raw backend-only diagnostics.
 - Subscribers enqueue durable assistant reindex intents only. Actual drain/processing is explicit through admin routes, worker, or cron and should not be described as automatic inline product indexing.
 
 ---

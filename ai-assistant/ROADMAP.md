@@ -169,7 +169,7 @@ Prepared/installed:
 3. Backend adapter installed under `medusa-agency-boilerplate` with exact `AI_ASSISTANT_ENABLED=true` opt-in.
 4. `e2e-checklist.md` covering chat/history, Markdown answer, recommendation, live price/stock, safe add-to-cart proposal, admin reindex/process/intents/stats, product update reindex intent, vector fallback, and security checks.
 5. Safe smoke script example in `scripts/smoke_assistant.py`.
-6. Root production Compose has an optional `ai-assistant` profile; launch still requires review, secrets, DB/Qdrant decisions, backups, rate limiting, and worker scheduling.
+6. Root staging production-mode Compose has an optional `ai-assistant` profile; real production launch still requires review, secrets, DB/Qdrant decisions, backups, rate limiting, and worker scheduling.
 
 ## Remaining gaps before real production launch
 

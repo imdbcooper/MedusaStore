@@ -24,6 +24,12 @@ import {
 import { AdminAssistantReindexSchema } from "./admin/assistant/reindex/route"
 import { AdminAssistantReindexProcessSchema } from "./admin/assistant/reindex/process/route"
 import {
+  AssistantSettingUpdateSchema,
+  LlmProviderCreateSchema,
+  LlmProviderUpdateSchema,
+  ReorderFallbackSchema,
+} from "./admin/assistant/settings/_schemas"
+import {
   AdminCreateMarketingCampaignSchema,
   AdminUpdateCustomerMarketingPreferencesSchema,
 } from "./admin/marketing/campaigns/route"
@@ -129,6 +135,78 @@ export default defineMiddlewares({
       matcher: "/admin/assistant/jobs/:id",
       methods: ["GET"],
       middlewares: [adminAuth],
+    },
+    // -----------------------------------------------------------------
+    // PR 3: assistant-settings admin API.
+    //
+    // Order matters — Medusa matches the FIRST entry whose `matcher`
+    // template matches the request. More specific literal paths must
+    // come before parameterized ones (`/.../reorder-fallback` before
+    // `/.../:id`), and within the `:id` group the action sub-routes
+    // (`/test`, `/activate`) must precede the bare `/:id` matcher so
+    // the generic GET/PATCH/DELETE handlers don't shadow them.
+    // -----------------------------------------------------------------
+    {
+      matcher: "/admin/assistant/settings/providers/reorder-fallback",
+      methods: ["POST"],
+      middlewares: [adminAuth, validateAndTransformBody(ReorderFallbackSchema)],
+    },
+    {
+      // Query-string validation (`prompt`) lives inside the route
+      // handler itself; the body is empty, so no Zod schema is wired
+      // through the central middleware here.
+      matcher: "/admin/assistant/settings/providers/:id/test",
+      methods: ["POST"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/assistant/settings/providers/:id/activate",
+      methods: ["POST"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/assistant/settings/providers/:id",
+      methods: ["GET", "DELETE"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/assistant/settings/providers/:id",
+      methods: ["PATCH"],
+      middlewares: [adminAuth, validateAndTransformBody(LlmProviderUpdateSchema)],
+    },
+    {
+      matcher: "/admin/assistant/settings/providers",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/assistant/settings/providers",
+      methods: ["POST"],
+      middlewares: [adminAuth, validateAndTransformBody(LlmProviderCreateSchema)],
+    },
+    {
+      matcher: "/admin/assistant/settings",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/assistant/settings",
+      methods: ["PATCH"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformBody(AssistantSettingUpdateSchema),
+      ],
+    },
+    {
+      // Server-to-server effective-config endpoint. Lives under
+      // `/internal/...` (NOT `/admin/...`) because Medusa applies
+      // admin auth to every `/admin/*` matcher in this file and the
+      // Python runtime authenticates with a static server token, not
+      // a Medusa session/api-key. The token is checked inside the
+      // route handler with `crypto.timingSafeEqual`.
+      matcher: "/internal/assistant/settings/effective",
+      methods: ["GET"],
+      middlewares: [],
     },
     {
       matcher: "/store/assistant/history",

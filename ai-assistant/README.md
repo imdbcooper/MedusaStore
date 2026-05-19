@@ -2,7 +2,7 @@
 
 Reusable intelligent shopping assistant module for Medusa-based e-commerce projects.
 
-This directory contains the standalone FastAPI assistant service, reusable Medusa adapter reference templates, integration documentation, deployment artifacts, and tests. In this repository the integration is no longer only a template: the Medusa backend adapter is installed in [`medusa-agency-boilerplate`](../medusa-agency-boilerplate), the storefront widget is installed in [`assistant`](../medusa-agency-boilerplate-storefront/src/modules/assistant), and root production Compose includes an optional disabled-by-default `ai-assistant` profile.
+This directory contains the standalone FastAPI assistant service, reusable Medusa adapter reference templates, integration documentation, deployment artifacts, and tests. In this repository the integration is no longer only a template: the Medusa backend adapter is installed in [`medusa-agency-boilerplate`](../medusa-agency-boilerplate), the storefront widget is installed in [`assistant`](../medusa-agency-boilerplate-storefront/src/modules/assistant), and root staging production-mode Compose includes an optional disabled-by-default `ai-assistant` profile.
 
 ## Documents
 
@@ -75,7 +75,7 @@ Implemented/prepared inside `ai-assistant/`:
 - Observability: structured request/chat logs, request ids, latency headers, response observability payload, tool-call counts, retrieval stats, and optional tracing/LangSmith env hooks.
 - Feedback: `POST /api/v1/feedback`, in-memory/PostgreSQL persistence, session/message ownership validation, PII-redacted comments, and feedback count in deep health stats.
 - Evaluation: [evaluation/dataset.jsonl](./evaluation/dataset.jsonl) covers recommendation, policy answer, price/stock grounding, and tenant isolation.
-- Deployment: [Dockerfile](./Dockerfile), [docker-compose.ai.yml](./docker-compose.ai.yml), production deployment docs, backup/restore notes, and operational runbooks.
+- Deployment: [Dockerfile](./Dockerfile), [docker-compose.ai.yml](./docker-compose.ai.yml), production-readiness deployment docs, backup/restore notes, and operational runbooks.
 
 ### Phase 7 — Real monorepo integration readiness
 
@@ -114,7 +114,7 @@ If `compileall` creates generated caches, remove them before commit:
 find backend/app backend/tests scripts -type d -name __pycache__ -prune -exec rm -rf {} +
 ```
 
-## Production deploy
+## Production-readiness deploy guidance
 
 See [docs/PRODUCTION_DEPLOYMENT.md](./docs/PRODUCTION_DEPLOYMENT.md).
 
@@ -134,7 +134,53 @@ Required production configuration includes:
 - `MEDUSA_BACKEND_URL`;
 - `QDRANT_URL` for vector mode.
 
-Optional LLM configuration uses `LLM_PROVIDER`, provider API key variables such as `OPENAI_API_KEY`, and provider model variables such as `OPENAI_MODEL`. Set `OPENAI_BASE_URL` only when using an OpenAI-compatible `/v1` endpoint instead of the default OpenAI API host.
+LLM provider configuration is now primarily managed from Medusa Admin (see below). Legacy service-side variables such as `LLM_PROVIDER`, `OPENAI_API_KEY`, and `OPENAI_MODEL` remain available only for bootstrap/dev/fallback scenarios and are deprecated for production as the main settings source.
+
+## Medusa Admin managed LLM settings
+
+The current preferred control plane for assistant LLM settings is **Medusa Admin → Settings → AI Ассистент**. Operators can manage OpenAI-compatible providers without editing the Python service environment:
+
+- add OpenAI-compatible providers with `base_url`, encrypted `api_key`, `model`, `temperature`, `max_tokens`, `top_p`, `timeout`, and custom headers;
+- assign one active provider and maintain an ordered fallback chain;
+- enable/disable providers, set `fallback_priority`, and update global assistant settings;
+- test a provider from Admin before activating it.
+
+Runtime flow:
+
+1. The Python service resolves managed settings by calling the Medusa backend endpoint `GET /internal/assistant/settings/effective`.
+2. The request must include `X-Assistant-Server-Token: <AI_ASSISTANT_SERVER_TOKEN>`. The same `AI_ASSISTANT_SERVER_TOKEN` value must be configured in the Medusa backend and the Python `ai-assistant` service.
+3. The effective settings response contains plaintext provider `api_key` values so the endpoint is **internal-only** and must be reachable only server-to-server behind the shared token.
+4. The Python `SettingsProvider` keeps a short TTL cache and supports stale-while-error behaviour: fresh settings are used during normal operation, recently cached settings can be reused if Medusa is temporarily unavailable.
+5. The OpenAI-compatible `LlmRouter` tries the active provider first and then enabled fallback providers by priority.
+6. If no managed provider is available, all provider calls fail, or settings cannot be fetched and no stale cache is usable, chat generation falls back deterministically to the existing grounded-answer path rather than hallucinating ungrounded commerce facts.
+
+Provider API keys are stored encrypted in the Medusa database. Configure the Medusa backend with `ASSISTANT_SETTINGS_ENCRYPTION_KEY` before saving provider secrets:
+
+- encryption uses AES-256-GCM;
+- the key must be a 32-byte base64 string;
+- generate a local/staging/prod key with:
+
+```bash
+openssl rand -base64 32
+```
+
+Never expose `ASSISTANT_SETTINGS_ENCRYPTION_KEY`, `AI_ASSISTANT_SERVER_TOKEN`, provider API keys, or the internal effective-settings response to storefront/browser runtime.
+
+### Quick start: local managed provider
+
+1. Set `ASSISTANT_SETTINGS_ENCRYPTION_KEY` in the Medusa backend env.
+2. Set the same `AI_ASSISTANT_SERVER_TOKEN` value in the Medusa backend env and in `ai-assistant/ENV.example` → local `.env`.
+3. Enable the Medusa adapter with `AI_ASSISTANT_ENABLED=true`, `AI_ASSISTANT_BASE_URL=http://localhost:8000/api/v1` (or a backend-reachable assistant URL), and `AI_ASSISTANT_SERVER_TOKEN=<same-token>`.
+4. Start Medusa and the Python `ai-assistant` service.
+5. Open **Medusa Admin → Settings → AI Ассистент**, add an OpenAI-compatible provider, click **Test**, then **Activate**.
+6. Verify the storefront chat via `/store/assistant/chat` or the installed widget when `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=true`.
+
+### Troubleshooting managed settings
+
+- `503 encryption_not_configured` in Admin/provider save flow: set `ASSISTANT_SETTINGS_ENCRYPTION_KEY` on the Medusa backend, restart it, then retry saving the provider.
+- `401` from `/internal/assistant/settings/effective`: ensure `AI_ASSISTANT_SERVER_TOKEN` is identical in Medusa backend and Python service env and is sent as `X-Assistant-Server-Token`.
+- Assistant answers with deterministic/templates only: no provider is active, settings are unavailable, the managed provider call failed, or all fallbacks failed; check backend logs, Python logs, provider test status, and settings cache diagnostics.
+- Fallback does not trigger: verify fallback providers have `is_enabled=true`, valid credentials/model/base URL, and a sane `fallback_priority` order.
 
 ## Medusa integration
 
