@@ -2,6 +2,8 @@ from uuid import uuid4
 
 import pytest
 
+from app.repositories.postgres import PostgresAssistantRepository
+
 
 @pytest.mark.asyncio
 async def test_memory_repository_session_message_lifecycle(repository):
@@ -63,3 +65,50 @@ async def test_memory_repository_upserts_sources_and_searches(repository):
     stats = await repository.stats()
     assert stats["document_count"] == 1
     assert stats["chunk_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_postgres_repository_list_messages_normalizes_json_string_columns():
+    session_id = uuid4()
+    rows = [
+        {
+            "id": uuid4(),
+            "session_id": session_id,
+            "role": "user",
+            "content": "Привет",
+            "intent": None,
+            "citations": "[]",
+            "products": "[]",
+            "actions": "[]",
+            "tool_calls": "[]",
+            "token_usage": "{}",
+            "created_at": "2026-05-19T00:00:00Z",
+        }
+    ]
+
+    class FakeConn:
+        async def fetch(self, *_args, **_kwargs):
+            return rows
+
+    class FakeAcquire:
+        async def __aenter__(self):
+            return FakeConn()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakePool:
+        def acquire(self):
+            return FakeAcquire()
+
+    class FakeDatabase:
+        pool = FakePool()
+
+    repository = PostgresAssistantRepository(FakeDatabase())
+    messages = await repository.list_messages(session_id)
+
+    assert messages[0]["citations"] == []
+    assert messages[0]["products"] == []
+    assert messages[0]["actions"] == []
+    assert messages[0]["tool_calls"] == []
+    assert messages[0]["token_usage"] == {}

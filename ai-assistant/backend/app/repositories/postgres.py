@@ -108,7 +108,7 @@ class PostgresAssistantRepository:
                 """,
                 *args,
             )
-        return [dict(row) for row in rows]
+        return [_normalize_message_row(dict(row)) for row in rows]
 
     async def get_session(self, session_id: UUID) -> dict[str, Any] | None:
         async with self.pool.acquire() as conn:
@@ -618,3 +618,30 @@ class PostgresAssistantRepository:
                 "reindex_intents_pending": reindex_stats["pending"],
                 "reindex_intents_error": reindex_stats["error"],
             }
+
+
+def _normalize_message_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    for field in ("citations", "products", "actions", "tool_calls"):
+        normalized[field] = _json_field_or_default(normalized.get(field), [])
+    normalized["token_usage"] = _json_field_or_default(normalized.get("token_usage"), {})
+    return normalized
+
+
+def _json_field_or_default(value: Any, default: list[Any] | dict[str, Any]) -> Any:
+    fallback = [] if isinstance(default, list) else {}
+
+    if value is None:
+        return fallback
+
+    if isinstance(value, type(fallback)):
+        return value
+
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return fallback
+        return parsed if isinstance(parsed, type(fallback)) else fallback
+
+    return fallback
