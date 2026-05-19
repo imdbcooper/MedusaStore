@@ -2,7 +2,7 @@
 
 > Статус: canonical deploy-path artifact для текущего staging contour по состоянию на `2026-04-20`.
 >
-> **Current status note (2026-05-11):** this file is a historical/generic staging contour. A concrete production topology now exists via [`docker-compose.prod.yml`](../docker-compose.prod.yml), Caddy-only reverse proxy, Payload production container, and manual GitHub Actions deploy. Do not use older statements in this file to claim that production packaging/proxy/deploy automation are absent. For current operations use [`production_runbook.md`](./production_runbook.md), [`architecture.md`](./architecture.md), and [`staging_runbook.md`](./staging_runbook.md).
+> **Current status note (2026-05-11):** this file is a historical/generic staging contour. A concrete staging production-mode topology now exists via [`docker-compose.prod.yml`](../docker-compose.prod.yml), Caddy-only reverse proxy, Payload container, and manual GitHub Actions `Deploy Staging` workflow. Do not use older statements in this file to claim that staging packaging/proxy/deploy automation are absent. Real production is not provisioned yet. For current operations use [`production_runbook.md`](./production_runbook.md), [`architecture.md`](./architecture.md), and [`staging_runbook.md`](./staging_runbook.md).
 >
 >
 > Предпосылка: первый шаг `Phase 8 / tranche 2` уже materialized в [Docs/staging_checklist.md](./staging_checklist.md), а baseline integrity contour подтвержден в [Docs/current_work.md](./current_work.md), [Docs/master_repo_plan_v2.md](./master_repo_plan_v2.md) и [.github/workflows/integrity-baseline.yml](../.github/workflows/integrity-baseline.yml).
@@ -84,8 +84,8 @@
 
 ### Явные assumptions и follow-up, которые нельзя выдумывать здесь
 
-- текущие артефакты **не** задают отдельную canonical staging topology для storefront hosting, reverse proxy или secret management system; это не относится к production, где topology/source of truth уже заданы в [`docker-compose.prod.yml`](../docker-compose.prod.yml) и [`docker/caddy/Caddyfile`](../docker/caddy/Caddyfile);
-- текущие артефакты **не** задают отдельный documented migration orchestration flow для staging; production deploy при этом уже имеет scripted Payload migration/seed toggles через [`scripts/github-deploy-staging.sh`](../scripts/github-deploy-staging.sh);
+- этот исторический artifact **не** задаёт отдельную canonical staging topology для storefront hosting, reverse proxy или secret management system; текущая staging topology/source of truth уже заданы в [`docker-compose.prod.yml`](../docker-compose.prod.yml), [`docker/caddy/Caddyfile`](../docker/caddy/Caddyfile), [`architecture.md`](./architecture.md) и [`production_runbook.md`](./production_runbook.md);
+- этот исторический artifact **не** задаёт отдельный documented migration orchestration flow для staging; текущий GitHub Actions staging deploy уже имеет scripted Payload migration/seed toggles через [`scripts/github-deploy-staging.sh`](../scripts/github-deploy-staging.sh);
 - наличие script surface вроде `seed` или `prepare:checkout-runtime` в [medusa-agency-boilerplate/package.json](../medusa-agency-boilerplate/package.json) не делает их автоматически обязательным staging gate, если это прямо не подтверждено текущими operational artifacts.
 
 ## 4. Canonical staging deploy order
@@ -247,7 +247,7 @@ Post-deploy verification опирается на already approved contour из [
 - [ ] Candidate проходит baseline static contour: `lint`, `typecheck`, `backend:build`, `storefront:build`.
 - [ ] Для staging materialized реальные `DATABASE_URL`, `REDIS_URL`, `MEDUSA_BACKEND_URL`, `STORE_CORS`, `ADMIN_CORS`, `AUTH_CORS` и non-placeholder secrets.
 - [ ] PostgreSQL и Redis доступны до начала rollout.
-- [ ] Для generic staging contour storefront трактуется как отдельный deployment unit; production уже включает storefront в [`docker-compose.prod.yml`](../docker-compose.prod.yml).
+- [ ] Для generic staging contour storefront трактуется как отдельный deployment unit; текущий staging production-mode stack уже включает storefront в [`docker-compose.prod.yml`](../docker-compose.prod.yml).
 - [ ] Baseline state подтвержден sanctioned bootstrap or seed path: `ru`, `rub`, sales channel, publishable key, минимальный shipping skeleton.
 - [ ] Отдельный undocumented migration choreography не добавлялся ad-hoc.
 - [ ] Optional integrations не превращены в prerequisite для первого staging deploy path.

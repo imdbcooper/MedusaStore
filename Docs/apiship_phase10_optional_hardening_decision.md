@@ -14,7 +14,7 @@ The current Phase 10 in [apiship_direct_migration_plan.md](./apiship_direct_migr
 
 Phase 10 does not authorize another default runtime cutover. It asks the project to decide whether provider-neutral hardening should be added after the direct ApiShip/Gorgo cutover is stable.
 
-This phase is therefore closed as a narrow decision/evidence artifact. No large architecture changes, package changes, live shipment enablement, checkout rewrites, provider-registration changes, bootstrap changes, or physical Delivery Hub file deletion are included.
+This phase is therefore closed as a narrow decision/evidence artifact. No large architecture changes, package changes, live shipment enablement, checkout rewrites, provider-registration changes, bootstrap changes, or database cleanup are included.
 
 ---
 
@@ -26,7 +26,6 @@ Keep the first baseline simple:
 - Buyer checkout remains pickup-point/PVZ-first through plugin-specific `/store/apiship/*` endpoints.
 - The selected delivery remains committed through the standard Medusa cart shipping-method flow with `data.apishipData`.
 - Live ApiShip shipment execution remains default-off and requires a separate explicit opt-in phase before any production-like shipment execution parity work.
-- Delivery Hub runtime residue remains quarantined/historical unless a later cleanup task explicitly scopes safe physical deletion.
 
 No optional hardening item is promoted into the baseline by Phase 10.
 
@@ -39,11 +38,11 @@ Follow-up status: provider-neutral delivery checkout abstraction has been implem
 The layer keeps the current ApiShip-first public contract intact:
 
 - storefront Store API reads and calculations remain direct `/store/apiship/*` helpers;
-- no canonical public `/store/delivery/*` facade is introduced;
+- no new provider-neutral Store API facade is introduced;
 - the ordinary cart commit still stores the selected ApiShip payload as `data.apishipData` through the standard Medusa add-shipping-method flow;
 - checkout payment/readiness/summary callers can now consume provider-neutral readiness/summary helpers backed by the ApiShip adapter, so future providers can add adapters without rewriting every checkout guard.
 
-This follow-up does not enable courier delivery, richer pricing policy, ApiShip admin/operator diagnostics, physical Delivery Hub cleanup, browser/runtime smoke, or live shipment execution by default.
+This follow-up does not enable courier delivery, richer pricing policy, ApiShip admin/operator diagnostics, browser/runtime smoke, or live shipment execution by default.
 
 ---
 
@@ -60,7 +59,7 @@ Confirmed installed Gorgo provider contract:
 Guardrails for this follow-up:
 
 - pickup-point/PVZ remains the baseline-first buyer flow;
-- direct `/store/apiship/*` remains the canonical Store API surface, with no public `/store/delivery/*` facade reintroduced;
+- direct `/store/apiship/*` remains the canonical Store API surface, without introducing a new provider-neutral facade;
 - checkout/order commits still use the standard Medusa shipping-method data payload with `data.apishipData`;
 - courier readiness requires a valid ApiShip tariff but intentionally does not require a PVZ point id;
 - pickup-point readiness still requires a PVZ point id;
@@ -83,7 +82,7 @@ Policy contract:
 
 Guardrails for this follow-up:
 
-- direct `/store/apiship/*` remains the canonical Store API surface, with no public `/store/delivery/*` facade reintroduced;
+- direct `/store/apiship/*` remains the canonical Store API surface, without introducing a new provider-neutral facade;
 - the standard Medusa add-shipping-method payload remains `data.apishipData`; the new `customerPricePolicy` object is additive and non-breaking;
 - backend readiness accepts legacy carts without `customerPricePolicy`, but rejects malformed or mismatched policy metadata when present;
 - checkout summaries use the policy result for `customer_price_amount` and expose policy metadata for display/summary callers;
@@ -117,10 +116,9 @@ The endpoint is protected by the existing Admin auth middleware and intentionall
 - expected seeded pickup-point and courier shipping option contracts;
 - checkout readiness guard status and guarded checkout routes;
 - shipment execution guard status with default-off posture and explicit `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` opt-in state reduced to enabled/disabled/source metadata;
-- Delivery Hub previous-baseline quarantine status;
 - hard limitations confirming no external ApiShip health call, no live shipment execution, no online auth validation, and no returned sensitive values.
 
-Limitations: diagnostics are offline/static by design. They do not call ApiShip, do not validate merchant auth online, do not create/cancel shipments, do not fetch labels/documents, do not re-enable Delivery Hub runtime endpoints, and do not expose sensitive values, auth headers, or raw confidential values.
+Limitations: diagnostics are offline/static by design. They do not call ApiShip, do not validate merchant auth online, do not create/cancel shipments, do not fetch labels/documents, do not expose sensitive values, auth headers, or raw confidential values.
 
 ---
 
@@ -132,7 +130,7 @@ The following items remain allowed only as separately scoped post-cutover tasks:
 | --- | --- | --- |
 | Backend readiness wrapper | Still covered by the ApiShip checkout readiness guard for the current pickup-point baseline; no backend-neutral wrapper was added in this follow-up. | Revisit only if backend routes need a stable provider-neutral contract again. |
 | Internal storefront provider-neutral checkout helpers | Implemented as a separately scoped post-smoke follow-up. | Keep this internal; direct `/store/apiship/*` remains canonical for Store API calls. |
-| Provider-neutral Store API facade | Not needed for the first baseline. | Do not reintroduce `/store/delivery/*` as a first-version ApiShip facade. |
+| Provider-neutral Store API facade | Not needed for the first baseline. | Do not introduce a provider-neutral Store API facade for the first ApiShip baseline. |
 | Richer pricing policy | Implemented as a separately scoped internal passthrough policy follow-up. | Keep the policy additive and deterministic; final Medusa shipping amount enforcement still requires a separate provider override/plugin follow-up if product pricing diverges from provider `deliveryCost`. |
 | Courier delivery mode | Implemented as optional ApiShip courier contract/readiness/seed scaffold. | Keep pickup-point baseline-first; defer richer courier UI unless explicitly scoped; live execution stays default-off. |
 | ApiShip admin/operator diagnostics | Implemented as a separately scoped backend admin diagnostics endpoint. | Keep it offline/static and secret-safe: no credentials, auth headers, labels, documents, external health calls, or live execution by default. |
@@ -144,9 +142,8 @@ The following items remain allowed only as separately scoped post-cutover tasks:
 Phase 10 is documentation/evidence scope, so the verification target is baseline posture rather than a new runtime feature:
 
 - The active checkout baseline remains ApiShip/Gorgo pickup-point through `/store/apiship/*`.
-- The first baseline remains direct and simple, without a new provider-neutral `/store/delivery/*` facade.
+- The first baseline remains direct and simple, without a new provider-neutral Store API facade.
 - ApiShip shipment execution remains guarded by `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` and is not enabled by default.
-- Historical Delivery Hub material remains previous-baseline evidence and must not be used as proof of the current ApiShip checkout path.
 
 Relevant non-destructive checks for this phase:
 

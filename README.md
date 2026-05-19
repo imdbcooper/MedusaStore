@@ -9,10 +9,10 @@ Operational entrypoint for the MedusaStore runtime repository. This file is the 
 | Layer | Current implementation | Source of truth |
 | --- | --- | --- |
 | Reverse proxy | Caddy container `medusastore-caddy`; terminates HTTPS for `studio.slavx.ru`; routes `/admin/*`, `/store/*`, `/auth/*`, `/payload/*`, `/api/content/*`, and storefront fallback. | [`docker/caddy/Caddyfile`](docker/caddy/Caddyfile) |
-| Storefront | Next.js container `medusastore-storefront` in production; host process in local dev; dynamic product route under `/{countryCode}/products/{handle}`. | [`docker-compose.prod.yml`](docker-compose.prod.yml), [`page.tsx`](medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/products/[handle]/page.tsx) |
+| Storefront | Next.js container `medusastore-storefront` in the staging production-mode Docker stack; host process in local dev; dynamic product route under `/{countryCode}/products/{handle}`. | [`docker-compose.prod.yml`](docker-compose.prod.yml), [`page.tsx`](medusa-agency-boilerplate-storefront/src/app/[countryCode]/(main)/products/[handle]/page.tsx) |
 | Medusa backend | Container `medusastore-backend`; source of truth for catalog, cart, checkout, payments, orders, fulfillment, notifications. | [`medusa-config.ts`](medusa-agency-boilerplate/medusa-config.ts) |
 | Payload CMS | Container `medusastore-payload`; headless content service for marketing pages, globals, preview/revalidate hooks. | [`payload.config.ts`](payload-cms/src/payload.config.ts), [`Docs/payload_cms_runbook.md`](Docs/payload_cms_runbook.md) |
-| Data | PostgreSQL container `medusastore-db`; Redis container `medusastore-redis`; production Payload uses dedicated `payload_cms` DB in the same PostgreSQL server. | [`docker-compose.prod.yml`](docker-compose.prod.yml) |
+| Data | PostgreSQL container `medusastore-db`; Redis container `medusastore-redis`; staging Payload uses dedicated `payload_cms` DB in the same PostgreSQL server. | [`docker-compose.prod.yml`](docker-compose.prod.yml) |
 | AI Assistant | Optional FastAPI container `medusastore-ai-assistant` behind the installed Medusa assistant adapter; storefront uses `/store/assistant/chat` and `/store/assistant/history`; disabled until `AI_ASSISTANT_ENABLED=true` and the storefront widget flag is enabled. | [`ai-assistant/README.md`](ai-assistant/README.md), [`docker-compose.prod.yml`](docker-compose.prod.yml) |
 | Deployment | Manual GitHub Actions workflow over SSH, branch input defaults to `main`, remote script rebuilds/starts compose and runs smoke checks. | [`.github/workflows/deploy-staging.yml`](.github/workflows/deploy-staging.yml), [`scripts/github-deploy-staging.sh`](scripts/github-deploy-staging.sh) |
 
@@ -40,7 +40,7 @@ Secrets flow: **only** through GitHub Secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DE
 
 ## Service table
 
-| Service | Container | Port/scope | Production role |
+| Service | Container | Port/scope | Staging role |
 | --- | --- | --- | --- |
 | `medusa-db` | `medusastore-db` | internal `5432` | PostgreSQL for Medusa and Payload databases. |
 | `medusa-redis` | `medusastore-redis` | internal `6379` | Redis for Medusa runtime/cache/event needs. |

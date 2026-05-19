@@ -2,7 +2,7 @@
 
 > Status updated: `2026-05-11`.
 >
-> Current production truth: Payload CMS is a separate app and a production Docker service `payload-cms` / container `medusastore-payload` in [`docker-compose.prod.yml`](../docker-compose.prod.yml). Canonical public access is through Caddy at `https://cms.slavx.ru`; server-side storefront access uses the internal Docker URL `http://payload-cms:3100` when Payload is enabled.
+> Current staging truth: Payload CMS is a separate app and a production-mode Docker service `payload-cms` / container `medusastore-payload` in [`docker-compose.prod.yml`](../docker-compose.prod.yml). Canonical public access is through Caddy at `https://cms.slavx.ru`; server-side storefront access uses the internal Docker URL `http://payload-cms:3100` when Payload is enabled.
 
 ## 1. Architecture baseline
 
@@ -16,19 +16,19 @@ Responsibility split:
 - Payload must not duplicate commerce truth or store provider/payment/delivery secrets.
 - The storefront keeps a commerce-only fallback path: Payload is opt-in for content routes and globals, not a hard requirement for basic commerce runtime.
 
-Production topology is documented in [`architecture.md`](./architecture.md). Production operations are documented in [`production_runbook.md`](./production_runbook.md).
+Staging topology is documented in [`architecture.md`](./architecture.md). Staging operations are documented in [`production_runbook.md`](./production_runbook.md).
 
-## 2. Production container/proxy behavior
+## 2. Staging container/proxy behavior
 
-Production compose includes Payload:
+Staging compose includes Payload:
 
 | Service | Container | Internal URL | Public route |
 | --- | --- | --- | --- |
 | `payload-cms` | `medusastore-payload` | `http://payload-cms:3100` | `https://cms.slavx.ru` |
 
-Caddy exposes Payload through the canonical `cms.slavx.ru` site in [`docker/caddy/Caddyfile`](../docker/caddy/Caddyfile). The storefront still talks to Payload over Docker networking; do not point production containers at public HTTPS for server-side Payload fetches.
+Caddy exposes Payload through the canonical `cms.slavx.ru` site in [`docker/caddy/Caddyfile`](../docker/caddy/Caddyfile). The storefront still talks to Payload over Docker networking; do not point staging containers at public HTTPS for server-side Payload fetches.
 
-Expected production env split:
+Expected staging env split:
 
 - `PAYLOAD_CMS_URL=http://payload-cms:3100` / `DOCKER_PAYLOAD_CMS_URL=http://payload-cms:3100` for server-side container communication.
 - `PAYLOAD_PUBLIC_SERVER_URL=https://cms.slavx.ru` for public/admin URL semantics.
@@ -47,10 +47,10 @@ Root orchestration commands are exposed from [`package.json`](../package.json) a
 | `npm run payload:clean` | Stop active Payload/Next dev/start processes and remove [`payload-cms/.next`](../payload-cms/.next). |
 | `npm run payload:restart` | Clean and start `payload:dev` in foreground. Safest local recovery path for admin chunk/style issues. |
 | `npm run payload:build` | Run production build for Payload. Guarded: refuses to build while a Payload/Next dev/start process is active. |
-| `npm run payload:start` | Start the production server after a successful production build. |
+| `npm run payload:start` | Start the optimized Payload server after a successful production-mode build. |
 | `npm run payload:types` | Generate Payload types. |
 | `npm run payload:importmap` | Generate Payload import map. |
-| `npm run payload:seed` | Seed/update marketing pages and globals used by local/staging/production smoke when explicitly requested. |
+| `npm run payload:seed` | Seed/update marketing pages and globals used by local/staging/future real-production smoke when explicitly requested. |
 
 Interactive lifecycle is also available through [`scripts/manage.sh`](../scripts/manage.sh) and `npm run manage`.
 
@@ -75,9 +75,9 @@ Correct local build flow:
 
 ## 5. Migrations and seed toggles
 
-Production deploy script [`scripts/github-deploy-staging.sh`](../scripts/github-deploy-staging.sh) controls Payload migrations and seed via environment:
+Staging deploy script [`scripts/github-deploy-staging.sh`](../scripts/github-deploy-staging.sh) controls Payload migrations and seed via environment:
 
-| Variable | Default | Production semantics |
+| Variable | Default | Staging semantics |
 | --- | --- | --- |
 | `RUN_PAYLOAD_MIGRATIONS` | `false` | When `true`, deploy runs a one-off Payload migration job before app containers start. Keep `false` for normal deploys after migrations are applied. |
 | `RUN_PAYLOAD_SEED` | `false` | When `true`, deploy runs the marketing content seed as a one-off job. Use intentionally for initial provisioning or approved reseed. |
@@ -115,14 +115,14 @@ Do not commit real secrets. Keep committed env examples as placeholders or safe 
 | Variable | Scope | Notes |
 | --- | --- | --- |
 | `PAYLOAD_ENABLED` | Storefront/root env | Enables storefront content reads. `false` means content routes are disabled/fallback. |
-| `PAYLOAD_CMS_URL` | Storefront server runtime | Internal production value should be `http://payload-cms:3100`; local value is usually `http://localhost:3100`. |
+| `PAYLOAD_CMS_URL` | Storefront server runtime | Internal staging value should be `http://payload-cms:3100`; local value is usually `http://localhost:3100`. |
 | `PAYLOAD_PUBLIC_SERVER_URL` | Payload runtime | Public/admin URL, e.g. `https://cms.slavx.ru` in staging. |
-| `PAYLOAD_DATABASE_URL` | Payload runtime | Dedicated Payload database. Production should use `payload_cms`, not Medusa commerce DB. |
-| `PAYLOAD_SECRET` | Payload runtime | Required Payload secret. Never commit real production value. |
+| `PAYLOAD_DATABASE_URL` | Payload runtime | Dedicated Payload database. Staging should use `payload_cms`, not Medusa commerce DB. |
+| `PAYLOAD_SECRET` | Payload runtime | Required Payload secret. Never commit real secret value. |
 | `PAYLOAD_CONTENT_PREVIEW_TOKEN` | Preview | Optional preview token. |
 | `PAYLOAD_PREVIEW_SECRET` | Preview | Optional preview signing secret; fallback can use `PAYLOAD_SECRET`. |
 | `PAYLOAD_REVALIDATE_SECRET` | Publish/revalidate | Secret used by storefront revalidate endpoint. |
-| `STOREFRONT_REVALIDATE_URL` | Payload runtime | Production internal URL can be `http://storefront:8000/api/content/revalidate`. |
+| `STOREFRONT_REVALIDATE_URL` | Payload runtime | Staging internal URL can be `http://storefront:8000/api/content/revalidate`. |
 
 ## 8. Troubleshooting
 
@@ -143,7 +143,7 @@ npm run payload:clean
 npm run payload:dev
 ```
 
-### 8.2. Production Payload pages API is empty
+### 8.2. Staging Payload pages API is empty
 
 Check database and seed state:
 
@@ -168,7 +168,7 @@ Remember `/ru/contacts` is static and should be diagnosed separately from Payloa
 
 ### 8.4. Wrong Payload DB
 
-Expected production URL points to `medusa-db:5432/payload_cms`. If it points to the commerce DB or localhost from inside a container, update remote `.env` and redeploy/restart.
+Expected staging URL points to `medusa-db:5432/payload_cms`. If it points to the commerce DB or localhost from inside a container, update remote `.env` and redeploy/restart.
 
 ### 8.5. Revalidation does not work
 
@@ -179,7 +179,7 @@ Check:
 - Storefront has matching `PAYLOAD_REVALIDATE_SECRET`.
 - Caddy routes `/api/content/*` to storefront.
 
-See [`troubleshooting.md`](./troubleshooting.md) for production incident commands.
+See [`troubleshooting.md`](./troubleshooting.md) for staging incident commands.
 
 ## 9. Readiness notes
 
@@ -188,4 +188,4 @@ Before committing Payload docs or config changes:
 - keep code and docs changes separated when task scope is documentation-only;
 - do not include real env values, database URLs with real passwords, admin passwords, tokens, or preview/revalidate secrets;
 - validate docs against [`docker-compose.prod.yml`](../docker-compose.prod.yml), [`docker/caddy/Caddyfile`](../docker/caddy/Caddyfile), Payload config, and storefront content client;
-- use [`production_runbook.md`](./production_runbook.md) for production deploy/smoke rather than local-only commands.
+- use [`production_runbook.md`](./production_runbook.md) for staging deploy/smoke rather than local-only commands.

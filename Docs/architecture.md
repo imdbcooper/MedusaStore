@@ -4,7 +4,7 @@
 
 ## 1. Topology overview
 
-Production runtime is a single Docker Compose application with one public ingress:
+The single staging environment at `studio.slavx.ru` runs a production-mode Docker Compose application with one public ingress. Real production is not provisioned yet:
 
 ```text
 Internet
@@ -34,9 +34,9 @@ medusastore-storefront ---> medusastore-payload:3100 server-side when Payload is
 medusastore-backend  ---> medusastore-ai-assistant:8000 when AI_ASSISTANT_ENABLED=true
 ```
 
-There is no Nginx layer in the current production topology. Caddy is the only reverse proxy. The AI Assistant is optional and is not exposed directly by Caddy; browser chat and history use `/store/assistant/chat` and `/store/assistant/history` through the Medusa backend adapter so server tokens stay server-side.
+There is no Nginx layer in the current staging Docker/Caddy topology. Caddy is the only reverse proxy. The AI Assistant is optional and is not exposed directly by Caddy; browser chat and history use `/store/assistant/chat` and `/store/assistant/history` through the Medusa backend adapter so server tokens stay server-side.
 
-## 2. Production services and containers
+## 2. Staging services and production-mode containers
 
 | Compose service | Container name | Image/build | Responsibility | Health/readiness |
 | --- | --- | --- | --- | --- |
@@ -80,9 +80,9 @@ These routes exist so older storefront/browser integrations keep working, but th
 
 ## 4. Internal URLs and precedence
 
-Production containers use internal Docker-network URLs for server-side calls:
+Staging production-mode containers use internal Docker-network URLs for server-side calls:
 
-| Purpose | Production internal value | Public/browser value |
+| Purpose | Staging internal value | Public/browser value |
 | --- | --- | --- |
 | Medusa backend server-side storefront calls | `MEDUSA_BACKEND_URL=http://medusa-backend:9000` or `DOCKER_MEDUSA_BACKEND_URL=http://medusa-backend:9000` | `NEXT_PUBLIC_MEDUSA_BACKEND_URL=https://studio.slavx.ru` or proxy-relative public origin when used by browser code. |
 | Medusa Admin browser bundle API base | Not used for server-to-server calls; set explicitly as `MEDUSA_ADMIN_BACKEND_URL=/` during backend build. | Same-origin relative `/` behind `https://admin.slavx.ru`, so Admin auth/API calls do not bake Docker-network, port `9000`, or retired domains into browser JS. |
@@ -93,7 +93,7 @@ Production containers use internal Docker-network URLs for server-side calls:
 | Redis | `redis://medusa-redis:6379` | Not public. |
 | AI Assistant | `AI_ASSISTANT_BASE_URL=http://ai-assistant:8000/api/v1` from Medusa backend | Browser uses `/store/assistant/chat`; `AI_ASSISTANT_SERVER_TOKEN` must never be public. |
 
-Storefront server runtime explicitly prefers `MEDUSA_BACKEND_URL` before `NEXT_PUBLIC_MEDUSA_BACKEND_URL` in [`env.ts`](../medusa-agency-boilerplate-storefront/src/lib/env.ts). This is important in production: server-side rendering should call `http://medusa-backend:9000`, not the public HTTPS URL, while browser requests can go through Caddy. Medusa Admin is separate: [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts) sets `admin.backendUrl` from `MEDUSA_ADMIN_BACKEND_URL`, defaulting to `/`, so the browser Admin bundle remains same-origin on `admin.slavx.ru`.
+Storefront server runtime explicitly prefers `MEDUSA_BACKEND_URL` before `NEXT_PUBLIC_MEDUSA_BACKEND_URL` in [`env.ts`](../medusa-agency-boilerplate-storefront/src/lib/env.ts). This is important in the staging Docker runtime: server-side rendering should call `http://medusa-backend:9000`, not the public HTTPS URL, while browser requests can go through Caddy. Medusa Admin is separate: [`medusa-config.ts`](../medusa-agency-boilerplate/medusa-config.ts) sets `admin.backendUrl` from `MEDUSA_ADMIN_BACKEND_URL`, defaulting to `/`, so the browser Admin bundle remains same-origin on `admin.slavx.ru`.
 
 ## 5. Runtime responsibilities
 
@@ -118,7 +118,7 @@ Storefront server runtime explicitly prefers `MEDUSA_BACKEND_URL` before `NEXT_P
 ### Payload CMS
 
 - Headless content/admin application for pages, posts, navigation, footer, site settings, drafts/preview, and revalidate hooks.
-- Uses dedicated `payload_cms` database in production via `PAYLOAD_DATABASE_URL`.
+- Uses dedicated `payload_cms` database in the staging Docker runtime via `PAYLOAD_DATABASE_URL`.
 - Seeding demo/marketing content is controlled by `RUN_PAYLOAD_SEED`; migrations by `RUN_PAYLOAD_MIGRATIONS`.
 - Must not store provider secrets, payment credentials, or commerce truth.
 
@@ -135,28 +135,28 @@ Storefront server runtime explicitly prefers `MEDUSA_BACKEND_URL` before `NEXT_P
 - Medusa owns the public `/store/assistant/chat` and `/store/assistant/history` proxies and injects the server token for assistant calls.
 - Storefront owns the optional widget under `src/modules/assistant`; it is mounted in the main shopper layout but remains hidden unless `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=true`.
 - Product/category/collection subscribers enqueue durable assistant reindex intents only; actual processing is an explicit admin/worker/cron drain through `/admin/assistant/reindex/process` or the assistant backend processor.
-- Safe first production topology is one assistant replica plus Caddy/API-gateway limits.
+- Safe first staging topology is one assistant replica plus Caddy/API-gateway limits when the assistant is explicitly enabled.
 - The assistant's current in-memory rate limiter is process-local: it is acceptable for one replica, but multi-replica scale-out requires Redis-backed distributed limiting or gateway/load-balancer limits because otherwise each replica counts limits independently.
 
-## 6. Local vs production topology
+## 6. Local vs staging production-mode topology
 
-Local [`docker-compose.yml`](../docker-compose.yml) is intentionally smaller: PostgreSQL, Redis, and Medusa backend only. Local storefront and Payload are usually host runtimes via scripts for faster development. Production [`docker-compose.prod.yml`](../docker-compose.prod.yml) includes storefront, Payload, and Caddy.
+Local [`docker-compose.yml`](../docker-compose.yml) is intentionally smaller: PostgreSQL, Redis, and Medusa backend only. Local storefront and Payload are usually host runtimes via scripts for faster development. Staging uses [`docker-compose.prod.yml`](../docker-compose.prod.yml), which includes storefront, Payload, and Caddy.
 
-Do not infer production topology from local compose alone.
+Do not infer staging topology from local compose alone.
 
 ## 7. Deployment topology
 
-Manual production deploy is defined by [`.github/workflows/deploy-staging.yml`](../.github/workflows/deploy-staging.yml). It connects to the production server and runs [`scripts/github-deploy-staging.sh`](../scripts/github-deploy-staging.sh) inside `/home/som/MedusaStore`.
+Manual staging deploy is defined by [`.github/workflows/deploy-staging.yml`](../.github/workflows/deploy-staging.yml). It connects to the staging server and runs [`scripts/github-deploy-staging.sh`](../scripts/github-deploy-staging.sh) inside `/home/som/MedusaStore`.
 
 The deploy script:
 
 1. fetches and hard-resets the selected branch;
 2. requires remote `.env` to exist;
-3. builds production images;
+3. builds production-mode images;
 4. starts PostgreSQL and Redis;
 5. optionally runs Payload migrations and seed jobs;
 6. starts backend, Payload, storefront, and Caddy;
-7. runs production smoke checks.
+7. runs staging smoke checks.
 
 ## 8. Operational source-of-truth rule
 

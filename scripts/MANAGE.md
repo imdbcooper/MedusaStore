@@ -51,7 +51,7 @@ bash scripts/manage.sh help
 
 ## 2. Почему storefront НЕ контейнеризован в локальном dev-compose — это не баг
 
-Этот раздел относится к локальному/dev контуру [`docker-compose.yml`](../docker-compose.yml:1). Production устроен иначе: [`docker-compose.prod.yml`](../docker-compose.prod.yml:1) включает `storefront`, `payload-cms` и `caddy`, а текущая production topology описана в [`Docs/architecture.md`](../Docs/architecture.md).
+Этот раздел относится к локальному/dev контуру [`docker-compose.yml`](../docker-compose.yml:1). Staging Docker/Caddy runtime устроен иначе: [`docker-compose.prod.yml`](../docker-compose.prod.yml:1) включает `storefront`, `payload-cms` и `caddy`, а текущая staging production-mode topology описана в [`Docs/architecture.md`](../Docs/architecture.md).
 
 В локальном [`docker-compose.yml`](../docker-compose.yml:1) подняты только
 `medusa-db`, `medusa-redis`, `medusa-backend`. Storefront
@@ -85,7 +85,7 @@ bash scripts/manage.sh help
 2. **Next.js dev/HMR.** На хосте удобнее: быстрее цикл, нет проблем
    с file-watch внутри bind-mount на разных ОС.
 3. **Контракт локального dev.** Backend и storefront в локальном контуре
-   запускаются как независимые runtime surface. Это не отменяет production
+   запускаются как независимые runtime surface. Это не отменяет staging production-mode
    compose, где storefront уже контейнеризован в [`docker-compose.prod.yml`](../docker-compose.prod.yml:87).
 4. **Не реальный «фронт» Medusa.** В компоуз входит **Medusa Admin**
    (HMR порт `5173`) — он часть backend-приложения. Storefront —

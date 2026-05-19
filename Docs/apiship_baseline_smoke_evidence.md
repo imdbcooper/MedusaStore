@@ -68,14 +68,12 @@ node scripts/apiship-runtime-preflight-smoke.mjs
 
 The preflight validates:
 
-1. committed public `/store/delivery/*` route files remain absent and Delivery Hub public runtime matchers in `middlewares.ts` terminate through quarantine instead of reintroducing a canonical facade;
-2. Medusa config still registers `@gorgo/medusa-fulfillment-apiship` as the ApiShip/Gorgo fulfillment provider;
-3. checkout readiness guards remain wired on Store payment-session creation and cart completion;
-4. shipment execution guards remain wired for Admin fulfillment create/cancel routes and still require exact `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` opt-in;
-5. `GET /admin/apiship/diagnostics` remains Admin-authenticated and backed by the redacted diagnostics module, with explicit limitations for no external ApiShip health call, no live shipment execution, no online auth validation, and no sensitive values returned;
-6. storefront checkout helper code calls direct `/store/apiship/*` providers, points, and calculate endpoints, then commits the selected method through the standard Medusa shipping-method flow with `data.apishipData`;
-7. storefront checkout/payment/review wiring uses the internal delivery readiness projection for ApiShip and does not depend on a public `/store/delivery/*` facade;
-8. Delivery Hub runtime quarantine keeps HTTP `410` and reports `baseline: "apiship_gorgo"`, `previous_baseline: "delivery_hub"`, and `live_shipment_execution_enabled: false`.
+1. Medusa config still registers `@gorgo/medusa-fulfillment-apiship` as the ApiShip/Gorgo fulfillment provider;
+2. checkout readiness guards remain wired on Store payment-session creation and cart completion;
+3. shipment execution guards remain wired for Admin fulfillment create/cancel routes and still require exact `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` opt-in;
+4. `GET /admin/apiship/diagnostics` remains Admin-authenticated and backed by the redacted diagnostics module, with explicit limitations for no external ApiShip health call, no live shipment execution, no online auth validation, and no sensitive values returned;
+5. storefront checkout helper code calls direct `/store/apiship/*` providers, points, and calculate endpoints, then commits the selected method through the standard Medusa shipping-method flow with `data.apishipData`;
+6. storefront checkout/payment/review wiring uses the internal delivery readiness projection for ApiShip.
 
 A future full browser smoke may be added only with a local mock Store API or isolated seeded runtime and must verify only the buyer-facing ApiShip pickup-point flow:
 
@@ -83,8 +81,7 @@ A future full browser smoke may be added only with a local mock Store API or iso
 2. shopper selects a PVZ and tariff;
 3. cart shipping method is saved through the standard Medusa cart shipping-method flow with `data.apishipData`;
 4. payment progression is blocked until the saved selection passes the ApiShip readiness predicate;
-5. no `/store/delivery/*` facade is required for the normal ApiShip checkout path;
-6. no Admin fulfillment create/cancel path is exercised unless live shipment execution is separately opted in and reviewed.
+5. no Admin fulfillment create/cancel path is exercised unless live shipment execution is separately opted in and reviewed.
 
 ---
 
@@ -95,20 +92,17 @@ Status: **ApiShip/Gorgo baseline integration complete for the scoped pre-product
 Commit map for accepted integration/follow-up blocks:
 
 - `e74d20e2ab8fd5cffc4dc1e3a6df064590f9871b` — deterministic baseline smoke/evidence;
-- `077e3a7c82a8f81d0842ab53d67134e0997b916a` — internal provider-neutral storefront readiness/summary helpers without public `/store/delivery/*` facade;
 - `854aa849a22bc152e2c2ddf5a1165801ae49d87b`, `f11ce0ba4e90e2aa25e61c9a4c8eee5334b54888`, `fc50adbc8d7dd17e8ff2079b88a4afad16ae4fc2` — optional courier contract/scaffold and accepted fixes;
 - `ea369e4fb906242693ff2aa4c587e8a05fe58f14` — richer customer-facing pricing policy metadata;
 - `997240c5f526755adb82ecd6f52d44fd22f67003` — ApiShip admin/operator diagnostics;
-- `f275a9a2b980ed12ab610c209326eb6fa20e4afb` — Physical Delivery Hub cleanup evidence/quarantine closure;
 - this browser/runtime follow-up — executable preflight-only runtime wiring smoke and final integration evidence.
 
 Completion boundaries:
 
 - ApiShip/Gorgo is the current delivery baseline for fresh templates.
-- Direct `/store/apiship/*` remains canonical for Store API reads/calculation; no public `/store/delivery/*` facade is reintroduced for normal checkout.
+- Direct `/store/apiship/*` remains canonical for Store API reads/calculation.
 - Checkout readiness guard and shipment execution default-off guard are active.
 - Operator diagnostics route/module exists and is secret-safe/offline by design.
-- Delivery Hub is previous-baseline residue and is quarantined/removed from active runtime behavior.
 
 Remaining limitations:
 

@@ -28,9 +28,9 @@
 
 Это и есть первый practical staging verification contour, который напрямую соответствует staging checklist, но теперь запускается одной командой.
 
-### Production HTTPS smoke expectations
+### Staging HTTPS smoke expectations
 
-Для текущего production-контура отдельный источник истины — [`production_runbook.md`](./production_runbook.md) и [`scripts/staging-container-smoke.sh`](../scripts/staging-container-smoke.sh). Минимальные production HTTPS expectations:
+Для текущего staging-контура отдельный источник истины — [`production_runbook.md`](./production_runbook.md) (filename retained historically; scope is staging) и [`scripts/staging-container-smoke.sh`](../scripts/staging-container-smoke.sh). Минимальные staging HTTPS expectations:
 
 1. `https://studio.slavx.ru/healthz` отвечает `200` и `ok`.
 2. `https://studio.slavx.ru/ru/about`, `/ru/promotions`, `/ru/delivery-and-payment` отвечают `200` при включенном и заполненном Payload/content baseline.

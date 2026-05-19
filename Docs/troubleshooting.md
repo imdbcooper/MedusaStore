@@ -1,6 +1,6 @@
 # Troubleshooting
 
-> Current operational troubleshooting for Docker/Caddy production and local/runtime parity. Do not paste secrets into tickets, docs, logs, or commits.
+> Current operational troubleshooting for Docker/Caddy staging and local/runtime parity. Do not paste secrets into tickets, docs, logs, or commits.
 
 ## 1. Product page returns `500`
 
@@ -29,13 +29,13 @@ docker compose -p medusastore -f docker-compose.prod.yml --env-file .env logs --
 docker compose -p medusastore -f docker-compose.prod.yml --env-file .env logs --tail=200 medusa-backend
 ```
 
-Inside production host, confirm server-side backend URL path:
+Inside the staging host, confirm server-side backend URL path:
 
 ```bash
 docker exec medusastore-storefront printenv MEDUSA_BACKEND_URL
 ```
 
-Expected production value is the Docker-network backend URL, usually `http://medusa-backend:9000`.
+Expected staging value is the Docker-network backend URL, usually `http://medusa-backend:9000`.
 
 Common causes:
 
@@ -90,7 +90,7 @@ Common causes:
 Symptoms:
 
 - Payload admin works, but expected pages/globals are missing.
-- Production smoke for `https://cms.slavx.ru/api/pages` returns empty results unexpectedly.
+- Staging smoke for `https://cms.slavx.ru/api/pages` returns empty results unexpectedly.
 
 Checks:
 
@@ -98,7 +98,7 @@ Checks:
 docker exec medusastore-payload printenv PAYLOAD_DATABASE_URL
 ```
 
-Expected production shape:
+Expected staging shape:
 
 ```text
 postgresql://<user>:<password>@medusa-db:5432/payload_cms?sslmode=disable
@@ -116,7 +116,7 @@ Fix direction:
 
 Symptoms:
 
-- Server-side pages fail inside the production container.
+- Server-side pages fail inside the staging production-mode container.
 - Browser `/store/*` calls work, but SSR/product/page requests fail.
 - Logs show fetches to `localhost`, public HTTPS, or an unreachable URL from inside Docker.
 
@@ -124,7 +124,7 @@ Implementation fact:
 
 - [`env.ts`](../medusa-agency-boilerplate-storefront/src/lib/env.ts) resolves `MEDUSA_BACKEND_URL` before `NEXT_PUBLIC_MEDUSA_BACKEND_URL`.
 
-Production expectation:
+Staging expectation:
 
 - `MEDUSA_BACKEND_URL` / `DOCKER_MEDUSA_BACKEND_URL`: `http://medusa-backend:9000`.
 - `NEXT_PUBLIC_MEDUSA_BACKEND_URL`: public/proxy origin, usually `https://studio.slavx.ru`, for storefront browser-visible usage.
@@ -164,7 +164,7 @@ Checks:
 docker exec medusastore-storefront printenv NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
 ```
 
-The value must not be empty and must not be a placeholder such as `REPLACE_WITH_ROOT_BOOTSTRAP` or `pk_build_placeholder` in real production runtime.
+The value must not be empty and must not be a placeholder such as `REPLACE_WITH_ROOT_BOOTSTRAP` or `pk_build_placeholder` in real staging runtime.
 
 Fix direction:
 
@@ -229,7 +229,7 @@ docker exec medusastore-backend printenv SMTP_PORT
 
 Do not print `SMTP_PASSWORD` in terminals, tickets, docs, or logs.
 
-Expected production activation shape after approval:
+Expected staging activation shape after approval:
 
 ```text
 NOTIFICATION_EMAIL_PROVIDER=smtp
@@ -262,7 +262,7 @@ Certificate handling direction:
 
 - issue and keep the Let's Encrypt certificate directly on `smtpserv`, because the private key should live next to the TLS-terminating SMTP service (`docker-mailserver`);
 - use HTTP-01 if port `80` can be opened on the mail VPS without service conflicts; otherwise use DNS-01 through the DNS provider API/manual flow;
-- do not copy the private key through the main staging/production server;
+- do not copy the private key through the main staging server;
 - mount/connect the issued cert paths into `/opt/mailserver/config/ssl` and docker-mailserver SSL config, then reload/recreate the mailserver container.
 
 ## 7a. Transactional email link opens "Страница не найдена" on storefront
@@ -313,7 +313,7 @@ Checks in GitHub Actions:
 - `DEPLOY_USER` is correct.
 - `DEPLOY_PATH` points to `/home/som/MedusaStore`.
 - `DEPLOY_SSH_PRIVATE_KEY` matches an authorized key for the user.
-- Workflow concurrency group `production-deploy` may queue another run if one is active.
+- Workflow concurrency group `staging-deploy` may queue another run if one is active.
 
 Checks on server:
 
@@ -364,7 +364,7 @@ Temporary operator-only workaround for known first-boot cases:
 SMOKE_BASE_URL=http://studio.slavx.ru bash ./scripts/staging-container-smoke.sh
 ```
 
-Do not leave HTTP-only smoke as the permanent production contract if HTTPS is intended.
+Do not leave HTTP-only smoke as the permanent staging contract if HTTPS is intended.
 
 ## 9. Payload migrations hanging
 

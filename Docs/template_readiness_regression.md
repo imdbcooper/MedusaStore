@@ -286,26 +286,25 @@ Expected behavior, который не считается регрессией:
 
 Проверяется только следующее:
 
-1. clean onboarding и startup не зависят от Delivery Hub/removed-provider env activation surface;
-2. historical DB residue from removed Delivery Hub provider остаётся только operator cleanup concern;
+1. clean onboarding и startup не зависят от obsolete provider env activation surface;
+2. historical DB residue from removed provider остаётся только operator cleanup concern;
 3. direct `/store/apiship/*` remains the canonical Store API contract for current checkout;
 4. live external shipment execution stays default-off unless `APISHIP_SHIPMENT_EXECUTION_ENABLED=true` is explicitly set.
 
 ### Канонические ожидания по env
 
-- отсутствие Delivery Hub/removed-provider env activation surface не должно ломать bootstrap, preflight и baseline runtime;
+- отсутствие obsolete provider env activation surface не должно ломать bootstrap, preflight и baseline runtime;
 - ApiShip/Gorgo remains the selected/default delivery contour for fresh templates;
-- historical Delivery Hub rows/provider ids в старых базах не считаются runtime env contract и очищаются отдельно только operator-approved процедурой.
+- historical obsolete provider rows/provider ids в старых базах не считаются runtime env contract и очищаются отдельно только operator-approved процедурой.
 
 ### Канонический route contract
 
-Current route family: direct `/store/apiship/*` Store API surfaces. Historical `GET /store/delivery/rates` belongs to the superseded provider-aware slice and is not current baseline guidance.
+Current route family: direct `/store/apiship/*` Store API surfaces. Removed provider-aware routes are not current baseline guidance.
 
 Что должно быть true:
 
 - current ApiShip Store API responses remain controlled JSON contracts, not raw crash paths;
 - checkout uses direct `/store/apiship/*` surfaces and standard Medusa shipping-method commit with ApiShip data;
-- no public `/store/delivery/*` compatibility facade is required for normal checkout;
 - absence of live ApiShip credentials must not turn into silent live shipment execution;
 - `APISHIP_SHIPMENT_EXECUTION_ENABLED=false` keeps external shipment creation disabled by default, and only exact `true` is treated as live-execution opt-in;
 - errors remain controlled and must not leak provider secrets, raw provider payloads, raw quote keys, or auth material.

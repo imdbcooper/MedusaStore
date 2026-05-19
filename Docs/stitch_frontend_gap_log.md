@@ -1,7 +1,7 @@
 # Stitch → Frontend: gap-log
 
 **Обновлено:** 2026-05-11
-**Статус:** актуальный итог после интеграции Stitch-макетов в storefront и production/docs sync.
+**Статус:** актуальный итог после интеграции Stitch-макетов в storefront и staging/docs sync.
 
 Этот документ коротко фиксирует:
 
@@ -143,7 +143,7 @@
 | --- | --- |
 | `npm --prefix ./medusa-agency-boilerplate-storefront run lint` | Последний зафиксированный pass был успешным; при изменениях frontend запускать заново. |
 | `npm run storefront:build` | Production build должен допускать Store API warnings во время static params collection, но dynamic product route требует runtime smoke. |
-| `npm --prefix ./medusa-agency-boilerplate-storefront run typecheck` | Старую ссылку на `deliveryhub legacy spec` считать stale: актуальный файл для checkout utility tests — [`delivery-checkout.spec.ts`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-checkout.spec.ts). |
+| `npm --prefix ./medusa-agency-boilerplate-storefront run typecheck` | Старые delivery legacy ссылки считать stale: актуальный файл для checkout utility tests — [`delivery-checkout.spec.ts`](../medusa-agency-boilerplate-storefront/src/lib/util/delivery-checkout.spec.ts). |
 | Product runtime smoke | Для существующего товара `/ru/products/<handle>` должен отвечать `200`; dynamic rendering не подтверждается одним build/static params pass. |
 
 ---
@@ -169,4 +169,4 @@
 - checkout shell;
 - home/editorial surfaces.
 
-Главные оставшиеся зоны — account, глубокие checkout states, contact form backend, region/currency UX и production-ready content/media governance. CMS route availability больше не считается открытым blocker: Payload production container, Caddy `/payload/*`, seeded content pages и storefront content rendering materialized; оставшийся риск — качество/актуальность production content и publish/DB state.
+Главные оставшиеся зоны — account, глубокие checkout states, contact form backend, region/currency UX и production-ready content/media governance. CMS route availability больше не считается открытым blocker: Payload staging production-mode container, Caddy `/payload/*`, seeded content pages и storefront content rendering materialized; оставшийся риск — качество/актуальность launch content и publish/DB state.
