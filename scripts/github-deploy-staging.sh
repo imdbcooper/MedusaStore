@@ -71,9 +71,17 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
+compose_profiles=()
+if grep -Eq '^AI_ASSISTANT_ENABLED=true$' .env; then
+  echo "AI Assistant enabled; including ai-assistant production profile."
+  compose_profiles+=(--profile ai-assistant)
+else
+  echo "AI Assistant disabled; skipping ai-assistant profile."
+fi
+
 echo "Building production images..."
 run_with_heartbeat "Docker image build" \
-  docker compose -p "$project_name" -f "$compose_file" --env-file .env build
+  docker compose -p "$project_name" -f "$compose_file" --env-file .env "${compose_profiles[@]}" build
 
 echo "Starting database and redis..."
 docker compose -p "$project_name" -f "$compose_file" --env-file .env up -d medusa-db medusa-redis
@@ -102,14 +110,6 @@ if [[ "$run_payload_seed" == "true" ]]; then
     -e RUN_PAYLOAD_SEED=true \
     --entrypoint payload-entrypoint \
     payload-cms true
-fi
-
-compose_profiles=()
-if grep -Eq '^AI_ASSISTANT_ENABLED=true$' .env; then
-  echo "AI Assistant enabled; including ai-assistant production profile."
-  compose_profiles+=(--profile ai-assistant)
-else
-  echo "AI Assistant disabled; skipping ai-assistant profile."
 fi
 
 echo "Starting application containers..."
