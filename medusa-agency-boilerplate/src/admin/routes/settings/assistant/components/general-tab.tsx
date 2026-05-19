@@ -369,10 +369,7 @@ export const GeneralTab = () => {
     setState(fromSettings(settings))
   }
 
-  const isDirty = useMemo(
-    () => Object.keys(buildPatch(state, settings)).length > 0,
-    [state, settings],
-  )
+  const isDirty = Object.keys(buildPatch(state, settings)).length > 0
 
   return (
     <div className="flex flex-col gap-5 px-6 py-5">

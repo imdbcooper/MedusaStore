@@ -10,6 +10,7 @@ from app.schemas.ingestion import MarkdownChunk
 
 FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
+PATH_SEGMENT_RE = re.compile(r"[^\w.-]+", re.UNICODE)
 
 
 def sha256_text(value: str) -> str:
@@ -34,6 +35,11 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     return metadata, content[match.end() :]
 
 
+def strip_frontmatter(content: str) -> str:
+    _, body = parse_frontmatter(content)
+    return body
+
+
 def infer_title(path: Path, metadata: dict[str, Any], body: str) -> str:
     if metadata.get("title"):
         return str(metadata["title"])
@@ -41,6 +47,45 @@ def infer_title(path: Path, metadata: dict[str, Any], body: str) -> str:
     if heading:
         return heading.group(2).strip()
     return path.stem.replace("-", " ").replace("_", " ").title()
+
+
+def sanitize_path_segment(value: str, *, default: str = "document") -> str:
+    normalized = PATH_SEGMENT_RE.sub("-", value.replace("/", "-").replace("\\", "-").strip().casefold())
+    normalized = normalized.strip(" .-_")
+    return normalized or default
+
+
+def build_admin_markdown_document(
+    *,
+    title: str,
+    description: str,
+    content: str,
+    source_id: str,
+    store_id: str,
+    locale: str,
+    tenant_id: str | None = None,
+    uploaded_file_name: str | None = None,
+) -> str:
+    body = normalize_markdown(strip_frontmatter(content))
+    metadata: dict[str, Any] = {
+        "title": title.strip(),
+        "description": normalize_markdown(description),
+        "source_type": "markdown",
+        "source_id": source_id,
+        "source_origin": "admin",
+        "store_id": store_id,
+        "locale": locale,
+    }
+    if tenant_id:
+        metadata["tenant_id"] = tenant_id
+    if uploaded_file_name:
+        metadata["uploaded_file_name"] = uploaded_file_name
+    frontmatter = yaml.safe_dump(
+        metadata,
+        allow_unicode=True,
+        sort_keys=False,
+    ).strip()
+    return f"---\n{frontmatter}\n---\n\n{body}\n"
 
 
 def split_markdown_sections(body: str) -> list[str]:
@@ -61,6 +106,30 @@ def split_markdown_sections(body: str) -> list[str]:
         if section:
             sections.append(section)
     return sections
+
+
+def enrich_body_with_frontmatter_context(
+    *,
+    body: str,
+    title: str,
+    metadata: dict[str, Any],
+) -> str:
+    description = metadata.get("description")
+    if not isinstance(description, str) or not description.strip():
+        return body
+    normalized_description = normalize_markdown(description)
+    if not normalized_description:
+        return body
+
+    prefix: list[str] = []
+    first_heading = HEADING_RE.search(body)
+    if not first_heading or normalize_heading(first_heading.group(2)) != normalize_heading(title):
+        prefix.append(f"# {title}")
+    if normalized_description.casefold() not in body.casefold():
+        prefix.append(normalized_description)
+    if not prefix:
+        return body
+    return normalize_markdown("\n\n".join([*prefix, body]))
 
 
 def chunk_text(section: str, *, target_chars: int, overlap_chars: int) -> list[str]:
@@ -98,6 +167,11 @@ def parse_markdown_file(
     metadata, body = parse_frontmatter(raw)
     body = normalize_markdown(body)
     title = infer_title(path, metadata, body)
+    body = enrich_body_with_frontmatter_context(
+        body=body,
+        title=title,
+        metadata=metadata,
+    )
     relative_path = str(path.relative_to(root)) if path.is_relative_to(root) else str(path)
     source_id = metadata.get("source_id") or relative_path
     source_type = metadata.get("source_type") or "markdown"
@@ -142,3 +216,7 @@ def discover_markdown_files(path: Path) -> list[Path]:
         for candidate in path.rglob("*")
         if candidate.is_file() and candidate.suffix.lower() in {".md", ".markdown"}
     )
+
+
+def normalize_heading(value: str) -> str:
+    return " ".join(value.strip().casefold().split())

@@ -22,4 +22,18 @@ export const assistantKeys = {
     [...assistantKeys.all, "providers", id] as const,
 
   settings: () => [...assistantKeys.all, "settings"] as const,
+
+  runtime: () => [...assistantKeys.all, "runtime"] as const,
+
+  stats: () => [...assistantKeys.all, "stats"] as const,
+
+  intents: (opts?: { status?: string; limit?: number }) =>
+    [
+      ...assistantKeys.all,
+      "intents",
+      opts?.status ?? "all",
+      opts?.limit ?? 20,
+    ] as const,
+
+  job: (id: string) => [...assistantKeys.all, "job", id] as const,
 }

@@ -43,9 +43,17 @@ tags: [delivery, payment]
 
 
 @pytest.fixture
-def app(repository, knowledge_dir):
+def knowledge_uploads_dir(tmp_path: Path) -> Path:
+    directory = tmp_path / "knowledge-uploaded"
+    directory.mkdir()
+    return directory
+
+
+@pytest.fixture
+def app(repository, knowledge_dir, knowledge_uploads_dir):
     settings = Settings(
         KNOWLEDGE_DIR=knowledge_dir,
+        KNOWLEDGE_UPLOADS_DIR=knowledge_uploads_dir,
         ASSISTANT_POSTGRES_URI=None,
         MEDUSA_BACKEND_URL="http://medusa.test",
         QDRANT_URL="http://qdrant.test:6333",

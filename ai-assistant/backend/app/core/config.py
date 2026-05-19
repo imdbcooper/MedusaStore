@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     openai_base_url: str | None = Field(default=None, alias="OPENAI_BASE_URL")
     openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
     knowledge_dir: Path = Field(default=Path("knowledge"), alias="KNOWLEDGE_DIR")
+    knowledge_uploads_dir: Path = Field(
+        default=Path("knowledge-uploaded"),
+        alias="KNOWLEDGE_UPLOADS_DIR",
+    )
     markdown_frontmatter_required: bool = Field(default=False, alias="MARKDOWN_FRONTMATTER_REQUIRED")
     chat_history_limit: int = Field(default=10, alias="CHAT_HISTORY_LIMIT")
     chat_max_input_chars: int = Field(default=4000, alias="CHAT_MAX_INPUT_CHARS")

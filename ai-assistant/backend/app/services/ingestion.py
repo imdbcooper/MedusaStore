@@ -1,9 +1,23 @@
 from pathlib import Path
 
 from app.core.config import Settings
-from app.ingestion.markdown import discover_markdown_files, parse_markdown_file, sha256_text
+from app.ingestion.markdown import (
+    build_admin_markdown_document,
+    discover_markdown_files,
+    normalize_markdown,
+    parse_markdown_file,
+    sanitize_path_segment,
+    sha256_text,
+    strip_frontmatter,
+)
 from app.ingestion.products import normalize_medusa_product
-from app.schemas.ingestion import IngestionJobResponse, MarkdownSyncResponse, MedusaProductsSyncResponse
+from app.schemas.ingestion import (
+    IngestionJobResponse,
+    KnowledgeDocumentCreateResponse,
+    KnowledgeDocumentResponse,
+    MarkdownSyncResponse,
+    MedusaProductsSyncResponse,
+)
 from app.services.vector import VectorBackendUnavailable
 
 
@@ -28,27 +42,190 @@ class MarkdownIngestionService:
         path: str | None = None,
         tenant_id: str | None = None,
     ) -> MarkdownSyncResponse:
-        root = Path(path) if path else self.settings.knowledge_dir
-        if not root.is_absolute():
-            root = Path.cwd() / root
-        if not root.exists():
-            raise FileNotFoundError(f"Markdown knowledge path does not exist: {root}")
-        files = discover_markdown_files(root)
+        if path:
+            target = self._resolve_path(path)
+            if not target.exists():
+                raise FileNotFoundError(f"Markdown knowledge path does not exist: {target}")
+            entries = [
+                (
+                    target if target.is_dir() else target.parent,
+                    file_path,
+                )
+                for file_path in discover_markdown_files(target)
+            ]
+            return await self._sync_entries(
+                store_id=store_id,
+                locale=locale,
+                tenant_id=tenant_id,
+                entries=entries,
+                source_id=str(target),
+                input_payload={"path": str(target), "locale": locale},
+            )
+
+        entries: list[tuple[Path, Path]] = []
+        packaged_root = self._resolve_path(self.settings.knowledge_dir)
+        if packaged_root.exists():
+            entries.extend(
+                (packaged_root if packaged_root.is_dir() else packaged_root.parent, file_path)
+                for file_path in discover_markdown_files(packaged_root)
+            )
+
+        uploads_base = self.uploads_base_dir
+        scoped_upload_root = self.upload_scope_dir(
+            store_id=store_id,
+            locale=locale,
+            tenant_id=tenant_id,
+        )
+        if scoped_upload_root.exists():
+            entries.extend(
+                (uploads_base, file_path)
+                for file_path in discover_markdown_files(scoped_upload_root)
+            )
+
+        if not entries:
+            raise FileNotFoundError(
+                f"Markdown knowledge paths do not exist: {packaged_root}, {scoped_upload_root}"
+            )
+
+        return await self._sync_entries(
+            store_id=store_id,
+            locale=locale,
+            tenant_id=tenant_id,
+            entries=entries,
+            source_id=",".join(
+                str(root)
+                for root in [packaged_root, scoped_upload_root]
+                if root.exists()
+            ),
+            input_payload={
+                "paths": [str(root) for root in [packaged_root, scoped_upload_root] if root.exists()],
+                "locale": locale,
+                "tenant_id": tenant_id,
+            },
+        )
+
+    async def save_admin_document(
+        self,
+        *,
+        store_id: str,
+        locale: str,
+        title: str,
+        description: str,
+        content: str,
+        tenant_id: str | None = None,
+        file_name: str | None = None,
+    ) -> KnowledgeDocumentCreateResponse:
+        cleaned_content = content.strip()
+        if not cleaned_content:
+            raise ValueError("Knowledge document content is empty.")
+        if not normalize_markdown(strip_frontmatter(cleaned_content)):
+            raise ValueError("Knowledge document content is empty after stripping frontmatter.")
+
+        uploads_base = self.uploads_base_dir
+        scoped_root = self.upload_scope_dir(
+            store_id=store_id,
+            locale=locale,
+            tenant_id=tenant_id,
+        )
+        scoped_root.mkdir(parents=True, exist_ok=True)
+
+        source_file_name = Path(file_name).name if file_name else ""
+        slug_source = Path(source_file_name).stem if source_file_name else title
+        slug = sanitize_path_segment(slug_source, default="knowledge-document")
+        full_path = scoped_root / f"{slug}.md"
+        relative_path = str(full_path.relative_to(uploads_base))
+        markdown = build_admin_markdown_document(
+            title=title,
+            description=description,
+            content=cleaned_content,
+            source_id=relative_path,
+            store_id=store_id,
+            locale=locale,
+            tenant_id=tenant_id,
+            uploaded_file_name=source_file_name or None,
+        )
+        full_path.write_text(markdown, encoding="utf-8")
+
+        sync = await self._sync_entries(
+            store_id=store_id,
+            locale=locale,
+            tenant_id=tenant_id,
+            entries=[(uploads_base, full_path)],
+            source_id=relative_path,
+            input_payload={
+                "path": relative_path,
+                "store_id": store_id,
+                "tenant_id": tenant_id,
+                "locale": locale,
+                "source_origin": "admin",
+            },
+        )
+        return KnowledgeDocumentCreateResponse(
+            document=KnowledgeDocumentResponse(
+                source_id=relative_path,
+                path=relative_path,
+                title=title.strip(),
+                description=description.strip(),
+                file_name=full_path.name,
+                store_id=store_id,
+                tenant_id=tenant_id,
+                locale=locale,
+            ),
+            job=sync.job,
+            chunks=sync.chunks,
+        )
+
+    @property
+    def uploads_base_dir(self) -> Path:
+        return self._resolve_path(self.settings.knowledge_uploads_dir)
+
+    def upload_scope_dir(
+        self,
+        *,
+        store_id: str,
+        locale: str,
+        tenant_id: str | None = None,
+    ) -> Path:
+        tenant_segment = sanitize_path_segment(tenant_id or "global", default="global")
+        return (
+            self.uploads_base_dir
+            / sanitize_path_segment(store_id, default="default")
+            / tenant_segment
+            / sanitize_path_segment(locale, default="ru")
+        )
+
+    def _resolve_path(self, value: str | Path) -> Path:
+        path = Path(value)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        return path
+
+    async def _sync_entries(
+        self,
+        *,
+        store_id: str,
+        locale: str,
+        tenant_id: str | None,
+        entries: list[tuple[Path, Path]],
+        source_id: str,
+        input_payload: dict,
+    ) -> MarkdownSyncResponse:
         job = await self.repository.create_ingestion_job(
             store_id=store_id,
             job_type="markdown_sync",
             source_type="markdown",
-            source_id=str(root),
-            input_payload={"path": str(root), "locale": locale},
+            source_id=source_id,
+            input_payload=input_payload,
         )
 
         all_chunks = []
         vector_indexed_count = 0
+        file_count = len(entries)
         try:
-            for file_path in files:
+            for root, file_path in entries:
                 chunks = parse_markdown_file(
                     file_path,
-                    root=root if root.is_dir() else root.parent,
+                    root=root,
                     store_id=store_id,
                     locale=locale,
                     target_chars=self.settings.chunk_target_chars,
@@ -75,8 +252,8 @@ class MarkdownIngestionService:
             job = await self.repository.complete_ingestion_job(
                 job_id=job["id"],
                 result={
-                    "source_count": len(files),
-                    "file_count": len(files),
+                    "source_count": file_count,
+                    "file_count": file_count,
                     "chunk_count": len(all_chunks),
                     "vector_indexed_count": vector_indexed_count,
                     "vector_status": "indexed" if vector_indexed_count else "skipped",
@@ -86,8 +263,8 @@ class MarkdownIngestionService:
             job = await self.repository.complete_ingestion_job(
                 job_id=job["id"],
                 result={
-                    "source_count": len(files),
-                    "file_count": len(files),
+                    "source_count": file_count,
+                    "file_count": file_count,
                     "chunk_count": len(all_chunks),
                     "vector_indexed_count": vector_indexed_count,
                     "vector_status": "indexed" if vector_indexed_count else "skipped",
@@ -97,15 +274,7 @@ class MarkdownIngestionService:
             raise
 
         return MarkdownSyncResponse(
-            job=IngestionJobResponse(
-                job_id=job["id"],
-                status=job["status"],
-                source_type=job.get("source_type"),
-                source_id=job.get("source_id"),
-                result=job.get("result") or {},
-                error=job.get("error"),
-                created_at=job.get("created_at"),
-            ),
+            job=job_response(job),
             chunks=all_chunks,
         )
 

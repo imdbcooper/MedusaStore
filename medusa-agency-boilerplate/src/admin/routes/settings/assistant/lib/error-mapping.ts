@@ -29,6 +29,36 @@ const fallbackMessages: Record<string, string> = {
   provider_disabled:
     "Этот провайдер отключён и не может быть сделан активным.",
   version_mismatch: assistantCopy.general.toasts.versionMismatch,
+  AI_ASSISTANT_PRODUCT_IDS_REQUIRED:
+    "Укажите хотя бы один product_id или используйте полный reindex каталога.",
+  AI_ASSISTANT_TIMEOUT:
+    "Assistant backend не ответил вовремя. Проверьте его состояние и попробуйте ещё раз.",
+  AI_ASSISTANT_NETWORK_ERROR:
+    "Medusa не может связаться с assistant backend. Проверьте AI_ASSISTANT_BASE_URL и доступность сервиса.",
+  AI_ASSISTANT_REQUEST_FAILED:
+    "Assistant backend вернул ошибку при выполнении операции.",
+  AI_ASSISTANT_ADAPTER_ERROR:
+    "Прокси Medusa → assistant backend вернул ошибку.",
+  INGESTION_FAILED:
+    "Синхронизация знаний завершилась ошибкой. Проверьте логи assistant backend.",
+  VECTOR_UNAVAILABLE:
+    "Vector backend сейчас недоступен. Проверьте Qdrant и embedding provider.",
+  RETRIEVAL_UNAVAILABLE:
+    "Retrieval backend сейчас недоступен.",
+  MEDUSA_UNAVAILABLE:
+    "Assistant backend не смог получить товары из Medusa Store API.",
+  KNOWLEDGE_DOCUMENT_INVALID:
+    "Markdown-документ не прошёл валидацию. Проверьте title, description и содержимое файла.",
+  KNOWLEDGE_DOCUMENT_WRITE_FAILED:
+    "Assistant backend не смог сохранить Markdown-документ в knowledge storage.",
+  AI_ASSISTANT_KNOWLEDGE_TITLE_REQUIRED:
+    assistantCopy.operations.errors.knowledgeTitleRequired,
+  AI_ASSISTANT_KNOWLEDGE_DESCRIPTION_REQUIRED:
+    assistantCopy.operations.errors.knowledgeDescriptionRequired,
+  AI_ASSISTANT_KNOWLEDGE_CONTENT_REQUIRED:
+    assistantCopy.operations.errors.knowledgeContentRequired,
+  AI_ASSISTANT_KNOWLEDGE_FILE_READ_FAILED:
+    assistantCopy.operations.errors.knowledgeFileRead,
   unauthorized:
     "Сессия истекла или нет прав доступа. Перезайдите в админку.",
   network: "Не удалось связаться с сервером. Проверьте соединение.",

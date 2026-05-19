@@ -32,6 +32,7 @@ import { useState } from "react"
 import {
   activateProvider,
   deleteProvider,
+  getRuntime,
   listProviders,
   updateProvider,
 } from "../lib/api"
@@ -69,6 +70,17 @@ export const ProvidersTab = () => {
   const prompt = usePrompt()
 
   const [drawer, setDrawer] = useState<DrawerState>({ open: false })
+
+  const runtimeQuery = useQuery({
+    queryKey: assistantKeys.runtime(),
+    queryFn: async () => {
+      const result = await getRuntime()
+      if (!result.ok) throw result
+      return result.data.runtime
+    },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  })
 
   const listQuery = useQuery({
     queryKey: assistantKeys.providers(),
@@ -140,6 +152,9 @@ export const ProvidersTab = () => {
     toggleMut.isPending ||
     deleteMut.isPending
 
+  const providerSecretsWritable =
+    runtimeQuery.data?.capabilities.provider_secrets_write ?? true
+
   // ---- Handlers ------------------------------------------------------------
 
   const onAdd = () => setDrawer({ open: true, mode: { kind: "create" } })
@@ -208,11 +223,19 @@ export const ProvidersTab = () => {
           variant="primary"
           type="button"
           onClick={onAdd}
+          disabled={!providerSecretsWritable}
         >
           <Plus />
           <span>{assistantCopy.providers.addCta}</span>
         </Button>
       </div>
+
+      {runtimeQuery.data &&
+      !runtimeQuery.data.secrets.assistant_settings_encryption_key_configured ? (
+        <Alert variant="error">
+          <span>{assistantCopy.providers.encryptionWarning}</span>
+        </Alert>
+      ) : null}
 
       {listQuery.isLoading ? (
         <SkeletonRows />

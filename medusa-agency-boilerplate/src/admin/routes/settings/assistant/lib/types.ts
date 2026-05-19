@@ -157,3 +157,150 @@ export type ListProvidersResponse = { providers: LlmProviderRow[] }
 export type SingleProviderResponse = { provider: LlmProviderRow }
 export type TestProviderResponse = { result: LlmProviderTestResult }
 export type SingleSettingsResponse = { settings: AssistantSettingRow }
+
+export type AssistantRuntimeStatus = {
+  adapter: {
+    enabled: boolean
+    base_url_configured: boolean
+    server_token_configured: boolean
+    timeout_ms: number
+    missing: string[]
+  }
+  secrets: {
+    assistant_settings_encryption_key_configured: boolean
+  }
+  capabilities: {
+    provider_secrets_write: boolean
+    assistant_backend_proxy: boolean
+    catalog_reindex: boolean
+    queue_processing: boolean
+    markdown_sync: boolean
+    vector_reindex: boolean
+  }
+}
+
+export type AssistantRuntimeResponse = {
+  ok: true
+  runtime: AssistantRuntimeStatus
+}
+
+export type AssistantComponentStatus = Record<string, unknown>
+
+export type AssistantBackendStats = {
+  status: string
+  retrieval_mode: string
+  stats: Record<string, number>
+  components: Record<string, AssistantComponentStatus>
+}
+
+export type AssistantStatsResponse = {
+  ok: true
+  stats: AssistantBackendStats
+}
+
+export type AssistantReindexIntent = {
+  id: string
+  store_id: string
+  tenant_id: string | null
+  locale: string
+  event_name: string
+  event_id: string | null
+  action: string
+  scope: string
+  product_ids: string[]
+  reason: string | null
+  coalescing_key: string | null
+  status: string
+  attempts: number
+  max_attempts: number
+  next_attempt_at: string | null
+  last_error: string | null
+  assistant_job_id: string | null
+  metadata: Record<string, unknown>
+  created_at: string | null
+  updated_at: string | null
+  started_at: string | null
+  finished_at: string | null
+}
+
+export type AssistantReindexIntentStats = Record<string, number>
+
+export type AssistantReindexIntentsPayload = {
+  intents: AssistantReindexIntent[]
+  stats: AssistantReindexIntentStats
+}
+
+export type AssistantReindexIntentsResponse = {
+  ok: true
+  result: AssistantReindexIntentsPayload
+}
+
+export type AssistantIngestionJob = {
+  job_id: string
+  status: string
+  source_type?: string | null
+  source_id?: string | null
+  result?: Record<string, unknown>
+  error?: string | null
+  created_at?: string | null
+}
+
+export type AssistantQueuedReindexResponse = {
+  ok: true
+  queued: boolean
+  result: Record<string, unknown>
+}
+
+export type AssistantProcessQueueResult = {
+  claimed: number
+  processed: Array<Record<string, unknown>>
+  stats: AssistantReindexIntentStats
+}
+
+export type AssistantProcessQueueResponse = {
+  ok: true
+  result: AssistantProcessQueueResult
+}
+
+export type AssistantJobResponse = {
+  ok: true
+  job: Record<string, unknown>
+}
+
+export type AssistantMarkdownSyncPayload = {
+  job: AssistantIngestionJob
+  chunks?: unknown[]
+}
+
+export type AssistantMarkdownSyncResponse = {
+  ok: true
+  result: AssistantMarkdownSyncPayload
+}
+
+export type AssistantKnowledgeDocument = {
+  source_id: string
+  path: string
+  title: string
+  description: string
+  file_name: string
+  store_id: string
+  tenant_id?: string | null
+  locale: string
+  source_type?: string
+}
+
+export type AssistantKnowledgeDocumentPayload = {
+  document: AssistantKnowledgeDocument
+  job: AssistantIngestionJob
+  chunks?: unknown[]
+}
+
+export type AssistantKnowledgeDocumentResponse = {
+  ok: true
+  result: AssistantKnowledgeDocumentPayload
+}
+
+export type AssistantVectorIndexResponse = {
+  ok: true
+  result: AssistantIngestionJob
+}

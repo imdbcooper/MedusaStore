@@ -29,6 +29,8 @@ import {
   LlmProviderUpdateSchema,
   ReorderFallbackSchema,
 } from "./admin/assistant/settings/_schemas"
+import { AdminAssistantKnowledgeSyncSchema } from "./admin/assistant/knowledge/sync/route"
+import { AdminAssistantKnowledgeDocumentCreateSchema } from "./admin/assistant/knowledge/documents/route"
 import {
   AdminCreateMarketingCampaignSchema,
   AdminUpdateCustomerMarketingPreferencesSchema,
@@ -56,6 +58,7 @@ import { StoreCreateProductReviewSchema } from "./store/products/[id]/reviews/ro
 import { StoreUploadProductReviewImageSchema } from "./store/products/[id]/reviews/upload/route"
 import { AdminRejectProductReviewSchema } from "./admin/reviews/[id]/reject/route"
 import { AdminProductReviewReplySchema } from "./admin/reviews/[id]/reply/route"
+import { AdminAssistantVectorIndexSchema } from "./admin/assistant/vector/index/route"
 
 const adminAuth = authenticate("user", ["session", "bearer", "api-key"])
 
@@ -132,9 +135,38 @@ export default defineMiddlewares({
       middlewares: [adminAuth],
     },
     {
+      matcher: "/admin/assistant/runtime",
+      methods: ["GET"],
+      middlewares: [adminAuth],
+    },
+    {
       matcher: "/admin/assistant/jobs/:id",
       methods: ["GET"],
       middlewares: [adminAuth],
+    },
+    {
+      matcher: "/admin/assistant/knowledge/sync",
+      methods: ["POST"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformBody(AdminAssistantKnowledgeSyncSchema),
+      ],
+    },
+    {
+      matcher: "/admin/assistant/knowledge/documents",
+      methods: ["POST"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformBody(AdminAssistantKnowledgeDocumentCreateSchema),
+      ],
+    },
+    {
+      matcher: "/admin/assistant/vector/index",
+      methods: ["POST"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformBody(AdminAssistantVectorIndexSchema),
+      ],
     },
     // -----------------------------------------------------------------
     // PR 3: assistant-settings admin API.

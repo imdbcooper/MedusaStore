@@ -4,9 +4,10 @@
  * `defineRouteConfig` помещает запись в боковую панель. URL формируется
  * из директории: `routes/settings/assistant/page.tsx` → `/app/settings/assistant`.
  *
- * Страница состоит из трёх вкладок (Tabs из `@medusajs/ui`):
+ * Страница состоит из четырёх вкладок (Tabs из `@medusajs/ui`):
  *   - «Провайдеры» — таблица + drawer + drag-and-drop fallback;
  *   - «Общие настройки» — форма для singleton с optimistic concurrency;
+ *   - «Индексация и статус» — reindex каталога, sync knowledge и runtime;
  *   - «Состояние» — массовый probe + снапшот последних тестов.
  *
  * Каждая вкладка — отдельный feature-component из `./components/*`.
@@ -22,6 +23,7 @@ import { Container, Heading, Tabs, Text, Toaster } from "@medusajs/ui"
 
 import GeneralTab from "./components/general-tab"
 import HealthTab from "./components/health-tab"
+import OperationsTab from "./components/operations-tab"
 import ProvidersTab from "./components/providers-tab"
 import { assistantCopy } from "./lib/copy"
 
@@ -46,6 +48,9 @@ const AssistantSettingsPage = () => {
             <Tabs.Trigger value="general">
               {assistantCopy.tabs.general}
             </Tabs.Trigger>
+            <Tabs.Trigger value="operations">
+              {assistantCopy.tabs.operations}
+            </Tabs.Trigger>
             <Tabs.Trigger value="health">
               {assistantCopy.tabs.health}
             </Tabs.Trigger>
@@ -56,6 +61,9 @@ const AssistantSettingsPage = () => {
         </Tabs.Content>
         <Tabs.Content value="general">
           <GeneralTab />
+        </Tabs.Content>
+        <Tabs.Content value="operations">
+          <OperationsTab />
         </Tabs.Content>
         <Tabs.Content value="health">
           <HealthTab />

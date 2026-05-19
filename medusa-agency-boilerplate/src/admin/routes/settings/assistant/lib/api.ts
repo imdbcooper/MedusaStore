@@ -22,8 +22,17 @@
 
 import type {
   AssistantApiResult,
+  AssistantJobResponse,
+  AssistantKnowledgeDocumentResponse,
+  AssistantMarkdownSyncResponse,
+  AssistantProcessQueueResponse,
+  AssistantQueuedReindexResponse,
+  AssistantReindexIntentsResponse,
+  AssistantRuntimeResponse,
   AssistantSettingRow,
   AssistantSettingUpdateInput,
+  AssistantStatsResponse,
+  AssistantVectorIndexResponse,
   ListProvidersResponse,
   LlmProviderCreateInput,
   LlmProviderRow,
@@ -34,7 +43,8 @@ import type {
   TestProviderResponse,
 } from "./types"
 
-const BASE = "/admin/assistant/settings"
+const SETTINGS_BASE = "/admin/assistant/settings"
+const ROOT_BASE = "/admin/assistant"
 
 type FetchOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE"
@@ -54,6 +64,7 @@ type FetchOptions = {
  * Для 204 No Content возвращает `{ ok: true, data: undefined }`.
  */
 async function call<T>(
+  base: string,
   path: string,
   options: FetchOptions = {},
 ): Promise<AssistantApiResult<T>> {
@@ -63,7 +74,7 @@ async function call<T>(
       headers["Content-Type"] = "application/json"
     }
 
-    const res = await fetch(`${BASE}${path}`, {
+    const res = await fetch(`${base}${path}`, {
       method: options.method ?? "GET",
       credentials: "include",
       headers,
@@ -137,7 +148,7 @@ export function listProviders(opts?: {
   signal?: AbortSignal
 }): Promise<AssistantApiResult<ListProvidersResponse>> {
   const qs = opts?.enabledOnly ? "?enabled_only=true" : ""
-  return call<ListProvidersResponse>(`/providers${qs}`, {
+  return call<ListProvidersResponse>(SETTINGS_BASE, `/providers${qs}`, {
     method: "GET",
     signal: opts?.signal,
   })
@@ -150,7 +161,7 @@ export function createProvider(
   input: LlmProviderCreateInput,
   signal?: AbortSignal,
 ): Promise<AssistantApiResult<SingleProviderResponse>> {
-  return call<SingleProviderResponse>("/providers", {
+  return call<SingleProviderResponse>(SETTINGS_BASE, "/providers", {
     method: "POST",
     body: input,
     signal,
@@ -165,6 +176,7 @@ export function getProvider(
   signal?: AbortSignal,
 ): Promise<AssistantApiResult<SingleProviderResponse>> {
   return call<SingleProviderResponse>(
+    SETTINGS_BASE,
     `/providers/${encodeURIComponent(id)}`,
     { method: "GET", signal },
   )
@@ -179,6 +191,7 @@ export function updateProvider(
   signal?: AbortSignal,
 ): Promise<AssistantApiResult<SingleProviderResponse>> {
   return call<SingleProviderResponse>(
+    SETTINGS_BASE,
     `/providers/${encodeURIComponent(id)}`,
     { method: "PATCH", body: patch, signal },
   )
@@ -191,7 +204,7 @@ export function deleteProvider(
   id: string,
   signal?: AbortSignal,
 ): Promise<AssistantApiResult<void>> {
-  return call<void>(`/providers/${encodeURIComponent(id)}`, {
+  return call<void>(SETTINGS_BASE, `/providers/${encodeURIComponent(id)}`, {
     method: "DELETE",
     signal,
     expectEmpty: true,
@@ -206,6 +219,7 @@ export function activateProvider(
   signal?: AbortSignal,
 ): Promise<AssistantApiResult<SingleProviderResponse>> {
   return call<SingleProviderResponse>(
+    SETTINGS_BASE,
     `/providers/${encodeURIComponent(id)}/activate`,
     { method: "POST", body: {}, signal },
   )
@@ -223,6 +237,7 @@ export function testProvider(
       ? `?prompt=${encodeURIComponent(opts.prompt.trim())}`
       : ""
   return call<TestProviderResponse>(
+    SETTINGS_BASE,
     `/providers/${encodeURIComponent(id)}/test${qs}`,
     { method: "POST", body: {}, signal: opts?.signal },
   )
@@ -235,7 +250,7 @@ export function reorderFallback(
   orderedIds: string[],
   signal?: AbortSignal,
 ): Promise<AssistantApiResult<ListProvidersResponse>> {
-  return call<ListProvidersResponse>("/providers/reorder-fallback", {
+  return call<ListProvidersResponse>(SETTINGS_BASE, "/providers/reorder-fallback", {
     method: "POST",
     body: { ordered_ids: orderedIds },
     signal,
@@ -252,7 +267,10 @@ export function reorderFallback(
 export function getSettings(
   signal?: AbortSignal,
 ): Promise<AssistantApiResult<SingleSettingsResponse>> {
-  return call<SingleSettingsResponse>("", { method: "GET", signal })
+  return call<SingleSettingsResponse>(SETTINGS_BASE, "", {
+    method: "GET",
+    signal,
+  })
 }
 
 /**
@@ -265,9 +283,160 @@ export function updateSettings(
   patch: AssistantSettingUpdateInput,
   signal?: AbortSignal,
 ): Promise<AssistantApiResult<SingleSettingsResponse>> {
-  return call<SingleSettingsResponse>("", {
+  return call<SingleSettingsResponse>(SETTINGS_BASE, "", {
     method: "PATCH",
     body: patch,
+    signal,
+  })
+}
+
+export function getRuntime(
+  signal?: AbortSignal,
+): Promise<AssistantApiResult<AssistantRuntimeResponse>> {
+  return call<AssistantRuntimeResponse>(ROOT_BASE, "/runtime", {
+    method: "GET",
+    signal,
+  })
+}
+
+export function getAssistantStats(
+  signal?: AbortSignal,
+): Promise<AssistantApiResult<AssistantStatsResponse>> {
+  return call<AssistantStatsResponse>(ROOT_BASE, "/stats", {
+    method: "GET",
+    signal,
+  })
+}
+
+export function queueFullCatalogReindex(
+  input: {
+    store_id: string
+    locale: string
+    region_id?: string
+    currency_code?: string
+  },
+  signal?: AbortSignal,
+): Promise<AssistantApiResult<AssistantQueuedReindexResponse>> {
+  return call<AssistantQueuedReindexResponse>(ROOT_BASE, "/reindex", {
+    method: "POST",
+    body: {
+      scope: "all",
+      force: true,
+      store_id: input.store_id,
+      locale: input.locale,
+      region_id: input.region_id,
+      currency_code: input.currency_code,
+    },
+    signal,
+  })
+}
+
+export function queueSelectedProductsReindex(
+  input: {
+    product_ids: string[]
+    store_id: string
+    locale: string
+    region_id?: string
+    currency_code?: string
+  },
+  signal?: AbortSignal,
+): Promise<AssistantApiResult<AssistantQueuedReindexResponse>> {
+  return call<AssistantQueuedReindexResponse>(ROOT_BASE, "/reindex", {
+    method: "POST",
+    body: {
+      scope: "products",
+      product_ids: input.product_ids,
+      store_id: input.store_id,
+      locale: input.locale,
+      region_id: input.region_id,
+      currency_code: input.currency_code,
+    },
+    signal,
+  })
+}
+
+export function processReindexQueue(
+  input: { limit: number; retry_backoff_seconds: number },
+  signal?: AbortSignal,
+): Promise<AssistantApiResult<AssistantProcessQueueResponse>> {
+  return call<AssistantProcessQueueResponse>(ROOT_BASE, "/reindex/process", {
+    method: "POST",
+    body: input,
+    signal,
+  })
+}
+
+export function listReindexIntents(
+  opts?: { status?: string; limit?: number; signal?: AbortSignal },
+): Promise<AssistantApiResult<AssistantReindexIntentsResponse>> {
+  const params = new URLSearchParams()
+  if (opts?.status && opts.status !== "all") {
+    params.set("status", opts.status)
+  }
+  if (opts?.limit) {
+    params.set("limit", String(opts.limit))
+  }
+  const qs = params.toString() ? `?${params.toString()}` : ""
+  return call<AssistantReindexIntentsResponse>(
+    ROOT_BASE,
+    `/reindex/intents${qs}`,
+    {
+      method: "GET",
+      signal: opts?.signal,
+    },
+  )
+}
+
+export function getAssistantJob(
+  id: string,
+  signal?: AbortSignal,
+): Promise<AssistantApiResult<AssistantJobResponse>> {
+  return call<AssistantJobResponse>(ROOT_BASE, `/jobs/${encodeURIComponent(id)}`, {
+    method: "GET",
+    signal,
+  })
+}
+
+export function syncKnowledgeMarkdown(
+  input: { store_id: string; locale: string },
+  signal?: AbortSignal,
+): Promise<AssistantApiResult<AssistantMarkdownSyncResponse>> {
+  return call<AssistantMarkdownSyncResponse>(ROOT_BASE, "/knowledge/sync", {
+    method: "POST",
+    body: input,
+    signal,
+  })
+}
+
+export function createKnowledgeDocument(
+  input: {
+    store_id: string
+    locale: string
+    title: string
+    description: string
+    content: string
+    file_name?: string
+  },
+  signal?: AbortSignal,
+): Promise<AssistantApiResult<AssistantKnowledgeDocumentResponse>> {
+  return call<AssistantKnowledgeDocumentResponse>(
+    ROOT_BASE,
+    "/knowledge/documents",
+    {
+      method: "POST",
+      body: input,
+      signal,
+    },
+  )
+}
+
+export function reindexVectors(
+  input: { store_id: string; locale: string; source_type?: "markdown" | "medusa_product" },
+  signal?: AbortSignal,
+): Promise<AssistantApiResult<AssistantVectorIndexResponse>> {
+  return call<AssistantVectorIndexResponse>(ROOT_BASE, "/vector/index", {
+    method: "POST",
+    body: input,
     signal,
   })
 }
@@ -278,8 +447,16 @@ export function updateSettings(
 
 export type {
   AssistantApiResult,
+  AssistantJobResponse,
+  AssistantMarkdownSyncResponse,
+  AssistantProcessQueueResponse,
+  AssistantQueuedReindexResponse,
+  AssistantReindexIntentsResponse,
+  AssistantRuntimeResponse,
   AssistantSettingRow,
   AssistantSettingUpdateInput,
+  AssistantStatsResponse,
+  AssistantVectorIndexResponse,
   ListProvidersResponse,
   LlmProviderCreateInput,
   LlmProviderRow,

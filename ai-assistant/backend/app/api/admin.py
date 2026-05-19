@@ -15,6 +15,7 @@ from app.api.dependencies import (
 from app.core.auth import require_api_token
 from app.core.security import enforce_rate_limit, rate_limit_identity
 from app.schemas.ingestion import IngestionJobResponse
+from app.schemas.ingestion import KnowledgeDocumentCreateRequest, KnowledgeDocumentCreateResponse
 from app.services.health import DeepHealthService
 from app.services.ingestion import MarkdownIngestionService, MedusaProductIngestionService, VectorIndexingService
 from app.services.reindex_queue import ReindexQueueProcessor
@@ -159,6 +160,40 @@ async def admin_stats(
             "lightrag": health.get("lightrag"),
         },
     }
+
+
+@router.post("/knowledge/documents", response_model=KnowledgeDocumentCreateResponse)
+async def create_knowledge_document(
+    request: KnowledgeDocumentCreateRequest,
+    http_request: FastAPIRequest,
+    service: MarkdownIngestionService = Depends(get_ingestion_service),
+    _: None = Depends(require_api_token),
+) -> KnowledgeDocumentCreateResponse:
+    enforce_rate_limit(
+        http_request,
+        scope="admin",
+        identity=rate_limit_identity(http_request, scope="admin", store_id=request.store_id),
+    )
+    try:
+        return await service.save_admin_document(
+            store_id=request.store_id,
+            tenant_id=request.tenant_id,
+            locale=request.locale,
+            title=request.title,
+            description=request.description,
+            content=request.content,
+            file_name=request.file_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": {"code": "KNOWLEDGE_DOCUMENT_INVALID", "message": str(exc), "retryable": False}},
+        ) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": {"code": "KNOWLEDGE_DOCUMENT_WRITE_FAILED", "message": str(exc), "retryable": False}},
+        ) from exc
 
 
 @router.post("/reindex")

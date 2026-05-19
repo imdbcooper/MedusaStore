@@ -79,6 +79,22 @@ export type AssistantReindexRequest = {
   currency_code?: string
 }
 
+export type AssistantMarkdownSyncRequest = {
+  store_id?: string
+  tenant_id?: string
+  locale?: string
+}
+
+export type AssistantKnowledgeDocumentRequest = {
+  store_id?: string
+  tenant_id?: string
+  locale?: string
+  title: string
+  description: string
+  content: string
+  file_name?: string
+}
+
 export type AssistantReindexResponse = {
   job: {
     job_id: string
@@ -91,6 +107,60 @@ export type AssistantReindexResponse = {
   }
   products_indexed?: number
   chunks?: unknown[]
+}
+
+export type AssistantMarkdownSyncResponse = {
+  job: {
+    job_id: string
+    status: string
+    source_type?: string
+    source_id?: string
+    result?: Record<string, unknown>
+    error?: string | null
+    created_at?: string | null
+  }
+  chunks?: unknown[]
+}
+
+export type AssistantKnowledgeDocumentResponse = {
+  document: {
+    source_id: string
+    path: string
+    title: string
+    description: string
+    file_name: string
+    store_id: string
+    tenant_id?: string | null
+    locale: string
+    source_type?: string
+  }
+  job: {
+    job_id: string
+    status: string
+    source_type?: string
+    source_id?: string
+    result?: Record<string, unknown>
+    error?: string | null
+    created_at?: string | null
+  }
+  chunks?: unknown[]
+}
+
+export type AssistantVectorIndexRequest = {
+  store_id?: string
+  tenant_id?: string
+  locale?: string
+  source_type?: string
+}
+
+export type AssistantVectorIndexResponse = {
+  job_id: string
+  status: string
+  source_type?: string
+  source_id?: string
+  result?: Record<string, unknown>
+  error?: string | null
+  created_at?: string | null
 }
 
 export type AssistantReindexIntentRequest = {
@@ -187,6 +257,30 @@ export class AssistantBackendClient {
 
   async reindex(payload: AssistantReindexRequest) {
     return this.requestJson<AssistantReindexResponse>("/ingest/medusa/products/sync", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: this.jsonHeaders(),
+    })
+  }
+
+  async syncMarkdown(payload: AssistantMarkdownSyncRequest) {
+    return this.requestJson<AssistantMarkdownSyncResponse>("/ingest/markdown/sync", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: this.jsonHeaders(),
+    })
+  }
+
+  async createKnowledgeDocument(payload: AssistantKnowledgeDocumentRequest) {
+    return this.requestJson<AssistantKnowledgeDocumentResponse>("/admin/knowledge/documents", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: this.jsonHeaders(),
+    })
+  }
+
+  async indexVectors(payload: AssistantVectorIndexRequest) {
+    return this.requestJson<AssistantVectorIndexResponse>("/ingest/vector/index", {
       method: "POST",
       body: JSON.stringify(payload),
       headers: this.jsonHeaders(),

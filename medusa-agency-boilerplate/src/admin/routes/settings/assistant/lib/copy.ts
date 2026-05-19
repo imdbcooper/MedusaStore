@@ -14,11 +14,12 @@
 export const assistantCopy = {
   pageTitle: "AI Ассистент",
   pageSubtitle:
-    "Настройка LLM-провайдеров, fallback-цепочки и параметров AI-ассистента магазина.",
+    "Настройка LLM-провайдеров, параметров рантайма и ручное управление индексом знаний ассистента магазина.",
 
   tabs: {
     providers: "Провайдеры",
     general: "Общие настройки",
+    operations: "Индексация и статус",
     health: "Состояние",
   },
 
@@ -133,6 +134,9 @@ export const assistantCopy = {
       body: "Добавьте OpenAI-совместимый эндпоинт, чтобы запустить ассистента.",
       addCta: "Добавить первого провайдера",
     },
+
+    encryptionWarning:
+      "На сервере не настроен ASSISTANT_SETTINGS_ENCRYPTION_KEY. Пока он не задан в backend env, сохранять и ротировать API-ключи провайдеров из админки нельзя.",
 
     errors: {
       load: "Не удалось загрузить список провайдеров.",
@@ -314,6 +318,158 @@ export const assistantCopy = {
     },
 
     versionLabel: (n: number) => `Версия #${n}`,
+  },
+
+  operations: {
+    heading: "Каталог, знания и runtime",
+    subheading:
+      "Полный reindex каталога, ручной запуск очереди, синхронизация Markdown-базы знаний и снимок состояния assistant backend.",
+
+    runtime: {
+      heading: "Readiness",
+      subheading:
+        "Безопасная диагностика server-side конфигурации. Значения секретов не показываются, виден только статус readiness.",
+      cards: {
+        adapter: "Backend adapter",
+        encryption: "Шифрование provider secret",
+        service: "Assistant backend",
+        retrieval: "Retrieval mode",
+      },
+      configured: "Настроено",
+      missing: "Не настроено",
+      ok: "Готово",
+      degraded: "Degraded",
+      disabled: "Отключено",
+      missingKeys: "Не хватает:",
+    },
+
+    catalog: {
+      heading: "Каталог товаров и услуг",
+      subheading:
+        "Ставит reindex в очередь assistant backend. После enqueue очередь нужно отдельно обработать.",
+      fullReindexCta: "Поставить полный reindex каталога",
+      selectedReindexCta: "Поставить reindex выбранных товаров",
+      processQueueCta: "Обработать очередь",
+      productIds: "Product IDs",
+      productIdsPlaceholder: "prod_123\\nprod_456",
+      productIdsHint:
+        "По одному `product_id` на строке или через запятую. Используется для точечного обновления знаний по товарам.",
+      storeId: "Store ID",
+      locale: "Locale",
+      regionId: "Region ID",
+      currencyCode: "Currency code",
+      processLimit: "Сколько intent обработать за запуск",
+      processBackoff: "Retry backoff (секунды)",
+    },
+
+    knowledge: {
+      heading: "Markdown knowledge и vector index",
+      subheading:
+        "Можно загрузить или создать Markdown-документ прямо из админки: frontmatter добавляется автоматически, документ сразу синхронизируется в knowledge index. Базовые файлы из `ai-assistant/knowledge/*.md` тоже остаются частью общей базы знаний.",
+      markdownSyncCta: "Синхронизировать Markdown knowledge",
+      vectorSyncCta: "Пересобрать vector index",
+      vectorSourceType: "Source type для vector reindex",
+      vectorSourceTypeAll: "Все источники",
+      vectorSourceTypeMarkdown: "Только Markdown",
+      vectorSourceTypeProducts: "Только товары",
+      documentHeading: "Новый Markdown-документ",
+      documentSubheading:
+        "Загрузите `.md` файл или вставьте текст вручную. Сервис сам сформирует frontmatter с `title` и `description`, сохранит документ в persistent storage assistant backend и сразу переиндексирует его.",
+      documentTitle: "Название документа",
+      documentTitlePlaceholder: "Доставка и оплата",
+      documentDescription: "Описание для ассистента",
+      documentDescriptionPlaceholder:
+        "Короткая сводка о том, что именно описывает документ и в каких вопросах ассистент должен на него опираться.",
+      documentFile: "Файл `.md`",
+      documentFileHint:
+        "Файл нужен только как источник текста. Даже если в нём уже есть frontmatter, ассистент сохранит документ в canonical-виде и добавит свой frontmatter заново.",
+      documentContent: "Markdown-контент",
+      documentContentPlaceholder: "# Заголовок\n\nТекст Markdown-документа…",
+      documentContentHint:
+        "Описание из frontmatter тоже попадёт в retrieval-контекст, поэтому заполняйте его как короткую семантическую сводку.",
+      documentAutoFrontmatterHint:
+        "Файл будет сохранён с автоматически сгенерированным frontmatter: `title`, `description`, `source_type`, `source_id`, `store_id`, `locale`.",
+      documentSelectedFile: (name: string) => `Выбран файл: ${name}`,
+      documentSaveCta: "Сохранить документ и синхронизировать",
+      documentClearCta: "Очистить форму",
+    },
+
+    stats: {
+      heading: "Снимок assistant backend",
+      subheading:
+        "Текущие счётчики документов/чанков и состояние основных компонентов assistant service.",
+      noStats: "Статистика assistant backend недоступна, пока backend adapter не готов.",
+      documentCount: "Документов",
+      chunkCount: "Чанков",
+      indexedProducts: "Проиндексировано товаров",
+      messages: "Сообщений",
+      pendingIntents: "Pending intents",
+      errorIntents: "Intents с ошибкой",
+    },
+
+    intents: {
+      heading: "Очередь reindex intent",
+      subheading:
+        "Последние intent’ы из assistant backend. Здесь видно, что реально ждёт обработки и какие job уже были запущены.",
+      filters: {
+        all: "Все",
+        pending: "Pending",
+        processing: "Processing",
+        completed: "Completed",
+        error: "Error",
+      },
+      columns: {
+        event: "Событие",
+        scope: "Scope",
+        products: "Товары",
+        status: "Статус",
+        attempts: "Попытки",
+        updated: "Обновлён",
+        job: "Job",
+      },
+      empty: "Очередь пуста.",
+      refreshCta: "Обновить очередь",
+      inspectJobCta: "Открыть job",
+      noJob: "—",
+    },
+
+    job: {
+      heading: "Статус выбранного job",
+      empty: "Выберите intent с `assistant_job_id`, чтобы посмотреть payload job.",
+      status: "Статус",
+      source: "Источник",
+      createdAt: "Создан",
+      error: "Ошибка",
+      result: "Result",
+    },
+
+    toasts: {
+      fullQueued: "Полный reindex каталога поставлен в очередь.",
+      selectedQueued: (count: number) =>
+        `В очередь поставлен reindex для ${count} товар(ов).`,
+      queueProcessed: (count: number) =>
+        `Обработка очереди завершена. Claimed: ${count}.`,
+      markdownSynced: "Markdown knowledge пересинхронизирован.",
+      knowledgeDocumentSaved: (path: string) =>
+        `Markdown-документ сохранён и синхронизирован: ${path}.`,
+      vectorSynced: "Vector index пересобран.",
+      jobLoaded: "Статус job обновлён.",
+    },
+
+    errors: {
+      runtime: "Не удалось загрузить readiness assistant runtime.",
+      stats: "Не удалось загрузить статистику assistant backend.",
+      intents: "Не удалось загрузить очередь reindex intent.",
+      productIdsRequired:
+        "Добавьте хотя бы один product_id или используйте полный reindex каталога.",
+      knowledgeTitleRequired: "Добавьте название документа.",
+      knowledgeDescriptionRequired:
+        "Добавьте короткое описание — оно нужно для frontmatter и retrieval-контекста.",
+      knowledgeContentRequired:
+        "Добавьте Markdown-контент или загрузите `.md` файл.",
+      knowledgeFileRead:
+        "Не удалось прочитать выбранный `.md` файл. Проверьте кодировку и попробуйте снова.",
+    },
   },
 
   // -------------------------------------------------------------------------
