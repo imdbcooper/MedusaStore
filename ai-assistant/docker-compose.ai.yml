@@ -23,6 +23,8 @@ services:
       ASSISTANT_SETTINGS_RETRY_BACKOFF_SECONDS: ${ASSISTANT_SETTINGS_RETRY_BACKOFF_SECONDS:-0.25}
     ports:
       - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       assistant-postgres:
         condition: service_healthy
