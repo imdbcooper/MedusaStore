@@ -160,12 +160,13 @@ def chunk_text(text: str, *, target_chars: int, overlap_chars: int) -> list[str]
     while start < len(normalized):
         end = min(start + target_chars, len(normalized))
         split_at = normalized.rfind("\n\n", start, end)
-        if split_at <= start:
+        if split_at <= start + overlap_chars:
             split_at = end
         chunks.append(normalized[start:split_at].strip())
         if split_at >= len(normalized):
             break
-        start = max(split_at - overlap_chars, 0)
+        next_start = max(split_at - overlap_chars, 0)
+        start = next_start if next_start > start else end
     return [chunk for chunk in chunks if chunk]
 
 

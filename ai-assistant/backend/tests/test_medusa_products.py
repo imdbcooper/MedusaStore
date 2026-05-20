@@ -1,7 +1,7 @@
 import pytest
 
 from app.core.config import Settings
-from app.ingestion.products import normalize_medusa_product
+from app.ingestion.products import chunk_text, normalize_medusa_product
 from app.repositories.memory import InMemoryAssistantRepository
 from app.services.ingestion import MedusaProductIngestionService
 from tests.fakes import ESPRESSO_MACHINE_PRODUCT, FakeMedusaProductClient
@@ -28,6 +28,18 @@ def test_normalize_medusa_product_creates_indexable_chunk():
     assert chunk.metadata["category_handles"] == ["coffee-machines"]
     assert chunk.metadata["price_hint_min"] == 49900
     assert chunk.metadata["availability_hint"] == "in_stock"
+
+
+def test_product_chunk_text_progresses_when_only_early_paragraph_break_exists():
+    text = "# Product: Demo\n\n" + ("A" * 1400)
+
+    chunks = chunk_text(text, target_chars=1200, overlap_chars=150)
+
+    assert len(chunks) == 2
+    assert chunks[0].startswith("# Product: Demo")
+    assert len(chunks[0]) == 1200
+    assert chunks[1] == "A" * len(chunks[1])
+    assert 0 < len(chunks[1]) < 500
 
 
 @pytest.mark.asyncio
