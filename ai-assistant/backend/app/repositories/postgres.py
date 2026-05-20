@@ -479,9 +479,14 @@ class PostgresAssistantRepository:
                   event_id = COALESCE(EXCLUDED.event_id, assistant_reindex_intents.event_id),
                   action = EXCLUDED.action,
                   scope = EXCLUDED.scope,
-                  product_ids = (
-                    SELECT jsonb_agg(DISTINCT value)
-                    FROM jsonb_array_elements_text(assistant_reindex_intents.product_ids || EXCLUDED.product_ids) AS value
+                  product_ids = COALESCE(
+                    (
+                      SELECT jsonb_agg(DISTINCT value)
+                      FROM jsonb_array_elements_text(
+                        assistant_reindex_intents.product_ids || EXCLUDED.product_ids
+                      ) AS value
+                    ),
+                    '[]'::jsonb
                   ),
                   reason = COALESCE(EXCLUDED.reason, assistant_reindex_intents.reason),
                   metadata = assistant_reindex_intents.metadata || EXCLUDED.metadata,
@@ -565,7 +570,7 @@ class PostgresAssistantRepository:
                       ELSE $2
                     END,
                     next_attempt_at = CASE
-                      WHEN $2 = 'error' AND attempts < max_attempts THEN now() + ($6::text || ' seconds')::interval
+                      WHEN $2 = 'error' AND attempts < max_attempts THEN now() + ($6 * INTERVAL '1 second')
                       ELSE next_attempt_at
                     END,
                     finished_at = CASE

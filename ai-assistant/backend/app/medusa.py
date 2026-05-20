@@ -69,13 +69,17 @@ class MedusaProductClient:
         region_id: str | None,
         currency_code: str | None,
     ) -> dict[str, Any]:
+        effective_region_id = region_id or self.settings.medusa_default_region_id
         query: dict[str, Any] = {
             "limit": limit,
             "offset": offset,
-            "fields": self.settings.medusa_products_fields,
+            "fields": medusa_products_fields_for_context(
+                self.settings.medusa_products_fields,
+                include_calculated_price=bool(effective_region_id),
+            ),
         }
-        if region_id:
-            query["region_id"] = region_id
+        if effective_region_id:
+            query["region_id"] = effective_region_id
         if currency_code:
             query["currency_code"] = currency_code
         for product_id in product_ids:
@@ -158,3 +162,11 @@ def _encode_query(query: dict[str, Any]) -> str:
         else:
             pairs.append((key, value))
     return urlencode(pairs)
+
+
+def medusa_products_fields_for_context(fields: str, *, include_calculated_price: bool) -> str:
+    if include_calculated_price:
+        return fields
+    parts = [part.strip() for part in fields.split(",")]
+    filtered = [part for part in parts if part != "*variants.calculated_price"]
+    return ",".join(filtered)

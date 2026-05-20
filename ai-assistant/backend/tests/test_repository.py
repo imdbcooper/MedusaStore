@@ -166,3 +166,127 @@ async def test_postgres_repository_list_reindex_intents_normalizes_json_string_c
 
     assert intents[0]["product_ids"] == []
     assert intents[0]["metadata"] == {"force": True}
+
+
+@pytest.mark.asyncio
+async def test_postgres_repository_enqueue_reindex_intent_coalesces_empty_arrays():
+    captured: dict[str, object] = {}
+    row = {
+        "id": uuid4(),
+        "store_id": "default",
+        "tenant_id": None,
+        "locale": "ru",
+        "event_name": "admin.reindex",
+        "event_id": None,
+        "action": "reindex",
+        "scope": "all_products",
+        "product_ids": [],
+        "reason": "admin.reindex",
+        "coalescing_key": "assistant:catalog:all-products",
+        "status": "pending",
+        "attempts": 0,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-05-19T00:00:00Z",
+        "last_error": None,
+        "assistant_job_id": None,
+        "metadata": {},
+        "created_at": "2026-05-19T00:00:00Z",
+        "updated_at": "2026-05-19T00:00:00Z",
+        "started_at": None,
+        "finished_at": None,
+    }
+
+    class FakeConn:
+        async def fetchrow(self, query, *args):
+            captured["query"] = query
+            captured["args"] = args
+            return row
+
+    class FakeAcquire:
+        async def __aenter__(self):
+            return FakeConn()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakePool:
+        def acquire(self):
+            return FakeAcquire()
+
+    class FakeDatabase:
+        pool = FakePool()
+
+    repository = PostgresAssistantRepository(FakeDatabase())
+    await repository.enqueue_reindex_intent(
+        store_id="default",
+        locale="ru",
+        event_name="admin.reindex",
+        scope="all_products",
+        product_ids=[],
+        coalescing_key="assistant:catalog:all-products",
+    )
+
+    assert "COALESCE(" in str(captured["query"])
+    assert "'[]'::jsonb" in str(captured["query"])
+    assert captured["args"][8] == "[]"
+
+
+@pytest.mark.asyncio
+async def test_postgres_repository_complete_reindex_intent_uses_integer_interval_backoff():
+    captured: dict[str, object] = {}
+    row = {
+        "id": uuid4(),
+        "store_id": "default",
+        "tenant_id": None,
+        "locale": "ru",
+        "event_name": "admin.reindex",
+        "event_id": None,
+        "action": "reindex",
+        "scope": "all_products",
+        "product_ids": [],
+        "reason": "admin.reindex",
+        "coalescing_key": "assistant:catalog:all-products",
+        "status": "pending",
+        "attempts": 1,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-05-19T00:01:00Z",
+        "last_error": "boom",
+        "assistant_job_id": None,
+        "metadata": {},
+        "created_at": "2026-05-19T00:00:00Z",
+        "updated_at": "2026-05-19T00:00:00Z",
+        "started_at": None,
+        "finished_at": None,
+    }
+
+    class FakeConn:
+        async def fetchrow(self, query, *args):
+            captured["query"] = query
+            captured["args"] = args
+            return row
+
+    class FakeAcquire:
+        async def __aenter__(self):
+            return FakeConn()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakePool:
+        def acquire(self):
+            return FakeAcquire()
+
+    class FakeDatabase:
+        pool = FakePool()
+
+    repository = PostgresAssistantRepository(FakeDatabase())
+    await repository.complete_reindex_intent(
+        intent_id=row["id"],
+        status="error",
+        error="boom",
+        retry_backoff_seconds=60,
+    )
+
+    assert "INTERVAL '1 second'" in str(captured["query"])
+    assert "text || ' seconds'" not in str(captured["query"])
+    assert captured["args"][5] == 60
