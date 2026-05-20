@@ -1,5 +1,6 @@
 import hashlib
 import re
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid5, NAMESPACE_URL
@@ -32,12 +33,24 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     metadata = yaml.safe_load(raw) or {}
     if not isinstance(metadata, dict):
         metadata = {}
-    return metadata, content[match.end() :]
+    return normalize_metadata_values(metadata), content[match.end() :]
 
 
 def strip_frontmatter(content: str) -> str:
     _, body = parse_frontmatter(content)
     return body
+
+
+def normalize_metadata_values(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): normalize_metadata_values(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [normalize_metadata_values(item) for item in value]
+    if isinstance(value, tuple | set):
+        return [normalize_metadata_values(item) for item in value]
+    if isinstance(value, datetime | date):
+        return value.isoformat()
+    return value
 
 
 def infer_title(path: Path, metadata: dict[str, Any], body: str) -> str:
