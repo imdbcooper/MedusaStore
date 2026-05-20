@@ -199,7 +199,7 @@ class PostgresAssistantRepository:
                 source_id,
                 json.dumps(input_payload),
             )
-        return dict(row)
+        return _normalize_ingestion_job_row(dict(row))
 
     async def complete_ingestion_job(
         self,
@@ -224,7 +224,7 @@ class PostgresAssistantRepository:
                 json.dumps(result),
                 error,
             )
-        return dict(row)
+        return _normalize_ingestion_job_row(dict(row))
 
     async def get_ingestion_job(self, job_id: UUID) -> dict[str, Any] | None:
         async with self.pool.acquire() as conn:
@@ -232,7 +232,7 @@ class PostgresAssistantRepository:
                 "SELECT * FROM assistant_ingestion_jobs WHERE id = $1",
                 job_id,
             )
-        return dict(row) if row else None
+        return _normalize_ingestion_job_row(dict(row)) if row else None
 
     async def delete_source(
         self,
@@ -630,6 +630,13 @@ def _normalize_message_row(row: dict[str, Any]) -> dict[str, Any]:
     for field in ("citations", "products", "actions", "tool_calls"):
         normalized[field] = _json_field_or_default(normalized.get(field), [])
     normalized["token_usage"] = _json_field_or_default(normalized.get("token_usage"), {})
+    return normalized
+
+
+def _normalize_ingestion_job_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    normalized["input"] = _json_field_or_default(normalized.get("input"), {})
+    normalized["result"] = _json_field_or_default(normalized.get("result"), {})
     return normalized
 
 

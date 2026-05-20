@@ -115,6 +115,95 @@ async def test_postgres_repository_list_messages_normalizes_json_string_columns(
 
 
 @pytest.mark.asyncio
+async def test_postgres_repository_get_ingestion_job_normalizes_json_string_columns():
+    job_id = uuid4()
+    row = {
+        "id": job_id,
+        "store_id": "default",
+        "job_type": "markdown_sync",
+        "status": "completed",
+        "source_type": "markdown",
+        "source_id": "knowledge",
+        "input": '{"locale":"ru"}',
+        "result": '{"file_count": 2, "chunk_count": 4}',
+        "error": None,
+        "started_at": "2026-05-20T00:00:00Z",
+        "finished_at": "2026-05-20T00:01:00Z",
+        "created_at": "2026-05-20T00:00:00Z",
+    }
+
+    class FakeConn:
+        async def fetchrow(self, *_args, **_kwargs):
+            return row
+
+    class FakeAcquire:
+        async def __aenter__(self):
+            return FakeConn()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakePool:
+        def acquire(self):
+            return FakeAcquire()
+
+    class FakeDatabase:
+        pool = FakePool()
+
+    repository = PostgresAssistantRepository(FakeDatabase())
+    job = await repository.get_ingestion_job(job_id)
+
+    assert job["input"] == {"locale": "ru"}
+    assert job["result"] == {"file_count": 2, "chunk_count": 4}
+
+
+@pytest.mark.asyncio
+async def test_postgres_repository_complete_ingestion_job_normalizes_json_string_columns():
+    job_id = uuid4()
+    row = {
+        "id": job_id,
+        "store_id": "default",
+        "job_type": "markdown_sync",
+        "status": "completed",
+        "source_type": "markdown",
+        "source_id": "knowledge",
+        "input": '{"locale":"ru"}',
+        "result": '{"file_count": 2, "chunk_count": 4}',
+        "error": None,
+        "started_at": "2026-05-20T00:00:00Z",
+        "finished_at": "2026-05-20T00:01:00Z",
+        "created_at": "2026-05-20T00:00:00Z",
+    }
+
+    class FakeConn:
+        async def fetchrow(self, query, *args):
+            return row
+
+    class FakeAcquire:
+        async def __aenter__(self):
+            return FakeConn()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakePool:
+        def acquire(self):
+            return FakeAcquire()
+
+    class FakeDatabase:
+        pool = FakePool()
+
+    repository = PostgresAssistantRepository(FakeDatabase())
+    job = await repository.complete_ingestion_job(
+        job_id=job_id,
+        result={"file_count": 2, "chunk_count": 4},
+    )
+
+    assert job["input"] == {"locale": "ru"}
+    assert job["result"] == {"file_count": 2, "chunk_count": 4}
+
+
+@pytest.mark.asyncio
 async def test_postgres_repository_list_reindex_intents_normalizes_json_string_columns():
     rows = [
         {
