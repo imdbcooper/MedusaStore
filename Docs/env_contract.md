@@ -575,7 +575,7 @@ Operational notes:
 - Browser requests to `/store/assistant/chat` and `/store/assistant/history` may send only safe session/context data such as `message`, anonymous assistant `session_id`, `store_id`, `locale`, `region_id`, `currency_code`, and page context.
 - Browser-provided `cart_id` is untrusted and is discarded by the current backend adapter. Cart-aware answers require a future trusted server-side cart ownership resolver before cart context can be forwarded.
 - `/store/assistant/history` is a scoped proxy for the active assistant session. It must not expose privileged assistant endpoints, server tokens, cross-session history, raw provider keys, or raw backend-only diagnostics.
-- Subscribers enqueue durable assistant reindex intents only. Actual drain/processing is explicit through admin routes, worker, or cron and should not be described as automatic inline product indexing.
+- Subscribers enqueue durable assistant reindex intents only. Drain/processing is asynchronous through the built-in Medusa scheduled job, admin routes, or another worker/cron path; it should not be described as automatic inline product indexing inside the product-write request itself.
 
 ---
 

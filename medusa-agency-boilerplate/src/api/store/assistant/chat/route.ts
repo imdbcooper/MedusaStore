@@ -1,4 +1,5 @@
 import type { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import type { AssistantClientError } from "../../../../lib/assistant-client"
 import { safePassthroughHeaders } from "../../../../lib/assistant-client"
 import { errorResponse, wantsEventStream } from "../../../../lib/route-utils"
 import { requireAssistantBackendClient } from "../../../../modules/assistant-runtime"
@@ -28,16 +29,24 @@ export async function POST(req: MedusaRequest<StoreAssistantChatBody>, res: Medu
   }
 
   try {
+    let deferredBind = false
     if (payload.session_id && customerId) {
-      await client.bindSession({
-        session_id: payload.session_id,
-        customer_id: customerId,
-        store_id: payload.store_id,
-        locale: payload.locale,
-        customer_context: {
-          source: "medusa_store_auth_context",
-        },
-      })
+      try {
+        await client.bindSession({
+          session_id: payload.session_id,
+          customer_id: customerId,
+          store_id: payload.store_id,
+          locale: payload.locale,
+          customer_context: {
+            source: "medusa_store_auth_context",
+          },
+        })
+      } catch (error) {
+        if (!isSessionNotFoundError(error)) {
+          throw error
+        }
+        deferredBind = true
+      }
     }
 
     if (wantsEventStream(req.headers)) {
@@ -61,6 +70,19 @@ export async function POST(req: MedusaRequest<StoreAssistantChatBody>, res: Medu
           }
           res.write(Buffer.from(value))
         }
+        if (deferredBind && payload.session_id && customerId) {
+          try {
+            await client.bindSession({
+              session_id: payload.session_id,
+              customer_id: customerId,
+              store_id: payload.store_id,
+              locale: payload.locale,
+              customer_context: {
+                source: "medusa_store_auth_context",
+              },
+            })
+          } catch {}
+        }
       } finally {
         reader.releaseLock()
         res.end()
@@ -69,6 +91,17 @@ export async function POST(req: MedusaRequest<StoreAssistantChatBody>, res: Medu
     }
 
     const response = await client.chat(payload, safePassthroughHeaders(req.headers))
+    if (deferredBind && payload.session_id && customerId) {
+      await client.bindSession({
+        session_id: payload.session_id,
+        customer_id: customerId,
+        store_id: payload.store_id,
+        locale: payload.locale,
+        customer_context: {
+          source: "medusa_store_auth_context",
+        },
+      })
+    }
     res.status(200).json(response)
   } catch (error) {
     errorResponse(res, error)
@@ -83,4 +116,9 @@ function extractAuthenticatedCustomerId(req: MedusaRequest<StoreAssistantChatBod
     return undefined
   }
   return authContext?.actor_id?.trim() || undefined
+}
+
+function isSessionNotFoundError(error: unknown) {
+  const assistantError = error as Partial<AssistantClientError>
+  return assistantError.status === 404 || assistantError.code === "SESSION_NOT_FOUND"
 }

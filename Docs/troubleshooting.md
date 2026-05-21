@@ -416,7 +416,7 @@ Implementation facts:
 - The storefront widget is installed under [`assistant`](../medusa-agency-boilerplate-storefront/src/modules/assistant) and is hidden by default with `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=false`.
 - Browser traffic must use backend Store API proxy routes: `/store/assistant/chat` and `/store/assistant/history`.
 - Backend server-to-server calls use `AI_ASSISTANT_SERVER_TOKEN`; the standalone assistant service expects `AI_ASSISTANT_API_TOKEN`.
-- Subscribers only enqueue durable reindex intents. Actual drain/processing is explicit through `/admin/assistant/reindex/process`, a worker, or cron.
+- Subscribers enqueue durable reindex intents. Queue drain/processing may happen through the built-in Medusa scheduled job, `/admin/assistant/reindex/process`, or another reviewed worker/cron path.
 
 Checks:
 
@@ -450,14 +450,14 @@ Common causes:
 - `AI_ASSISTANT_SERVER_TOKEN` does not match the assistant service `AI_ASSISTANT_API_TOKEN`.
 - `NEXT_PUBLIC_AI_ASSISTANT_WIDGET_ENABLED=false` intentionally hides the widget in the storefront.
 - Browser code is calling the assistant service directly instead of `/store/assistant/chat` or `/store/assistant/history`.
-- Reindex intents were enqueued but never drained through admin, worker, or cron processing.
+- Reindex intents were enqueued but never drained because the built-in scheduled job is not running, the backend adapter is disabled, or no manual/worker path processed the queue.
 
 Fix direction:
 
 - Keep the widget default-off unless launch/review explicitly enables it.
 - Enable the backend adapter only with exact `AI_ASSISTANT_ENABLED=true` and matching backend/service tokens.
 - Verify `/store/assistant/history` remains a scoped proxy and does not expose server tokens.
-- Drain queued work explicitly with `POST /admin/assistant/reindex/process` or deploy a reviewed worker/cron path.
+- Confirm the built-in Medusa scheduled drain job is running, or drain queued work explicitly with `POST /admin/assistant/reindex/process`, or deploy another reviewed worker/cron path.
 - Do not paste assistant API tokens, server tokens, LLM keys, raw chat PII, or provider payloads into logs/tickets/docs.
 
 ## 11. Quick log map

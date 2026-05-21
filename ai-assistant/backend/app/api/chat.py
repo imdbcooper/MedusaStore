@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request as FastAPIRequest
@@ -10,6 +11,7 @@ from app.schemas.chat import ChatHistoryMessage, ChatHistoryResponse, ChatReques
 from app.services.chat import ChatService
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+logger = logging.getLogger("assistant.chat.api")
 
 
 @router.post("", response_model=ChatResponse)
@@ -29,6 +31,7 @@ async def chat(
     try:
         return await service.answer(request, request_id=getattr(http_request.state, "request_id", None))
     except Exception as exc:
+        logger.exception("assistant chat request failed")
         raise HTTPException(
             status_code=500,
             detail={

@@ -437,7 +437,7 @@ async function responseToError(response: Response) {
 
   try {
     details = await response.json()
-    const error = typeof details === "object" && details && "error" in details ? (details as { error?: Record<string, unknown> }).error : null
+    const error = extractErrorPayload(details)
     if (error?.message && typeof error.message === "string") {
       message = error.message
     }
@@ -457,4 +457,31 @@ async function responseToError(response: Response) {
     retryable,
     details,
   })
+}
+
+function extractErrorPayload(payload: unknown): Record<string, unknown> | null {
+  if (!payload || typeof payload !== "object") {
+    return null
+  }
+
+  const root = payload as {
+    error?: unknown
+    detail?: { error?: unknown } | unknown
+  }
+
+  if (root.error && typeof root.error === "object") {
+    return root.error as Record<string, unknown>
+  }
+
+  if (
+    root.detail &&
+    typeof root.detail === "object" &&
+    "error" in root.detail &&
+    root.detail.error &&
+    typeof root.detail.error === "object"
+  ) {
+    return root.detail.error as Record<string, unknown>
+  }
+
+  return null
 }
