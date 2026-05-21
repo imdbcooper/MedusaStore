@@ -10,6 +10,30 @@ import ContentLinkItem from "@modules/content/components/content-link"
 import MedusaCTA from "@modules/layout/components/medusa-cta"
 import { resolveFooterShellSurface } from "@modules/storefront-customization/components/shell-surface-resolver"
 
+const SEEDED_DEMO_GLOBALS = {
+  siteName: "Medusa Agency Demo Store",
+  tagline: "Демо-витрина с управляемым контентом Payload CMS",
+  contactEmail: "support@example.com",
+  contactPhone: "+7 000 000-00-00",
+} as const
+
+const resolveFooterValue = (
+  value: string | null | undefined,
+  {
+    fallback,
+    seededDemoValue,
+  }: {
+    fallback: string
+    seededDemoValue?: string
+  }
+) => {
+  const normalized = value?.trim()
+  if (!normalized || (seededDemoValue && normalized === seededDemoValue)) {
+    return fallback
+  }
+  return normalized
+}
+
 export default async function Footer() {
   const [{ collections }, productCategories, payloadFooter, siteSettings] =
     await Promise.all([
@@ -25,10 +49,22 @@ export default async function Footer() {
   const navigationCopy = storefrontConfig.copy.navigation
   const commonCopy = storefrontConfig.copy.common
 
-  const brandName = siteSettings?.siteName || storefrontConfig.storeName
-  const tagline = siteSettings?.tagline || storefrontConfig.tagline
-  const contactEmail = payloadFooter?.contactEmail || storefrontConfig.contact.email
-  const contactPhone = payloadFooter?.contactPhone || storefrontConfig.contact.phone
+  const brandName = resolveFooterValue(siteSettings?.siteName, {
+    fallback: storefrontConfig.storeName,
+    seededDemoValue: SEEDED_DEMO_GLOBALS.siteName,
+  })
+  const tagline = resolveFooterValue(siteSettings?.tagline, {
+    fallback: storefrontConfig.tagline,
+    seededDemoValue: SEEDED_DEMO_GLOBALS.tagline,
+  })
+  const contactEmail = resolveFooterValue(payloadFooter?.contactEmail, {
+    fallback: storefrontConfig.contact.email,
+    seededDemoValue: SEEDED_DEMO_GLOBALS.contactEmail,
+  })
+  const contactPhone = resolveFooterValue(payloadFooter?.contactPhone, {
+    fallback: storefrontConfig.contact.phone,
+    seededDemoValue: SEEDED_DEMO_GLOBALS.contactPhone,
+  })
   const footerColumns = payloadFooter?.columns || []
   const socialLinks = payloadFooter?.socialLinks || []
   const footerSurface = resolveFooterShellSurface()

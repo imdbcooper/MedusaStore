@@ -15,10 +15,16 @@ export default async function ProductRail({
   collection,
   region,
   maxProducts,
+  href,
+  actionLabel = storefrontConfig.copy.common.viewAll,
+  useFeaturedCards = false,
 }: {
   collection: HttpTypes.StoreCollection
   region: HttpTypes.StoreRegion
   maxProducts?: number
+  href?: string
+  actionLabel?: string
+  useFeaturedCards?: boolean
 }) {
   const {
     response: { products: pricedProducts },
@@ -39,6 +45,7 @@ export default async function ProductRail({
     : pricedProducts
 
   const shellSurface = resolveFeaturedRailCatalogShellSurface()
+  const collectionHref = href || (collection.handle ? `/collections/${collection.handle}` : "/collections")
 
   // Plan §6.3 / step 4 — batch rating summaries for every card on the rail
   // (see also `paginated-products.tsx`). Cheap, parallelised; no extra
@@ -51,16 +58,16 @@ export default async function ProductRail({
     <FeaturedRailCatalogShellSurface
       surface={shellSurface}
       title={collection.title}
-      href={`/collections/${collection.handle}`}
-      actionLabel={storefrontConfig.copy.common.viewAll}
+      href={collectionHref}
+      actionLabel={actionLabel}
     >
       <ul className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] gap-6 small:gap-8">
         {resolvedProducts &&
           resolvedProducts.map((product) => (
-            <li key={product.id}>
+            <li key={product.id} className="min-w-0">
               <ProductPreview
                 product={product}
-                isFeatured
+                isFeatured={useFeaturedCards}
                 ratingSummary={ratingSummaries[product.id] ?? null}
               />
             </li>

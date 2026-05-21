@@ -115,6 +115,100 @@ async def test_postgres_repository_list_messages_normalizes_json_string_columns(
 
 
 @pytest.mark.asyncio
+async def test_postgres_repository_search_chunks_normalizes_json_string_source_columns():
+    rows = [
+        {
+            "id": uuid4(),
+            "source_id": uuid4(),
+            "chunk_index": 0,
+            "content": "Политика доставки",
+            "content_hash": "chunk-hash",
+            "metadata": '{"tenant_id":"tenant-a"}',
+            "source": '{"source_type":"markdown","source_id":"faq.md","title":"FAQ","metadata":"{\\"tenant_id\\":\\"tenant-a\\"}"}',
+            "score": 1,
+            "created_at": "2026-05-21T00:00:00Z",
+        }
+    ]
+
+    class FakeConn:
+        async def fetch(self, *_args, **_kwargs):
+            return rows
+
+    class FakeAcquire:
+        async def __aenter__(self):
+            return FakeConn()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakePool:
+        def acquire(self):
+            return FakeAcquire()
+
+    class FakeDatabase:
+        pool = FakePool()
+
+    repository = PostgresAssistantRepository(FakeDatabase())
+    chunks = await repository.search_chunks(
+        store_id="default",
+        locale="ru",
+        query="политика доставки",
+    )
+
+    assert chunks[0]["metadata"] == {"tenant_id": "tenant-a"}
+    assert chunks[0]["source"]["source_type"] == "markdown"
+    assert chunks[0]["source"]["source_id"] == "faq.md"
+    assert chunks[0]["source"]["metadata"] == {"tenant_id": "tenant-a"}
+
+
+@pytest.mark.asyncio
+async def test_postgres_repository_list_chunks_for_source_normalizes_json_string_source_columns():
+    rows = [
+        {
+            "id": uuid4(),
+            "source_id": uuid4(),
+            "chunk_index": 0,
+            "content": "Политика доставки",
+            "content_hash": "chunk-hash",
+            "metadata": '{"tenant_id":"tenant-a"}',
+            "source": '{"source_type":"markdown","source_id":"faq.md","title":"FAQ","metadata":"{\\"tenant_id\\":\\"tenant-a\\"}"}',
+            "created_at": "2026-05-21T00:00:00Z",
+        }
+    ]
+
+    class FakeConn:
+        async def fetch(self, *_args, **_kwargs):
+            return rows
+
+    class FakeAcquire:
+        async def __aenter__(self):
+            return FakeConn()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakePool:
+        def acquire(self):
+            return FakeAcquire()
+
+    class FakeDatabase:
+        pool = FakePool()
+
+    repository = PostgresAssistantRepository(FakeDatabase())
+    chunks = await repository.list_chunks_for_source(
+        store_id="default",
+        locale="ru",
+        source_type="markdown",
+        source_id="faq.md",
+    )
+
+    assert chunks[0]["metadata"] == {"tenant_id": "tenant-a"}
+    assert chunks[0]["source"]["source_type"] == "markdown"
+    assert chunks[0]["source"]["source_id"] == "faq.md"
+    assert chunks[0]["source"]["metadata"] == {"tenant_id": "tenant-a"}
+
+
+@pytest.mark.asyncio
 async def test_postgres_repository_get_ingestion_job_normalizes_json_string_columns():
     job_id = uuid4()
     row = {

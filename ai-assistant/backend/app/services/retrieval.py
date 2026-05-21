@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app.schemas.chat import Citation
@@ -31,6 +32,7 @@ class SimpleMarkdownRetriever:
             limit=limit,
             source_type=source_type,
         )
+        chunks = [_normalize_chunk(chunk) for chunk in chunks]
         chunks = apply_payload_filters(chunks, filters)
         return chunks, citations_from_chunks(chunks)
 
@@ -45,7 +47,8 @@ class SimpleMarkdownRetriever:
     ) -> list[dict]:
         seen: set[str] = set()
         cards: list[dict] = []
-        for chunk in chunks:
+        for raw_chunk in chunks:
+            chunk = _normalize_chunk(raw_chunk)
             source = chunk.get("source", {})
             if source.get("source_type") != "medusa_product":
                 continue
@@ -111,6 +114,7 @@ class QdrantVectorRetriever:
             category=filters.get("category"),
             brand=filters.get("brand"),
         )
+        chunks = [_normalize_chunk(chunk) for chunk in chunks]
         return chunks, citations_from_chunks(chunks)
 
     async def product_cards(
@@ -124,7 +128,8 @@ class QdrantVectorRetriever:
     ) -> list[dict]:
         cards: list[dict] = []
         seen: set[str] = set()
-        for chunk in chunks:
+        for raw_chunk in chunks:
+            chunk = _normalize_chunk(raw_chunk)
             source = chunk.get("source", {})
             metadata = source.get("metadata") or chunk.get("metadata") or {}
             if (source.get("source_type") or metadata.get("source_type")) != "medusa_product":
@@ -253,7 +258,8 @@ def filters_have_vector_scope(filters: dict[str, Any] | None) -> bool:
 
 def citations_from_chunks(chunks: list[dict]) -> list[Citation]:
     citations: list[Citation] = []
-    for chunk in chunks:
+    for raw_chunk in chunks:
+        chunk = _normalize_chunk(raw_chunk)
         source = chunk.get("source", {})
         citations.append(
             Citation(
@@ -274,6 +280,7 @@ def apply_payload_filters(chunks: list[dict], filters: dict[str, Any]) -> list[d
 
 
 def chunk_matches_filters(chunk: dict[str, Any], filters: dict[str, Any]) -> bool:
+    chunk = _normalize_chunk(chunk)
     source = chunk.get("source") or {}
     metadata = source.get("metadata") or chunk.get("metadata") or {}
     merged = {**metadata, **source}
@@ -299,9 +306,32 @@ def ensure_list(value: Any) -> list[Any]:
     return [value]
 
 
+def _normalize_chunk(chunk: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(chunk)
+    normalized["metadata"] = _coerce_dict(normalized.get("metadata"))
+    source = _coerce_dict(normalized.get("source"))
+    normalized["source"] = {**source, "metadata": _coerce_dict(source.get("metadata"))} if source else {}
+    return normalized
+
+
+def _coerce_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
 def product_card_from_metadata(metadata: dict, source: dict, chunk: dict | None) -> dict:
+    metadata = _coerce_dict(metadata)
+    source = _coerce_dict(source)
     reason = None
     if chunk:
+        chunk = _normalize_chunk(chunk)
         title = source.get("title") or metadata.get("title") or "товар"
         reason = f"Подходит по найденному описанию из карточки «{title}»."
     return {

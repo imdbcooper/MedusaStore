@@ -113,7 +113,7 @@ const FeaturedCollectionsSection = ({
         <div className="mb-10 flex flex-col gap-4 small:flex-row small:items-end small:justify-between">
           <HomeSectionHeading title={section.title} description={section.description} />
           <StorefrontActionLinkButton
-            action={{ label: "Весь каталог →", href: "/store" }}
+            action={section.primaryAction}
             variant="secondary"
           />
         </div>

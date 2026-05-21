@@ -92,6 +92,7 @@ export type HomeFeaturedCollectionsSection = {
   type: "featuredCollections"
   title: string
   description?: string
+  primaryAction?: StorefrontActionLink
   collectionHandles?: string[]
   maxCollections?: number
   maxProductsPerCollection?: number
@@ -540,6 +541,10 @@ export const storefrontPresetCatalog = {
             title: "Популярные решения",
             description:
               "Готовые архитектурные базы, адаптируемые под ваш бренд.",
+            primaryAction: {
+              label: "Весь каталог →",
+              href: "/store",
+            },
             maxCollections: 2,
             maxProductsPerCollection: 2,
           },
@@ -943,6 +948,10 @@ export const storefrontPresetCatalog = {
             title: "Основные подборки магазина",
             description:
               "Preset меняет merchandising tone, но продолжает использовать существующий collection и product data layer.",
+            primaryAction: {
+              label: "Весь каталог →",
+              href: "/store",
+            },
             maxCollections: 4,
             maxProductsPerCollection: 3,
           },

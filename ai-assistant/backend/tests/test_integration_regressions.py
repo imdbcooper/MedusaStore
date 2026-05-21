@@ -163,6 +163,36 @@ def test_postgres_chat_retrieval_path_accepts_source_type_filtered_requests():
     assert search_fetch["args"] == ("default", "ru", 0, ["Найди", "товар"], 5)
 
 
+def test_markdown_retriever_normalizes_stringified_chunk_source_before_payload_filters():
+    class BrokenRepository:
+        async def search_chunks(self, **_kwargs):
+            return [
+                {
+                    "id": "chunk-1",
+                    "content": "Доставка по Москве",
+                    "metadata": '{"tenant_id":"tenant-a"}',
+                    "source": '{"source_type":"markdown","source_id":"faq.md","title":"FAQ","metadata":"{\\"tenant_id\\":\\"tenant-a\\"}"}',
+                }
+            ]
+
+    async def run():
+        retriever = SimpleMarkdownRetriever(repository=BrokenRepository())
+        return await retriever.search(
+            query="Доставка",
+            store_id="default",
+            locale="ru",
+            tenant_id="tenant-a",
+            filters={"source_type": "markdown"},
+        )
+
+    chunks, citations = asyncio.run(run())
+
+    assert len(chunks) == 1
+    assert chunks[0]["source"]["source_id"] == "faq.md"
+    assert chunks[0]["source"]["metadata"] == {"tenant_id": "tenant-a"}
+    assert citations[0].source_id == "faq.md"
+
+
 def test_qdrant_category_filter_shape_keeps_category_as_nested_condition():
     qdrant_filter = build_qdrant_filter(
         store_id="default",

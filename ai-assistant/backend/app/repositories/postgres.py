@@ -350,7 +350,7 @@ class PostgresAssistantRepository:
                 """,
                 *args,
             )
-        return [dict(row) for row in rows]
+        return [_normalize_chunk_row(dict(row)) for row in rows]
 
     async def list_sources(
         self,
@@ -377,7 +377,7 @@ class PostgresAssistantRepository:
                 """,
                 *args,
             )
-        return [dict(row) for row in rows]
+        return [_normalize_source_row(dict(row)) for row in rows]
 
     async def list_chunks_for_source(
         self,
@@ -411,7 +411,7 @@ class PostgresAssistantRepository:
                 """,
                 *args,
             )
-        return [dict(row) for row in rows]
+        return [_normalize_chunk_row(dict(row)) for row in rows]
 
     async def create_feedback(
         self,
@@ -630,6 +630,20 @@ def _normalize_message_row(row: dict[str, Any]) -> dict[str, Any]:
     for field in ("citations", "products", "actions", "tool_calls"):
         normalized[field] = _json_field_or_default(normalized.get(field), [])
     normalized["token_usage"] = _json_field_or_default(normalized.get("token_usage"), {})
+    return normalized
+
+
+def _normalize_source_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    normalized["metadata"] = _json_field_or_default(normalized.get("metadata"), {})
+    return normalized
+
+
+def _normalize_chunk_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    normalized["metadata"] = _json_field_or_default(normalized.get("metadata"), {})
+    source = _json_field_or_default(normalized.get("source"), {})
+    normalized["source"] = _normalize_source_row(source) if source else {}
     return normalized
 
 
