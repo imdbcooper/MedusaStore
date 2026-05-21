@@ -5,6 +5,11 @@ import medusaError from "@lib/util/medusa-error"
 import { getAuthHeaders, getCacheOptions } from "./cookies"
 import { HttpTypes } from "@medusajs/types"
 
+type OrderListFilters = Record<
+  string,
+  string | number | boolean | string[] | null | undefined
+>
+
 export const retrieveOrder = async (id: string) => {
   const headers = {
     ...(await getAuthHeaders()),
@@ -32,7 +37,7 @@ export const retrieveOrder = async (id: string) => {
 export const listOrders = async (
   limit: number = 10,
   offset: number = 0,
-  filters?: Record<string, any>
+  filters?: OrderListFilters
 ) => {
   const headers = {
     ...(await getAuthHeaders()),

@@ -12,6 +12,7 @@ type ShippingDetailsProps = {
 const ShippingDetails = ({ order }: ShippingDetailsProps) => {
   const orderCopy = storefrontConfig.copy.order
   const commonCopy = storefrontConfig.copy.common
+  const shippingMethod = order.shipping_methods?.[0]
 
   return (
     <div>
@@ -61,9 +62,9 @@ const ShippingDetails = ({ order }: ShippingDetailsProps) => {
             {orderCopy.method}
           </Text>
           <Text className="txt-medium text-ui-fg-subtle">
-            {(order as any).shipping_methods[0]?.name} (
+            {shippingMethod?.name} (
             {convertToLocale({
-              amount: order.shipping_methods?.[0].total ?? 0,
+              amount: shippingMethod?.total ?? 0,
               currency_code: order.currency_code,
             })}
             )

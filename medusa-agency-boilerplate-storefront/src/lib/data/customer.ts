@@ -15,11 +15,22 @@ import {
   setAuthToken,
 } from "./cookies"
 
+type CustomerAddressActionState = {
+  success: boolean
+  error: string | null
+  isDefaultBilling?: boolean
+  isDefaultShipping?: boolean
+  addressId?: string
+}
+
+const stringifyError = (error: unknown) =>
+  error instanceof Error ? error.toString() : String(error)
+
 export const retrieveCustomer =
   async (): Promise<HttpTypes.StoreCustomer | null> => {
     const authHeaders = await getAuthHeaders()
 
-    if (!authHeaders) return null
+    if (!hasAuthorizationHeader(authHeaders)) return null
 
     const headers = {
       ...authHeaders,
@@ -59,7 +70,10 @@ export const updateCustomer = async (body: HttpTypes.StoreUpdateCustomer) => {
   return updateRes
 }
 
-export async function signup(_currentState: unknown, formData: FormData) {
+export async function signup(
+  _currentState: unknown,
+  formData: FormData
+): Promise<string | null> {
   const password = formData.get("password") as string
   const customerForm = {
     email: formData.get("email") as string,
@@ -80,7 +94,7 @@ export async function signup(_currentState: unknown, formData: FormData) {
       ...(await getAuthHeaders()),
     }
 
-    const { customer: createdCustomer } = await sdk.store.customer.create(
+    await sdk.store.customer.create(
       customerForm,
       {},
       headers
@@ -98,13 +112,16 @@ export async function signup(_currentState: unknown, formData: FormData) {
 
     await transferCart()
 
-    return createdCustomer
-  } catch (error: any) {
-    return error.toString()
+    return null
+  } catch (error: unknown) {
+    return stringifyError(error)
   }
 }
 
-export async function login(_currentState: unknown, formData: FormData) {
+export async function login(
+  _currentState: unknown,
+  formData: FormData
+): Promise<string | null> {
   const email = formData.get("email") as string
   const password = formData.get("password") as string
 
@@ -116,15 +133,17 @@ export async function login(_currentState: unknown, formData: FormData) {
         const customerCacheTag = await getCacheTag("customers")
         revalidateTag(customerCacheTag)
       })
-  } catch (error: any) {
-    return error.toString()
+  } catch (error: unknown) {
+    return stringifyError(error)
   }
 
   try {
     await transferCart()
-  } catch (error: any) {
-    return error.toString()
+  } catch (error: unknown) {
+    return stringifyError(error)
   }
+
+  return null
 }
 
 export async function signout(countryCode: string) {
@@ -161,7 +180,7 @@ export async function transferCart() {
 export const addCustomerAddress = async (
   currentState: Record<string, unknown>,
   formData: FormData
-): Promise<any> => {
+): Promise<CustomerAddressActionState> => {
   const isDefaultBilling = (currentState.isDefaultBilling as boolean) || false
   const isDefaultShipping = (currentState.isDefaultShipping as boolean) || false
 
@@ -186,7 +205,7 @@ export const addCustomerAddress = async (
 
   return sdk.store.customer
     .createAddress(address, {}, headers)
-    .then(async ({ customer }) => {
+    .then(async () => {
       const customerCacheTag = await getCacheTag("customers")
       revalidateTag(customerCacheTag)
       return { success: true, error: null }
@@ -218,7 +237,7 @@ export const deleteCustomerAddress = async (
 export const updateCustomerAddress = async (
   currentState: Record<string, unknown>,
   formData: FormData
-): Promise<any> => {
+): Promise<CustomerAddressActionState> => {
   const addressId =
     (currentState.addressId as string) || (formData.get("addressId") as string)
 
@@ -263,7 +282,7 @@ export const updateCustomerAddress = async (
 function hasAuthorizationHeader(
   headers: Awaited<ReturnType<typeof getAuthHeaders>>
 ): headers is { authorization: string } {
-  return typeof (headers as { authorization?: string }).authorization === "string"
+  return typeof headers.authorization === "string"
 }
 
 function buildVkIdProfileUrl(countryCode: string, result?: string, reason?: string) {

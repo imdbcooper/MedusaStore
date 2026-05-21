@@ -25,21 +25,23 @@ export async function generateStaticParams() {
     }
 
     const countryCodes = await listRegions().then((regions: StoreRegion[]) =>
-      regions?.map((r) => r.countries?.map((c) => c.iso_2)).flat()
-    )
-
-    const categoryHandles = product_categories.map(
-      (category: any) => category.handle
-    )
-
-    return countryCodes
-      ?.map((countryCode: string | undefined) =>
-        categoryHandles.map((handle: any) => ({
-          countryCode,
-          category: [handle],
-        }))
+      regions.flatMap((region) =>
+        (region.countries ?? [])
+          .map((country) => country.iso_2)
+          .filter((countryCode): countryCode is string => Boolean(countryCode))
       )
-      .flat()
+    )
+
+    const categoryHandles = product_categories
+      .map((category) => category.handle)
+      .filter((handle): handle is string => Boolean(handle))
+
+    return countryCodes.flatMap((countryCode) =>
+      categoryHandles.map((handle) => ({
+        countryCode,
+        category: [handle],
+      }))
+    )
   } catch (error) {
     console.warn(
       `Skipping category static params generation because the Store API is unavailable: ${
@@ -65,7 +67,7 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
         canonical: `${params.category.join("/")}`,
       },
     }
-  } catch (error) {
+  } catch {
     notFound()
   }
 }

@@ -61,7 +61,7 @@ export default async function Footer() {
       <div className="content-container flex flex-col w-full">
         <div
           className={clx(
-            "flex flex-col gap-y-6 xsmall:flex-row items-start justify-between py-16 px-8 small:px-10",
+            "grid gap-10 px-6 py-16 small:px-10 lg:grid-cols-[minmax(220px,280px)_1fr] lg:items-start lg:gap-12",
             isInverseTone && !isEditorial && "text-[var(--theme-accent-contrast)]"
           )}
           style={
@@ -79,7 +79,7 @@ export default async function Footer() {
               : undefined
           }
         >
-          <div className="max-w-sm flex flex-col gap-y-4">
+          <div className="flex w-full max-w-[280px] flex-col gap-y-4">
             <LocalizedClientLink
               href="/"
               className={clx(
@@ -133,7 +133,7 @@ export default async function Footer() {
               </a>
             </div>
           </div>
-          <div className="text-small-regular gap-10 md:gap-x-16 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5">
+          <div className="text-small-regular grid w-full grid-cols-2 gap-8 md:gap-x-12 sm:grid-cols-4 lg:grid-cols-5">
             {footerColumns.map((column, index) => (
               <div className="flex flex-col gap-y-2" key={String(column.id || index)}>
                 <span

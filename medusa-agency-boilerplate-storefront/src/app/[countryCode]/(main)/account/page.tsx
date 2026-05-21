@@ -75,7 +75,7 @@ export default async function AccountPage(props: AccountPageProps) {
   return (
     <div className="flex w-full flex-col gap-y-4">
       {customerNeedsOnboarding && countryCode ? (
-        <OnboardingBanner countryCode={countryCode} />
+        <OnboardingBanner />
       ) : null}
       {passwordResetStatus === "success" ? (
         <div

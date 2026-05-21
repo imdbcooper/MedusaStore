@@ -16,6 +16,19 @@ import {
 import { getRegion } from "./regions"
 import { getLocale } from "@lib/data/locale-actions"
 
+type CartAddressPayload = NonNullable<
+  Exclude<HttpTypes.StoreUpdateCart["shipping_address"], string>
+>
+
+const getFormValue = (formData: FormData, key: string) => {
+  const value = formData.get(key)
+
+  return typeof value === "string" ? value : undefined
+}
+
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error)
+
 /**
  * Retrieves a cart by its ID. If no ID is provided, it will use the cart ID from the cookies.
  * @param cartId - optional - The ID of the cart to retrieve.
@@ -292,7 +305,7 @@ export async function applyPromotions(codes: string[]) {
     .catch(medusaError)
 }
 
-export async function applyGiftCard(code: string) {
+export async function applyGiftCard() {
   //   const cartId = getCartId()
   //   if (!cartId) return "No cartId cookie found"
   //   try {
@@ -304,7 +317,7 @@ export async function applyGiftCard(code: string) {
   //   }
 }
 
-export async function removeDiscount(code: string) {
+export async function removeDiscount() {
   // const cartId = getCartId()
   // if (!cartId) return "No cartId cookie found"
   // try {
@@ -315,11 +328,7 @@ export async function removeDiscount(code: string) {
   // }
 }
 
-export async function removeGiftCard(
-  codeToRemove: string,
-  giftCards: any[]
-  // giftCards: GiftCard[]
-) {
+export async function removeGiftCard() {
   //   const cartId = getCartId()
   //   if (!cartId) return "No cartId cookie found"
   //   try {
@@ -342,61 +351,74 @@ export async function submitPromotionForm(
   const code = formData.get("code") as string
   try {
     await applyPromotions([code])
-  } catch (e: any) {
-    return e.message
+  } catch (error: unknown) {
+    return getErrorMessage(error)
   }
 }
 
 // TODO: Pass a POJO instead of a form entity here
-export async function setAddresses(currentState: unknown, formData: FormData) {
+export async function setAddresses(
+  _currentState: unknown,
+  formData: FormData
+) {
   try {
     if (!formData) {
       throw new Error("No form data found when setting addresses")
     }
-    const cartId = getCartId()
+
+    const cartId = await getCartId()
+
     if (!cartId) {
       throw new Error("No existing cart found when setting addresses")
     }
 
-    const data = {
-      shipping_address: {
-        first_name: formData.get("shipping_address.first_name"),
-        last_name: formData.get("shipping_address.last_name"),
-        address_1: formData.get("shipping_address.address_1"),
-        address_2: "",
-        company: formData.get("shipping_address.company"),
-        postal_code: formData.get("shipping_address.postal_code"),
-        city: formData.get("shipping_address.city"),
-        country_code: formData.get("shipping_address.country_code"),
-        province: formData.get("shipping_address.province"),
-        phone: formData.get("shipping_address.phone"),
-      },
-      email: formData.get("email"),
-    } as any
+    const shippingAddress: CartAddressPayload = {
+      first_name: getFormValue(formData, "shipping_address.first_name"),
+      last_name: getFormValue(formData, "shipping_address.last_name"),
+      address_1: getFormValue(formData, "shipping_address.address_1"),
+      address_2: "",
+      company: getFormValue(formData, "shipping_address.company"),
+      postal_code: getFormValue(formData, "shipping_address.postal_code"),
+      city: getFormValue(formData, "shipping_address.city"),
+      country_code: getFormValue(formData, "shipping_address.country_code"),
+      province: getFormValue(formData, "shipping_address.province"),
+      phone: getFormValue(formData, "shipping_address.phone"),
+    }
+
+    const data: HttpTypes.StoreUpdateCart = {
+      shipping_address: shippingAddress,
+      email: getFormValue(formData, "email"),
+    }
 
     const sameAsBilling = formData.get("same_as_billing")
-    if (sameAsBilling === "on") data.billing_address = data.shipping_address
+    if (sameAsBilling === "on") data.billing_address = shippingAddress
 
     if (sameAsBilling !== "on")
       data.billing_address = {
-        first_name: formData.get("billing_address.first_name"),
-        last_name: formData.get("billing_address.last_name"),
-        address_1: formData.get("billing_address.address_1"),
+        first_name: getFormValue(formData, "billing_address.first_name"),
+        last_name: getFormValue(formData, "billing_address.last_name"),
+        address_1: getFormValue(formData, "billing_address.address_1"),
         address_2: "",
-        company: formData.get("billing_address.company"),
-        postal_code: formData.get("billing_address.postal_code"),
-        city: formData.get("billing_address.city"),
-        country_code: formData.get("billing_address.country_code"),
-        province: formData.get("billing_address.province"),
-        phone: formData.get("billing_address.phone"),
+        company: getFormValue(formData, "billing_address.company"),
+        postal_code: getFormValue(formData, "billing_address.postal_code"),
+        city: getFormValue(formData, "billing_address.city"),
+        country_code: getFormValue(formData, "billing_address.country_code"),
+        province: getFormValue(formData, "billing_address.province"),
+        phone: getFormValue(formData, "billing_address.phone"),
       }
     await updateCart(data)
-  } catch (e: any) {
-    return e.message
+  } catch (error: unknown) {
+    return getErrorMessage(error)
+  }
+
+  const countryCode = getFormValue(formData, "shipping_address.country_code")
+
+  if (!countryCode) {
+    throw new Error("No shipping country code found when setting addresses")
   }
 
   redirect(
-    `/${formData.get("shipping_address.country_code")}/checkout?step=delivery`
+    `/${countryCode}/checkout?step=delivery`
   )
 }
 

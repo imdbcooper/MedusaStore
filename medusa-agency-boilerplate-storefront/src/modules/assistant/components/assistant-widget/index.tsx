@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 
 import { fetchAssistantHistory, sendAssistantMessage } from "../../lib/client"
 import { loadAssistantHistory, mergeAssistantMessages, saveAssistantHistory } from "../../lib/history"
@@ -62,6 +62,7 @@ export default function AssistantWidget({
   const [input, setInput] = useState("")
   const [messages, setMessages] = useState<AssistantMessage[]>([INITIAL_MESSAGE])
   const [isPending, startTransition] = useTransition()
+  const messagesViewportRef = useRef<HTMLDivElement | null>(null)
   const sessionId = useMemo(() => getAssistantSessionId(), [])
   const historyScope = useMemo(() => ({ storeId, locale, countryCode }), [countryCode, locale, storeId])
 
@@ -112,6 +113,28 @@ export default function AssistantWidget({
       cancelled = true
     }
   }, [historyScope, locale, sessionId, storeId])
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    const viewport = messagesViewportRef.current
+    if (!viewport) {
+      return
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      viewport.scrollTo({
+        top: viewport.scrollHeight,
+        behavior: messages.length > 1 ? "smooth" : "auto",
+      })
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+    }
+  }, [isPending, messages, open])
 
   const canSend = input.trim().length > 0 && !isPending
 
@@ -165,7 +188,7 @@ export default function AssistantWidget({
       {open && (
         <section
           aria-label="AI shopping assistant"
-          className="flex h-[min(620px,calc(100vh-7rem))] w-[min(390px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-ui-border-base bg-ui-bg-base shadow-elevation-card-rest"
+          className="flex h-[min(620px,calc(100vh-7rem))] min-h-0 w-[min(390px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-ui-border-base bg-ui-bg-base shadow-elevation-card-rest"
         >
           <header className="flex items-start justify-between gap-4 border-b border-ui-border-base px-4 py-3">
             <div>
@@ -182,7 +205,7 @@ export default function AssistantWidget({
             </button>
           </header>
 
-          <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+          <div ref={messagesViewportRef} className="flex-1 min-h-0 space-y-3 overflow-y-auto px-4 py-4">
             {messages.map((message) => {
               const isUser = message.role === "user"
               return (

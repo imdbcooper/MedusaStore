@@ -1,10 +1,6 @@
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 
-type OnboardingBannerProps = {
-  countryCode: string
-}
-
-export default function OnboardingBanner({ countryCode }: OnboardingBannerProps) {
+export default function OnboardingBanner() {
   return (
     <section
       className="mb-6 flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-4 shadow-sm small:flex-row small:items-center small:justify-between"

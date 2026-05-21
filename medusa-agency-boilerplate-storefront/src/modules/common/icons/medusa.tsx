@@ -3,15 +3,15 @@ import React from "react"
 import { IconProps } from "types/icon"
 
 const Medusa: React.FC<IconProps> = ({
-  size = "20",
+  size = "18",
   color = "#9CA3AF",
   ...attributes
 }) => {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      width="18"
-      height="18"
+      width={size}
+      height={size}
       viewBox="0 0 18 18"
       fill="none"
       {...attributes}

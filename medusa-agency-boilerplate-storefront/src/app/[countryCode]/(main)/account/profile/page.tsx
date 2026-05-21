@@ -94,7 +94,7 @@ export default async function Profile(props: ProfilePageProps) {
     <div className="w-full" data-testid="profile-page-wrapper">
       {isOnboardingPending(customer) ? (
         <div className="mb-6">
-          <OnboardingBanner countryCode={countryCode} />
+          <OnboardingBanner />
         </div>
       ) : null}
       <div className="mb-8 flex flex-col gap-y-2">

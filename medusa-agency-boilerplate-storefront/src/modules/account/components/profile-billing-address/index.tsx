@@ -9,6 +9,14 @@ import AccountInfo from "../account-info"
 import { HttpTypes } from "@medusajs/types"
 import { addCustomerAddress, updateCustomerAddress } from "@lib/data/customer"
 
+type BillingAddressFormState = {
+  isDefaultBilling: boolean
+  isDefaultShipping: boolean
+  success: boolean
+  error: string | null
+  addressId?: string
+}
+
 type MyInformationProps = {
   customer: HttpTypes.StoreCustomer
   regions: HttpTypes.StoreRegion[]
@@ -37,10 +45,10 @@ const ProfileBillingAddress: React.FC<MyInformationProps> = ({
     (addr) => addr.is_default_billing
   )
 
-  const initialState: Record<string, any> = {
+  const initialState: BillingAddressFormState = {
     isDefaultBilling: true,
     isDefaultShipping: false,
-    error: false,
+    error: null,
     success: false,
   }
 

@@ -441,9 +441,9 @@ const Shipping: React.FC<ShippingProps> = ({
         data,
       })
       return true
-    } catch (err: any) {
+    } catch (error: unknown) {
       setShippingMethodId(previousId)
-      setError(err.message)
+      setError(error instanceof Error ? error.message : String(error))
       return false
     } finally {
       setIsLoading(false)
@@ -497,11 +497,14 @@ const Shipping: React.FC<ShippingProps> = ({
 
       router.refresh()
       return true
-    } catch (err: any) {
+    } catch (error: unknown) {
       setApishipState((current) => ({
         ...current,
         commit_status: "error",
-        message: err.message ?? "Не удалось сохранить ApiShip доставку. Попробуйте ещё раз.",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Не удалось сохранить ApiShip доставку. Попробуйте ещё раз.",
       }))
       return false
     }
@@ -805,7 +808,7 @@ const Shipping: React.FC<ShippingProps> = ({
                   </Text>
                   {apishipTariffs.length > 0 ? (
                     <div className="grid gap-y-2">
-                      {apishipTariffs.slice(0, 6).map((tariff, index) => {
+                      {apishipTariffs.slice(0, 6).map((tariff) => {
                         const tariffId = getApishipTariffId(tariff)
                         const isPersistable = Boolean(normalizeApishipTariffForCheckout(tariff))
                         const isSelected = tariffId === apishipState.selected_tariff_id

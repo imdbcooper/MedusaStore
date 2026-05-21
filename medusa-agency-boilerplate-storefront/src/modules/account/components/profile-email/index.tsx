@@ -8,6 +8,11 @@ import AccountInfo from "../account-info"
 import { HttpTypes } from "@medusajs/types"
 // import { updateCustomer } from "@lib/data/customer"
 
+type ProfileEmailState = {
+  success: boolean
+  error: string | null
+}
+
 type MyInformationProps = {
   customer: HttpTypes.StoreCustomer
 }
@@ -17,23 +22,28 @@ const ProfileEmail: React.FC<MyInformationProps> = ({ customer }) => {
 
   // TODO: It seems we don't support updating emails now?
   const updateCustomerEmail = (
-    _currentState: Record<string, unknown>,
+    currentState: ProfileEmailState,
     formData: FormData
   ) => {
-    const customer = {
-      email: formData.get("email") as string,
+    const email = formData.get("email") as string
+
+    if (!email || email === customer.email) {
+      return currentState
     }
 
     try {
       // await updateCustomer(customer)
       return { success: true, error: null }
-    } catch (error: any) {
-      return { success: false, error: error.toString() }
+    } catch (error: unknown) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.toString() : String(error),
+      }
     }
   }
 
   const [state, formAction] = useActionState(updateCustomerEmail, {
-    error: false,
+    error: null,
     success: false,
   })
 
@@ -52,7 +62,7 @@ const ProfileEmail: React.FC<MyInformationProps> = ({ customer }) => {
         currentInfo={`${customer.email}`}
         isSuccess={successState}
         isError={!!state.error}
-        errorMessage={state.error}
+        errorMessage={state.error ?? undefined}
         clearState={clearState}
         data-testid="account-email-editor"
       >

@@ -10,12 +10,10 @@ import {
 export default async function ProductPreview({
   product,
   isFeatured,
-  region,
   ratingSummary,
 }: {
   product: HttpTypes.StoreProduct
   isFeatured?: boolean
-  region: HttpTypes.StoreRegion
   /**
    * Phase 2 / step 4 (plan §6.3) — pre-fetched rating summary for this
    * product, batched at the catalog/page level. When omitted the catalog

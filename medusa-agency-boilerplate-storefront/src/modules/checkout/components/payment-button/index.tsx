@@ -53,7 +53,7 @@ const PaymentButton: React.FC<PaymentButtonProps> = ({
       )
     case isManual(paymentSession?.provider_id):
       return (
-        <ManualTestPaymentButton cart={cart} notReady={notReady} data-testid={dataTestId} />
+        <ManualTestPaymentButton notReady={notReady} data-testid={dataTestId} />
       )
     default:
       return <Button disabled>{checkoutCopy.selectPaymentMethod}</Button>
@@ -122,16 +122,19 @@ const YooKassaPaymentButton = ({
       })
 
       window.location.assign(confirmationUrl)
-    } catch (err: any) {
-      if (err?.message === "NEXT_REDIRECT") {
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : String(error)
+
+      if (message === "NEXT_REDIRECT") {
         return
       }
 
       console.error("[YooKassa checkout] Failed to continue checkout", {
         cartId: cart.id,
-        message: err?.message,
+        message,
       })
-      setErrorMessage(err.message)
+      setErrorMessage(message)
       setSubmitting(false)
     }
   }
@@ -270,10 +273,8 @@ const StripePaymentButton = ({
 }
 
 const ManualTestPaymentButton = ({
-  cart,
   notReady,
 }: {
-  cart: HttpTypes.StoreCart
   notReady: boolean
 }) => {
   const [submitting, setSubmitting] = useState(false)

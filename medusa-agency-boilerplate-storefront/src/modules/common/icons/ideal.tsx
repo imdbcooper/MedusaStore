@@ -9,8 +9,8 @@ const Ideal: React.FC<IconProps> = ({
 }) => {
   return (
     <svg
-      width="20px"
-      height="20px"
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       role="img"
       xmlns="http://www.w3.org/2000/svg"

@@ -8,6 +8,11 @@ import AccountInfo from "../account-info"
 import { HttpTypes } from "@medusajs/types"
 import { updateCustomer } from "@lib/data/customer"
 
+type ProfilePhoneState = {
+  success: boolean
+  error: string | null
+}
+
 type MyInformationProps = {
   customer: HttpTypes.StoreCustomer
 }
@@ -16,7 +21,7 @@ const ProfileEmail: React.FC<MyInformationProps> = ({ customer }) => {
   const [successState, setSuccessState] = React.useState(false)
 
   const updateCustomerPhone = async (
-    _currentState: Record<string, unknown>,
+    _currentState: ProfilePhoneState,
     formData: FormData
   ) => {
     const customer = {
@@ -26,13 +31,16 @@ const ProfileEmail: React.FC<MyInformationProps> = ({ customer }) => {
     try {
       await updateCustomer(customer)
       return { success: true, error: null }
-    } catch (error: any) {
-      return { success: false, error: error.toString() }
+    } catch (error: unknown) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.toString() : String(error),
+      }
     }
   }
 
   const [state, formAction] = useActionState(updateCustomerPhone, {
-    error: false,
+    error: null,
     success: false,
   })
 
@@ -51,7 +59,7 @@ const ProfileEmail: React.FC<MyInformationProps> = ({ customer }) => {
         currentInfo={`${customer.phone}`}
         isSuccess={successState}
         isError={!!state.error}
-        errorMessage={state.error}
+        errorMessage={state.error ?? undefined}
         clearState={clearState}
         data-testid="account-phone-editor"
       >

@@ -54,13 +54,12 @@ export default async function ProductRail({
       href={`/collections/${collection.handle}`}
       actionLabel={storefrontConfig.copy.common.viewAll}
     >
-      <ul className="grid grid-cols-2 small:grid-cols-3 gap-x-6 gap-y-24 small:gap-y-36">
+      <ul className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] gap-6 small:gap-8">
         {resolvedProducts &&
           resolvedProducts.map((product) => (
             <li key={product.id}>
               <ProductPreview
                 product={product}
-                region={region}
                 isFeatured
                 ratingSummary={ratingSummaries[product.id] ?? null}
               />

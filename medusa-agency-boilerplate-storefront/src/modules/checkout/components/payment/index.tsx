@@ -11,6 +11,7 @@ import { initiatePaymentSession } from "@lib/data/cart"
 import { storefrontConfig } from "@lib/storefront-config"
 import { isDeliveryCheckoutReady } from "@lib/util/delivery-checkout"
 import { CheckCircleSolid, CreditCard } from "@medusajs/icons"
+import { HttpTypes } from "@medusajs/types"
 import { Button, Container, Heading, Text, clx } from "@medusajs/ui"
 import ErrorMessage from "@modules/checkout/components/error-message"
 import PaymentContainer, {
@@ -24,11 +25,11 @@ const Payment = ({
   cart,
   availablePaymentMethods,
 }: {
-  cart: any
-  availablePaymentMethods: any[]
+  cart: HttpTypes.StoreCart
+  availablePaymentMethods: HttpTypes.StorePaymentProvider[]
 }) => {
   const activeSession = cart.payment_collection?.payment_sessions?.find(
-    (paymentSession: any) => paymentSession.status === "pending"
+    (paymentSession) => paymentSession.status === "pending"
   )
 
   const [isLoading, setIsLoading] = useState(false)
@@ -56,8 +57,7 @@ const Payment = ({
     }
   }
 
-  const paidByGiftcard =
-    cart?.gift_cards && cart?.gift_cards?.length > 0 && cart?.total === 0
+  const paidByGiftcard = cart.gift_card_total > 0 && cart.total === 0
 
   const deliveryCheckoutReady = isDeliveryCheckoutReady(cart)
   const paymentReady = (activeSession && deliveryCheckoutReady) || paidByGiftcard
@@ -121,8 +121,8 @@ const Payment = ({
           }
         )
       }
-    } catch (err: any) {
-      setError(err.message)
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : String(error))
     } finally {
       setIsLoading(false)
     }

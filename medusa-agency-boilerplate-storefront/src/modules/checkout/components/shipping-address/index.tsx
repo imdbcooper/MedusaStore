@@ -1,6 +1,5 @@
 import { HttpTypes } from "@medusajs/types"
 import { Container } from "@medusajs/ui"
-import { storefrontConfig } from "@lib/storefront-config"
 import { ComparableAddress } from "@lib/util/compare-addresses"
 import Checkbox from "@modules/common/components/checkbox"
 import Input from "@modules/common/components/input"
@@ -108,7 +107,7 @@ const ShippingAddress = ({
     address?: HttpTypes.StoreCartAddress,
     email?: string
   ) => {
-    address &&
+    if (address) {
       setFormData((prevState) => ({
         ...prevState,
         "shipping_address.first_name": address?.first_name || "",
@@ -121,6 +120,7 @@ const ShippingAddress = ({
         "shipping_address.province": address?.province || "",
         "shipping_address.phone": address?.phone || "",
       }))
+    }
 
     if (email) {
       hasUserEditedEmailRef.current = false
@@ -201,8 +201,6 @@ const ShippingAddress = ({
       [e.target.name]: e.target.value,
     }))
   }
-
-  const checkoutCopy = storefrontConfig.copy.checkout
 
   return (
     <>

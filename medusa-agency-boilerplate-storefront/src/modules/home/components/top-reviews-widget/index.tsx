@@ -62,7 +62,7 @@ export default async function TopReviewsWidget(): Promise<React.ReactElement | n
           ) : null}
         </div>
 
-        <ul className="grid gap-6 pt-12 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+        <ul className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] gap-6 pt-12">
           {items.map((review) => (
             <li key={review.id} className="h-full">
               <ProductReviewCard review={review} />

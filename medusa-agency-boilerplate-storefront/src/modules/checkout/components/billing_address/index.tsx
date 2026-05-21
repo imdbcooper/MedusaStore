@@ -3,8 +3,10 @@ import Input from "@modules/common/components/input"
 import React, { useState } from "react"
 import CountrySelect from "../country-select"
 
+type BillingAddressFormData = Record<string, string>
+
 const BillingAddress = ({ cart }: { cart: HttpTypes.StoreCart | null }) => {
-  const [formData, setFormData] = useState<any>({
+  const [formData, setFormData] = useState<BillingAddressFormData>({
     "billing_address.first_name": cart?.billing_address?.first_name || "",
     "billing_address.last_name": cart?.billing_address?.last_name || "",
     "billing_address.address_1": cart?.billing_address?.address_1 || "",

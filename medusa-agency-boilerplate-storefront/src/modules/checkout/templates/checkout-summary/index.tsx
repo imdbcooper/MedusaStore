@@ -1,12 +1,13 @@
 import { storefrontConfig } from "@lib/storefront-config"
 import { Heading, Text } from "@medusajs/ui"
+import { HttpTypes } from "@medusajs/types"
 import ItemsPreviewTemplate from "@modules/cart/templates/preview"
 import DiscountCode from "@modules/checkout/components/discount-code"
 import ShippingSummary from "@modules/checkout/components/shipping-summary"
 import CartTotals from "@modules/common/components/cart-totals"
 import Divider from "@modules/common/components/divider"
 
-const CheckoutSummary = async ({ cart }: { cart: any }) => {
+const CheckoutSummary = async ({ cart }: { cart: HttpTypes.StoreCart }) => {
   return (
     <div className="sticky top-8 flex flex-col-reverse gap-y-8 small:flex-col">
       <div className="flex w-full flex-col rounded-[var(--theme-radius-shell)] border border-[var(--theme-border)] bg-[var(--theme-surface)] p-6 shadow-[var(--theme-shadow-card)]">

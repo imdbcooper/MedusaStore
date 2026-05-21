@@ -63,7 +63,6 @@ export default async function RelatedProducts({
       {products.map((product) => (
         <li key={product.id}>
           <Product
-            region={region}
             product={product}
             ratingSummary={ratingSummaries[product.id] ?? null}
           />

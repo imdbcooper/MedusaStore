@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import assert from "node:assert/strict"
-// @ts-ignore -- runtime uses Node 24 test runner via --experimental-strip-types
+// @ts-expect-error -- runtime uses Node 24 test runner via --experimental-strip-types
 import test from "node:test"
 
 import {

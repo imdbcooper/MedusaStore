@@ -57,7 +57,7 @@ export default async function PaginatedProducts({
     return null
   }
 
-  let {
+  const {
     response: { products, count },
   } = await listProductsWithSort({
     page,
@@ -96,7 +96,6 @@ export default async function PaginatedProducts({
             >
               <ProductPreview
                 product={p}
-                region={region}
                 isFeatured={isFeatured}
                 ratingSummary={ratingSummaries[p.id] ?? null}
               />

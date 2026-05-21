@@ -1,9 +1,15 @@
 import "server-only"
 import { cookies as nextCookies } from "next/headers"
 
-export const getAuthHeaders = async (): Promise<
-  { authorization: string } | {}
-> => {
+type AuthHeaders = {
+  authorization?: string
+}
+
+type CacheOptions = {
+  tags?: string[]
+}
+
+export const getAuthHeaders = async (): Promise<AuthHeaders> => {
   try {
     const cookies = await nextCookies()
     const token = cookies.get("_medusa_jwt")?.value
@@ -28,14 +34,14 @@ export const getCacheTag = async (tag: string): Promise<string> => {
     }
 
     return `${tag}-${cacheId}`
-  } catch (error) {
+  } catch {
     return ""
   }
 }
 
 export const getCacheOptions = async (
   tag: string
-): Promise<{ tags: string[] } | {}> => {
+): Promise<CacheOptions> => {
   if (typeof window !== "undefined") {
     return {}
   }

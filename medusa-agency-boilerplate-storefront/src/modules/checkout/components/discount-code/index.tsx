@@ -11,9 +11,7 @@ import ErrorMessage from "../error-message"
 import { SubmitButton } from "../submit-button"
 
 type DiscountCodeProps = {
-  cart: HttpTypes.StoreCart & {
-    promotions: HttpTypes.StorePromotion[]
-  }
+  cart: HttpTypes.StoreCart
 }
 
 const DiscountCode: React.FC<DiscountCodeProps> = ({ cart }) => {
@@ -46,8 +44,8 @@ const DiscountCode: React.FC<DiscountCodeProps> = ({ cart }) => {
 
     try {
       await applyPromotions(codes)
-    } catch (e: any) {
-      setErrorMessage(e.message)
+    } catch (error: unknown) {
+      setErrorMessage(error instanceof Error ? error.message : String(error))
     }
 
     if (input) {

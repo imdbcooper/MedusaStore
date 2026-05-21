@@ -10,13 +10,12 @@ type InputProps = Omit<
 > & {
   label: string
   errors?: Record<string, unknown>
-  touched?: Record<string, unknown>
   name: string
   topLabel?: string
 }
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ type, name, label, touched, required, topLabel, ...props }, ref) => {
+  ({ type, name, label, required, topLabel, ...props }, ref) => {
     const inputRef = React.useRef<HTMLInputElement>(null)
     const [showPassword, setShowPassword] = useState(false)
     const [inputType, setInputType] = useState(type)

@@ -41,7 +41,7 @@ const ProductReviewCard: React.FC<ProductReviewCardProps> = ({ review }) => {
 
   return (
     <article
-      className="flex flex-col gap-4 rounded-[var(--theme-radius-card)] border border-[var(--theme-border)] bg-[var(--theme-surface)] p-6"
+      className="flex h-full flex-col gap-4 rounded-[var(--theme-radius-card)] border border-[var(--theme-border)] bg-[var(--theme-surface)] p-6"
       data-testid="product-review-card"
       data-review-id={review.id}
     >
@@ -171,7 +171,7 @@ const ProductReviewCard: React.FC<ProductReviewCardProps> = ({ review }) => {
         </aside>
       ) : null}
 
-      <footer className="flex justify-end">
+      <footer className="mt-auto flex justify-end">
         <HelpfulButton
           reviewId={review.id}
           initialCount={review.helpful_count}
