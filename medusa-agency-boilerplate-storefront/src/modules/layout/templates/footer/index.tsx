@@ -285,7 +285,7 @@ export default async function Footer() {
               </div>
             )}
             {collections && collections.length > 0 && (
-              <div className="flex flex-col gap-y-2">
+              <div className="flex min-w-0 flex-col gap-y-2 sm:col-span-2 lg:col-span-2">
                 <span
                   className={clx(
                     "txt-small-plus",
@@ -299,17 +299,14 @@ export default async function Footer() {
                     "grid grid-cols-1 gap-2 txt-small",
                     isInverseTone
                       ? "text-[color:rgba(247,251,255,0.72)]"
-                      : "text-ui-fg-subtle",
-                    {
-                      "grid-cols-2": (collections?.length || 0) > 3,
-                    }
+                      : "text-ui-fg-subtle"
                   )}
                 >
                   {collections?.slice(0, collectionLinkLimit).map((c) => (
-                    <li key={c.id}>
+                    <li key={c.id} className="min-w-0">
                       <LocalizedClientLink
                         className={clx(
-                          "transition",
+                          "break-normal transition",
                           isInverseTone
                             ? "hover:text-[var(--theme-accent-contrast)]"
                             : "hover:text-[var(--theme-foreground)]"

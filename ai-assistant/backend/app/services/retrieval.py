@@ -150,8 +150,8 @@ class ModeAwareRetriever:
         tenant_id: str | None = None,
         filters: dict[str, Any] | None = None,
     ) -> tuple[list[dict], list[Citation]]:
-        requested = normalize_retrieval_mode(mode or getattr(self.settings, "retrieval_mode", "markdown"))
         explicit_mode = mode is not None
+        requested = normalize_retrieval_mode(mode if explicit_mode else getattr(self.settings, "retrieval_mode", "markdown"))
         implicit_auto_to_markdown = requested == "auto" and not explicit_mode and not filters_have_vector_scope(filters)
         if implicit_auto_to_markdown:
             requested = "markdown"
@@ -394,6 +394,9 @@ PRODUCT_REASON_LABELS = {
     "scope": "контексту страницы",
 }
 PRODUCT_SOURCE_FALLBACK_MIN_SCORE = 2.5
+PRODUCT_SEMANTIC_ONLY_MIN_BOOST = 1.35
+PRODUCT_SEMANTIC_ONLY_SCORE_BASE = 1.8
+PRODUCT_SEMANTIC_ONLY_MIN_SCORE = 3.0
 
 
 def rank_product_card_candidates(
@@ -532,10 +535,16 @@ def score_product_candidate(
         breakdown["scope_bonus"] = 5.0
     retrieval_score = chunk.get("score") if isinstance(chunk, dict) else None
     retrieval_boost = normalized_retrieval_boost(retrieval_score)
-    if retrieval_boost > 0 and (lexical_hits > 0 or explicit_scope_match):
-        score += retrieval_boost
-        breakdown["retrieval_boost"] = round(retrieval_boost, 3)
-    if lexical_hits == 0 and not explicit_scope_match:
+    if retrieval_boost > 0:
+        if lexical_hits > 0 or explicit_scope_match:
+            score += retrieval_boost
+            breakdown["retrieval_boost"] = round(retrieval_boost, 3)
+        elif retrieval_boost > PRODUCT_SEMANTIC_ONLY_MIN_BOOST:
+            score += PRODUCT_SEMANTIC_ONLY_SCORE_BASE + retrieval_boost
+            matched_fields.append("description")
+            breakdown["retrieval_semantic_base"] = PRODUCT_SEMANTIC_ONLY_SCORE_BASE
+            breakdown["retrieval_semantic_boost"] = round(retrieval_boost, 3)
+    if lexical_hits == 0 and not explicit_scope_match and score < PRODUCT_SEMANTIC_ONLY_MIN_SCORE:
         return 0.0, 0, False, [], {}
     return score, lexical_hits, explicit_scope_match, list(dict.fromkeys(matched_fields)), breakdown
 

@@ -529,6 +529,80 @@ def test_enterprise_low_confidence_query_sets_needs_human_and_handoff_action(cli
     assert data["observability"]["human_handoff"]["reason"] == "enterprise_low_confidence_recommendation"
 
 
+def test_low_confidence_clarification_keeps_close_candidate_cards(client):
+    fake_client = client.app.state.fake_medusa_product_client
+    fake_client.products = [
+        *fake_client.products,
+        {
+            "id": "prod_support_bot",
+            "handle": "support-bot",
+            "title": "Бот для техподдержки",
+            "subtitle": "Бот для клиентского helpdesk",
+            "description": "Отвечает на обращения пользователей в Telegram, но требует уточнить каналы, интеграции и тон коммуникации.",
+            "thumbnail": "https://example.test/support-bot.jpg",
+            "collection": {"id": "pcol_bots", "title": "AI-боты"},
+            "categories": [{"id": "pcat_bots", "name": "Чат-боты", "handle": "chat-bots"}],
+            "tags": [{"value": "telegram"}],
+            "variants": [
+                {
+                    "id": "variant_support_bot",
+                    "title": "Base",
+                    "sku": "BOT-SUPPORT",
+                    "calculated_price": {"calculated_amount": 12000000, "currency_code": "rub"},
+                    "inventory_quantity": 1,
+                }
+            ],
+            "images": [{"url": "https://example.test/support-bot.jpg"}],
+            "metadata": {"brand": "Acme"},
+            "updated_at": "2026-05-11T00:00:00Z",
+        },
+        {
+            "id": "prod_business_assistant",
+            "handle": "business-assistant",
+            "title": "ИИ-ассистент для бизнеса",
+            "subtitle": "Помощник для внутренних процессов и консультаций",
+            "description": "Помогает командам обрабатывать заявки и консультировать клиентов по базе знаний.",
+            "thumbnail": "https://example.test/business-assistant.jpg",
+            "collection": {"id": "pcol_ai", "title": "AI-решения"},
+            "categories": [{"id": "pcat_ai", "name": "AI-ассистенты", "handle": "ai-assistants"}],
+            "tags": [{"value": "assistant"}, {"value": "business"}],
+            "variants": [
+                {
+                    "id": "variant_business_assistant",
+                    "title": "Base",
+                    "sku": "AI-BUSINESS",
+                    "calculated_price": {"calculated_amount": 18000000, "currency_code": "rub"},
+                    "inventory_quantity": 1,
+                }
+            ],
+            "images": [{"url": "https://example.test/business-assistant.jpg"}],
+            "metadata": {"brand": "Acme"},
+            "updated_at": "2026-05-11T00:00:00Z",
+        },
+    ]
+    _ingest_products(client)
+
+    response = client.post(
+        "/api/v1/chat",
+        json={
+            "message": "Бот для helpdesk",
+            "store_id": "default",
+            "locale": "ru",
+            "region_id": "reg_ru",
+            "currency_code": "rub",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["safety"]["status"] == "ok"
+    assert data["products"]
+    assert data["products"][0]["id"] == "prod_support_bot"
+    assert data["observability"]["recommendation"]["low_confidence"] is False
+    assert data["observability"]["recommendation"]["selected_ids"] == ["prod_support_bot"]
+    assert not any(action["type"] == "request_human_follow_up" for action in data["actions"])
+
+
 def test_grounded_catalog_match_does_not_set_needs_human(client):
     _ingest_products(client)
 

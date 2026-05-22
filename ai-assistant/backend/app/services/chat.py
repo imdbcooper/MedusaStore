@@ -291,13 +291,14 @@ class ChatService:
             retrieval_min_score = max(0.0, float(runtime.global_settings.retrieval_min_score or 0.0))
             product_limit = max(1, min(retrieval_top_k, 3))
         retrieval_filters = filters_from_request(request)
+        retrieval_mode = request.mode if "mode" in request.model_fields_set else None
         try:
             chunks, citations = await self.retriever.search(
                 query=request.message,
                 store_id=request.store_id,
                 locale=request.locale,
                 limit=retrieval_top_k,
-                mode=request.mode if request.mode != "auto" else None,
+                mode=retrieval_mode,
                 tenant_id=request.tenant_id,
                 filters=retrieval_filters,
             )
@@ -338,6 +339,7 @@ class ChatService:
                     for candidate in product_candidates
                     if str(candidate.get("id") or "") not in rejected_product_ids
                 ]
+            product_candidates = candidates_safe_to_recommend(product_candidates)
             recommendation_candidates_for_debug = list(product_candidates)
             if not retrieval_error:
                 catalog_available = await self._catalog_has_products(
@@ -366,14 +368,15 @@ class ChatService:
                     )
                 )
             if clarification_question:
-                if (
-                    low_confidence_recommendation
-                    or comparison_requires_more_options
-                    or detect_negative_feedback(request.message)
-                ):
+                if comparison_requires_more_options or detect_negative_feedback(request.message):
                     chunks = []
                     citations = []
-                product_candidates = []
+                    product_candidates = []
+                elif low_confidence_recommendation:
+                    product_candidates = candidates_safe_to_show_with_clarification(product_candidates)
+                    if not product_candidates:
+                        chunks = []
+                        citations = []
             if product_candidates:
                 tool_calls.append(
                     ToolCall(
@@ -1298,10 +1301,14 @@ def _filter_chunks_by_min_score(
 def recommendation_is_low_confidence(candidates: list[dict[str, Any]]) -> bool:
     if not candidates:
         return True
+    candidates = candidates_safe_to_recommend(candidates)
+    if not candidates:
+        return True
     top = candidates[0]
     top_score = float(top.get("_score") or 0.0)
     top_lexical_hits = int(top.get("_lexical_hits") or 0)
     explicit_scope_match = bool(top.get("_explicit_scope_match"))
+    semantic_match = candidate_has_semantic_signal(top)
     if explicit_scope_match:
         return False
     if top_lexical_hits <= 0:
@@ -1312,6 +1319,27 @@ def recommendation_is_low_confidence(candidates: list[dict[str, Any]]) -> bool:
         return False
     second_score = float(candidates[1].get("_score") or 0.0)
     return top_score < (RECOMMENDATION_MIN_SCORE + 1.5) and (top_score - second_score) < RECOMMENDATION_MIN_MARGIN
+
+
+def candidate_has_semantic_signal(candidate: dict[str, Any]) -> bool:
+    score_breakdown = candidate.get("_score_breakdown") or {}
+    return any(key.startswith("retrieval") for key in score_breakdown)
+
+
+def candidates_safe_to_recommend(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [candidate for candidate in candidates if int(candidate.get("_lexical_hits") or 0) > 0]
+
+
+def candidates_safe_to_show_with_clarification(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    safe_candidates = []
+    for candidate in candidates:
+        score = float(candidate.get("_score") or 0.0)
+        if score < RECOMMENDATION_MIN_SCORE:
+            continue
+        if int(candidate.get("_lexical_hits") or 0) <= 0:
+            continue
+        safe_candidates.append(candidate)
+    return safe_candidates[:3]
 
 
 def rerank_candidates_with_dialogue_memory(

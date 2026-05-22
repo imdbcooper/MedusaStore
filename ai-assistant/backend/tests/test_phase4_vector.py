@@ -310,6 +310,29 @@ def test_auto_mode_falls_back_to_markdown_when_vector_backend_unavailable(client
     assert data["observability"]["retriever_mode"] == "markdown"
 
 
+def test_explicit_auto_mode_uses_vector_even_when_default_retrieval_mode_is_markdown(client):
+    client.app.state.settings.retrieval_mode = "markdown"
+    _ingest_products(client)
+
+    response = client.post(
+        "/api/v1/chat",
+        json={
+            "message": "Подбери кофемашину для эспрессо",
+            "store_id": "default",
+            "locale": "ru",
+            "mode": "auto",
+            "region_id": "reg_ru",
+            "currency_code": "rub",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["products"][0]["id"] == "prod_espresso"
+    assert data["observability"]["retriever_mode"] == "vector"
+    assert client.app.state.fake_qdrant_client.searches
+
+
 def test_vector_mode_returns_safe_error_when_backend_unavailable(client):
     client.app.state.fake_qdrant_client.fail_search = True
 
