@@ -1,0 +1,5 @@
+publicHoistPattern:
+  - "*@medusajs/*"
+  - "@tanstack/react-query"
+  - "react-i18next"
+  - "react-router-dom"
