@@ -6,6 +6,7 @@ import { fetchAssistantHistory, sendAssistantMessage } from "../../lib/client"
 import { loadAssistantHistory, mergeAssistantMessages, saveAssistantHistory } from "../../lib/history"
 import { getAssistantSessionId } from "../../lib/session"
 import type { AssistantChatResponse, AssistantHistoryMessage, AssistantMessage } from "../../types"
+import AssistantActionCard from "../assistant-action-card"
 import AssistantMarkdown from "../assistant-markdown"
 import AssistantProductCard from "../assistant-product-card"
 
@@ -50,6 +51,10 @@ function toVisibleMessage(message: AssistantHistoryMessage): AssistantMessage | 
     actions: message.actions,
     safety: message.safety,
   }
+}
+
+function hasActionType(message: AssistantMessage, type: string) {
+  return message.actions?.some((action) => action.type === type) === true
 }
 
 export default function AssistantWidget({
@@ -235,6 +240,22 @@ export default function AssistantWidget({
                     <p className="mt-3 rounded-md bg-ui-bg-base px-2 py-1 text-xs text-ui-fg-subtle">
                       Добавление в корзину требует подтверждения. Используйте карточку товара и стандартную кнопку магазина.
                     </p>
+                  )}
+                  {hasActionType(message, "request_human_follow_up") && (
+                    <div className="space-y-2">
+                      {message.actions
+                        ?.filter((action) => action.type === "request_human_follow_up")
+                        .map((action, index) => (
+                          <AssistantActionCard
+                            key={`${message.id}_handoff_${index}`}
+                            action={action}
+                            fallbackSummary={message.content}
+                            messageId={message.id}
+                            storeId={storeId}
+                            locale={locale}
+                          />
+                        ))}
+                    </div>
                   )}
                 </article>
               )

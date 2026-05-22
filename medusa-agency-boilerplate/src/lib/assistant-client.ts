@@ -70,6 +70,34 @@ export type AssistantHistoryResponse = {
   }>
 }
 
+export type AssistantHandoffRequest = {
+  session_id: string
+  message_id?: string
+  store_id?: string
+  tenant_id?: string
+  locale?: string
+  source?: string
+  name?: string
+  email?: string
+  phone?: string
+  summary?: string
+  reason?: string
+  note?: string
+  metadata?: Record<string, unknown>
+}
+
+export type AssistantHandoffResponse = {
+  handoff_id: string
+  session_id: string
+  message_id?: string
+  store_id: string
+  tenant_id?: string | null
+  locale: string
+  status: string
+  source: string
+  created_at?: string | null
+}
+
 export type AssistantReindexRequest = {
   store_id?: string
   locale?: string
@@ -252,6 +280,14 @@ export class AssistantBackendClient {
     return this.requestJson<AssistantHistoryResponse>(`/chat/history/scoped?${query.toString()}`, {
       method: "GET",
       headers: this.authHeaders(),
+    })
+  }
+
+  async handoff(payload: AssistantHandoffRequest) {
+    return this.requestJson<AssistantHandoffResponse>("/handoff", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: this.jsonHeaders(),
     })
   }
 

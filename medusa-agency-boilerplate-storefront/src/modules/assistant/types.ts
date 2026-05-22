@@ -36,6 +36,16 @@ export type AssistantProduct = {
 
 export type AssistantAction = {
   type?: string
+  label?: string
+  payload?: {
+    reason?: string
+    summary?: string
+    session_id?: string
+    store_id?: string
+    locale?: string
+    tenant_id?: string | null
+    [key: string]: unknown
+  }
   product_id?: string
   variant_id?: string
   quantity?: number
@@ -54,8 +64,39 @@ export type AssistantChatResponse = {
   tool_calls?: unknown[]
   safety?: {
     live_data_checked?: boolean
+    needs_human?: boolean
+    status?: string
+    notes?: string[]
     [key: string]: unknown
   }
+}
+
+export type AssistantHandoffRequest = {
+  session_id: string
+  message_id?: string
+  store_id?: string
+  tenant_id?: string
+  locale?: string
+  source?: string
+  name?: string
+  email?: string
+  phone?: string
+  summary?: string
+  reason?: string
+  note?: string
+  metadata?: Record<string, unknown>
+}
+
+export type AssistantHandoffResponse = {
+  handoff_id: string
+  session_id: string
+  message_id?: string
+  store_id: string
+  tenant_id?: string | null
+  locale: string
+  status: string
+  source: string
+  created_at?: string | null
 }
 
 export type AssistantHistoryRequest = {
