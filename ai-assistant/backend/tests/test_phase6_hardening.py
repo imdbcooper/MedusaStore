@@ -241,6 +241,63 @@ def test_feedback_rejects_message_from_different_session(client):
     assert feedback.json()["detail"]["error"]["code"] == "FEEDBACK_MESSAGE_SCOPE_MISMATCH"
 
 
+def test_handoff_endpoint_persists_submission_and_updates_stats(client):
+    chat = client.post("/api/v1/chat", json={"message": "Привет", "store_id": "default", "locale": "ru"})
+    assert chat.status_code == 200
+    chat_data = chat.json()
+
+    handoff = client.post(
+        "/api/v1/handoff",
+        json={
+            "session_id": chat_data["session_id"],
+            "message_id": chat_data["message_id"],
+            "store_id": "default",
+            "locale": "ru",
+            "source": "assistant_widget",
+            "name": "Алексей",
+            "email": "lead@example.com",
+            "summary": "Нужен созвон по интеграциям и SLA",
+        },
+    )
+
+    assert handoff.status_code == 200
+    data = handoff.json()
+    assert data["status"] == "submitted"
+    assert data["source"] == "assistant_widget"
+
+    records = list(client.app.state.repository.handoffs.values())
+    assert len(records) == 1
+    assert records[0]["email"] == "lead@example.com"
+    assert records[0]["summary"] == "Нужен созвон по интеграциям и SLA"
+
+    health = client.get("/api/v1/health/deep")
+    assert health.status_code == 200
+    assert health.json()["stats"]["handoff_count"] == 1
+
+
+def test_handoff_rejects_message_from_different_session(client):
+    first = client.post("/api/v1/chat", json={"message": "Привет", "store_id": "default", "locale": "ru"})
+    second = client.post("/api/v1/chat", json={"message": "Здравствуйте", "store_id": "default", "locale": "ru"})
+    assert first.status_code == 200
+    assert second.status_code == 200
+    first_data = first.json()
+    second_data = second.json()
+
+    handoff = client.post(
+        "/api/v1/handoff",
+        json={
+            "session_id": first_data["session_id"],
+            "message_id": second_data["message_id"],
+            "store_id": "default",
+            "locale": "ru",
+            "email": "lead@example.com",
+        },
+    )
+
+    assert handoff.status_code == 403
+    assert handoff.json()["detail"]["error"]["code"] == "HANDOFF_MESSAGE_SCOPE_MISMATCH"
+
+
 def test_chat_max_input_chars_is_enforced(client):
     client.app.state.settings.chat_max_input_chars = 5
     response = client.post("/api/v1/chat", json={"message": "123456", "store_id": "default", "locale": "ru"})

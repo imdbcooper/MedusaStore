@@ -8,6 +8,53 @@ from uuid import uuid4
 from app.ingestion.markdown import sha256_text
 from app.schemas.ingestion import ProductChunk
 
+USE_CASE_PATTERNS = [
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"(?:подходит|идеально|создан[ао]?|используется)\s+для\s+([^,.!?]{3,100})",
+        r"\bfor\s+([^,.!?]{3,100})",
+    )
+]
+SUITABILITY_LABEL_KEYWORDS = {
+    "home": {"home", "дом", "дома", "домашний", "домашняя", "домашнее"},
+    "office": {"office", "офис", "офиса", "команда", "team"},
+    "kitchen": {"kitchen", "кухня", "кухни"},
+    "enterprise": {"enterprise", "корпоративный", "корпоративная", "крупный", "крупного", "enterprise-grade"},
+    "small_business": {"малый", "малого", "средний", "среднего", "бизнес", "startup", "стартап"},
+    "ecommerce": {"ecommerce", "e-commerce", "commerce", "магазин", "каталог", "checkout"},
+    "support": {"support", "helpdesk", "поддержка", "саппорт"},
+    "marketing": {"marketing", "маркетинг", "лидогенерация", "seo", "контент"},
+    "analytics": {"analytics", "аналитика", "дашборд", "dashboard", "bi", "отчетность"},
+    "automation": {"automation", "автоматизация", "workflow", "бот", "боты"},
+    "integration": {"integration", "интеграция", "erp", "crm", "api", "1c"},
+    "security": {"security", "безопасность", "audit", "аудит", "hardening"},
+    "mobile": {"mobile", "ios", "android", "app", "приложение", "миниапп"},
+    "web": {"web", "site", "website", "сайт", "landing", "spa", "saas"},
+}
+SEARCH_TERM_STOPWORDS = {
+    "the",
+    "and",
+    "for",
+    "with",
+    "from",
+    "или",
+    "для",
+    "это",
+    "подходит",
+    "товар",
+    "товары",
+    "product",
+    "products",
+    "solution",
+    "solutions",
+    "услуга",
+    "услуги",
+    "решение",
+    "решения",
+    "live",
+    "medusa",
+}
+
 
 def normalize_medusa_product(
     product: dict[str, Any],
@@ -55,6 +102,7 @@ def build_product_document(product: dict[str, Any]) -> str:
     options = ", ".join(option_label(item) for item in ensure_list(product.get("options")))
     variants = [variant_line(item) for item in ensure_list(product.get("variants"))]
     attributes = metadata_lines(product.get("metadata"))
+    suitability = build_suitability_metadata(product)
 
     lines = [
         f"# Product: {title}",
@@ -79,6 +127,14 @@ def build_product_document(product: dict[str, Any]) -> str:
         lines.extend(["", "## Variants", *variants])
     if attributes:
         lines.extend(["", "## Attributes", *attributes])
+    if suitability["use_case_phrases"] or suitability["suitability_labels"] or suitability["search_terms"]:
+        lines.extend(["", "## Suitability signals"])
+        if suitability["use_case_phrases"]:
+            lines.append("Use cases: " + ", ".join(suitability["use_case_phrases"]))
+        if suitability["suitability_labels"]:
+            lines.append("Suitability labels: " + ", ".join(suitability["suitability_labels"]))
+        if suitability["search_terms"]:
+            lines.append("Search terms: " + ", ".join(suitability["search_terms"][:20]))
     lines.extend(
         [
             "",
@@ -110,6 +166,7 @@ def build_product_metadata(
     ]
     currency = first_currency_code(variants)
     metadata = product.get("metadata") if isinstance(product.get("metadata"), dict) else {}
+    suitability = build_suitability_metadata(product)
 
     return {
         "store_id": store_id,
@@ -118,10 +175,17 @@ def build_product_metadata(
         "source_type": "medusa_product",
         "source_id": product.get("id"),
         "title": product.get("title"),
+        "subtitle": product.get("subtitle"),
+        "description": clean_text(product.get("description")),
         "url": f"/products/{product.get('handle')}" if product.get("handle") else None,
         "product_id": product.get("id"),
         "variant_ids": [variant.get("id") for variant in variants if variant.get("id")],
         "handle": product.get("handle"),
+        "category_names": [
+            category_label(category)
+            for category in categories
+            if category_label(category)
+        ],
         "category_ids": [
             category.get("id")
             for category in categories
@@ -134,7 +198,21 @@ def build_product_metadata(
         ],
         "collection_id": collection.get("id"),
         "collection_title": collection.get("title"),
+        "collection_handle": collection.get("handle"),
         "tags": [tag_label(item) for item in ensure_list(product.get("tags")) if tag_label(item)],
+        "option_titles": [
+            clean_text(option.get("title") or option.get("id"))
+            for option in ensure_list(product.get("options"))
+            if isinstance(option, dict) and clean_text(option.get("title") or option.get("id"))
+        ],
+        "variant_titles": [
+            clean_text(variant.get("title") or variant.get("id"))
+            for variant in variants
+            if isinstance(variant, dict) and clean_text(variant.get("title") or variant.get("id"))
+        ],
+        "use_case_phrases": suitability["use_case_phrases"],
+        "suitability_labels": suitability["suitability_labels"],
+        "search_terms": suitability["search_terms"],
         "brand": metadata.get("brand") or metadata.get("manufacturer"),
         "price_hint_min": min(price_values) if price_values else None,
         "price_hint_max": max(price_values) if price_values else None,
@@ -147,6 +225,32 @@ def build_product_metadata(
             if isinstance(item, dict) and item.get("url")
         ],
         "updated_at": iso_or_none(product.get("updated_at")),
+    }
+
+
+def build_suitability_metadata(product: dict[str, Any]) -> dict[str, list[str]]:
+    categories = ensure_list(product.get("categories"))
+    collection = product.get("collection") if isinstance(product.get("collection"), dict) else {}
+    metadata = product.get("metadata") if isinstance(product.get("metadata"), dict) else {}
+    corpus = [
+        clean_text(product.get("title")),
+        clean_text(product.get("subtitle")),
+        clean_text(product.get("description")),
+        *(category_label(item) for item in categories),
+        collection_label(collection),
+        *(tag_label(item) for item in ensure_list(product.get("tags"))),
+        *(option_label(item) for item in ensure_list(product.get("options"))),
+        *(variant_line(item) for item in ensure_list(product.get("variants"))),
+        *metadata_text_values(metadata),
+    ]
+    combined_text = " ".join(part for part in corpus if part)
+    use_case_phrases = extract_use_case_phrases(corpus)
+    suitability_labels = infer_suitability_labels(combined_text)
+    search_terms = extract_search_terms([*corpus, *use_case_phrases, *suitability_labels])
+    return {
+        "use_case_phrases": use_case_phrases,
+        "suitability_labels": suitability_labels,
+        "search_terms": search_terms,
     }
 
 
@@ -234,6 +338,69 @@ def metadata_lines(metadata: Any) -> list[str]:
             continue
         lines.append(f"- {clean_text(key).replace('_', ' ').title()}: {clean_text(value)}")
     return lines
+
+
+def metadata_text_values(metadata: Any) -> list[str]:
+    if isinstance(metadata, dict):
+        values: list[str] = []
+        for item in metadata.values():
+            values.extend(metadata_text_values(item))
+        return values
+    if isinstance(metadata, list):
+        values: list[str] = []
+        for item in metadata:
+            values.extend(metadata_text_values(item))
+        return values
+    text = clean_text(metadata)
+    return [text] if text else []
+
+
+def extract_use_case_phrases(parts: list[str]) -> list[str]:
+    phrases: list[str] = []
+    for part in parts:
+        normalized = clean_text(part)
+        if not normalized:
+            continue
+        for pattern in USE_CASE_PATTERNS:
+            match = pattern.search(normalized)
+            if not match:
+                continue
+            phrase = clean_text(match.group(1)).strip(" ,.;:-")
+            if phrase:
+                phrases.append(phrase)
+    return list(dict.fromkeys(phrases))[:8]
+
+
+def infer_suitability_labels(text: str) -> list[str]:
+    normalized_tokens = set(tokenize_text(text))
+    labels: list[str] = []
+    for label, keywords in SUITABILITY_LABEL_KEYWORDS.items():
+        keyword_tokens = {token.casefold().replace("ё", "е") for token in keywords}
+        if normalized_tokens & keyword_tokens:
+            labels.append(label)
+    return labels
+
+
+def extract_search_terms(parts: list[str]) -> list[str]:
+    terms: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        for token in tokenize_text(part):
+            if token in SEARCH_TERM_STOPWORDS or token.isdigit():
+                continue
+            if token in seen:
+                continue
+            seen.add(token)
+            terms.append(token)
+    return terms[:32]
+
+
+def tokenize_text(value: Any) -> list[str]:
+    return [
+        token
+        for token in re.findall(r"[\wа-яА-ЯёЁ-]+", clean_text(value).casefold().replace("ё", "е"))
+        if len(token) > 2
+    ]
 
 
 def variant_price_values(variant: Any) -> list[int]:

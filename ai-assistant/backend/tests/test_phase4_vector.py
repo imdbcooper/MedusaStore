@@ -133,6 +133,30 @@ def test_vector_retrieval_mode_uses_qdrant_and_live_commerce_tools(client):
     assert client.app.state.fake_qdrant_client.searches[-1]["query_filter"]
 
 
+def test_vector_mode_does_not_return_arbitrary_product_for_unmatched_query(client):
+    client.app.state.settings.retrieval_mode = "vector"
+    _ingest_products(client)
+
+    response = client.post(
+        "/api/v1/chat",
+        json={
+            "message": "Подбери телевизор для гостиной",
+            "store_id": "default",
+            "locale": "ru",
+            "mode": "vector",
+            "region_id": "reg_ru",
+            "currency_code": "rub",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["products"] == []
+    assert data["safety"]["status"] == "clarification_required"
+    assert "prod_espresso" not in response.text
+    assert "уточните" in data["answer"].lower()
+
+
 
 def test_source_scoped_chunk_listing_and_vector_reindex_without_truncation(client):
     client.app.state.settings.retrieval_mode = "vector"

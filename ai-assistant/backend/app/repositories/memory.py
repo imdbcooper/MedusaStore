@@ -25,6 +25,8 @@ class InMemoryAssistantRepository:
         self.jobs: dict[UUID, dict[str, Any]] = {}
         self.reindex_intents: dict[UUID, dict[str, Any]] = {}
         self.feedback: dict[UUID, dict[str, Any]] = {}
+        self.handoffs: dict[UUID, dict[str, Any]] = {}
+        self.principal_states: dict[str, dict[str, Any]] = {}
 
     async def ensure_session(
         self,
@@ -105,6 +107,19 @@ class InMemoryAssistantRepository:
     async def get_session(self, session_id: UUID) -> dict[str, Any] | None:
         session = self.sessions.get(session_id)
         return deepcopy(session) if session else None
+
+    async def update_session_customer_context(
+        self,
+        *,
+        session_id: UUID,
+        customer_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        session = self.sessions.get(session_id)
+        if not session:
+            raise ValueError("SESSION_NOT_FOUND")
+        session["customer_context"] = deepcopy(customer_context or {})
+        session["updated_at"] = datetime.now(timezone.utc)
+        return deepcopy(session)
 
     async def bind_session_customer(
         self,
@@ -257,6 +272,7 @@ class InMemoryAssistantRepository:
                 if score > 0 or not query_terms:
                     enriched = deepcopy(chunk)
                     enriched["source"] = deepcopy(source)
+                    enriched["score"] = score
                     matches.append((score, enriched))
         matches.sort(key=lambda item: item[0], reverse=True)
         return [match for _, match in matches[:limit]]
@@ -332,6 +348,47 @@ class InMemoryAssistantRepository:
             "created_at": datetime.now(timezone.utc),
         }
         self.feedback[feedback_id] = record
+        return deepcopy(record)
+
+    async def create_handoff(
+        self,
+        *,
+        session_id: UUID,
+        message_id: UUID | None = None,
+        store_id: str = "default",
+        tenant_id: str | None = None,
+        locale: str = "ru",
+        source: str = "assistant_widget",
+        name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        summary: str | None = None,
+        reason: str | None = None,
+        note: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        handoff_id = uuid4()
+        session = self.sessions.get(session_id) or {}
+        record = {
+            "id": handoff_id,
+            "session_id": session_id,
+            "message_id": message_id,
+            "customer_id": session.get("customer_id"),
+            "store_id": store_id,
+            "tenant_id": tenant_id,
+            "locale": locale,
+            "status": "submitted",
+            "source": source,
+            "name": name,
+            "email": email,
+            "phone": phone,
+            "summary": summary,
+            "reason": reason,
+            "note": note,
+            "metadata": metadata or {},
+            "created_at": datetime.now(timezone.utc),
+        }
+        self.handoffs[handoff_id] = record
         return deepcopy(record)
 
     async def enqueue_reindex_intent(
@@ -455,6 +512,15 @@ class InMemoryAssistantRepository:
             "total": len(self.reindex_intents),
         }
 
+    async def get_principal_state(self, principal_id: str) -> dict[str, Any] | None:
+        record = self.principal_states.get(principal_id)
+        return deepcopy(record) if record else None
+
+    async def upsert_principal_state(self, state: dict[str, Any]) -> dict[str, Any]:
+        record = deepcopy(state)
+        self.principal_states[record["principal_id"]] = record
+        return deepcopy(record)
+
     async def stats(self) -> dict[str, int]:
         reindex_stats = await self.reindex_intent_stats()
         return {
@@ -466,6 +532,7 @@ class InMemoryAssistantRepository:
             "session_count": len(self.sessions),
             "message_count": len(self.messages),
             "feedback_count": len(self.feedback),
+            "handoff_count": len(self.handoffs),
             "failed_jobs": sum(1 for job in self.jobs.values() if job["status"] == "error"),
             "reindex_intents_pending": reindex_stats["pending"],
             "reindex_intents_error": reindex_stats["error"],

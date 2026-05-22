@@ -6,7 +6,14 @@ from fastapi.responses import StreamingResponse
 
 from app.api.dependencies import get_chat_service
 from app.core.auth import require_api_token
-from app.core.security import enforce_rate_limit, rate_limit_identity
+from app.core.security import (
+    assistant_principal_identity,
+    classify_abuse_event,
+    enforce_rate_limit,
+    evolve_principal_state,
+    principal_block_retry_after_seconds,
+    rate_limit_identity,
+)
 from app.schemas.chat import ChatHistoryMessage, ChatHistoryResponse, ChatRequest, ChatResponse
 from app.services.chat import ChatService
 
@@ -28,6 +35,7 @@ async def chat(
     )
     enforce_rate_limit(http_request, scope="chat", identity=identity)
     validate_input_length(http_request, request.message)
+    await enforce_principal_block_policy(http_request=http_request, request=request, service=service)
     try:
         return await service.answer(request, request_id=getattr(http_request.state, "request_id", None))
     except Exception as exc:
@@ -59,6 +67,7 @@ async def chat_stream(
     )
     enforce_rate_limit(http_request, scope="chat", identity=identity)
     validate_input_length(http_request, request.message)
+    await enforce_principal_block_policy(http_request=http_request, request=request, service=service)
     return StreamingResponse(
         service.stream_events(request, request_id=getattr(http_request.state, "request_id", None)),
         media_type="text/event-stream",
@@ -126,3 +135,62 @@ def validate_input_length(http_request: FastAPIRequest, message: str) -> None:
                 }
             },
         )
+
+
+async def enforce_principal_block_policy(
+    *,
+    http_request: FastAPIRequest,
+    request: ChatRequest,
+    service: ChatService,
+) -> None:
+    repository = getattr(service, "repository", None)
+    if repository is None or not hasattr(repository, "get_principal_state") or not hasattr(repository, "upsert_principal_state"):
+        return
+    principal = assistant_principal_identity(
+        http_request,
+        customer_id=request.customer_id,
+        store_id=request.store_id,
+        tenant_id=request.tenant_id,
+    )
+    current_state = await repository.get_principal_state(principal["principal_id"])
+    retry_after = principal_block_retry_after_seconds(current_state)
+    if retry_after > 0:
+        raise_temporary_block(current_state or {}, retry_after_seconds=retry_after)
+    event_type = classify_abuse_event(request.message)
+    if not event_type:
+        return
+    settings = http_request.app.state.settings
+    next_state = evolve_principal_state(
+        current_state,
+        principal_id=str(principal["principal_id"]),
+        principal_kind=str(principal["principal_kind"]),
+        store_id=request.store_id,
+        tenant_id=request.tenant_id,
+        customer_id=request.customer_id,
+        event_type=event_type,
+        window_seconds=int(settings.abuse_window_seconds),
+        block_seconds=int(settings.abuse_block_seconds),
+        off_topic_threshold=int(settings.abuse_off_topic_threshold),
+        prompt_injection_threshold=int(settings.abuse_prompt_injection_threshold),
+    )
+    stored_state = await repository.upsert_principal_state(next_state)
+    retry_after = principal_block_retry_after_seconds(stored_state)
+    if retry_after > 0:
+        raise_temporary_block(stored_state, retry_after_seconds=retry_after)
+
+
+def raise_temporary_block(state: dict, *, retry_after_seconds: int) -> None:
+    block_reason = state.get("block_reason") or "assistant_policy"
+    raise HTTPException(
+        status_code=429,
+        detail={
+            "error": {
+                "code": "ASSISTANT_TEMPORARILY_BLOCKED",
+                "message": "Assistant access is temporarily blocked for this user due to repeated off-topic or unsafe requests.",
+                "retryable": True,
+                "retry_after_seconds": retry_after_seconds,
+                "block_reason": block_reason,
+            }
+        },
+        headers={"Retry-After": str(retry_after_seconds)},
+    )

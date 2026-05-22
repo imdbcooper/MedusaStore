@@ -6,6 +6,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -43,6 +44,31 @@ INJECTION_PATTERNS = [
         r"show\s+(me\s+)?(your\s+)?(prompt|system message|token|secret)",
         r"bypass\s+(safety|guardrails|policy)",
         r"jailbreak",
+    )
+]
+OFF_TOPIC_PATTERNS = [
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\bанекдот\b",
+        r"\bшутк[ауи]\b",
+        r"\bмем\b",
+        r"\bпогод[ауеы]\b",
+        r"\bгороскоп\b",
+        r"\bрецепт\b",
+        r"\bстих\b",
+        r"\bфильм\b",
+        r"\bсериал\b",
+        r"\bполитик[ауеи]\b",
+        r"\bфутбол\b",
+        r"\bбаскетбол\b",
+        r"\bкто\s+победит\b",
+    )
+]
+SMALLTALK_PATTERNS = [
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"^\s*(привет|здравствуйте|добрый\s+день|hello|hi|hey)\b",
+        r"^\s*(спасибо|благодарю)\b",
     )
 ]
 SELLABLE_FACT_RE = re.compile(
@@ -117,6 +143,29 @@ def rate_limit_identity(request: Request, *, scope: str, session_id: str | None 
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def assistant_principal_identity(
+    request: Request,
+    *,
+    customer_id: str | None,
+    store_id: str,
+    tenant_id: str | None,
+) -> dict[str, str | None]:
+    if customer_id:
+        raw = ":".join(["assistant_principal", store_id, tenant_id or "-", "customer", customer_id])
+        principal_kind = "customer"
+    else:
+        forwarded_for = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        ip = forwarded_for or (request.client.host if request.client else "unknown")
+        user_agent = (request.headers.get("user-agent") or "").strip().lower()
+        raw = ":".join(["assistant_principal", store_id, tenant_id or "-", "anonymous", ip, user_agent])
+        principal_kind = "anonymous"
+    return {
+        "principal_id": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+        "principal_kind": principal_kind,
+        "customer_id": customer_id,
+    }
+
+
 def enforce_rate_limit(request: Request, *, scope: str, identity: str) -> None:
     settings = request.app.state.settings
     limiter: InMemoryRateLimiter = request.app.state.rate_limiter
@@ -147,6 +196,102 @@ def enforce_rate_limit(request: Request, *, scope: str, identity: str) -> None:
 
 def detect_prompt_injection(text: str) -> list[str]:
     return [pattern.pattern for pattern in INJECTION_PATTERNS if pattern.search(text or "")]
+
+
+def probable_off_topic(text: str) -> bool:
+    normalized = text or ""
+    if not normalized.strip():
+        return False
+    if any(pattern.search(normalized) for pattern in SMALLTALK_PATTERNS):
+        return False
+    return any(pattern.search(normalized) for pattern in OFF_TOPIC_PATTERNS)
+
+
+def classify_abuse_event(text: str) -> str | None:
+    if detect_prompt_injection(text):
+        return "prompt_injection"
+    if probable_off_topic(text):
+        return "off_topic"
+    return None
+
+
+def evolve_principal_state(
+    state: dict[str, Any] | None,
+    *,
+    principal_id: str,
+    principal_kind: str,
+    store_id: str,
+    tenant_id: str | None,
+    customer_id: str | None,
+    event_type: str,
+    window_seconds: int,
+    block_seconds: int,
+    off_topic_threshold: int,
+    prompt_injection_threshold: int,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    timestamp = now or datetime.now(timezone.utc)
+    existing = dict(state or {})
+    last_seen_at = _coerce_datetime(existing.get("last_seen_at"))
+    blocked_until = _coerce_datetime(existing.get("blocked_until"))
+    if last_seen_at is None or (window_seconds > 0 and timestamp - last_seen_at > timedelta(seconds=window_seconds)):
+        off_topic_count = 0
+        prompt_injection_count = 0
+    else:
+        off_topic_count = max(0, int(existing.get("off_topic_count") or 0))
+        prompt_injection_count = max(0, int(existing.get("prompt_injection_count") or 0))
+    if blocked_until and blocked_until <= timestamp:
+        blocked_until = None
+    if event_type == "off_topic":
+        off_topic_count += 1
+    elif event_type == "prompt_injection":
+        prompt_injection_count += 1
+    block_reason = existing.get("block_reason")
+    if prompt_injection_threshold > 0 and prompt_injection_count >= prompt_injection_threshold:
+        blocked_until = timestamp + timedelta(seconds=max(block_seconds, 0))
+        block_reason = "prompt_injection"
+    elif off_topic_threshold > 0 and off_topic_count >= off_topic_threshold:
+        blocked_until = timestamp + timedelta(seconds=max(block_seconds, 0))
+        block_reason = "off_topic"
+    metadata = existing.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    metadata = {
+        **metadata,
+        "last_event_type": event_type,
+        "last_event_at": timestamp.isoformat(),
+    }
+    return {
+        "principal_id": principal_id,
+        "principal_kind": principal_kind,
+        "store_id": store_id,
+        "tenant_id": tenant_id,
+        "customer_id": customer_id,
+        "off_topic_count": off_topic_count,
+        "prompt_injection_count": prompt_injection_count,
+        "blocked_until": blocked_until,
+        "block_reason": block_reason,
+        "last_seen_at": timestamp,
+        "metadata": metadata,
+        "created_at": _coerce_datetime(existing.get("created_at")) or timestamp,
+        "updated_at": timestamp,
+    }
+
+
+def principal_block_retry_after_seconds(
+    state: dict[str, Any] | None,
+    *,
+    now: datetime | None = None,
+) -> int:
+    if not state:
+        return 0
+    blocked_until = _coerce_datetime(state.get("blocked_until"))
+    if blocked_until is None:
+        return 0
+    timestamp = now or datetime.now(timezone.utc)
+    if blocked_until <= timestamp:
+        return 0
+    return max(1, int((blocked_until - timestamp).total_seconds()))
 
 
 def redact_pii(text: str | None) -> str | None:
@@ -244,3 +389,21 @@ def assert_not_browser_request(request: Request) -> None:
 
 def sellable_fact_requested(text: str) -> bool:
     return bool(SELLABLE_FACT_RE.search(text or ""))
+
+
+def _coerce_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    return None

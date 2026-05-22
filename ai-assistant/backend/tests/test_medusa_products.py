@@ -21,11 +21,20 @@ def test_normalize_medusa_product_creates_indexable_chunk():
     assert chunk.source_type == "medusa_product"
     assert chunk.source_id == "prod_espresso"
     assert "# Product: Espresso Pro" in chunk.content
+    assert "## Suitability signals" in chunk.content
+    assert "Use cases: эспрессо и капучино дома" in chunk.content
+    assert "Suitability labels: home" in chunk.content
     assert "SKU: ESP-BLK" in chunk.content
     assert "Price, stock, delivery and promotions must be checked live" in chunk.content
     assert chunk.metadata["product_id"] == "prod_espresso"
     assert chunk.metadata["handle"] == "espresso-pro"
+    assert chunk.metadata["subtitle"] == "Домашняя рожковая кофемашина"
+    assert chunk.metadata["category_names"] == ["Кофемашины"]
     assert chunk.metadata["category_handles"] == ["coffee-machines"]
+    assert chunk.metadata["collection_handle"] is None
+    assert chunk.metadata["use_case_phrases"] == ["эспрессо и капучино дома"]
+    assert "home" in chunk.metadata["suitability_labels"]
+    assert "espresso" in chunk.metadata["search_terms"]
     assert chunk.metadata["price_hint_min"] == 49900
     assert chunk.metadata["availability_hint"] == "in_stock"
 

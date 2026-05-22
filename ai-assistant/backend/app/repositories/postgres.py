@@ -51,7 +51,7 @@ class PostgresAssistantRepository:
                 json.dumps(metadata or {}),
                 (metadata or {}).get("tenant_id"),
             )
-        return dict(row)
+        return _normalize_session_row(dict(row))
 
     async def add_message(
         self,
@@ -113,7 +113,29 @@ class PostgresAssistantRepository:
     async def get_session(self, session_id: UUID) -> dict[str, Any] | None:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM assistant_sessions WHERE id = $1", session_id)
-        return dict(row) if row else None
+        return _normalize_session_row(dict(row)) if row else None
+
+    async def update_session_customer_context(
+        self,
+        *,
+        session_id: UUID,
+        customer_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE assistant_sessions
+                SET customer_context = $2::jsonb,
+                    updated_at = now()
+                WHERE id = $1
+                RETURNING *
+                """,
+                session_id,
+                json.dumps(customer_context or {}),
+            )
+        if not row:
+            raise ValueError("SESSION_NOT_FOUND")
+        return _normalize_session_row(dict(row))
 
     async def bind_session_customer(
         self,
@@ -157,7 +179,7 @@ class PostgresAssistantRepository:
                     customer_id,
                     json.dumps(customer_context or {}),
                 )
-        return dict(updated)
+        return _normalize_session_row(dict(updated))
 
     async def get_message(self, message_id: UUID) -> dict[str, Any] | None:
         async with self.pool.acquire() as conn:
@@ -448,6 +470,102 @@ class PostgresAssistantRepository:
             )
         return dict(row)
 
+    async def create_handoff(
+        self,
+        *,
+        session_id: UUID,
+        message_id: UUID | None = None,
+        store_id: str = "default",
+        tenant_id: str | None = None,
+        locale: str = "ru",
+        source: str = "assistant_widget",
+        name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        summary: str | None = None,
+        reason: str | None = None,
+        note: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        handoff_id = uuid4()
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO assistant_handoffs
+                  (id, session_id, message_id, customer_id, store_id, tenant_id, locale, status, source,
+                   name, email, phone, summary, reason, note, metadata)
+                VALUES (
+                  $1, $2, $3,
+                  (SELECT customer_id FROM assistant_sessions WHERE id = $2),
+                  $4, $5, $6, 'submitted', $7,
+                  $8, $9, $10, $11, $12, $13, $14::jsonb
+                )
+                RETURNING *
+                """,
+                handoff_id,
+                session_id,
+                message_id,
+                store_id,
+                tenant_id,
+                locale,
+                source,
+                name,
+                email,
+                phone,
+                summary,
+                reason,
+                note,
+                json.dumps(metadata or {}),
+            )
+        return _normalize_handoff_row(dict(row))
+
+    async def get_principal_state(self, principal_id: str) -> dict[str, Any] | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM assistant_principal_state WHERE principal_id = $1",
+                principal_id,
+            )
+        return _normalize_principal_state_row(dict(row)) if row else None
+
+    async def upsert_principal_state(self, state: dict[str, Any]) -> dict[str, Any]:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO assistant_principal_state
+                  (principal_id, principal_kind, store_id, tenant_id, customer_id,
+                   off_topic_count, prompt_injection_count, blocked_until, block_reason,
+                   last_seen_at, metadata, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13)
+                ON CONFLICT (principal_id) DO UPDATE SET
+                  principal_kind = EXCLUDED.principal_kind,
+                  store_id = EXCLUDED.store_id,
+                  tenant_id = EXCLUDED.tenant_id,
+                  customer_id = EXCLUDED.customer_id,
+                  off_topic_count = EXCLUDED.off_topic_count,
+                  prompt_injection_count = EXCLUDED.prompt_injection_count,
+                  blocked_until = EXCLUDED.blocked_until,
+                  block_reason = EXCLUDED.block_reason,
+                  last_seen_at = EXCLUDED.last_seen_at,
+                  metadata = EXCLUDED.metadata,
+                  updated_at = EXCLUDED.updated_at
+                RETURNING *
+                """,
+                state.get("principal_id"),
+                state.get("principal_kind"),
+                state.get("store_id"),
+                state.get("tenant_id"),
+                state.get("customer_id"),
+                int(state.get("off_topic_count") or 0),
+                int(state.get("prompt_injection_count") or 0),
+                state.get("blocked_until"),
+                state.get("block_reason"),
+                state.get("last_seen_at"),
+                json.dumps(state.get("metadata") or {}),
+                state.get("created_at"),
+                state.get("updated_at"),
+            )
+        return _normalize_principal_state_row(dict(row))
+
     async def enqueue_reindex_intent(
         self,
         *,
@@ -617,6 +735,7 @@ class PostgresAssistantRepository:
                 "session_count": await conn.fetchval("SELECT COUNT(*) FROM assistant_sessions"),
                 "message_count": await conn.fetchval("SELECT COUNT(*) FROM assistant_messages"),
                 "feedback_count": await conn.fetchval("SELECT COUNT(*) FROM assistant_feedback"),
+                "handoff_count": await conn.fetchval("SELECT COUNT(*) FROM assistant_handoffs"),
                 "failed_jobs": await conn.fetchval(
                     "SELECT COUNT(*) FROM assistant_ingestion_jobs WHERE status = 'error'"
                 ),
@@ -639,6 +758,19 @@ def _normalize_source_row(row: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _normalize_handoff_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    normalized["metadata"] = _json_field_or_default(normalized.get("metadata"), {})
+    return normalized
+
+
+def _normalize_session_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    normalized["metadata"] = _json_field_or_default(normalized.get("metadata"), {})
+    normalized["customer_context"] = _json_field_or_default(normalized.get("customer_context"), {})
+    return normalized
+
+
 def _normalize_chunk_row(row: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(row)
     normalized["metadata"] = _json_field_or_default(normalized.get("metadata"), {})
@@ -657,6 +789,12 @@ def _normalize_ingestion_job_row(row: dict[str, Any]) -> dict[str, Any]:
 def _normalize_reindex_intent_row(row: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(row)
     normalized["product_ids"] = _json_field_or_default(normalized.get("product_ids"), [])
+    normalized["metadata"] = _json_field_or_default(normalized.get("metadata"), {})
+    return normalized
+
+
+def _normalize_principal_state_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
     normalized["metadata"] = _json_field_or_default(normalized.get("metadata"), {})
     return normalized
 

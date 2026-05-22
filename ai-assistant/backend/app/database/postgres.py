@@ -134,6 +134,42 @@ CREATE TABLE IF NOT EXISTS assistant_feedback (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS assistant_handoffs (
+  id UUID PRIMARY KEY,
+  session_id UUID NOT NULL REFERENCES assistant_sessions(id),
+  message_id UUID NULL REFERENCES assistant_messages(id),
+  customer_id TEXT NULL,
+  store_id TEXT NOT NULL DEFAULT 'default',
+  tenant_id TEXT NULL,
+  locale TEXT NOT NULL DEFAULT 'ru',
+  status TEXT NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted', 'processing', 'completed', 'rejected')),
+  source TEXT NOT NULL DEFAULT 'assistant_widget',
+  name TEXT NULL,
+  email TEXT NULL,
+  phone TEXT NULL,
+  summary TEXT NULL,
+  reason TEXT NULL,
+  note TEXT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS assistant_principal_state (
+  principal_id TEXT PRIMARY KEY,
+  principal_kind TEXT NOT NULL DEFAULT 'anonymous' CHECK (principal_kind IN ('anonymous', 'customer')),
+  store_id TEXT NOT NULL DEFAULT 'default',
+  tenant_id TEXT NULL,
+  customer_id TEXT NULL,
+  off_topic_count INTEGER NOT NULL DEFAULT 0,
+  prompt_injection_count INTEGER NOT NULL DEFAULT 0,
+  blocked_until TIMESTAMPTZ NULL,
+  block_reason TEXT NULL,
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  metadata JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS assistant_reindex_intents (
   id UUID PRIMARY KEY,
   store_id TEXT NOT NULL DEFAULT 'default',
@@ -172,6 +208,11 @@ CREATE INDEX IF NOT EXISTS idx_assistant_sources_store_locale
   ON assistant_sources(store_id, locale, source_type);
 CREATE INDEX IF NOT EXISTS idx_assistant_feedback_session_created
   ON assistant_feedback(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_assistant_handoffs_session_created
+  ON assistant_handoffs(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_assistant_principal_state_blocked
+  ON assistant_principal_state(blocked_until)
+  WHERE blocked_until IS NOT NULL;
 """
 
 

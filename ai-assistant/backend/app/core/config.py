@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     markdown_frontmatter_required: bool = Field(default=False, alias="MARKDOWN_FRONTMATTER_REQUIRED")
     chat_history_limit: int = Field(default=10, alias="CHAT_HISTORY_LIMIT")
     chat_max_input_chars: int = Field(default=4000, alias="CHAT_MAX_INPUT_CHARS")
+    abuse_block_seconds: int = Field(default=7200, alias="ASSISTANT_ABUSE_BLOCK_SECONDS")
+    abuse_window_seconds: int = Field(default=1800, alias="ASSISTANT_ABUSE_WINDOW_SECONDS")
+    abuse_off_topic_threshold: int = Field(default=5, alias="ASSISTANT_ABUSE_OFF_TOPIC_THRESHOLD")
+    abuse_prompt_injection_threshold: int = Field(
+        default=3,
+        alias="ASSISTANT_ABUSE_PROMPT_INJECTION_THRESHOLD",
+    )
     chunk_target_chars: int = Field(default=1200, alias="MARKDOWN_CHUNK_TARGET_CHARS")
     chunk_overlap_chars: int = Field(default=150, alias="MARKDOWN_CHUNK_OVERLAP_CHARS")
 

@@ -1,4 +1,5 @@
 import asyncio
+import json
 from uuid import uuid4
 
 from app.core.config import Settings
@@ -91,6 +92,20 @@ class FakePostgresPool:
                 "locale": args[4],
                 "region_id": args[5],
                 "tenant_id": args[7],
+                "metadata": {},
+                "customer_context": {},
+            }
+        if "UPDATE assistant_sessions" in query and "customer_context = $2::jsonb" in query:
+            return {
+                "id": args[0],
+                "store_id": "default",
+                "customer_id": None,
+                "cart_id": None,
+                "locale": "ru",
+                "region_id": None,
+                "tenant_id": None,
+                "metadata": {},
+                "customer_context": json.loads(args[1]),
             }
         if "INSERT INTO assistant_messages" in query:
             return {"id": args[0], "session_id": args[1], "role": args[2], "content": args[3]}
@@ -157,7 +172,7 @@ def test_postgres_chat_retrieval_path_accepts_source_type_filtered_requests():
 
     response = asyncio.run(_run_postgres_chat_smoke(repository))
 
-    assert response.safety.status == "ok"
+    assert response.intent == "product_search"
     search_fetch = next(fetch for fetch in repository.database.pool.fetches if "assistant_source_chunks" in fetch["query"])
     assert "s.source_type" not in search_fetch["query"]
     assert search_fetch["args"] == ("default", "ru", 0, ["Найди", "товар"], 5)

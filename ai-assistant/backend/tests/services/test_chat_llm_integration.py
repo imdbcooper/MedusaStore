@@ -256,3 +256,23 @@ async def test_pii_redaction_is_applied_on_top_of_llm_answer():
     assert response.observability["answer_source"] == "llm:p1"
     assert "test@example.com" not in response.answer
     assert "[REDACTED_EMAIL]" in response.answer
+
+
+@pytest.mark.asyncio
+async def test_llm_system_prompt_includes_compressed_dialogue_memory():
+    settings_provider = _StubSettingsProvider(_runtime(active=_provider()))
+    router = _StubLlmRouter(result=_llm_result("LLM answer."))
+    service = _build_service(settings_provider=settings_provider, llm_router=router)
+
+    first = await service.answer(_request(message="Расскажи про доставку"))
+    router.calls.clear()
+
+    response = await service.answer(
+        _request(message="А как с оплатой?", session_id=first.session_id)
+    )
+
+    assert response.observability["answer_source"] == "llm:p1"
+    assert len(router.calls) == 1
+    call = router.calls[0]
+    assert "Сжатая память диалога" in call.system_prompt
+    assert "Расскажи про доставку" in call.system_prompt
