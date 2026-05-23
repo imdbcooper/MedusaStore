@@ -42,12 +42,19 @@ import { errorResponse } from "../../../../admin/assistant/settings/_helpers"
  */
 
 const TOKEN_HEADER = "x-assistant-server-token"
+const CACHE_CONTROL_VALUE = "no-store, no-cache, must-revalidate, private"
 
 function getServerToken(): string | null {
   const raw = process.env.AI_ASSISTANT_SERVER_TOKEN
   if (typeof raw !== "string") return null
   const trimmed = raw.trim()
   return trimmed.length > 0 ? trimmed : null
+}
+
+function applyNoCacheHeaders(res: MedusaResponse): void {
+  res.setHeader("Cache-Control", CACHE_CONTROL_VALUE)
+  res.setHeader("Pragma", "no-cache")
+  res.setHeader("Expires", "0")
 }
 
 function readPresentedToken(req: MedusaRequest): string {
@@ -75,6 +82,8 @@ function safeEquals(a: string, b: string): boolean {
 }
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  applyNoCacheHeaders(res)
+
   const expected = getServerToken()
   if (!expected) {
     res.status(503).json({

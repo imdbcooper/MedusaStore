@@ -89,9 +89,37 @@ type SettingState = {
   updated_at: Date
 }
 
+type TelegramState = {
+  enabled: boolean
+  environment_mode: string
+  bot_username: string | null
+  bot_token_ciphertext: Buffer | null
+  bot_token_iv: Buffer | null
+  bot_token_tag: Buffer | null
+  bot_token_last4: string | null
+  support_chat_id: string | null
+  topics_required: boolean
+  webhook_url: string | null
+  webhook_secret_ciphertext: Buffer | null
+  webhook_secret_iv: Buffer | null
+  webhook_secret_tag: Buffer | null
+  webhook_secret_last4: string | null
+  allowed_operator_ids: string[]
+  allowed_admin_ids: string[]
+  operator_reply_mode: string
+  fallback_message: string | null
+  last_test_status: string | null
+  last_test_error: string | null
+  last_test_at: Date | null
+  created_at: Date
+  updated_at: Date
+  version: number
+}
+
 type DbState = {
   providers: Map<string, ProviderState>
   setting: SettingState | null
+  telegram: TelegramState | null
   /** Monotonic clock for `now()` so ordering by created_at/updated_at is
    *  stable inside a single test run. */
   clock: number
@@ -176,6 +204,36 @@ function projectSetting(s: SettingState): Record<string, unknown> {
     version: s.version,
     updated_by: s.updated_by,
     updated_at: s.updated_at,
+  }
+}
+
+function projectTelegramRuntime(t: TelegramState): Record<string, unknown> {
+  return {
+    id: "singleton",
+    enabled: t.enabled,
+    environment_mode: t.environment_mode,
+    bot_username: t.bot_username,
+    bot_token_last4: t.bot_token_last4,
+    support_chat_id: t.support_chat_id,
+    topics_required: t.topics_required,
+    webhook_url: t.webhook_url,
+    webhook_secret_last4: t.webhook_secret_last4,
+    allowed_operator_ids: t.allowed_operator_ids,
+    allowed_admin_ids: t.allowed_admin_ids,
+    operator_reply_mode: t.operator_reply_mode,
+    fallback_message: t.fallback_message,
+    last_test_status: t.last_test_status,
+    last_test_error: t.last_test_error,
+    last_test_at: t.last_test_at,
+    created_at: t.created_at,
+    updated_at: t.updated_at,
+    version: t.version,
+    bot_token_ciphertext: t.bot_token_ciphertext,
+    bot_token_iv: t.bot_token_iv,
+    bot_token_tag: t.bot_token_tag,
+    webhook_secret_ciphertext: t.webhook_secret_ciphertext,
+    webhook_secret_iv: t.webhook_secret_iv,
+    webhook_secret_tag: t.webhook_secret_tag,
   }
 }
 
@@ -330,6 +388,7 @@ function buildMockPg(state: DbState): PgConnectionLike {
       case "create-index-llm-fallback-priority":
       case "create-index-llm-enabled-priority":
       case "create-table-setting":
+      case "create-table-telegram-handoff":
         return { rows: [], rowCount: 0 }
 
       case "seed-singleton": {
@@ -363,6 +422,39 @@ function buildMockPg(state: DbState): PgConnectionLike {
           version: 1,
           updated_by: null,
           updated_at: nextNow(state),
+        }
+        return { rows: [], rowCount: 1 }
+      }
+
+      case "seed-telegram-handoff-singleton": {
+        if (state.telegram) return { rows: [], rowCount: 0 }
+        const [fallback_message] = bindings as [string]
+        const now = nextNow(state)
+        state.telegram = {
+          enabled: false,
+          environment_mode: "test",
+          bot_username: null,
+          bot_token_ciphertext: null,
+          bot_token_iv: null,
+          bot_token_tag: null,
+          bot_token_last4: null,
+          support_chat_id: null,
+          topics_required: true,
+          webhook_url: null,
+          webhook_secret_ciphertext: null,
+          webhook_secret_iv: null,
+          webhook_secret_tag: null,
+          webhook_secret_last4: null,
+          allowed_operator_ids: [],
+          allowed_admin_ids: [],
+          operator_reply_mode: "explicit_reply_command",
+          fallback_message,
+          last_test_status: null,
+          last_test_error: null,
+          last_test_at: null,
+          created_at: now,
+          updated_at: now,
+          version: 1,
         }
         return { rows: [], rowCount: 1 }
       }
@@ -647,6 +739,13 @@ function buildMockPg(state: DbState): PgConnectionLike {
         }
       }
 
+      case "get-telegram-handoff-runtime": {
+        if (!state.telegram) return { rows: [] }
+        return {
+          rows: [projectTelegramRuntime(state.telegram)] as unknown as T[],
+        }
+      }
+
       default:
         // Unknown SQL — return empty so we surface "rows missing" errors
         // from the module instead of silent test passes.
@@ -662,7 +761,7 @@ function buildMockPg(state: DbState): PgConnectionLike {
 }
 
 function buildState(): DbState {
-  return { providers: new Map(), setting: null, clock: 0 }
+  return { providers: new Map(), setting: null, telegram: null, clock: 0 }
 }
 
 // ---------------------------------------------------------------------------
@@ -1111,11 +1210,16 @@ describe("getEffectiveAssistantConfig", () => {
       "sk-second-5678",
     ])
     expect(config.global.id).toBe("singleton")
+    expect(config.telegram_handoff.enabled).toBe(false)
+    expect(config.telegram_handoff.bot_token).toBeNull()
+    expect(config.telegram_handoff.webhook_secret).toBeNull()
+    expect(config.telegram_handoff.diagnostics.status).toBe("disabled")
 
     const allTimes = [
       config.active!.updated_at,
       ...config.fallback.map((f) => f.updated_at),
       config.global.updated_at,
+      config.telegram_handoff.updated_at,
     ]
     const max = allTimes.reduce((acc, cur) => (cur > acc ? cur : acc))
     expect(config.version).toBe(max)

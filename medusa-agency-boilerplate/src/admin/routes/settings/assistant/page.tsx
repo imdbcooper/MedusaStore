@@ -4,9 +4,10 @@
  * `defineRouteConfig` помещает запись в боковую панель. URL формируется
  * из директории: `routes/settings/assistant/page.tsx` → `/app/settings/assistant`.
  *
- * Страница состоит из четырёх вкладок (Tabs из `@medusajs/ui`):
+ * Страница состоит из пяти вкладок (Tabs из `@medusajs/ui`):
  *   - «Провайдеры» — таблица + drawer + drag-and-drop fallback;
  *   - «Общие настройки» — форма для singleton с optimistic concurrency;
+ *   - «Telegram / Handoff» — настройки Telegram handoff, diagnostics и live connection test;
  *   - «Индексация и статус» — reindex каталога, sync knowledge и runtime;
  *   - «Состояние» — массовый probe + снапшот последних тестов.
  *
@@ -25,6 +26,7 @@ import GeneralTab from "./components/general-tab"
 import HealthTab from "./components/health-tab"
 import OperationsTab from "./components/operations-tab"
 import ProvidersTab from "./components/providers-tab"
+import TelegramHandoffTab from "./components/telegram-handoff-tab"
 import { assistantCopy } from "./lib/copy"
 
 const AssistantSettingsPage = () => {
@@ -48,6 +50,9 @@ const AssistantSettingsPage = () => {
             <Tabs.Trigger value="general">
               {assistantCopy.tabs.general}
             </Tabs.Trigger>
+            <Tabs.Trigger value="telegram-handoff">
+              {assistantCopy.tabs.telegramHandoff}
+            </Tabs.Trigger>
             <Tabs.Trigger value="operations">
               {assistantCopy.tabs.operations}
             </Tabs.Trigger>
@@ -61,6 +66,9 @@ const AssistantSettingsPage = () => {
         </Tabs.Content>
         <Tabs.Content value="general">
           <GeneralTab />
+        </Tabs.Content>
+        <Tabs.Content value="telegram-handoff">
+          <TelegramHandoffTab />
         </Tabs.Content>
         <Tabs.Content value="operations">
           <OperationsTab />

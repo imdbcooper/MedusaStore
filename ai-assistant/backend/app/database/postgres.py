@@ -74,9 +74,12 @@ CREATE TABLE IF NOT EXISTS assistant_messages (
   actions JSONB NOT NULL DEFAULT '[]',
   tool_calls JSONB NOT NULL DEFAULT '[]',
   token_usage JSONB NOT NULL DEFAULT '{}',
+  metadata JSONB NOT NULL DEFAULT '{}',
   latency_ms INTEGER NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE assistant_messages ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}';
 
 CREATE TABLE IF NOT EXISTS assistant_sources (
   id UUID PRIMARY KEY,
@@ -154,6 +157,81 @@ CREATE TABLE IF NOT EXISTS assistant_handoffs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS assistant_handoff_tickets (
+  handoff_id UUID NOT NULL REFERENCES assistant_handoffs(id) ON DELETE CASCADE,
+  channel TEXT NOT NULL DEFAULT 'telegram' CHECK (channel IN ('telegram')),
+  ticket_status TEXT NOT NULL DEFAULT 'submitted' CHECK (
+    ticket_status IN (
+      'submitted',
+      'open',
+      'assigned',
+      'waiting_customer',
+      'waiting_operator',
+      'closed',
+      'failed'
+    )
+  ),
+  telegram_chat_id TEXT NULL,
+  telegram_topic_id BIGINT NULL,
+  telegram_topic_title TEXT NULL,
+  telegram_root_message_id BIGINT NULL,
+  assigned_operator_id TEXT NULL,
+  assigned_operator_username TEXT NULL,
+  assigned_at TIMESTAMPTZ NULL,
+  closed_at TIMESTAMPTZ NULL,
+  last_operator_message_at TIMESTAMPTZ NULL,
+  last_customer_message_at TIMESTAMPTZ NULL,
+  last_telegram_update_id BIGINT NULL,
+  failure_reason TEXT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  opened_at TIMESTAMPTZ NULL,
+  last_sync_at TIMESTAMPTZ NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (handoff_id, channel)
+);
+
+ALTER TABLE assistant_handoff_tickets DROP CONSTRAINT IF EXISTS assistant_handoff_tickets_ticket_status_check;
+ALTER TABLE assistant_handoff_tickets
+  ADD CONSTRAINT assistant_handoff_tickets_ticket_status_check
+  CHECK (
+    ticket_status IN (
+      'submitted',
+      'open',
+      'assigned',
+      'waiting_customer',
+      'waiting_operator',
+      'closed',
+      'failed'
+    )
+  );
+ALTER TABLE assistant_handoff_tickets ADD COLUMN IF NOT EXISTS assigned_operator_id TEXT NULL;
+ALTER TABLE assistant_handoff_tickets ADD COLUMN IF NOT EXISTS assigned_operator_username TEXT NULL;
+ALTER TABLE assistant_handoff_tickets ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ NULL;
+ALTER TABLE assistant_handoff_tickets ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ NULL;
+ALTER TABLE assistant_handoff_tickets ADD COLUMN IF NOT EXISTS last_operator_message_at TIMESTAMPTZ NULL;
+ALTER TABLE assistant_handoff_tickets ADD COLUMN IF NOT EXISTS last_customer_message_at TIMESTAMPTZ NULL;
+ALTER TABLE assistant_handoff_tickets ADD COLUMN IF NOT EXISTS last_telegram_update_id BIGINT NULL;
+
+CREATE TABLE IF NOT EXISTS assistant_handoff_messages (
+  id UUID PRIMARY KEY,
+  handoff_id UUID NOT NULL REFERENCES assistant_handoffs(id) ON DELETE CASCADE,
+  session_id UUID NOT NULL REFERENCES assistant_sessions(id) ON DELETE CASCADE,
+  telegram_chat_id TEXT NOT NULL,
+  telegram_topic_id BIGINT NULL,
+  telegram_message_id BIGINT NULL,
+  telegram_update_id BIGINT NULL,
+  direction TEXT NOT NULL,
+  delivery_status TEXT NOT NULL,
+  message_kind TEXT NOT NULL DEFAULT 'telegram_update',
+  assistant_message_id UUID NULL REFERENCES assistant_messages(id),
+  operator_telegram_user_id TEXT NULL,
+  operator_username TEXT NULL,
+  content TEXT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (telegram_update_id)
+);
+
 CREATE TABLE IF NOT EXISTS assistant_principal_state (
   principal_id TEXT PRIMARY KEY,
   principal_kind TEXT NOT NULL DEFAULT 'anonymous' CHECK (principal_kind IN ('anonymous', 'customer')),
@@ -210,6 +288,17 @@ CREATE INDEX IF NOT EXISTS idx_assistant_feedback_session_created
   ON assistant_feedback(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_assistant_handoffs_session_created
   ON assistant_handoffs(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_assistant_handoff_tickets_status_updated
+  ON assistant_handoff_tickets(channel, ticket_status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_assistant_handoff_tickets_thread
+  ON assistant_handoff_tickets(channel, telegram_chat_id, telegram_topic_id);
+CREATE INDEX IF NOT EXISTS idx_assistant_handoff_messages_handoff_created
+  ON assistant_handoff_messages(handoff_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_assistant_handoff_messages_session_created
+  ON assistant_handoff_messages(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_assistant_handoff_messages_update
+  ON assistant_handoff_messages(telegram_update_id)
+  WHERE telegram_update_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_assistant_principal_state_blocked
   ON assistant_principal_state(blocked_until)
   WHERE blocked_until IS NOT NULL;

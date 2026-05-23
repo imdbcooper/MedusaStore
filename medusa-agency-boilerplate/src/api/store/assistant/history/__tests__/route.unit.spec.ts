@@ -73,6 +73,76 @@ describe("store assistant history route", () => {
     expect(json).toHaveBeenCalledWith({
       session_id: "11111111-1111-4111-8111-111111111111",
       messages: [],
+      handoff_ticket: null,
+    })
+  })
+
+  it("sanitizes visible metadata and handoff ticket state for the storefront", async () => {
+    const json = jest.fn()
+    const status = jest.fn(() => ({ json }))
+
+    mockScopedHistory.mockResolvedValue({
+      session_id: "11111111-1111-4111-8111-111111111111",
+      store_id: "default",
+      locale: "ru",
+      messages: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          session_id: "11111111-1111-4111-8111-111111111111",
+          role: "assistant",
+          content: "С вами уже работает специалист.",
+          intent: "telegram_operator_reply",
+          metadata: {
+            source: "telegram_operator",
+            operator_username: "alice",
+            operator_telegram_user_id: "7001",
+          },
+          created_at: "2026-05-23T12:00:00.000Z",
+        },
+      ],
+      handoff_ticket: {
+        channel: "telegram",
+        status: "waiting_customer",
+        message: "Operator replied.",
+        updated_at: "2026-05-23T12:00:00.000Z",
+      },
+    })
+
+    await POST(
+      {
+        body: {
+          session_id: "11111111-1111-4111-8111-111111111111",
+          store_id: "default",
+          locale: "ru",
+        },
+      } as never,
+      { status } as never
+    )
+
+    expect(status).toHaveBeenCalledWith(200)
+    expect(json).toHaveBeenCalledWith({
+      session_id: "11111111-1111-4111-8111-111111111111",
+      messages: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          session_id: "11111111-1111-4111-8111-111111111111",
+          role: "assistant",
+          content: "С вами уже работает специалист.",
+          intent: "telegram_operator_reply",
+          products: [],
+          actions: [],
+          metadata: {
+            source: "telegram_operator",
+          },
+          created_at: "2026-05-23T12:00:00.000Z",
+        },
+      ],
+      handoff_ticket: {
+        channel: "telegram",
+        status: "waiting_customer",
+        message: "Operator replied.",
+        updated_at: "2026-05-23T12:00:00.000Z",
+      },
     })
   })
 })

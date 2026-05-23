@@ -97,6 +97,12 @@ export type AssistantHandoffResponse = {
   status: string
   source: string
   created_at?: string | null
+  ticket?: {
+    channel: "telegram"
+    status: string
+    message?: string | null
+    updated_at?: string | null
+  } | null
 }
 
 export type AssistantHistoryRequest = {
@@ -108,6 +114,12 @@ export type AssistantHistoryRequest = {
 
 export type AssistantHistoryResponse = {
   session_id: string
+  handoff_ticket?: {
+    channel: "telegram"
+    status: string
+    message?: string | null
+    updated_at?: string | null
+  } | null
   messages: AssistantHistoryMessage[]
 }
 
@@ -119,6 +131,7 @@ export type AssistantHistoryMessage = {
   intent?: string | null
   products?: AssistantProduct[]
   actions?: AssistantAction[]
+  metadata?: Record<string, unknown>
   safety?: AssistantChatResponse["safety"]
   created_at?: string
 }
@@ -129,7 +142,9 @@ export type AssistantMessage = {
   content: string
   products?: AssistantProduct[]
   actions?: AssistantAction[]
+  metadata?: Record<string, unknown>
   safety?: AssistantChatResponse["safety"]
+  created_at?: string
   pending?: boolean
   error?: string
 }

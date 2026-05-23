@@ -51,6 +51,10 @@ const fallbackMessages: Record<string, string> = {
     "Markdown-документ не прошёл валидацию. Проверьте title, description и содержимое файла.",
   KNOWLEDGE_DOCUMENT_WRITE_FAILED:
     "Assistant backend не смог сохранить Markdown-документ в knowledge storage.",
+  SETTINGS_PROVIDER_UNAVAILABLE:
+    "Assistant backend не может получить свежий internal settings snapshot из Medusa. Проверьте server-to-server токены и доступность internal endpoint.",
+  AUTH_REQUIRED:
+    "Assistant backend отклонил server-to-server токен. Проверьте bridge-конфигурацию между Medusa и Python backend.",
   AI_ASSISTANT_KNOWLEDGE_TITLE_REQUIRED:
     assistantCopy.operations.errors.knowledgeTitleRequired,
   AI_ASSISTANT_KNOWLEDGE_DESCRIPTION_REQUIRED:

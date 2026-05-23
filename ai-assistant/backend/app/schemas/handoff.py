@@ -27,6 +27,13 @@ class HandoffRequest(BaseModel):
         return self
 
 
+class HandoffTicketResponse(BaseModel):
+    channel: str = "telegram"
+    status: str
+    message: str | None = None
+    updated_at: datetime | None = None
+
+
 class HandoffResponse(BaseModel):
     handoff_id: UUID
     session_id: UUID
@@ -37,3 +44,4 @@ class HandoffResponse(BaseModel):
     status: str = "submitted"
     source: str
     created_at: datetime | None = None
+    ticket: HandoffTicketResponse | None = None

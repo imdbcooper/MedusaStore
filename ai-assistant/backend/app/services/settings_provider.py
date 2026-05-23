@@ -1,7 +1,8 @@
 """TTL-cached provider over Medusa /internal/assistant/settings/effective.
 
 The provider exposes the *effective* assistant configuration (active provider,
-fallback chain, global settings) so the rest of the service can pick up
+fallback chain, global settings, and Telegram handoff runtime settings so the
+rest of the service can pick up
 dashboard changes without redeploys. It is intentionally HTTP-only and does
 not perform any LLM I/O.
 
@@ -12,8 +13,9 @@ Key behaviours:
     ``assistant.settings.stale_used`` warning.
   * Bounded retries with exponential backoff for transient network and 5xx
     failures. 4xx are surfaced immediately as ``SettingsFetchError``.
-  * Plain ``api_key`` is preserved on the in-memory model but never logged or
-    rendered via ``repr``; callers must read it explicitly.
+  * Plain secrets (provider ``api_key`` and Telegram bot/webhook secrets) are
+    preserved on the in-memory model but never logged or rendered via ``repr``;
+    callers must read them explicitly.
 """
 
 from __future__ import annotations
@@ -25,11 +27,19 @@ from collections.abc import Callable
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.core.security import structured_log
 
 _RETRY_STATUS_CODES: frozenset[int] = frozenset({500, 502, 503, 504})
+
+
+def _mask_secret(value: str | None) -> str:
+    if not value:
+        return "unset"
+    if len(value) < 4:
+        return "***"
+    return f"***{value[-4:]}"
 
 
 class ProviderRuntime(BaseModel):
@@ -93,6 +103,167 @@ class GlobalAssistantSettings(BaseModel):
     version: int = 1
 
 
+class TelegramHandoffDiagnostics(BaseModel):
+    """Non-secret readiness summary for the Telegram handoff integration."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = "disabled"
+    missing_fields: list[str] = Field(default_factory=list)
+    can_test: bool = False
+
+
+class TelegramHandoffRuntimeSettings(BaseModel):
+    """Internal runtime config for the future Telegram handoff integration.
+
+    ``bot_token`` and ``webhook_secret`` may contain plain secrets returned by
+    Medusa's internal-only effective settings endpoint. They are kept out of the
+    default model repr and out of :meth:`safe_repr`.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = "singleton"
+    enabled: bool = False
+    environment_mode: str = "test"
+    bot_username: str | None = None
+    bot_token: str | None = Field(default=None, repr=False)
+    support_chat_id: str | None = None
+    topics_required: bool = True
+    webhook_url: str | None = None
+    webhook_secret: str | None = Field(default=None, repr=False)
+    allowed_operator_ids: list[str] = Field(default_factory=list)
+    allowed_admin_ids: list[str] = Field(default_factory=list)
+    operator_reply_mode: str = "explicit_reply_command"
+    fallback_message: str | None = None
+    diagnostics: TelegramHandoffDiagnostics = Field(
+        default_factory=TelegramHandoffDiagnostics
+    )
+    version: int | None = None
+    updated_at: str | None = None
+    last_test_status: str | None = None
+    last_test_error: str | None = None
+    last_test_at: str | None = None
+
+    @field_validator(
+        "bot_username",
+        "bot_token",
+        "support_chat_id",
+        "webhook_url",
+        "webhook_secret",
+        "fallback_message",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_optional_strings(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    @field_validator("allowed_operator_ids", "allowed_admin_ids", mode="before")
+    @classmethod
+    def _normalize_user_id_lists(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ValueError("must be a list")
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            candidate = str(item).strip()
+            if not candidate:
+                continue
+            if candidate not in seen:
+                seen.add(candidate)
+                normalized.append(candidate)
+        return normalized
+
+    @property
+    def has_bot_token(self) -> bool:
+        return bool(self.bot_token)
+
+    @property
+    def has_webhook_secret(self) -> bool:
+        return bool(self.webhook_secret)
+
+    @property
+    def allowed_operator_user_ids(self) -> tuple[str, ...]:
+        return tuple(self.allowed_operator_ids)
+
+    @property
+    def allowed_admin_user_ids(self) -> tuple[str, ...]:
+        return tuple(self.allowed_admin_ids)
+
+    @property
+    def has_operator_acl(self) -> bool:
+        return bool(self.allowed_operator_ids or self.allowed_admin_ids)
+
+    @property
+    def is_ready_for_connection_test(self) -> bool:
+        if not self.enabled:
+            return False
+        if not self.has_bot_token:
+            return False
+        if not self.has_webhook_secret:
+            return False
+        if not self.support_chat_id:
+            return False
+        if not self.topics_required:
+            return False
+        if not self.webhook_url:
+            return False
+        if self.environment_mode == "production" and not self.has_operator_acl:
+            return False
+        return True
+
+    @property
+    def is_configured(self) -> bool:
+        return self.is_ready_for_connection_test
+
+    @property
+    def is_ready_for_webhook(self) -> bool:
+        if not self.enabled:
+            return False
+        if not self.has_bot_token:
+            return False
+        if not self.support_chat_id:
+            return False
+        if not self.topics_required:
+            return False
+        if not self.has_webhook_secret:
+            return False
+        if not self.has_operator_acl:
+            return False
+        return True
+
+    def safe_repr(self) -> str:
+        bot_token = _mask_secret(self.bot_token)
+        webhook_secret = _mask_secret(self.webhook_secret)
+        return (
+            "<TelegramHandoffRuntimeSettings "
+            f"enabled={self.enabled} "
+            f"environment_mode={self.environment_mode} "
+            f"bot_username={self.bot_username!r} "
+            f"bot_token={bot_token} "
+            f"support_chat_id={self.support_chat_id!r} "
+            f"topics_required={self.topics_required} "
+            f"webhook_url={self.webhook_url!r} "
+            f"webhook_secret={webhook_secret} "
+            f"allowed_operator_ids={self.allowed_operator_ids!r} "
+            f"allowed_admin_ids={self.allowed_admin_ids!r} "
+            f"operator_reply_mode={self.operator_reply_mode!r} "
+            f"diagnostics_status={self.diagnostics.status!r} "
+            f"ready={self.is_ready_for_connection_test}>"
+        )
+
+    def __repr__(self) -> str:  # pragma: no cover - delegation
+        return self.safe_repr()
+
+    def __str__(self) -> str:  # pragma: no cover - delegation
+        return self.safe_repr()
+
+
 class AssistantRuntimeSettings(BaseModel):
     """Snapshot of the effective assistant configuration.
 
@@ -108,6 +279,9 @@ class AssistantRuntimeSettings(BaseModel):
     active: ProviderRuntime | None = None
     fallback: list[ProviderRuntime] = Field(default_factory=list)
     global_settings: GlobalAssistantSettings
+    telegram_handoff: TelegramHandoffRuntimeSettings = Field(
+        default_factory=TelegramHandoffRuntimeSettings
+    )
 
 
 class SettingsFetchError(RuntimeError):
@@ -381,6 +555,23 @@ class SettingsProvider:
         except ValidationError as exc:
             raise SettingsFetchError(f"Global settings payload is invalid: {exc}") from exc
 
+        telegram_raw = effective.get("telegram_handoff")
+        if telegram_raw is None:
+            telegram_handoff = TelegramHandoffRuntimeSettings()
+        else:
+            if not isinstance(telegram_raw, dict):
+                raise SettingsFetchError(
+                    "'effective.telegram_handoff' must be an object or null"
+                )
+            try:
+                telegram_handoff = TelegramHandoffRuntimeSettings.model_validate(
+                    telegram_raw
+                )
+            except ValidationError as exc:
+                raise SettingsFetchError(
+                    f"Telegram handoff payload is invalid: {exc}",
+                ) from exc
+
         active: ProviderRuntime | None = None
         if active_raw is not None:
             if not isinstance(active_raw, dict):
@@ -422,6 +613,7 @@ class SettingsProvider:
             active=active,
             fallback=fallback,
             global_settings=global_settings,
+            telegram_handoff=telegram_handoff,
         )
 
 
@@ -431,4 +623,6 @@ __all__ = [
     "ProviderRuntime",
     "SettingsFetchError",
     "SettingsProvider",
+    "TelegramHandoffDiagnostics",
+    "TelegramHandoffRuntimeSettings",
 ]

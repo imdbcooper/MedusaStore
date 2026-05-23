@@ -6,6 +6,7 @@ from app.api.feedback import router as feedback_router
 from app.api.handoff import router as handoff_router
 from app.api.health import router as health_router
 from app.api.ingest import router as ingest_router
+from app.api.telegram import router as telegram_router
 from app.api.tools import router as tools_router
 
 api_router = APIRouter()
@@ -15,4 +16,5 @@ api_router.include_router(ingest_router)
 api_router.include_router(tools_router)
 api_router.include_router(feedback_router)
 api_router.include_router(handoff_router)
+api_router.include_router(telegram_router)
 api_router.include_router(admin_router)

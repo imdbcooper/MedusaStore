@@ -19,6 +19,7 @@ export const assistantCopy = {
   tabs: {
     providers: "Провайдеры",
     general: "Общие настройки",
+    telegramHandoff: "Telegram / Handoff",
     operations: "Индексация и статус",
     health: "Состояние",
   },
@@ -318,6 +319,132 @@ export const assistantCopy = {
     },
 
     versionLabel: (n: number) => `Версия #${n}`,
+  },
+
+  telegramHandoff: {
+    heading: "Telegram handoff",
+    subheading:
+      "Конфигурация и live-проверка Telegram handoff для операторской support-группы.",
+
+    status: {
+      disabled: "Disabled",
+      notConfigured: "Not configured",
+      partiallyConfigured: "Partially configured",
+      ready: "Ready for connection test",
+      canTest: "Можно запускать live connection test.",
+      cannotTest: "Сначала заполните обязательные поля.",
+      missing: "Не хватает:",
+    },
+
+    sections: {
+      diagnostics: "Диагностика",
+      connection: "Конфигурация подключения",
+      access: "Доступ операторов",
+      behavior: "Поведение handoff",
+      checklist: "Что подготовить позже",
+    },
+
+    fields: {
+      enabled: "Включить Telegram handoff",
+      enabledHint:
+        "Пока выключено — можно сохранить неполную конфигурацию без бота и группы.",
+      environmentMode: "Режим окружения",
+      environmentModeHint:
+        "В `test` можно оставить пустые списки операторов и админов.",
+      botToken: "Bot token",
+      botTokenHint:
+        "Хранится только в зашифрованном виде. Оставьте пустым, чтобы не менять сохранённый токен.",
+      botUsername: "Bot username",
+      botUsernameHint:
+        "Пока можно заполнить вручную или оставить пустым до будущего auto-detect.",
+      supportChatId: "Support chat ID",
+      supportChatIdHint:
+        "Telegram numeric id приватной supergroup, обычно вида `-100…`.",
+      topicsRequired: "Topics / Forum обязательны",
+      topicsRequiredHint:
+        "Для MVP handoff предполагается, что в support-группе включены Topics.",
+      webhookUrl: "Webhook URL",
+      webhookUrlHint:
+        "Webhook URL, который должен быть зарегистрирован у Telegram-бота.",
+      webhookSecret: "Webhook secret",
+      webhookSecretHint:
+        "Секрет хранится зашифрованно. Можно ввести новый вручную, старое значение не раскрывается.",
+      allowedOperatorIds: "Allowed operator IDs",
+      allowedOperatorIdsHint:
+        "Telegram numeric user id операторов. По одному id на строке или через запятую.",
+      allowedAdminIds: "Allowed admin IDs",
+      allowedAdminIdsHint:
+        "Telegram numeric user id администраторов handoff.",
+      operatorReplyMode: "Operator reply mode",
+      operatorReplyModeHint:
+        "Как интерпретировать ответы операторов внутри topic.",
+      fallbackMessage: "Fallback message",
+      fallbackMessageHint:
+        "Сообщение для клиента на случай, если Telegram недоступен или handoff нельзя завершить.",
+    },
+
+    placeholders: {
+      botTokenEmpty: "123456:ABCDEF…",
+      botTokenMasked: (masked: string) => masked,
+      botUsername: "shop_support_bot",
+      supportChatId: "-1001234567890",
+      webhookUrl: "https://example.com/api/telegram/webhook",
+      webhookSecretEmpty: "Введите новый secret",
+      webhookSecretMasked: (masked: string) => masked,
+      ids: "123456789\n987654321",
+      fallbackMessage:
+        "Telegram handoff временно недоступен. Оставьте контакты, и мы вернёмся к вам другим способом.",
+    },
+
+    environmentModes: {
+      test: "test",
+      production: "production",
+    },
+
+    operatorReplyModes: {
+      explicitReplyCommand: "explicit_reply_command",
+      allTopicMessages: "all_topic_messages",
+    },
+
+    checklist: {
+      intro:
+        "Даже если бот и support-группа ещё не созданы, здесь можно заранее сохранить будущие параметры handoff.",
+      items: [
+        "Создать Telegram-бота через BotFather.",
+        "Подготовить приватную Telegram supergroup для операторов.",
+        "Включить Topics / Forum в support-группе.",
+        "Добавить бота в группу и выдать ему admin-права.",
+        "Получить numeric support chat id группы.",
+        "Собрать numeric Telegram user IDs операторов и админов.",
+      ],
+    },
+
+    lastTest: {
+      never: "Проверка соединения ещё не запускалась.",
+      at: "Последняя проверка",
+    },
+
+    actions: {
+      save: "Сохранить настройки",
+      revert: "Отменить изменения",
+      test: "Test connection",
+      testing: "Проверяем…",
+    },
+
+    toasts: {
+      saved: "Telegram handoff настройки сохранены.",
+      testPassed: "Соединение с Telegram подтверждено.",
+      testMissing:
+        "Проверка завершена с замечаниями. Смотрите результат и детали ниже.",
+      saveFirst:
+        "Есть несохранённые изменения. Сначала сохраните конфигурацию, если хотите протестировать именно её.",
+    },
+
+    errors: {
+      load: "Не удалось загрузить Telegram handoff конфигурацию.",
+      idsInvalid:
+        "Проверьте списки operator/admin ids — нужны только numeric Telegram user ids.",
+    },
   },
 
   operations: {

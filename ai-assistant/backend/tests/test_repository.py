@@ -2,6 +2,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.database.postgres import SCHEMA_SQL
 from app.repositories.postgres import PostgresAssistantRepository
 
 
@@ -68,6 +69,182 @@ async def test_memory_repository_upserts_sources_and_searches(repository):
 
 
 @pytest.mark.asyncio
+async def test_memory_repository_handoff_ticket_lifecycle(repository):
+    session = await repository.ensure_session(
+        session_id=None,
+        store_id="default",
+        locale="ru",
+    )
+    handoff = await repository.create_handoff(
+        session_id=session["id"],
+        store_id="default",
+        locale="ru",
+        source="assistant_widget",
+        email="lead@example.com",
+        summary="Нужен созвон по интеграциям и SLA",
+    )
+
+    submitted = await repository.upsert_handoff_ticket(
+        handoff_id=handoff["id"],
+        channel="telegram",
+        ticket_status="submitted",
+        created_at=handoff["created_at"],
+        last_sync_at=handoff["created_at"],
+    )
+    opened = await repository.upsert_handoff_ticket(
+        handoff_id=handoff["id"],
+        channel="telegram",
+        ticket_status="open",
+        telegram_chat_id="-1001234567890",
+        telegram_topic_id=321,
+        telegram_topic_title="#ABC12345 · Алексей",
+        telegram_root_message_id=654,
+        opened_at=handoff["created_at"],
+    )
+    loaded = await repository.get_handoff_ticket(
+        handoff_id=handoff["id"],
+        channel="telegram",
+    )
+
+    assert submitted["ticket_status"] == "submitted"
+    assert opened["ticket_status"] == "open"
+    assert loaded is not None
+    assert loaded["telegram_chat_id"] == "-1001234567890"
+    assert loaded["telegram_topic_id"] == 321
+    assert loaded["telegram_root_message_id"] == 654
+
+
+@pytest.mark.asyncio
+async def test_memory_repository_handoff_ticket_upsert_preserves_open_metadata_on_submitted_retry(
+    repository,
+):
+    session = await repository.ensure_session(
+        session_id=None,
+        store_id="default",
+        locale="ru",
+    )
+    handoff = await repository.create_handoff(
+        session_id=session["id"],
+        store_id="default",
+        locale="ru",
+        source="assistant_widget",
+        email="lead@example.com",
+        summary="Нужен созвон по интеграциям и SLA",
+    )
+
+    opened = await repository.upsert_handoff_ticket(
+        handoff_id=handoff["id"],
+        channel="telegram",
+        ticket_status="open",
+        telegram_chat_id="-1001234567890",
+        telegram_topic_id=321,
+        telegram_topic_title="#ABC12345 · Алексей",
+        telegram_root_message_id=654,
+        created_at=handoff["created_at"],
+        opened_at=handoff["created_at"],
+        last_sync_at=handoff["created_at"],
+    )
+    retried = await repository.upsert_handoff_ticket(
+        handoff_id=handoff["id"],
+        channel="telegram",
+        ticket_status="submitted",
+        created_at=handoff["created_at"],
+    )
+
+    assert opened["ticket_status"] == "open"
+    assert retried["ticket_status"] == "open"
+    assert retried["telegram_chat_id"] == "-1001234567890"
+    assert retried["telegram_topic_id"] == 321
+    assert retried["telegram_topic_title"] == "#ABC12345 · Алексей"
+    assert retried["telegram_root_message_id"] == 654
+    assert retried["opened_at"] == handoff["created_at"]
+
+
+@pytest.mark.asyncio
+async def test_memory_repository_handoff_message_reservation_reuses_failed_mapping(
+    repository,
+):
+    session = await repository.ensure_session(
+        session_id=None,
+        store_id="default",
+        locale="ru",
+    )
+    handoff = await repository.create_handoff(
+        session_id=session["id"],
+        store_id="default",
+        locale="ru",
+        source="assistant_widget",
+        email="lead@example.com",
+        summary="Нужен созвон по интеграциям и SLA",
+    )
+
+    reserved, is_reserved = await repository.reserve_handoff_message(
+        handoff_id=handoff["id"],
+        session_id=session["id"],
+        telegram_chat_id="-1001234567890",
+        telegram_topic_id=321,
+        telegram_message_id=777,
+        telegram_update_id=9001,
+        direction="telegram_inbound",
+        message_kind="message_processing",
+        operator_telegram_user_id="7001",
+        operator_username="operator_alex",
+        content="/reply Привет",
+        metadata={"reason": "processing"},
+    )
+    duplicate, duplicate_reserved = await repository.reserve_handoff_message(
+        handoff_id=handoff["id"],
+        session_id=session["id"],
+        telegram_chat_id="-1001234567890",
+        telegram_topic_id=321,
+        telegram_message_id=777,
+        telegram_update_id=9001,
+        direction="telegram_inbound",
+        message_kind="message_processing",
+        operator_telegram_user_id="7001",
+        operator_username="operator_alex",
+        content="/reply Привет",
+        metadata={"reason": "processing"},
+    )
+
+    assert is_reserved is True
+    assert reserved["delivery_status"] == "processing"
+    assert duplicate_reserved is False
+    assert duplicate["id"] == reserved["id"]
+
+    assistant_message_id = uuid4()
+    failed = await repository.update_handoff_message(
+        handoff_message_id=reserved["id"],
+        delivery_status="failed",
+        assistant_message_id=assistant_message_id,
+        content="Привет",
+        metadata={"reason": "unexpected_error"},
+    )
+    retried, retried_reserved = await repository.reserve_handoff_message(
+        handoff_id=handoff["id"],
+        session_id=session["id"],
+        telegram_chat_id="-1001234567890",
+        telegram_topic_id=321,
+        telegram_message_id=777,
+        telegram_update_id=9001,
+        direction="telegram_inbound",
+        message_kind="command_reply",
+        operator_telegram_user_id="7001",
+        operator_username="operator_alex",
+        content="Привет",
+        metadata={"reason": "processing"},
+    )
+
+    assert failed["delivery_status"] == "failed"
+    assert retried_reserved is True
+    assert retried["id"] == reserved["id"]
+    assert retried["delivery_status"] == "processing"
+    assert retried["assistant_message_id"] == assistant_message_id
+    assert retried["content"] == "Привет"
+    assert len(repository.handoff_messages) == 1
+
+
+@pytest.mark.asyncio
 async def test_postgres_repository_list_messages_normalizes_json_string_columns():
     session_id = uuid4()
     rows = [
@@ -112,6 +289,192 @@ async def test_postgres_repository_list_messages_normalizes_json_string_columns(
     assert messages[0]["actions"] == []
     assert messages[0]["tool_calls"] == []
     assert messages[0]["token_usage"] == {}
+
+
+def test_postgres_schema_declares_handoff_ticket_table():
+    assert "CREATE TABLE IF NOT EXISTS assistant_handoff_tickets" in SCHEMA_SQL
+    assert "idx_assistant_handoff_tickets_status_updated" in SCHEMA_SQL
+
+
+@pytest.mark.asyncio
+async def test_postgres_repository_reserve_handoff_message_uses_atomic_insert():
+    captured: dict[str, object] = {}
+    row = {
+        "id": uuid4(),
+        "handoff_id": uuid4(),
+        "session_id": uuid4(),
+        "telegram_chat_id": "-1001234567890",
+        "telegram_topic_id": 321,
+        "telegram_message_id": 777,
+        "telegram_update_id": 9001,
+        "direction": "telegram_inbound",
+        "delivery_status": "processing",
+        "message_kind": "message_processing",
+        "assistant_message_id": None,
+        "operator_telegram_user_id": "7001",
+        "operator_username": "operator_alex",
+        "content": "/reply Привет",
+        "metadata": "{}",
+    }
+
+    class FakeTransaction:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeConn:
+        def transaction(self):
+            return FakeTransaction()
+
+        async def fetchrow(self, query, *args):
+            captured["query"] = query
+            captured["args"] = args
+            return row
+
+    class FakeAcquire:
+        async def __aenter__(self):
+            return FakeConn()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakePool:
+        def acquire(self):
+            return FakeAcquire()
+
+    class FakeDatabase:
+        pool = FakePool()
+
+    repository = PostgresAssistantRepository(FakeDatabase())
+    reserved, is_reserved = await repository.reserve_handoff_message(
+        handoff_id=row["handoff_id"],
+        session_id=row["session_id"],
+        telegram_chat_id="-1001234567890",
+        telegram_topic_id=321,
+        telegram_message_id=777,
+        telegram_update_id=9001,
+        direction="telegram_inbound",
+        message_kind="message_processing",
+        operator_telegram_user_id="7001",
+        operator_username="operator_alex",
+        content="/reply Привет",
+        metadata={"reason": "processing"},
+    )
+
+    query = " ".join(str(captured["query"]).split())
+    assert "ON CONFLICT (telegram_update_id) DO NOTHING" in query
+    assert reserved["delivery_status"] == "processing"
+    assert is_reserved is True
+
+
+@pytest.mark.asyncio
+async def test_postgres_repository_update_handoff_message_only_updates_requested_fields():
+    captured: dict[str, object] = {}
+    row = {
+        "id": uuid4(),
+        "handoff_id": uuid4(),
+        "session_id": uuid4(),
+        "telegram_chat_id": "-1001234567890",
+        "telegram_topic_id": 321,
+        "telegram_message_id": 777,
+        "telegram_update_id": 9001,
+        "direction": "telegram_inbound",
+        "delivery_status": "failed",
+        "message_kind": "command_reply",
+        "assistant_message_id": uuid4(),
+        "operator_telegram_user_id": "7001",
+        "operator_username": "operator_alex",
+        "content": "Привет",
+        "metadata": "{}",
+    }
+
+    class FakeConn:
+        async def fetchrow(self, query, *args):
+            captured["query"] = query
+            captured["args"] = args
+            return row
+
+    class FakeAcquire:
+        async def __aenter__(self):
+            return FakeConn()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakePool:
+        def acquire(self):
+            return FakeAcquire()
+
+    class FakeDatabase:
+        pool = FakePool()
+
+    repository = PostgresAssistantRepository(FakeDatabase())
+    await repository.update_handoff_message(
+        handoff_message_id=row["id"],
+        delivery_status="failed",
+        metadata={"reason": "unexpected_error"},
+    )
+
+    query = " ".join(str(captured["query"]).split())
+    assert "delivery_status = $2" in query
+    assert "metadata = $3::jsonb" in query
+    assert "assistant_message_id" not in query
+
+
+@pytest.mark.asyncio
+async def test_postgres_repository_handoff_ticket_upsert_sql_preserves_existing_metadata():
+    captured: dict[str, object] = {}
+    row = {
+        "handoff_id": uuid4(),
+        "channel": "telegram",
+        "ticket_status": "open",
+        "telegram_chat_id": "-1001234567890",
+        "telegram_topic_id": 321,
+        "telegram_topic_title": "#ABC12345 · Алексей",
+        "telegram_root_message_id": 654,
+        "failure_reason": None,
+        "created_at": "2026-05-22T12:00:00Z",
+        "opened_at": "2026-05-22T12:00:00Z",
+        "last_sync_at": "2026-05-22T12:00:00Z",
+        "updated_at": "2026-05-22T12:00:01Z",
+    }
+
+    class FakeConn:
+        async def fetchrow(self, query, *args):
+            captured["query"] = query
+            captured["args"] = args
+            return row
+
+    class FakeAcquire:
+        async def __aenter__(self):
+            return FakeConn()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakePool:
+        def acquire(self):
+            return FakeAcquire()
+
+    class FakeDatabase:
+        pool = FakePool()
+
+    repository = PostgresAssistantRepository(FakeDatabase())
+    await repository.upsert_handoff_ticket(
+        handoff_id=row["handoff_id"],
+        channel="telegram",
+        ticket_status="submitted",
+    )
+
+    query = " ".join(str(captured["query"]).split())
+    assert "COALESCE( EXCLUDED.telegram_chat_id, assistant_handoff_tickets.telegram_chat_id )" in query
+    assert "COALESCE( EXCLUDED.telegram_topic_id, assistant_handoff_tickets.telegram_topic_id )" in query
+    assert "COALESCE( EXCLUDED.telegram_root_message_id, assistant_handoff_tickets.telegram_root_message_id )" in query
+    assert "assistant_handoff_tickets.ticket_status = 'open'" in query
+    assert "assistant_handoff_tickets.ticket_status = 'failed'" in query
+    assert "COALESCE( assistant_handoff_tickets.opened_at, EXCLUDED.opened_at )" in query
 
 
 @pytest.mark.asyncio

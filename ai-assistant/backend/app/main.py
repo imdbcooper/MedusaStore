@@ -18,6 +18,7 @@ from app.services.llm import LlmRouter
 from app.services.reindex_queue import ReindexQueueProcessor
 from app.services.retrieval import ModeAwareRetriever, QdrantVectorRetriever, SimpleMarkdownRetriever
 from app.services.settings_provider import SettingsProvider
+from app.services.telegram_handoff import TelegramHandoffService
 from app.services.vector import HashingEmbeddingProvider, QdrantAdapter
 from app.tools.commerce import LiveCommerceTools
 
@@ -55,6 +56,7 @@ def create_app(settings: Settings | None = None, *, repository=None) -> FastAPI:
         app.state.llm_router = (
             LlmRouter(app.state.settings_provider) if app.state.settings_provider else None
         )
+        app.state.telegram_handoff_service = TelegramHandoffService()
         app.state.chat_service = ChatService(
             repository=app.state.repository,
             retriever=app.state.retriever,
@@ -101,6 +103,7 @@ def create_app(settings: Settings | None = None, *, repository=None) -> FastAPI:
         await app.state.qdrant_adapter.close()
         if app.state.llm_router is not None:
             await app.state.llm_router.aclose()
+        await app.state.telegram_handoff_service.aclose()
         if app.state.settings_provider is not None:
             await app.state.settings_provider.aclose()
         await database.close()

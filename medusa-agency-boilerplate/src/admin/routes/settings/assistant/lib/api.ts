@@ -32,6 +32,8 @@ import type {
   AssistantSettingRow,
   AssistantSettingUpdateInput,
   AssistantStatsResponse,
+  AssistantTelegramHandoffTestInput,
+  AssistantTelegramHandoffUpdateInput,
   AssistantVectorIndexResponse,
   ListProvidersResponse,
   LlmProviderCreateInput,
@@ -40,7 +42,9 @@ import type {
   LlmProviderUpdateInput,
   SingleProviderResponse,
   SingleSettingsResponse,
+  SingleTelegramHandoffResponse,
   TestProviderResponse,
+  TestTelegramHandoffResponse,
 } from "./types"
 
 const SETTINGS_BASE = "/admin/assistant/settings"
@@ -290,6 +294,49 @@ export function updateSettings(
   })
 }
 
+export function getTelegramHandoffConfig(
+  signal?: AbortSignal,
+): Promise<AssistantApiResult<SingleTelegramHandoffResponse>> {
+  return call<SingleTelegramHandoffResponse>(
+    SETTINGS_BASE,
+    "/telegram-handoff",
+    {
+      method: "GET",
+      signal,
+    },
+  )
+}
+
+export function updateTelegramHandoffConfig(
+  patch: AssistantTelegramHandoffUpdateInput,
+  signal?: AbortSignal,
+): Promise<AssistantApiResult<SingleTelegramHandoffResponse>> {
+  return call<SingleTelegramHandoffResponse>(
+    SETTINGS_BASE,
+    "/telegram-handoff",
+    {
+      method: "PATCH",
+      body: patch,
+      signal,
+    },
+  )
+}
+
+export function testTelegramHandoffConfig(
+  patch: AssistantTelegramHandoffTestInput = {},
+  signal?: AbortSignal,
+): Promise<AssistantApiResult<TestTelegramHandoffResponse>> {
+  return call<TestTelegramHandoffResponse>(
+    SETTINGS_BASE,
+    "/telegram-handoff/test",
+    {
+      method: "POST",
+      body: patch,
+      signal,
+    },
+  )
+}
+
 export function getRuntime(
   signal?: AbortSignal,
 ): Promise<AssistantApiResult<AssistantRuntimeResponse>> {
@@ -456,6 +503,8 @@ export type {
   AssistantSettingRow,
   AssistantSettingUpdateInput,
   AssistantStatsResponse,
+  AssistantTelegramHandoffTestInput,
+  AssistantTelegramHandoffUpdateInput,
   AssistantVectorIndexResponse,
   ListProvidersResponse,
   LlmProviderCreateInput,
@@ -464,5 +513,7 @@ export type {
   LlmProviderUpdateInput,
   SingleProviderResponse,
   SingleSettingsResponse,
+  SingleTelegramHandoffResponse,
   TestProviderResponse,
+  TestTelegramHandoffResponse,
 }

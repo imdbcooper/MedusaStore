@@ -1,4 +1,8 @@
 import type { AssistantAdapterConfig } from "./config"
+import type {
+  AssistantTelegramHandoffDiagnostics,
+  AssistantTelegramHandoffLastTestStatus,
+} from "../modules/assistant-settings"
 
 export type FetchLike = typeof fetch
 
@@ -58,6 +62,12 @@ export type AssistantHistoryResponse = {
   store_id: string
   locale: string
   customer_bound?: boolean
+  handoff_ticket?: {
+    channel: "telegram"
+    status: string
+    message?: string | null
+    updated_at?: string | null
+  } | null
   messages: Array<{
     id: string
     session_id: string
@@ -66,6 +76,7 @@ export type AssistantHistoryResponse = {
     intent?: string | null
     products?: unknown[]
     actions?: unknown[]
+    metadata?: Record<string, unknown>
     created_at?: string
   }>
 }
@@ -96,6 +107,12 @@ export type AssistantHandoffResponse = {
   status: string
   source: string
   created_at?: string | null
+  ticket?: {
+    channel: "telegram"
+    status: string
+    message?: string | null
+    updated_at?: string | null
+  } | null
 }
 
 export type AssistantReindexRequest = {
@@ -208,6 +225,20 @@ export type AssistantReindexIntentRequest = {
 
 export type AssistantStatsResponse = Record<string, unknown>
 export type AssistantJobStatusResponse = Record<string, unknown>
+
+export type AssistantTelegramHandoffConnectionTestResult = {
+  ok: boolean
+  status: AssistantTelegramHandoffLastTestStatus
+  message: string
+  warnings: string[]
+  missing_fields: string[]
+  tested_at: string
+  diagnostics: AssistantTelegramHandoffDiagnostics
+  bot?: Record<string, unknown> | null
+  support_chat?: Record<string, unknown> | null
+  bot_membership?: Record<string, unknown> | null
+  webhook?: Record<string, unknown> | null
+}
 
 export class AssistantClientError extends Error {
   status: number
@@ -341,6 +372,16 @@ export class AssistantBackendClient {
       method: "GET",
       headers: this.authHeaders(),
     })
+  }
+
+  async testTelegramHandoffConnection() {
+    return this.requestJson<AssistantTelegramHandoffConnectionTestResult>(
+      "/admin/telegram/handoff/test-connection",
+      {
+        method: "POST",
+        headers: this.jsonHeaders(),
+      }
+    )
   }
 
   async jobStatus(jobId: string) {

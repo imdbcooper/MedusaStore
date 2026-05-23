@@ -4,6 +4,8 @@ from uuid import UUID, uuid4
 
 from app.database.postgres import PostgresDatabase
 
+_UNSET = object()
+
 
 class PostgresAssistantRepository:
     """PostgreSQL implementation of assistant session/message/source storage."""
@@ -65,6 +67,7 @@ class PostgresAssistantRepository:
         actions: list[dict[str, Any]] | None = None,
         tool_calls: list[dict[str, Any]] | None = None,
         token_usage: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
         latency_ms: int | None = None,
     ) -> dict[str, Any]:
         message_id = uuid4()
@@ -73,9 +76,9 @@ class PostgresAssistantRepository:
                 """
                 INSERT INTO assistant_messages
                   (id, session_id, role, content, intent, citations, products,
-                   actions, tool_calls, token_usage, latency_ms)
+                   actions, tool_calls, token_usage, metadata, latency_ms)
                 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb,
-                        $9::jsonb, $10::jsonb, $11)
+                        $9::jsonb, $10::jsonb, $11::jsonb, $12)
                 RETURNING *
                 """,
                 message_id,
@@ -88,9 +91,10 @@ class PostgresAssistantRepository:
                 json.dumps(actions or []),
                 json.dumps(tool_calls or []),
                 json.dumps(token_usage or {}),
+                json.dumps(metadata or {}),
                 latency_ms,
             )
-        return dict(row)
+        return _normalize_message_row(dict(row))
 
     async def list_messages(self, session_id: UUID, *, limit: int | None = None) -> list[dict[str, Any]]:
         limit_clause = "LIMIT $2" if limit is not None else ""
@@ -184,7 +188,7 @@ class PostgresAssistantRepository:
     async def get_message(self, message_id: UUID) -> dict[str, Any] | None:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM assistant_messages WHERE id = $1", message_id)
-        return dict(row) if row else None
+        return _normalize_message_row(dict(row)) if row else None
 
     async def message_belongs_to_session(self, *, message_id: UUID, session_id: UUID) -> bool:
         async with self.pool.acquire() as conn:
@@ -519,6 +523,634 @@ class PostgresAssistantRepository:
             )
         return _normalize_handoff_row(dict(row))
 
+    async def get_handoff(self, handoff_id: UUID) -> dict[str, Any] | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT *
+                FROM assistant_handoffs
+                WHERE id = $1
+                """,
+                handoff_id,
+            )
+        return _normalize_handoff_row(dict(row)) if row else None
+
+    async def get_handoff_ticket(
+        self,
+        *,
+        handoff_id: UUID,
+        channel: str = "telegram",
+    ) -> dict[str, Any] | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT *
+                FROM assistant_handoff_tickets
+                WHERE handoff_id = $1 AND channel = $2
+                """,
+                handoff_id,
+                channel,
+            )
+        return _normalize_handoff_ticket_row(dict(row)) if row else None
+
+    async def upsert_handoff_ticket(
+        self,
+        *,
+        handoff_id: UUID,
+        channel: str = "telegram",
+        ticket_status: str,
+        telegram_chat_id: str | None = None,
+        telegram_topic_id: int | None = None,
+        telegram_topic_title: str | None = None,
+        telegram_root_message_id: int | None = None,
+        assigned_operator_id: str | None = None,
+        assigned_operator_username: str | None = None,
+        assigned_at=None,
+        closed_at=None,
+        last_operator_message_at=None,
+        last_customer_message_at=None,
+        last_telegram_update_id: int | None = None,
+        failure_reason: str | None = None,
+        created_at=None,
+        opened_at=None,
+        last_sync_at=None,
+    ) -> dict[str, Any]:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO assistant_handoff_tickets
+                  (
+                    handoff_id,
+                    channel,
+                    ticket_status,
+                    telegram_chat_id,
+                    telegram_topic_id,
+                    telegram_topic_title,
+                    telegram_root_message_id,
+                    assigned_operator_id,
+                    assigned_operator_username,
+                    assigned_at,
+                    closed_at,
+                    last_operator_message_at,
+                    last_customer_message_at,
+                    last_telegram_update_id,
+                    failure_reason,
+                    created_at,
+                    opened_at,
+                    last_sync_at,
+                    updated_at
+                  )
+                VALUES (
+                  $1, $2, $3, $4, $5, $6, $7,
+                  $8, $9, $10, $11, $12, $13, $14,
+                  $15,
+                  COALESCE($16, now()),
+                  $17,
+                  COALESCE($18, now()),
+                  now()
+                )
+                ON CONFLICT (handoff_id, channel) DO UPDATE SET
+                  ticket_status = CASE
+                    WHEN assistant_handoff_tickets.ticket_status = 'open'
+                      AND assistant_handoff_tickets.telegram_topic_id IS NOT NULL
+                      AND assistant_handoff_tickets.telegram_root_message_id IS NOT NULL
+                      AND EXCLUDED.ticket_status <> 'open'
+                    THEN assistant_handoff_tickets.ticket_status
+                    WHEN assistant_handoff_tickets.ticket_status = 'failed'
+                      AND EXCLUDED.ticket_status = 'submitted'
+                    THEN assistant_handoff_tickets.ticket_status
+                    ELSE EXCLUDED.ticket_status
+                  END,
+                  telegram_chat_id = COALESCE(
+                    EXCLUDED.telegram_chat_id,
+                    assistant_handoff_tickets.telegram_chat_id
+                  ),
+                  telegram_topic_id = COALESCE(
+                    EXCLUDED.telegram_topic_id,
+                    assistant_handoff_tickets.telegram_topic_id
+                  ),
+                  telegram_topic_title = COALESCE(
+                    EXCLUDED.telegram_topic_title,
+                    assistant_handoff_tickets.telegram_topic_title
+                  ),
+                  telegram_root_message_id = COALESCE(
+                    EXCLUDED.telegram_root_message_id,
+                    assistant_handoff_tickets.telegram_root_message_id
+                  ),
+                  assigned_operator_id = COALESCE(
+                    EXCLUDED.assigned_operator_id,
+                    assistant_handoff_tickets.assigned_operator_id
+                  ),
+                  assigned_operator_username = COALESCE(
+                    EXCLUDED.assigned_operator_username,
+                    assistant_handoff_tickets.assigned_operator_username
+                  ),
+                  assigned_at = COALESCE(
+                    assistant_handoff_tickets.assigned_at,
+                    EXCLUDED.assigned_at
+                  ),
+                  closed_at = COALESCE(
+                    EXCLUDED.closed_at,
+                    assistant_handoff_tickets.closed_at
+                  ),
+                  last_operator_message_at = COALESCE(
+                    EXCLUDED.last_operator_message_at,
+                    assistant_handoff_tickets.last_operator_message_at
+                  ),
+                  last_customer_message_at = COALESCE(
+                    EXCLUDED.last_customer_message_at,
+                    assistant_handoff_tickets.last_customer_message_at
+                  ),
+                  last_telegram_update_id = COALESCE(
+                    EXCLUDED.last_telegram_update_id,
+                    assistant_handoff_tickets.last_telegram_update_id
+                  ),
+                  failure_reason = CASE
+                    WHEN EXCLUDED.ticket_status = 'open' THEN NULL
+                    WHEN EXCLUDED.failure_reason IS NOT NULL THEN EXCLUDED.failure_reason
+                    ELSE assistant_handoff_tickets.failure_reason
+                  END,
+                  opened_at = COALESCE(
+                    assistant_handoff_tickets.opened_at,
+                    EXCLUDED.opened_at
+                  ),
+                  last_sync_at = COALESCE(
+                    EXCLUDED.last_sync_at,
+                    assistant_handoff_tickets.last_sync_at,
+                    now()
+                  ),
+                  updated_at = now()
+                RETURNING *
+                """,
+                handoff_id,
+                channel,
+                ticket_status,
+                telegram_chat_id,
+                telegram_topic_id,
+                telegram_topic_title,
+                telegram_root_message_id,
+                assigned_operator_id,
+                assigned_operator_username,
+                assigned_at,
+                closed_at,
+                last_operator_message_at,
+                last_customer_message_at,
+                last_telegram_update_id,
+                failure_reason,
+                created_at,
+                opened_at,
+                last_sync_at,
+            )
+        return _normalize_handoff_ticket_row(dict(row))
+
+    async def update_handoff_ticket(
+        self,
+        *,
+        handoff_id: UUID,
+        channel: str = "telegram",
+        ticket_status: str | object = _UNSET,
+        assigned_operator_id: str | None | object = _UNSET,
+        assigned_operator_username: str | None | object = _UNSET,
+        assigned_at: Any | object = _UNSET,
+        closed_at: Any | object = _UNSET,
+        last_operator_message_at: Any | object = _UNSET,
+        last_customer_message_at: Any | object = _UNSET,
+        last_telegram_update_id: int | None | object = _UNSET,
+        failure_reason: str | None | object = _UNSET,
+        last_sync_at: Any | object = _UNSET,
+    ) -> dict[str, Any]:
+        current = await self.get_handoff_ticket(handoff_id=handoff_id, channel=channel)
+        if current is None:
+            raise ValueError("HANDOFF_TICKET_NOT_FOUND")
+
+        merged = dict(current)
+        if ticket_status is not _UNSET:
+            merged["ticket_status"] = ticket_status
+        if assigned_operator_id is not _UNSET:
+            merged["assigned_operator_id"] = assigned_operator_id
+        if assigned_operator_username is not _UNSET:
+            merged["assigned_operator_username"] = assigned_operator_username
+        if assigned_at is not _UNSET:
+            merged["assigned_at"] = assigned_at
+        if closed_at is not _UNSET:
+            merged["closed_at"] = closed_at
+        if last_operator_message_at is not _UNSET:
+            merged["last_operator_message_at"] = last_operator_message_at
+        if last_customer_message_at is not _UNSET:
+            merged["last_customer_message_at"] = last_customer_message_at
+        if last_telegram_update_id is not _UNSET:
+            merged["last_telegram_update_id"] = last_telegram_update_id
+        if failure_reason is not _UNSET:
+            merged["failure_reason"] = failure_reason
+        if last_sync_at is not _UNSET:
+            merged["last_sync_at"] = last_sync_at
+
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE assistant_handoff_tickets
+                SET ticket_status = $3,
+                    telegram_chat_id = $4,
+                    telegram_topic_id = $5,
+                    telegram_topic_title = $6,
+                    telegram_root_message_id = $7,
+                    assigned_operator_id = $8,
+                    assigned_operator_username = $9,
+                    assigned_at = $10,
+                    closed_at = $11,
+                    last_operator_message_at = $12,
+                    last_customer_message_at = $13,
+                    last_telegram_update_id = $14,
+                    failure_reason = $15,
+                    last_sync_at = $16,
+                    updated_at = now()
+                WHERE handoff_id = $1 AND channel = $2
+                RETURNING *
+                """,
+                handoff_id,
+                channel,
+                merged.get("ticket_status"),
+                merged.get("telegram_chat_id"),
+                merged.get("telegram_topic_id"),
+                merged.get("telegram_topic_title"),
+                merged.get("telegram_root_message_id"),
+                merged.get("assigned_operator_id"),
+                merged.get("assigned_operator_username"),
+                merged.get("assigned_at"),
+                merged.get("closed_at"),
+                merged.get("last_operator_message_at"),
+                merged.get("last_customer_message_at"),
+                merged.get("last_telegram_update_id"),
+                merged.get("failure_reason"),
+                merged.get("last_sync_at"),
+            )
+        return _normalize_handoff_ticket_row(dict(row))
+
+    async def find_handoff_ticket_by_telegram_thread(
+        self,
+        *,
+        telegram_chat_id: str,
+        telegram_topic_id: int,
+        channel: str = "telegram",
+    ) -> dict[str, Any] | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT t.*, h.session_id
+                FROM assistant_handoff_tickets t
+                JOIN assistant_handoffs h ON h.id = t.handoff_id
+                WHERE t.channel = $1
+                  AND t.telegram_chat_id = $2
+                  AND t.telegram_topic_id = $3
+                ORDER BY t.updated_at DESC
+                LIMIT 1
+                """,
+                channel,
+                telegram_chat_id,
+                telegram_topic_id,
+            )
+        return _normalize_handoff_ticket_row(dict(row)) if row else None
+
+    async def get_latest_handoff_ticket_for_session(
+        self,
+        *,
+        session_id: UUID,
+        channel: str = "telegram",
+    ) -> dict[str, Any] | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT t.*, h.session_id
+                FROM assistant_handoff_tickets t
+                JOIN assistant_handoffs h ON h.id = t.handoff_id
+                WHERE t.channel = $1
+                  AND h.session_id = $2
+                ORDER BY COALESCE(t.last_sync_at, t.updated_at, h.created_at) DESC
+                LIMIT 1
+                """,
+                channel,
+                session_id,
+            )
+        return _normalize_handoff_ticket_row(dict(row)) if row else None
+
+    async def get_handoff_message_by_update_id(
+        self,
+        *,
+        telegram_update_id: int,
+    ) -> dict[str, Any] | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT *
+                FROM assistant_handoff_messages
+                WHERE telegram_update_id = $1
+                """,
+                telegram_update_id,
+            )
+        return _normalize_handoff_message_row(dict(row)) if row else None
+
+    async def get_handoff_message_by_message(
+        self,
+        *,
+        telegram_chat_id: str,
+        telegram_topic_id: int,
+        telegram_message_id: int,
+        direction: str,
+    ) -> dict[str, Any] | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT *
+                FROM assistant_handoff_messages
+                WHERE telegram_chat_id = $1
+                  AND telegram_topic_id = $2
+                  AND telegram_message_id = $3
+                  AND direction = $4
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                telegram_chat_id,
+                telegram_topic_id,
+                telegram_message_id,
+                direction,
+            )
+        return _normalize_handoff_message_row(dict(row)) if row else None
+
+    async def reserve_handoff_message(
+        self,
+        *,
+        handoff_id: UUID,
+        session_id: UUID,
+        telegram_chat_id: str,
+        telegram_topic_id: int | None,
+        telegram_message_id: int | None,
+        telegram_update_id: int | None,
+        direction: str,
+        message_kind: str = "telegram_update",
+        operator_telegram_user_id: str | None = None,
+        operator_username: str | None = None,
+        content: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        message_id = uuid4()
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                if telegram_update_id is None:
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO assistant_handoff_messages
+                          (
+                            id,
+                            handoff_id,
+                            session_id,
+                            telegram_chat_id,
+                            telegram_topic_id,
+                            telegram_message_id,
+                            telegram_update_id,
+                            direction,
+                            delivery_status,
+                            message_kind,
+                            operator_telegram_user_id,
+                            operator_username,
+                            content,
+                            metadata
+                          )
+                        VALUES (
+                          $1, $2, $3, $4, $5, $6, $7, $8, 'processing',
+                          $9, $10, $11, $12, $13::jsonb
+                        )
+                        RETURNING *
+                        """,
+                        message_id,
+                        handoff_id,
+                        session_id,
+                        telegram_chat_id,
+                        telegram_topic_id,
+                        telegram_message_id,
+                        telegram_update_id,
+                        direction,
+                        message_kind,
+                        operator_telegram_user_id,
+                        operator_username,
+                        content,
+                        json.dumps(metadata or {}),
+                    )
+                    return _normalize_handoff_message_row(dict(row)), True
+
+                inserted = await conn.fetchrow(
+                    """
+                    INSERT INTO assistant_handoff_messages
+                      (
+                        id,
+                        handoff_id,
+                        session_id,
+                        telegram_chat_id,
+                        telegram_topic_id,
+                        telegram_message_id,
+                        telegram_update_id,
+                        direction,
+                        delivery_status,
+                        message_kind,
+                        operator_telegram_user_id,
+                        operator_username,
+                        content,
+                        metadata
+                      )
+                    VALUES (
+                      $1, $2, $3, $4, $5, $6, $7, $8, 'processing',
+                      $9, $10, $11, $12, $13::jsonb
+                    )
+                    ON CONFLICT (telegram_update_id) DO NOTHING
+                    RETURNING *
+                    """,
+                    message_id,
+                    handoff_id,
+                    session_id,
+                    telegram_chat_id,
+                    telegram_topic_id,
+                    telegram_message_id,
+                    telegram_update_id,
+                    direction,
+                    message_kind,
+                    operator_telegram_user_id,
+                    operator_username,
+                    content,
+                    json.dumps(metadata or {}),
+                )
+                if inserted:
+                    return _normalize_handoff_message_row(dict(inserted)), True
+
+                existing = await conn.fetchrow(
+                    """
+                    SELECT *
+                    FROM assistant_handoff_messages
+                    WHERE telegram_update_id = $1
+                    FOR UPDATE
+                    """,
+                    telegram_update_id,
+                )
+                if not existing:
+                    raise ValueError("HANDOFF_MESSAGE_NOT_FOUND")
+                existing_record = _normalize_handoff_message_row(dict(existing))
+                if existing_record.get("delivery_status") != "failed":
+                    return existing_record, False
+
+                updated = await conn.fetchrow(
+                    """
+                    UPDATE assistant_handoff_messages
+                    SET handoff_id = $2,
+                        session_id = $3,
+                        telegram_chat_id = $4,
+                        telegram_topic_id = $5,
+                        telegram_message_id = $6,
+                        direction = $7,
+                        delivery_status = 'processing',
+                        message_kind = $8,
+                        operator_telegram_user_id = $9,
+                        operator_username = $10,
+                        content = COALESCE($11, assistant_handoff_messages.content),
+                        metadata = $12::jsonb
+                    WHERE id = $1
+                    RETURNING *
+                    """,
+                    existing_record["id"],
+                    handoff_id,
+                    session_id,
+                    telegram_chat_id,
+                    telegram_topic_id,
+                    telegram_message_id,
+                    direction,
+                    message_kind,
+                    operator_telegram_user_id,
+                    operator_username,
+                    content,
+                    json.dumps(metadata or {}),
+                )
+        return _normalize_handoff_message_row(dict(updated)), True
+
+    async def create_handoff_message(
+        self,
+        *,
+        handoff_id: UUID,
+        session_id: UUID,
+        telegram_chat_id: str,
+        telegram_topic_id: int | None,
+        telegram_message_id: int | None,
+        telegram_update_id: int | None,
+        direction: str,
+        delivery_status: str,
+        message_kind: str = "telegram_update",
+        assistant_message_id: UUID | None = None,
+        operator_telegram_user_id: str | None = None,
+        operator_username: str | None = None,
+        content: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        message_id = uuid4()
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO assistant_handoff_messages
+                  (
+                    id,
+                    handoff_id,
+                    session_id,
+                    telegram_chat_id,
+                    telegram_topic_id,
+                    telegram_message_id,
+                    telegram_update_id,
+                    direction,
+                    delivery_status,
+                    message_kind,
+                    assistant_message_id,
+                    operator_telegram_user_id,
+                    operator_username,
+                    content,
+                    metadata
+                  )
+                VALUES (
+                  $1, $2, $3, $4, $5, $6, $7, $8, $9,
+                  $10, $11, $12, $13, $14, $15::jsonb
+                )
+                RETURNING *
+                """,
+                message_id,
+                handoff_id,
+                session_id,
+                telegram_chat_id,
+                telegram_topic_id,
+                telegram_message_id,
+                telegram_update_id,
+                direction,
+                delivery_status,
+                message_kind,
+                assistant_message_id,
+                operator_telegram_user_id,
+                operator_username,
+                content,
+                json.dumps(metadata or {}),
+            )
+        return _normalize_handoff_message_row(dict(row))
+
+    async def update_handoff_message(
+        self,
+        *,
+        handoff_message_id: UUID,
+        delivery_status: str | object = _UNSET,
+        message_kind: str | object = _UNSET,
+        assistant_message_id: UUID | None | object = _UNSET,
+        content: str | None | object = _UNSET,
+        metadata: dict[str, Any] | None | object = _UNSET,
+    ) -> dict[str, Any]:
+        sets: list[str] = []
+        args: list[Any] = [handoff_message_id]
+        arg_index = 2
+
+        if delivery_status is not _UNSET:
+            sets.append(f"delivery_status = ${arg_index}")
+            args.append(delivery_status)
+            arg_index += 1
+        if message_kind is not _UNSET:
+            sets.append(f"message_kind = ${arg_index}")
+            args.append(message_kind)
+            arg_index += 1
+        if assistant_message_id is not _UNSET:
+            sets.append(f"assistant_message_id = ${arg_index}")
+            args.append(assistant_message_id)
+            arg_index += 1
+        if content is not _UNSET:
+            sets.append(f"content = ${arg_index}")
+            args.append(content)
+            arg_index += 1
+        if metadata is not _UNSET:
+            sets.append(f"metadata = ${arg_index}::jsonb")
+            args.append(json.dumps(metadata or {}))
+            arg_index += 1
+
+        async with self.pool.acquire() as conn:
+            if not sets:
+                row = await conn.fetchrow(
+                    """
+                    SELECT *
+                    FROM assistant_handoff_messages
+                    WHERE id = $1
+                    """,
+                    handoff_message_id,
+                )
+            else:
+                row = await conn.fetchrow(
+                    f"""
+                    UPDATE assistant_handoff_messages
+                    SET {", ".join(sets)}
+                    WHERE id = $1
+                    RETURNING *
+                    """,
+                    *args,
+                )
+        if not row:
+            raise ValueError("HANDOFF_MESSAGE_NOT_FOUND")
+        return _normalize_handoff_message_row(dict(row))
+
     async def get_principal_state(self, principal_id: str) -> dict[str, Any] | None:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -749,6 +1381,7 @@ def _normalize_message_row(row: dict[str, Any]) -> dict[str, Any]:
     for field in ("citations", "products", "actions", "tool_calls"):
         normalized[field] = _json_field_or_default(normalized.get(field), [])
     normalized["token_usage"] = _json_field_or_default(normalized.get("token_usage"), {})
+    normalized["metadata"] = _json_field_or_default(normalized.get("metadata"), {})
     return normalized
 
 
@@ -759,6 +1392,16 @@ def _normalize_source_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalize_handoff_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    normalized["metadata"] = _json_field_or_default(normalized.get("metadata"), {})
+    return normalized
+
+
+def _normalize_handoff_ticket_row(row: dict[str, Any]) -> dict[str, Any]:
+    return dict(row)
+
+
+def _normalize_handoff_message_row(row: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(row)
     normalized["metadata"] = _json_field_or_default(normalized.get("metadata"), {})
     return normalized

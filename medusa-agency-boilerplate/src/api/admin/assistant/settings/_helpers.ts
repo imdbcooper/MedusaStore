@@ -3,6 +3,7 @@ import {
   AssistantSettingsError,
   type LlmProviderRow,
 } from "../../../../modules/assistant-settings"
+import type { AssistantClientError } from "../../../../lib/assistant-client"
 
 /**
  * Shared response helpers for the assistant-settings admin API (PR 3).
@@ -61,6 +62,23 @@ export function errorResponse(res: MedusaResponse, error: unknown): void {
   res.status(500).json({
     error: "internal_error",
     message,
+  })
+}
+
+export function assistantClientErrorResponse(
+  res: MedusaResponse,
+  error: unknown
+): void {
+  const assistantError = error as Partial<AssistantClientError>
+  const rawStatus =
+    typeof assistantError.status === "number" ? assistantError.status : 500
+  const status = rawStatus === 401 || rawStatus === 403 ? 502 : rawStatus
+  res.status(status).json({
+    error: assistantError.code || "AI_ASSISTANT_ADAPTER_ERROR",
+    message:
+      error instanceof Error
+        ? error.message
+        : "AI Assistant adapter request failed",
   })
 }
 

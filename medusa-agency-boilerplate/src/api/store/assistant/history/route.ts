@@ -18,7 +18,15 @@ type AssistantHistoryMessage = {
   intent?: string | null
   products?: unknown[]
   actions?: unknown[]
+  metadata?: Record<string, unknown>
   created_at?: string
+}
+
+type AssistantHandoffTicket = {
+  channel?: "telegram" | string
+  status?: string
+  message?: string | null
+  updated_at?: string | null
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -64,12 +72,14 @@ export async function POST(req: MedusaRequest<StoreAssistantHistoryBody>, res: M
     res.status(200).json({
       session_id: history.session_id,
       messages: sanitizeMessages(history.messages),
+      handoff_ticket: sanitizeHandoffTicket(history.handoff_ticket),
     })
   } catch (error) {
     if (isMissingScopedHistoryError(error)) {
       res.status(200).json({
         session_id: sessionId,
         messages: [],
+        handoff_ticket: null,
       })
       return
     }
@@ -90,8 +100,41 @@ function sanitizeMessages(messages: AssistantHistoryMessage[]) {
       intent: message.intent ?? null,
       products: Array.isArray(message.products) ? message.products : [],
       actions: Array.isArray(message.actions) ? message.actions : [],
+      metadata: sanitizeMessageMetadata(message.metadata),
       created_at: message.created_at,
     }))
+}
+
+function sanitizeMessageMetadata(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return {}
+  }
+
+  const record = metadata as Record<string, unknown>
+  const source = typeof record.source === "string" ? record.source.trim() : ""
+  if (source === "telegram_operator") {
+    return { source }
+  }
+
+  return {}
+}
+
+function sanitizeHandoffTicket(ticket: AssistantHandoffTicket | null | undefined) {
+  if (!ticket || typeof ticket !== "object") {
+    return null
+  }
+
+  const status = typeof ticket.status === "string" ? ticket.status.trim() : ""
+  if (!status) {
+    return null
+  }
+
+  return {
+    channel: ticket.channel === "telegram" ? "telegram" : "telegram",
+    status,
+    message: typeof ticket.message === "string" ? ticket.message : null,
+    updated_at: typeof ticket.updated_at === "string" ? ticket.updated_at : null,
+  }
 }
 
 function normalizeScopeValue(value: unknown, fallback: string, maxLength: number) {

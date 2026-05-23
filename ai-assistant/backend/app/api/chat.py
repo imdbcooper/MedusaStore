@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request as FastAPIRequest
 from fastapi.responses import StreamingResponse
 
 from app.api.dependencies import get_chat_service
-from app.core.auth import require_api_token
+from app.core.auth import require_api_token, require_server_token_or_api_token
 from app.core.security import (
     assistant_principal_identity,
     classify_abuse_event,
@@ -80,7 +80,7 @@ async def chat_history(
     session_id: UUID,
     http_request: FastAPIRequest,
     service: ChatService = Depends(get_chat_service),
-    _: None = Depends(require_api_token),
+    _: None = Depends(require_server_token_or_api_token),
 ) -> list[dict]:
     identity = rate_limit_identity(http_request, scope="admin", session_id=str(session_id))
     enforce_rate_limit(http_request, scope="admin", identity=identity)
@@ -96,7 +96,7 @@ async def scoped_chat_history(
     customer_id: str | None = None,
     limit: int = 50,
     service: ChatService = Depends(get_chat_service),
-    _: None = Depends(require_api_token),
+    _: None = Depends(require_server_token_or_api_token),
 ) -> dict:
     identity = rate_limit_identity(http_request, scope="admin", session_id=str(session_id), store_id=store_id)
     enforce_rate_limit(http_request, scope="admin", identity=identity)

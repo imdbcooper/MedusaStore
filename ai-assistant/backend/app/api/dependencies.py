@@ -7,6 +7,7 @@ from app.services.ingestion import MarkdownIngestionService, MedusaProductIngest
 from app.services.llm import LlmRouter
 from app.services.reindex_queue import ReindexQueueProcessor
 from app.services.settings_provider import SettingsProvider
+from app.services.telegram_handoff import TelegramHandoffService
 
 
 def get_repository(request: Request):
@@ -45,7 +46,10 @@ def get_settings_provider(request: Request) -> SettingsProvider | None:
     return getattr(request.app.state, "settings_provider", None)
 
 
+def get_telegram_handoff_service(request: Request) -> TelegramHandoffService:
+    return request.app.state.telegram_handoff_service
+
+
 def get_llm_router(request: Request) -> LlmRouter | None:
     return getattr(request.app.state, "llm_router", None)
-
 

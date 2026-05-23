@@ -12,6 +12,8 @@ SEARCH_NORMALIZATION_REPLACEMENTS = {
     "оплаты": "оплата",
 }
 
+_UNSET = object()
+
 
 class InMemoryAssistantRepository:
     """Test/dev repository with the same semantics as the PostgreSQL repository."""
@@ -26,6 +28,10 @@ class InMemoryAssistantRepository:
         self.reindex_intents: dict[UUID, dict[str, Any]] = {}
         self.feedback: dict[UUID, dict[str, Any]] = {}
         self.handoffs: dict[UUID, dict[str, Any]] = {}
+        self.handoff_tickets: dict[tuple[UUID, str], dict[str, Any]] = {}
+        self.handoff_messages: dict[UUID, dict[str, Any]] = {}
+        self.handoff_messages_by_update: dict[int, UUID] = {}
+        self.handoff_messages_by_message: dict[tuple[str, int | None, int, str], UUID] = {}
         self.principal_states: dict[str, dict[str, Any]] = {}
 
     async def ensure_session(
@@ -77,6 +83,7 @@ class InMemoryAssistantRepository:
         actions: list[dict[str, Any]] | None = None,
         tool_calls: list[dict[str, Any]] | None = None,
         token_usage: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
         latency_ms: int | None = None,
     ) -> dict[str, Any]:
         message_id = uuid4()
@@ -91,6 +98,7 @@ class InMemoryAssistantRepository:
             "actions": actions or [],
             "tool_calls": tool_calls or [],
             "token_usage": token_usage or {},
+            "metadata": metadata or {},
             "latency_ms": latency_ms,
             "created_at": datetime.now(timezone.utc),
         }
@@ -389,6 +397,373 @@ class InMemoryAssistantRepository:
             "created_at": datetime.now(timezone.utc),
         }
         self.handoffs[handoff_id] = record
+        return deepcopy(record)
+
+    async def get_handoff(self, handoff_id: UUID) -> dict[str, Any] | None:
+        record = self.handoffs.get(handoff_id)
+        return deepcopy(record) if record else None
+
+    async def get_handoff_ticket(
+        self,
+        *,
+        handoff_id: UUID,
+        channel: str = "telegram",
+    ) -> dict[str, Any] | None:
+        record = self.handoff_tickets.get((handoff_id, channel))
+        return deepcopy(record) if record else None
+
+    async def upsert_handoff_ticket(
+        self,
+        *,
+        handoff_id: UUID,
+        channel: str = "telegram",
+        ticket_status: str,
+        telegram_chat_id: str | None = None,
+        telegram_topic_id: int | None = None,
+        telegram_topic_title: str | None = None,
+        telegram_root_message_id: int | None = None,
+        assigned_operator_id: str | None = None,
+        assigned_operator_username: str | None = None,
+        assigned_at=None,
+        closed_at=None,
+        last_operator_message_at=None,
+        last_customer_message_at=None,
+        last_telegram_update_id: int | None = None,
+        failure_reason: str | None = None,
+        created_at=None,
+        opened_at=None,
+        last_sync_at=None,
+    ) -> dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        key = (handoff_id, channel)
+        existing = self.handoff_tickets.get(key)
+        existing_status = (existing or {}).get("ticket_status")
+        existing_has_open_link = bool(
+            (existing or {}).get("telegram_topic_id") is not None
+            and (existing or {}).get("telegram_root_message_id") is not None
+        )
+        effective_status = ticket_status
+        if existing_status == "open" and existing_has_open_link and ticket_status != "open":
+            effective_status = "open"
+        elif existing_status == "failed" and ticket_status == "submitted":
+            effective_status = "failed"
+        record = {
+            "handoff_id": handoff_id,
+            "channel": channel,
+            "ticket_status": effective_status,
+            "telegram_chat_id": telegram_chat_id
+            if telegram_chat_id is not None
+            else (existing or {}).get("telegram_chat_id"),
+            "telegram_topic_id": telegram_topic_id
+            if telegram_topic_id is not None
+            else (existing or {}).get("telegram_topic_id"),
+            "telegram_topic_title": telegram_topic_title
+            if telegram_topic_title is not None
+            else (existing or {}).get("telegram_topic_title"),
+            "telegram_root_message_id": telegram_root_message_id
+            if telegram_root_message_id is not None
+            else (existing or {}).get("telegram_root_message_id"),
+            "assigned_operator_id": assigned_operator_id
+            if assigned_operator_id is not None
+            else (existing or {}).get("assigned_operator_id"),
+            "assigned_operator_username": assigned_operator_username
+            if assigned_operator_username is not None
+            else (existing or {}).get("assigned_operator_username"),
+            "assigned_at": assigned_at
+            if assigned_at is not None
+            else (existing or {}).get("assigned_at"),
+            "closed_at": closed_at
+            if closed_at is not None
+            else (existing or {}).get("closed_at"),
+            "last_operator_message_at": last_operator_message_at
+            if last_operator_message_at is not None
+            else (existing or {}).get("last_operator_message_at"),
+            "last_customer_message_at": last_customer_message_at
+            if last_customer_message_at is not None
+            else (existing or {}).get("last_customer_message_at"),
+            "last_telegram_update_id": last_telegram_update_id
+            if last_telegram_update_id is not None
+            else (existing or {}).get("last_telegram_update_id"),
+            "failure_reason": (
+                None
+                if effective_status == "open"
+                else failure_reason
+                if failure_reason is not None
+                else (existing or {}).get("failure_reason")
+            ),
+            "created_at": created_at or (existing or {}).get("created_at") or now,
+            "opened_at": (existing or {}).get("opened_at") or opened_at,
+            "last_sync_at": last_sync_at
+            if last_sync_at is not None
+            else (existing or {}).get("last_sync_at")
+            or now,
+            "updated_at": now,
+        }
+        self.handoff_tickets[key] = record
+        return deepcopy(record)
+
+    async def update_handoff_ticket(
+        self,
+        *,
+        handoff_id: UUID,
+        channel: str = "telegram",
+        ticket_status: str | object = _UNSET,
+        assigned_operator_id: str | None | object = _UNSET,
+        assigned_operator_username: str | None | object = _UNSET,
+        assigned_at: Any | object = _UNSET,
+        closed_at: Any | object = _UNSET,
+        last_operator_message_at: Any | object = _UNSET,
+        last_customer_message_at: Any | object = _UNSET,
+        last_telegram_update_id: int | None | object = _UNSET,
+        failure_reason: str | None | object = _UNSET,
+        last_sync_at: Any | object = _UNSET,
+    ) -> dict[str, Any]:
+        key = (handoff_id, channel)
+        record = self.handoff_tickets.get(key)
+        if not record:
+            raise ValueError("HANDOFF_TICKET_NOT_FOUND")
+        updated = dict(record)
+        if ticket_status is not _UNSET:
+            updated["ticket_status"] = ticket_status
+        if assigned_operator_id is not _UNSET:
+            updated["assigned_operator_id"] = assigned_operator_id
+        if assigned_operator_username is not _UNSET:
+            updated["assigned_operator_username"] = assigned_operator_username
+        if assigned_at is not _UNSET:
+            updated["assigned_at"] = assigned_at
+        if closed_at is not _UNSET:
+            updated["closed_at"] = closed_at
+        if last_operator_message_at is not _UNSET:
+            updated["last_operator_message_at"] = last_operator_message_at
+        if last_customer_message_at is not _UNSET:
+            updated["last_customer_message_at"] = last_customer_message_at
+        if last_telegram_update_id is not _UNSET:
+            updated["last_telegram_update_id"] = last_telegram_update_id
+        if failure_reason is not _UNSET:
+            updated["failure_reason"] = failure_reason
+        if last_sync_at is not _UNSET:
+            updated["last_sync_at"] = last_sync_at
+        updated["updated_at"] = datetime.now(timezone.utc)
+        self.handoff_tickets[key] = updated
+        return deepcopy(updated)
+
+    async def find_handoff_ticket_by_telegram_thread(
+        self,
+        *,
+        telegram_chat_id: str,
+        telegram_topic_id: int,
+        channel: str = "telegram",
+    ) -> dict[str, Any] | None:
+        matches: list[dict[str, Any]] = []
+        for (ticket_handoff_id, ticket_channel), ticket in self.handoff_tickets.items():
+            if ticket_channel != channel:
+                continue
+            if ticket.get("telegram_chat_id") != telegram_chat_id:
+                continue
+            if ticket.get("telegram_topic_id") != telegram_topic_id:
+                continue
+            matches.append(
+                {
+                    **ticket,
+                    "session_id": (self.handoffs.get(ticket_handoff_id) or {}).get("session_id"),
+                }
+            )
+        if not matches:
+            return None
+        matches.sort(
+            key=lambda item: item.get("updated_at")
+            or item.get("last_sync_at")
+            or item.get("created_at"),
+            reverse=True,
+        )
+        return deepcopy(matches[0])
+
+    async def get_latest_handoff_ticket_for_session(
+        self,
+        *,
+        session_id: UUID,
+        channel: str = "telegram",
+    ) -> dict[str, Any] | None:
+        matches: list[dict[str, Any]] = []
+        for (ticket_handoff_id, ticket_channel), ticket in self.handoff_tickets.items():
+            if ticket_channel != channel:
+                continue
+            handoff = self.handoffs.get(ticket_handoff_id)
+            if not handoff or handoff.get("session_id") != session_id:
+                continue
+            matches.append({**ticket, "session_id": session_id})
+        if not matches:
+            return None
+        matches.sort(
+            key=lambda item: item.get("last_sync_at")
+            or item.get("updated_at")
+            or item.get("created_at"),
+            reverse=True,
+        )
+        return deepcopy(matches[0])
+
+    async def get_handoff_message_by_update_id(
+        self,
+        *,
+        telegram_update_id: int,
+    ) -> dict[str, Any] | None:
+        record_id = self.handoff_messages_by_update.get(telegram_update_id)
+        if not record_id:
+            return None
+        return deepcopy(self.handoff_messages.get(record_id))
+
+    async def get_handoff_message_by_message(
+        self,
+        *,
+        telegram_chat_id: str,
+        telegram_topic_id: int,
+        telegram_message_id: int,
+        direction: str,
+    ) -> dict[str, Any] | None:
+        key = (telegram_chat_id, telegram_topic_id, telegram_message_id, direction)
+        record_id = self.handoff_messages_by_message.get(key)
+        if not record_id:
+            return None
+        return deepcopy(self.handoff_messages.get(record_id))
+
+    async def reserve_handoff_message(
+        self,
+        *,
+        handoff_id: UUID,
+        session_id: UUID,
+        telegram_chat_id: str,
+        telegram_topic_id: int | None,
+        telegram_message_id: int | None,
+        telegram_update_id: int | None,
+        direction: str,
+        message_kind: str = "telegram_update",
+        operator_telegram_user_id: str | None = None,
+        operator_username: str | None = None,
+        content: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        if telegram_update_id is not None:
+            record_id = self.handoff_messages_by_update.get(telegram_update_id)
+            if record_id:
+                existing = self.handoff_messages.get(record_id)
+                if existing is None:
+                    raise ValueError("HANDOFF_MESSAGE_NOT_FOUND")
+                if existing.get("delivery_status") != "failed":
+                    return deepcopy(existing), False
+                existing.update(
+                    {
+                        "handoff_id": handoff_id,
+                        "session_id": session_id,
+                        "telegram_chat_id": telegram_chat_id,
+                        "telegram_topic_id": telegram_topic_id,
+                        "telegram_message_id": telegram_message_id,
+                        "direction": direction,
+                        "delivery_status": "processing",
+                        "message_kind": message_kind,
+                        "operator_telegram_user_id": operator_telegram_user_id,
+                        "operator_username": operator_username,
+                        "content": content
+                        if content is not None
+                        else existing.get("content"),
+                        "metadata": deepcopy(metadata or {}),
+                    }
+                )
+                if telegram_message_id is not None:
+                    key = (
+                        telegram_chat_id,
+                        telegram_topic_id,
+                        telegram_message_id,
+                        direction,
+                    )
+                    self.handoff_messages_by_message[key] = record_id
+                return deepcopy(existing), True
+
+        created = await self.create_handoff_message(
+            handoff_id=handoff_id,
+            session_id=session_id,
+            telegram_chat_id=telegram_chat_id,
+            telegram_topic_id=telegram_topic_id,
+            telegram_message_id=telegram_message_id,
+            telegram_update_id=telegram_update_id,
+            direction=direction,
+            delivery_status="processing",
+            message_kind=message_kind,
+            assistant_message_id=None,
+            operator_telegram_user_id=operator_telegram_user_id,
+            operator_username=operator_username,
+            content=content,
+            metadata=metadata,
+        )
+        return created, True
+
+    async def create_handoff_message(
+        self,
+        *,
+        handoff_id: UUID,
+        session_id: UUID,
+        telegram_chat_id: str,
+        telegram_topic_id: int | None,
+        telegram_message_id: int | None,
+        telegram_update_id: int | None,
+        direction: str,
+        delivery_status: str,
+        message_kind: str = "telegram_update",
+        assistant_message_id: UUID | None = None,
+        operator_telegram_user_id: str | None = None,
+        operator_username: str | None = None,
+        content: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        record_id = uuid4()
+        record = {
+            "id": record_id,
+            "handoff_id": handoff_id,
+            "session_id": session_id,
+            "telegram_chat_id": telegram_chat_id,
+            "telegram_topic_id": telegram_topic_id,
+            "telegram_message_id": telegram_message_id,
+            "telegram_update_id": telegram_update_id,
+            "direction": direction,
+            "delivery_status": delivery_status,
+            "message_kind": message_kind,
+            "assistant_message_id": assistant_message_id,
+            "operator_telegram_user_id": operator_telegram_user_id,
+            "operator_username": operator_username,
+            "content": content,
+            "metadata": metadata or {},
+            "created_at": datetime.now(timezone.utc),
+        }
+        self.handoff_messages[record_id] = record
+        if telegram_update_id is not None:
+            self.handoff_messages_by_update[telegram_update_id] = record_id
+        if telegram_message_id is not None:
+            key = (telegram_chat_id, telegram_topic_id, telegram_message_id, direction)
+            self.handoff_messages_by_message[key] = record_id
+        return deepcopy(record)
+
+    async def update_handoff_message(
+        self,
+        *,
+        handoff_message_id: UUID,
+        delivery_status: str | object = _UNSET,
+        message_kind: str | object = _UNSET,
+        assistant_message_id: UUID | None | object = _UNSET,
+        content: str | None | object = _UNSET,
+        metadata: dict[str, Any] | None | object = _UNSET,
+    ) -> dict[str, Any]:
+        record = self.handoff_messages.get(handoff_message_id)
+        if record is None:
+            raise ValueError("HANDOFF_MESSAGE_NOT_FOUND")
+        if delivery_status is not _UNSET:
+            record["delivery_status"] = delivery_status
+        if message_kind is not _UNSET:
+            record["message_kind"] = message_kind
+        if assistant_message_id is not _UNSET:
+            record["assistant_message_id"] = assistant_message_id
+        if content is not _UNSET:
+            record["content"] = content
+        if metadata is not _UNSET:
+            record["metadata"] = deepcopy(metadata or {})
         return deepcopy(record)
 
     async def enqueue_reindex_intent(

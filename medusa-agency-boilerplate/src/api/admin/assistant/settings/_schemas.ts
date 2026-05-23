@@ -161,3 +161,102 @@ export const AssistantSettingUpdateSchema = z
 export type AssistantSettingUpdateBody = z.infer<
   typeof AssistantSettingUpdateSchema
 >
+
+// ---------------------------------------------------------------------------
+// Telegram handoff settings
+// ---------------------------------------------------------------------------
+
+const TelegramNumericUserIdSchema = z
+  .union([z.string(), z.number().int()])
+  .transform((value) => String(value).trim())
+  .refine((value) => /^\d+$/.test(value), {
+    message: "Telegram user ids must be numeric",
+  })
+
+const TelegramNullableString = (max: number) =>
+  z
+    .union([z.string().max(max), z.null()])
+    .transform((value) => {
+      if (value === null) return null
+      const trimmed = value.trim()
+      return trimmed.length ? trimmed : null
+    })
+
+const TelegramNullableWebhookUrl = z
+  .union([z.string().max(512), z.null()])
+  .transform((value) => {
+    if (value === null) return null
+    const trimmed = value.trim()
+    return trimmed.length ? trimmed : null
+  })
+  .refine((value) => value === null || /^https?:\/\//i.test(value), {
+    message: "webhook_url must start with http:// or https://",
+  })
+
+const TelegramSecretInput = z
+  .string()
+  .max(512)
+  .transform((value) => {
+    const trimmed = value.trim()
+    return trimmed.length ? trimmed : undefined
+  })
+
+const TelegramHandoffBaseShape = {
+  enabled: z.boolean().optional(),
+  environment_mode: z.enum(["test", "production"]).optional(),
+  bot_token: TelegramSecretInput.optional(),
+  bot_username: TelegramNullableString(64).optional(),
+  support_chat_id: z
+    .union([z.string(), z.number().int(), z.null()])
+    .transform((value) => {
+      if (value === null) return null
+      const normalized = String(value).trim()
+      return normalized.length ? normalized : null
+    })
+    .refine((value) => value === null || /^-?\d+$/.test(value), {
+      message: "support_chat_id must be a Telegram numeric chat id",
+    })
+    .optional(),
+  topics_required: z.boolean().optional(),
+  webhook_url: TelegramNullableWebhookUrl.optional(),
+  webhook_secret: TelegramSecretInput.optional(),
+  allowed_operator_ids: z.array(TelegramNumericUserIdSchema).max(100).optional(),
+  allowed_admin_ids: z.array(TelegramNumericUserIdSchema).max(100).optional(),
+  operator_reply_mode: z
+    .enum(["explicit_reply_command", "all_topic_messages"])
+    .optional(),
+  fallback_message: TelegramNullableString(2000).optional(),
+}
+
+export const AssistantTelegramHandoffReadQuerySchema = z.object({}).strict()
+
+export type AssistantTelegramHandoffReadQuery = z.infer<
+  typeof AssistantTelegramHandoffReadQuerySchema
+>
+
+export const AssistantTelegramHandoffUpdateSchema = z
+  .object({
+    ...TelegramHandoffBaseShape,
+    expected_version: z.number().int().min(1).optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      Object.entries(value).some(
+        ([key, fieldValue]) =>
+          key !== "expected_version" && fieldValue !== undefined
+      ),
+    { message: "at least one field is required" }
+  )
+
+export type AssistantTelegramHandoffUpdateBody = z.infer<
+  typeof AssistantTelegramHandoffUpdateSchema
+>
+
+export const AssistantTelegramHandoffTestSchema = z
+  .object(TelegramHandoffBaseShape)
+  .strict()
+
+export type AssistantTelegramHandoffTestBody = z.infer<
+  typeof AssistantTelegramHandoffTestSchema
+>

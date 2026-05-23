@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.handoff import HandoffTicketResponse
+
 
 class PageContext(BaseModel):
     type: str | None = None
@@ -88,6 +90,7 @@ class ChatHistoryMessage(BaseModel):
     products: list[dict[str, Any]] = Field(default_factory=list)
     actions: list[dict[str, Any]] = Field(default_factory=list)
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 
 
@@ -97,3 +100,4 @@ class ChatHistoryResponse(BaseModel):
     store_id: str
     locale: str
     customer_bound: bool = False
+    handoff_ticket: HandoffTicketResponse | None = None

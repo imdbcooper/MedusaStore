@@ -1132,12 +1132,19 @@ class ChatService:
             return None
 
         messages = await self.repository.list_messages(session_id, limit=min(max(limit, 1), 50))
+        handoff_ticket = None
+        if hasattr(self.repository, "get_latest_handoff_ticket_for_session"):
+            handoff_ticket = await self.repository.get_latest_handoff_ticket_for_session(
+                session_id=session_id,
+                channel="telegram",
+            )
         return {
             "session_id": session_id,
             "messages": messages,
             "store_id": session.get("store_id") or store_id,
             "locale": session.get("locale") or locale,
             "customer_bound": bool(bound_customer_id),
+            "handoff_ticket": _public_handoff_ticket_record(handoff_ticket),
         }
 
 
@@ -1186,6 +1193,24 @@ def _build_chat_history(
             history.append(ChatMessage(role=role, content=content))
     history.append(ChatMessage(role="user", content=redacted_user_message))
     return history
+
+
+def _public_handoff_ticket_record(ticket: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not ticket:
+        return None
+    return {
+        "channel": "telegram",
+        "status": str(ticket.get("ticket_status") or "submitted"),
+        "message": None,
+        "updated_at": (
+            ticket.get("last_sync_at")
+            or ticket.get("closed_at")
+            or ticket.get("assigned_at")
+            or ticket.get("opened_at")
+            or ticket.get("updated_at")
+            or ticket.get("created_at")
+        ),
+    }
 
 
 def _compose_system_prompt(

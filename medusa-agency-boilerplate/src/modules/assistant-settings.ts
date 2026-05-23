@@ -138,11 +138,104 @@ export type AssistantSettingUpdateInput = Partial<
 
 export type EffectiveAssistantConfig = {
   /** ISO max(updated_at) across the active provider, fallback chain and the
-   *  global singleton — clients can use it as a cache-invalidation token. */
+   *  global singleton and Telegram handoff runtime config — clients can use it
+   *  as a cache-invalidation token. */
   version: string
   active: LlmProviderRuntime | null
   fallback: LlmProviderRuntime[]
   global: AssistantSettingRow
+  telegram_handoff: AssistantTelegramHandoffRuntimeConfig
+}
+
+export type AssistantSecretMetadata = {
+  is_configured: boolean
+  last4: string | null
+  masked: string | null
+}
+
+export type AssistantTelegramHandoffEnvironmentMode = "test" | "production"
+
+export type AssistantTelegramHandoffOperatorReplyMode =
+  | "explicit_reply_command"
+  | "all_topic_messages"
+
+export type AssistantTelegramHandoffDiagnosticsStatus =
+  | "disabled"
+  | "not_configured"
+  | "partially_configured"
+  | "ready_for_connection_test"
+
+export type AssistantTelegramHandoffLastTestStatus =
+  | "disabled"
+  | "missing_credentials"
+  | "dry_run_passed"
+  | "connection_ok"
+  | "connection_failed"
+  | "not_implemented"
+
+export type AssistantTelegramHandoffDiagnostics = {
+  status: AssistantTelegramHandoffDiagnosticsStatus
+  missing_fields: string[]
+  can_test: boolean
+}
+
+export type AssistantTelegramHandoffConfigRow = {
+  id: "singleton"
+  enabled: boolean
+  environment_mode: AssistantTelegramHandoffEnvironmentMode
+  bot_username: string | null
+  bot_token: AssistantSecretMetadata
+  support_chat_id: string | null
+  topics_required: boolean
+  webhook_url: string | null
+  webhook_secret: AssistantSecretMetadata
+  allowed_operator_ids: string[]
+  allowed_admin_ids: string[]
+  operator_reply_mode: AssistantTelegramHandoffOperatorReplyMode
+  fallback_message: string | null
+  last_test_status: AssistantTelegramHandoffLastTestStatus | null
+  last_test_error: string | null
+  last_test_at: string | null
+  created_at: string
+  updated_at: string
+  version: number
+  diagnostics: AssistantTelegramHandoffDiagnostics
+}
+
+export type AssistantTelegramHandoffRuntimeConfig = Omit<
+  AssistantTelegramHandoffConfigRow,
+  "bot_token" | "webhook_secret"
+> & {
+  bot_token: string | null
+  webhook_secret: string | null
+}
+
+export type AssistantTelegramHandoffUpdateInput = Partial<
+  Omit<
+    AssistantTelegramHandoffConfigRow,
+    | "id"
+    | "bot_token"
+    | "webhook_secret"
+    | "last_test_status"
+    | "last_test_error"
+    | "last_test_at"
+    | "created_at"
+    | "updated_at"
+    | "version"
+    | "diagnostics"
+  >
+> & {
+  bot_token?: string
+  webhook_secret?: string
+}
+
+export type AssistantTelegramHandoffTestResult = {
+  ok: boolean
+  status: AssistantTelegramHandoffLastTestStatus
+  message: string
+  missing_fields: string[]
+  tested_at: string
+  diagnostics: AssistantTelegramHandoffDiagnostics
 }
 
 export type LlmProviderTestResult = {
@@ -224,6 +317,9 @@ const DEFAULT_OBSERVABILITY: Record<string, boolean> = {
   sentry: false,
   langsmith: false,
 }
+
+const DEFAULT_TELEGRAM_HANDOFF_FALLBACK_MESSAGE =
+  "Telegram handoff временно недоступен. Пожалуйста, попробуйте позже или свяжитесь с магазином другим удобным способом."
 
 // ---------------------------------------------------------------------------
 // Internal helpers — type coercions
@@ -343,6 +439,17 @@ function asJsonArrayOfStrings(value: unknown): string[] {
   return raw.filter((entry): entry is string => typeof entry === "string")
 }
 
+function asTrimmedStringOrNull(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    return trimmed.length ? trimmed : null
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(Math.trunc(value))
+  }
+  return null
+}
+
 function toBuffer(value: unknown): Buffer {
   if (Buffer.isBuffer(value)) {
     return value
@@ -374,7 +481,29 @@ type RawProviderRow = Record<string, unknown> & {
   api_key_tag?: unknown
 }
 
+type RawTelegramHandoffRow = Record<string, unknown> & {
+  bot_token_ciphertext?: unknown
+  bot_token_iv?: unknown
+  bot_token_tag?: unknown
+  webhook_secret_ciphertext?: unknown
+  webhook_secret_iv?: unknown
+  webhook_secret_tag?: unknown
+}
+
 const RETRIEVAL_MODES = ["markdown", "vector", "lightrag", "auto"] as const
+const TELEGRAM_HANDOFF_ENVIRONMENT_MODES = ["test", "production"] as const
+const TELEGRAM_HANDOFF_OPERATOR_REPLY_MODES = [
+  "explicit_reply_command",
+  "all_topic_messages",
+] as const
+const TELEGRAM_HANDOFF_LAST_TEST_STATUSES = [
+  "disabled",
+  "missing_credentials",
+  "dry_run_passed",
+  "connection_ok",
+  "connection_failed",
+  "not_implemented",
+] as const
 
 function isRetrievalMode(
   value: unknown
@@ -383,6 +512,116 @@ function isRetrievalMode(
     typeof value === "string" &&
     (RETRIEVAL_MODES as readonly string[]).includes(value)
   )
+}
+
+function isTelegramHandoffEnvironmentMode(
+  value: unknown
+): value is AssistantTelegramHandoffEnvironmentMode {
+  return (
+    typeof value === "string" &&
+    (TELEGRAM_HANDOFF_ENVIRONMENT_MODES as readonly string[]).includes(value)
+  )
+}
+
+function isTelegramHandoffOperatorReplyMode(
+  value: unknown
+): value is AssistantTelegramHandoffOperatorReplyMode {
+  return (
+    typeof value === "string" &&
+    (TELEGRAM_HANDOFF_OPERATOR_REPLY_MODES as readonly string[]).includes(value)
+  )
+}
+
+function isTelegramHandoffLastTestStatus(
+  value: unknown
+): value is AssistantTelegramHandoffLastTestStatus {
+  return (
+    typeof value === "string" &&
+    (TELEGRAM_HANDOFF_LAST_TEST_STATUSES as readonly string[]).includes(value)
+  )
+}
+
+function toAssistantSecretMetadata(last4: unknown): AssistantSecretMetadata {
+  const normalized = typeof last4 === "string" && last4.length ? last4 : null
+  return {
+    is_configured: normalized !== null,
+    last4: normalized,
+    masked: normalized ? `••••${normalized}` : null,
+  }
+}
+
+type TelegramHandoffDiagnosticsSnapshot = {
+  enabled: boolean
+  environment_mode: AssistantTelegramHandoffEnvironmentMode
+  bot_token_configured: boolean
+  webhook_secret_configured: boolean
+  support_chat_id: string | null
+  topics_required: boolean
+  webhook_url: string | null
+  allowed_operator_ids: string[]
+  allowed_admin_ids: string[]
+}
+
+function evaluateTelegramHandoffDiagnostics(
+  snapshot: TelegramHandoffDiagnosticsSnapshot
+): AssistantTelegramHandoffDiagnostics {
+  if (!snapshot.enabled) {
+    return {
+      status: "disabled",
+      missing_fields: [],
+      can_test: false,
+    }
+  }
+
+  const missing_fields: string[] = []
+  const hasOperatorsOrAdmins =
+    snapshot.allowed_operator_ids.length > 0 ||
+    snapshot.allowed_admin_ids.length > 0
+
+  if (!snapshot.bot_token_configured) {
+    missing_fields.push("bot_token")
+  }
+  if (!snapshot.webhook_secret_configured) {
+    missing_fields.push("webhook_secret")
+  }
+  if (!snapshot.support_chat_id) {
+    missing_fields.push("support_chat_id")
+  }
+  if (!snapshot.topics_required) {
+    missing_fields.push("topics_required")
+  }
+  if (!snapshot.webhook_url) {
+    missing_fields.push("webhook_url")
+  }
+  if (
+    !hasOperatorsOrAdmins &&
+    snapshot.environment_mode === "production"
+  ) {
+    missing_fields.push("allowed_operator_ids_or_allowed_admin_ids")
+  }
+
+  if (missing_fields.length === 0) {
+    return {
+      status: "ready_for_connection_test",
+      missing_fields,
+      can_test: true,
+    }
+  }
+
+  const configuredSignals = [
+    snapshot.bot_token_configured,
+    snapshot.webhook_secret_configured,
+    Boolean(snapshot.support_chat_id),
+    Boolean(snapshot.webhook_url),
+    hasOperatorsOrAdmins,
+  ].filter(Boolean).length
+
+  return {
+    status:
+      configuredSignals === 0 ? "not_configured" : "partially_configured",
+    missing_fields,
+    can_test: false,
+  }
 }
 
 function toLlmProviderRow(raw: RawProviderRow): LlmProviderRow {
@@ -420,6 +659,115 @@ function toLlmProviderRow(raw: RawProviderRow): LlmProviderRow {
         : null,
     created_at: asIsoDate(raw.created_at) || new Date(0).toISOString(),
     updated_at: asIsoDate(raw.updated_at) || new Date(0).toISOString(),
+  }
+}
+
+function toAssistantTelegramHandoffConfigRow(
+  raw: RawTelegramHandoffRow
+): AssistantTelegramHandoffConfigRow {
+  const bot_token = toAssistantSecretMetadata(raw.bot_token_last4)
+  const webhook_secret = toAssistantSecretMetadata(raw.webhook_secret_last4)
+  const environment_mode = isTelegramHandoffEnvironmentMode(
+    raw.environment_mode
+  )
+    ? raw.environment_mode
+    : "test"
+  const allowed_operator_ids = asJsonArrayOfStrings(raw.allowed_operator_ids)
+  const allowed_admin_ids = asJsonArrayOfStrings(raw.allowed_admin_ids)
+  const diagnostics = evaluateTelegramHandoffDiagnostics({
+    enabled: asBoolean(raw.enabled, false),
+    environment_mode,
+    bot_token_configured: bot_token.is_configured,
+    webhook_secret_configured: webhook_secret.is_configured,
+    support_chat_id: asTrimmedStringOrNull(raw.support_chat_id),
+    topics_required: asBoolean(raw.topics_required, true),
+    webhook_url: asTrimmedStringOrNull(raw.webhook_url),
+    allowed_operator_ids,
+    allowed_admin_ids,
+  })
+
+  return {
+    id: "singleton",
+    enabled: asBoolean(raw.enabled, false),
+    environment_mode,
+    bot_username: asTrimmedStringOrNull(raw.bot_username),
+    bot_token,
+    support_chat_id: asTrimmedStringOrNull(raw.support_chat_id),
+    topics_required: asBoolean(raw.topics_required, true),
+    webhook_url: asTrimmedStringOrNull(raw.webhook_url),
+    webhook_secret,
+    allowed_operator_ids,
+    allowed_admin_ids,
+    operator_reply_mode: isTelegramHandoffOperatorReplyMode(
+      raw.operator_reply_mode
+    )
+      ? raw.operator_reply_mode
+      : "explicit_reply_command",
+    fallback_message:
+      typeof raw.fallback_message === "string" ? raw.fallback_message : null,
+    last_test_status: isTelegramHandoffLastTestStatus(raw.last_test_status)
+      ? raw.last_test_status
+      : null,
+    last_test_error:
+      typeof raw.last_test_error === "string" && raw.last_test_error.length
+        ? raw.last_test_error
+        : null,
+    last_test_at: asIsoDate(raw.last_test_at),
+    created_at: asIsoDate(raw.created_at) || new Date(0).toISOString(),
+    updated_at: asIsoDate(raw.updated_at) || new Date(0).toISOString(),
+    version: asInteger(raw.version, 1),
+    diagnostics,
+  }
+}
+
+function decryptOptionalSecret(parts: {
+  ciphertext: unknown
+  iv: unknown
+  tag: unknown
+  label: string
+}): string | null {
+  const hasCiphertext =
+    parts.ciphertext !== null && parts.ciphertext !== undefined
+  const hasIv = parts.iv !== null && parts.iv !== undefined
+  const hasTag = parts.tag !== null && parts.tag !== undefined
+
+  if (!hasCiphertext && !hasIv && !hasTag) {
+    return null
+  }
+
+  try {
+    return decryptSecret({
+      ciphertext: toBuffer(parts.ciphertext),
+      iv: toBuffer(parts.iv),
+      tag: toBuffer(parts.tag),
+    })
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "unknown"
+    throw new AssistantSettingsError(
+      "encryption_failure",
+      `Failed to decrypt Telegram ${parts.label}: ${reason}`
+    )
+  }
+}
+
+function toAssistantTelegramHandoffRuntimeConfig(
+  raw: RawTelegramHandoffRow
+): AssistantTelegramHandoffRuntimeConfig {
+  const base = toAssistantTelegramHandoffConfigRow(raw)
+  return {
+    ...base,
+    bot_token: decryptOptionalSecret({
+      ciphertext: raw.bot_token_ciphertext,
+      iv: raw.bot_token_iv,
+      tag: raw.bot_token_tag,
+      label: "bot_token",
+    }),
+    webhook_secret: decryptOptionalSecret({
+      ciphertext: raw.webhook_secret_ciphertext,
+      iv: raw.webhook_secret_iv,
+      tag: raw.webhook_secret_tag,
+      label: "webhook_secret",
+    }),
   }
 }
 
@@ -578,6 +926,330 @@ function assertProviderInputShape(input: {
   }
 }
 
+type NormalizedAssistantTelegramHandoffUpdateInput = {
+  enabled?: boolean
+  environment_mode?: AssistantTelegramHandoffEnvironmentMode
+  bot_username?: string | null
+  bot_token?: string
+  support_chat_id?: string | null
+  topics_required?: boolean
+  webhook_url?: string | null
+  webhook_secret?: string
+  allowed_operator_ids?: string[]
+  allowed_admin_ids?: string[]
+  operator_reply_mode?: AssistantTelegramHandoffOperatorReplyMode
+  fallback_message?: string | null
+}
+
+function normalizeOptionalSecretInput(
+  field: "bot_token" | "webhook_secret",
+  value: unknown
+): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined
+  }
+  if (typeof value !== "string") {
+    throw new AssistantSettingsError(
+      "validation",
+      `${field} must be a string when provided`
+    )
+  }
+  const trimmed = value.trim()
+  return trimmed.length ? trimmed : undefined
+}
+
+function normalizeTelegramIdList(
+  field:
+    | "allowed_operator_ids"
+    | "allowed_admin_ids",
+  value: unknown
+): string[] {
+  if (!Array.isArray(value)) {
+    throw new AssistantSettingsError(
+      "validation",
+      `${field} must be an array`
+    )
+  }
+  if (value.length > 100) {
+    throw new AssistantSettingsError(
+      "validation",
+      `${field} cannot contain more than 100 entries`
+    )
+  }
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const entry of value) {
+    const normalized =
+      typeof entry === "string"
+        ? entry.trim()
+        : typeof entry === "number" && Number.isFinite(entry)
+          ? String(Math.trunc(entry))
+          : ""
+    if (!/^\d+$/.test(normalized)) {
+      throw new AssistantSettingsError(
+        "validation",
+        `${field} must contain Telegram numeric user ids`
+      )
+    }
+    if (!seen.has(normalized)) {
+      seen.add(normalized)
+      out.push(normalized)
+    }
+  }
+  return out
+}
+
+function normalizeAssistantTelegramHandoffInput(
+  input: AssistantTelegramHandoffUpdateInput
+): NormalizedAssistantTelegramHandoffUpdateInput {
+  const normalized: NormalizedAssistantTelegramHandoffUpdateInput = {}
+
+  if (input.enabled !== undefined) {
+    if (typeof input.enabled !== "boolean") {
+      throw new AssistantSettingsError(
+        "validation",
+        "enabled must be a boolean"
+      )
+    }
+    normalized.enabled = input.enabled
+  }
+
+  if (input.environment_mode !== undefined) {
+    if (!isTelegramHandoffEnvironmentMode(input.environment_mode)) {
+      throw new AssistantSettingsError(
+        "validation",
+        `environment_mode must be one of ${TELEGRAM_HANDOFF_ENVIRONMENT_MODES.join(", ")}`
+      )
+    }
+    normalized.environment_mode = input.environment_mode
+  }
+
+  if (input.bot_username !== undefined) {
+    if (input.bot_username === null) {
+      normalized.bot_username = null
+    } else if (typeof input.bot_username === "string") {
+      const value = input.bot_username.trim().replace(/^@+/, "")
+      if (value.length > 64) {
+        throw new AssistantSettingsError(
+          "validation",
+          "bot_username must be 64 characters or fewer"
+        )
+      }
+      normalized.bot_username = value.length ? value : null
+    } else {
+      throw new AssistantSettingsError(
+        "validation",
+        "bot_username must be a string or null"
+      )
+    }
+  }
+
+  const botToken = normalizeOptionalSecretInput("bot_token", input.bot_token)
+  if (botToken !== undefined) {
+    normalized.bot_token = botToken
+  }
+
+  if (input.support_chat_id !== undefined) {
+    if (input.support_chat_id === null) {
+      normalized.support_chat_id = null
+    } else {
+      const value = asTrimmedStringOrNull(input.support_chat_id)
+      if (!value) {
+        normalized.support_chat_id = null
+      } else if (!/^-?\d+$/.test(value)) {
+        throw new AssistantSettingsError(
+          "validation",
+          "support_chat_id must be a Telegram numeric chat id"
+        )
+      } else if (value.length > 32) {
+        throw new AssistantSettingsError(
+          "validation",
+          "support_chat_id is too long"
+        )
+      } else {
+        normalized.support_chat_id = value
+      }
+    }
+  }
+
+  if (input.topics_required !== undefined) {
+    if (typeof input.topics_required !== "boolean") {
+      throw new AssistantSettingsError(
+        "validation",
+        "topics_required must be a boolean"
+      )
+    }
+    normalized.topics_required = input.topics_required
+  }
+
+  if (input.webhook_url !== undefined) {
+    if (input.webhook_url === null) {
+      normalized.webhook_url = null
+    } else if (typeof input.webhook_url === "string") {
+      const value = input.webhook_url.trim()
+      if (!value) {
+        normalized.webhook_url = null
+      } else {
+        let parsed: URL
+        try {
+          parsed = new URL(value)
+        } catch {
+          throw new AssistantSettingsError(
+            "validation",
+            "webhook_url must be a valid URL"
+          )
+        }
+        if (!/^https?:$/i.test(parsed.protocol)) {
+          throw new AssistantSettingsError(
+            "validation",
+            "webhook_url must start with http:// or https://"
+          )
+        }
+        if (value.length > 512) {
+          throw new AssistantSettingsError(
+            "validation",
+            "webhook_url must be 512 characters or fewer"
+          )
+        }
+        normalized.webhook_url = value
+      }
+    } else {
+      throw new AssistantSettingsError(
+        "validation",
+        "webhook_url must be a string or null"
+      )
+    }
+  }
+
+  const webhookSecret = normalizeOptionalSecretInput(
+    "webhook_secret",
+    input.webhook_secret
+  )
+  if (webhookSecret !== undefined) {
+    normalized.webhook_secret = webhookSecret
+  }
+
+  if (input.allowed_operator_ids !== undefined) {
+    normalized.allowed_operator_ids = normalizeTelegramIdList(
+      "allowed_operator_ids",
+      input.allowed_operator_ids
+    )
+  }
+
+  if (input.allowed_admin_ids !== undefined) {
+    normalized.allowed_admin_ids = normalizeTelegramIdList(
+      "allowed_admin_ids",
+      input.allowed_admin_ids
+    )
+  }
+
+  if (input.operator_reply_mode !== undefined) {
+    if (!isTelegramHandoffOperatorReplyMode(input.operator_reply_mode)) {
+      throw new AssistantSettingsError(
+        "validation",
+        `operator_reply_mode must be one of ${TELEGRAM_HANDOFF_OPERATOR_REPLY_MODES.join(", ")}`
+      )
+    }
+    normalized.operator_reply_mode = input.operator_reply_mode
+  }
+
+  if (input.fallback_message !== undefined) {
+    if (input.fallback_message === null) {
+      normalized.fallback_message = null
+    } else if (typeof input.fallback_message === "string") {
+      const value = input.fallback_message.trim()
+      if (value.length > 2000) {
+        throw new AssistantSettingsError(
+          "validation",
+          "fallback_message must be 2000 characters or fewer"
+        )
+      }
+      normalized.fallback_message = value.length ? value : null
+    } else {
+      throw new AssistantSettingsError(
+        "validation",
+        "fallback_message must be a string or null"
+      )
+    }
+  }
+
+  return normalized
+}
+
+function resolveTelegramHandoffDiagnosticsSnapshot(
+  current: AssistantTelegramHandoffConfigRow,
+  input: NormalizedAssistantTelegramHandoffUpdateInput = {}
+): TelegramHandoffDiagnosticsSnapshot {
+  return {
+    enabled: input.enabled ?? current.enabled,
+    environment_mode: input.environment_mode ?? current.environment_mode,
+    bot_token_configured:
+      input.bot_token !== undefined ? true : current.bot_token.is_configured,
+    webhook_secret_configured:
+      input.webhook_secret !== undefined
+        ? true
+        : current.webhook_secret.is_configured,
+    support_chat_id:
+      input.support_chat_id !== undefined
+        ? input.support_chat_id
+        : current.support_chat_id,
+    topics_required: input.topics_required ?? current.topics_required,
+    webhook_url:
+      input.webhook_url !== undefined ? input.webhook_url : current.webhook_url,
+    allowed_operator_ids:
+      input.allowed_operator_ids ?? current.allowed_operator_ids,
+    allowed_admin_ids: input.allowed_admin_ids ?? current.allowed_admin_ids,
+  }
+}
+
+function assertTelegramHandoffEnabledState(
+  snapshot: TelegramHandoffDiagnosticsSnapshot
+): void {
+  if (!snapshot.enabled) {
+    return
+  }
+  if (!snapshot.bot_token_configured) {
+    throw new AssistantSettingsError(
+      "validation",
+      "bot_token is required when Telegram handoff is enabled"
+    )
+  }
+  if (!snapshot.webhook_secret_configured) {
+    throw new AssistantSettingsError(
+      "validation",
+      "webhook_secret is required when Telegram handoff is enabled"
+    )
+  }
+  if (!snapshot.support_chat_id) {
+    throw new AssistantSettingsError(
+      "validation",
+      "support_chat_id is required when Telegram handoff is enabled"
+    )
+  }
+  if (!snapshot.webhook_url) {
+    throw new AssistantSettingsError(
+      "validation",
+      "webhook_url is required when Telegram handoff is enabled"
+    )
+  }
+  if (!snapshot.topics_required) {
+    throw new AssistantSettingsError(
+      "validation",
+      "topics_required must stay enabled for the Telegram handoff MVP"
+    )
+  }
+  if (
+    snapshot.environment_mode === "production" &&
+    snapshot.allowed_operator_ids.length === 0 &&
+    snapshot.allowed_admin_ids.length === 0
+  ) {
+    throw new AssistantSettingsError(
+      "validation",
+      "At least one operator or admin id is required when Telegram handoff is enabled in production mode"
+    )
+  }
+}
+
 // ---------------------------------------------------------------------------
 // ID generation
 // ---------------------------------------------------------------------------
@@ -711,6 +1383,77 @@ export async function ensureAssistantSettingsTables(
       JSON.stringify(DEFAULT_RATE_LIMITS),
       JSON.stringify(DEFAULT_OBSERVABILITY),
     ]
+  )
+
+  await pg.raw(`
+    -- @assistant:create-table-telegram-handoff
+    create table if not exists assistant_telegram_handoff_config (
+      id text primary key check (id = 'singleton'),
+      enabled boolean not null default false,
+      environment_mode text not null default 'test'
+        check (environment_mode in ('test', 'production')),
+      bot_username text null,
+      bot_token_ciphertext bytea null,
+      bot_token_iv bytea null,
+      bot_token_tag bytea null,
+      bot_token_last4 text null,
+      support_chat_id text null,
+      topics_required boolean not null default true,
+      webhook_url text null,
+      webhook_secret_ciphertext bytea null,
+      webhook_secret_iv bytea null,
+      webhook_secret_tag bytea null,
+      webhook_secret_last4 text null,
+      allowed_operator_ids jsonb not null default '[]'::jsonb,
+      allowed_admin_ids jsonb not null default '[]'::jsonb,
+      operator_reply_mode text not null default 'explicit_reply_command'
+        check (
+          operator_reply_mode in (
+            'explicit_reply_command',
+            'all_topic_messages'
+          )
+        ),
+      fallback_message text null,
+      last_test_status text null,
+      last_test_error text null,
+      last_test_at timestamptz null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      version integer not null default 1
+    )
+  `)
+
+  await pg.raw(
+    `
+      -- @assistant:seed-telegram-handoff-singleton
+      insert into assistant_telegram_handoff_config (
+        id,
+        enabled,
+        environment_mode,
+        topics_required,
+        allowed_operator_ids,
+        allowed_admin_ids,
+        operator_reply_mode,
+        fallback_message,
+        created_at,
+        updated_at,
+        version
+      ) values (
+        'singleton',
+        false,
+        'test',
+        true,
+        '[]'::jsonb,
+        '[]'::jsonb,
+        'explicit_reply_command',
+        ?,
+        now(),
+        now(),
+        1
+      )
+      on conflict (id) do nothing
+    `,
+    [DEFAULT_TELEGRAM_HANDOFF_FALLBACK_MESSAGE]
   )
 }
 
@@ -1314,18 +2057,37 @@ export async function getEffectiveAssistantConfig(
     }
     const global = toAssistantSettingRow(settingRows[0])
 
+    const telegramResult = await trx.raw<RawTelegramHandoffRow>(`
+      -- @assistant:get-telegram-handoff-runtime
+      select ${TELEGRAM_HANDOFF_RUNTIME_COLUMNS}
+      from assistant_telegram_handoff_config
+      where id = 'singleton'
+      limit 1
+    `)
+    const telegramRows = getRawRows<RawTelegramHandoffRow>(telegramResult)
+    if (!telegramRows.length) {
+      throw new AssistantSettingsError(
+        "not_found",
+        "assistant_telegram_handoff_config singleton row is missing"
+      )
+    }
+    const telegram_handoff = toAssistantTelegramHandoffRuntimeConfig(
+      telegramRows[0]
+    )
+
     const candidates: string[] = []
     if (active?.updated_at) candidates.push(active.updated_at)
     for (const f of fallback) {
       if (f.updated_at) candidates.push(f.updated_at)
     }
     if (global.updated_at) candidates.push(global.updated_at)
+    if (telegram_handoff.updated_at) candidates.push(telegram_handoff.updated_at)
     const version =
       candidates.length === 0
         ? new Date(0).toISOString()
         : candidates.reduce((acc, cur) => (cur > acc ? cur : acc))
 
-    return { version, active, fallback, global }
+    return { version, active, fallback, global, telegram_handoff }
   })
 }
 
@@ -1621,6 +2383,356 @@ export async function updateAssistantSetting(
       )
     }
     return toAssistantSettingRow(updatedRows[0])
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Telegram handoff config (singleton)
+// ---------------------------------------------------------------------------
+
+const TELEGRAM_HANDOFF_PUBLIC_COLUMNS = `
+  id,
+  enabled,
+  environment_mode,
+  bot_username,
+  bot_token_last4,
+  support_chat_id,
+  topics_required,
+  webhook_url,
+  webhook_secret_last4,
+  allowed_operator_ids,
+  allowed_admin_ids,
+  operator_reply_mode,
+  fallback_message,
+  last_test_status,
+  last_test_error,
+  last_test_at,
+  created_at,
+  updated_at,
+  version
+`
+
+const TELEGRAM_HANDOFF_RUNTIME_COLUMNS = `
+  ${TELEGRAM_HANDOFF_PUBLIC_COLUMNS},
+  bot_token_ciphertext,
+  bot_token_iv,
+  bot_token_tag,
+  webhook_secret_ciphertext,
+  webhook_secret_iv,
+  webhook_secret_tag
+`
+
+export async function getAssistantTelegramHandoffConfig(
+  pg: PgConnectionLike
+): Promise<AssistantTelegramHandoffConfigRow> {
+  await ensureAssistantSettingsTables(pg)
+  const result = await pg.raw<RawTelegramHandoffRow>(
+    `
+      -- @assistant:get-telegram-handoff
+      select ${TELEGRAM_HANDOFF_PUBLIC_COLUMNS}
+      from assistant_telegram_handoff_config
+      where id = 'singleton'
+      limit 1
+    `
+  )
+  const rows = getRawRows<RawTelegramHandoffRow>(result)
+  if (!rows.length) {
+    throw new AssistantSettingsError(
+      "not_found",
+      "assistant_telegram_handoff_config singleton row is missing"
+    )
+  }
+  return toAssistantTelegramHandoffConfigRow(rows[0])
+}
+
+export async function getAssistantTelegramHandoffRuntimeConfig(
+  pg: PgConnectionLike
+): Promise<AssistantTelegramHandoffRuntimeConfig> {
+  await ensureAssistantSettingsTables(pg)
+  const result = await pg.raw<RawTelegramHandoffRow>(
+    `
+      -- @assistant:get-telegram-handoff-runtime
+      select ${TELEGRAM_HANDOFF_RUNTIME_COLUMNS}
+      from assistant_telegram_handoff_config
+      where id = 'singleton'
+      limit 1
+    `
+  )
+  const rows = getRawRows<RawTelegramHandoffRow>(result)
+  if (!rows.length) {
+    throw new AssistantSettingsError(
+      "not_found",
+      "assistant_telegram_handoff_config singleton row is missing"
+    )
+  }
+  return toAssistantTelegramHandoffRuntimeConfig(rows[0])
+}
+
+export async function updateAssistantTelegramHandoffConfig(
+  pg: PgConnectionLike,
+  input: AssistantTelegramHandoffUpdateInput,
+  opts?: { expectedVersion?: number }
+): Promise<AssistantTelegramHandoffConfigRow> {
+  await ensureAssistantSettingsTables(pg)
+  const normalized = normalizeAssistantTelegramHandoffInput(input)
+
+  return await pg.transaction(async (trx) => {
+    const currentResult = await trx.raw<RawTelegramHandoffRow>(
+      `
+        -- @assistant:lock-telegram-handoff
+        select ${TELEGRAM_HANDOFF_PUBLIC_COLUMNS}
+        from assistant_telegram_handoff_config
+        where id = 'singleton'
+        for update
+      `
+    )
+    const currentRows = getRawRows<RawTelegramHandoffRow>(currentResult)
+    if (!currentRows.length) {
+      throw new AssistantSettingsError(
+        "not_found",
+        "assistant_telegram_handoff_config singleton row is missing"
+      )
+    }
+    const current = toAssistantTelegramHandoffConfigRow(currentRows[0])
+
+    if (
+      opts?.expectedVersion !== undefined &&
+      current.version !== opts.expectedVersion
+    ) {
+      throw new AssistantSettingsError(
+        "version_mismatch",
+        `Expected version ${opts.expectedVersion}, got ${current.version}`
+      )
+    }
+
+    const snapshot = resolveTelegramHandoffDiagnosticsSnapshot(
+      current,
+      normalized
+    )
+    assertTelegramHandoffEnabledState(snapshot)
+
+    const sets: string[] = []
+    const bindings: unknown[] = []
+
+    if (normalized.enabled !== undefined) {
+      sets.push("enabled = ?")
+      bindings.push(normalized.enabled)
+    }
+    if (normalized.environment_mode !== undefined) {
+      sets.push("environment_mode = ?")
+      bindings.push(normalized.environment_mode)
+    }
+    if (normalized.bot_username !== undefined) {
+      sets.push("bot_username = ?")
+      bindings.push(normalized.bot_username)
+    }
+    if (normalized.support_chat_id !== undefined) {
+      sets.push("support_chat_id = ?")
+      bindings.push(normalized.support_chat_id)
+    }
+    if (normalized.topics_required !== undefined) {
+      sets.push("topics_required = ?")
+      bindings.push(normalized.topics_required)
+    }
+    if (normalized.webhook_url !== undefined) {
+      sets.push("webhook_url = ?")
+      bindings.push(normalized.webhook_url)
+    }
+    if (normalized.allowed_operator_ids !== undefined) {
+      sets.push("allowed_operator_ids = ?::jsonb")
+      bindings.push(JSON.stringify(normalized.allowed_operator_ids))
+    }
+    if (normalized.allowed_admin_ids !== undefined) {
+      sets.push("allowed_admin_ids = ?::jsonb")
+      bindings.push(JSON.stringify(normalized.allowed_admin_ids))
+    }
+    if (normalized.operator_reply_mode !== undefined) {
+      sets.push("operator_reply_mode = ?")
+      bindings.push(normalized.operator_reply_mode)
+    }
+    if (normalized.fallback_message !== undefined) {
+      sets.push("fallback_message = ?")
+      bindings.push(normalized.fallback_message)
+    }
+
+    if (normalized.bot_token !== undefined) {
+      if (!isEncryptionConfigured()) {
+        throw new AssistantSettingsError(
+          "encryption_not_configured",
+          "ASSISTANT_SETTINGS_ENCRYPTION_KEY is not configured; cannot store Telegram bot_token"
+        )
+      }
+      let encrypted: EncryptedSecret
+      try {
+        encrypted = encryptSecret(normalized.bot_token)
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "unknown"
+        throw new AssistantSettingsError(
+          "encryption_failure",
+          `Failed to encrypt Telegram bot_token: ${reason}`
+        )
+      }
+      sets.push("bot_token_ciphertext = ?")
+      bindings.push(encrypted.ciphertext)
+      sets.push("bot_token_iv = ?")
+      bindings.push(encrypted.iv)
+      sets.push("bot_token_tag = ?")
+      bindings.push(encrypted.tag)
+      sets.push("bot_token_last4 = ?")
+      bindings.push(encrypted.last4)
+    }
+
+    if (normalized.webhook_secret !== undefined) {
+      if (!isEncryptionConfigured()) {
+        throw new AssistantSettingsError(
+          "encryption_not_configured",
+          "ASSISTANT_SETTINGS_ENCRYPTION_KEY is not configured; cannot store Telegram webhook_secret"
+        )
+      }
+      let encrypted: EncryptedSecret
+      try {
+        encrypted = encryptSecret(normalized.webhook_secret)
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "unknown"
+        throw new AssistantSettingsError(
+          "encryption_failure",
+          `Failed to encrypt Telegram webhook_secret: ${reason}`
+        )
+      }
+      sets.push("webhook_secret_ciphertext = ?")
+      bindings.push(encrypted.ciphertext)
+      sets.push("webhook_secret_iv = ?")
+      bindings.push(encrypted.iv)
+      sets.push("webhook_secret_tag = ?")
+      bindings.push(encrypted.tag)
+      sets.push("webhook_secret_last4 = ?")
+      bindings.push(encrypted.last4)
+    }
+
+    if (sets.length === 0) {
+      return current
+    }
+
+    sets.push("version = version + 1")
+    sets.push("updated_at = now()")
+
+    const updateResult = await trx.raw<RawTelegramHandoffRow>(
+      `
+        -- @assistant:update-telegram-handoff
+        update assistant_telegram_handoff_config
+        set ${sets.join(", ")}
+        where id = 'singleton'
+        returning ${TELEGRAM_HANDOFF_PUBLIC_COLUMNS}
+      `,
+      bindings
+    )
+    const updatedRows = getRawRows<RawTelegramHandoffRow>(updateResult)
+    if (!updatedRows.length) {
+      throw new AssistantSettingsError(
+        "not_found",
+        "assistant_telegram_handoff_config singleton disappeared during update"
+      )
+    }
+    return toAssistantTelegramHandoffConfigRow(updatedRows[0])
+  })
+}
+
+async function persistAssistantTelegramHandoffTestResult(
+  executor: Pick<PgConnectionLike, "raw"> | Pick<PgTransactionLike, "raw">,
+  result: AssistantTelegramHandoffTestResult
+): Promise<void> {
+  const updateResult = await executor.raw(
+    `
+      -- @assistant:update-telegram-handoff-test-result
+      update assistant_telegram_handoff_config
+      set
+        last_test_status = ?,
+        last_test_error = ?,
+        last_test_at = ?::timestamptz,
+        updated_at = now()
+      where id = 'singleton'
+    `,
+    [result.status, result.ok ? null : result.message, result.tested_at]
+  )
+  if ((updateResult.rowCount ?? 0) === 0) {
+    throw new AssistantSettingsError(
+      "not_found",
+      "assistant_telegram_handoff_config singleton row is missing"
+    )
+  }
+}
+
+export async function recordAssistantTelegramHandoffTestResult(
+  pg: PgConnectionLike,
+  result: AssistantTelegramHandoffTestResult
+): Promise<void> {
+  await ensureAssistantSettingsTables(pg)
+  await persistAssistantTelegramHandoffTestResult(pg, result)
+}
+
+export async function testAssistantTelegramHandoffConfig(
+  pg: PgConnectionLike,
+  input: AssistantTelegramHandoffUpdateInput = {}
+): Promise<AssistantTelegramHandoffTestResult> {
+  await ensureAssistantSettingsTables(pg)
+  const normalized = normalizeAssistantTelegramHandoffInput(input)
+
+  return await pg.transaction(async (trx) => {
+    const currentResult = await trx.raw<RawTelegramHandoffRow>(
+      `
+        -- @assistant:lock-telegram-handoff
+        select ${TELEGRAM_HANDOFF_PUBLIC_COLUMNS}
+        from assistant_telegram_handoff_config
+        where id = 'singleton'
+        for update
+      `
+    )
+    const currentRows = getRawRows<RawTelegramHandoffRow>(currentResult)
+    if (!currentRows.length) {
+      throw new AssistantSettingsError(
+        "not_found",
+        "assistant_telegram_handoff_config singleton row is missing"
+      )
+    }
+    const current = toAssistantTelegramHandoffConfigRow(currentRows[0])
+    const snapshot = resolveTelegramHandoffDiagnosticsSnapshot(
+      current,
+      normalized
+    )
+    const diagnostics = evaluateTelegramHandoffDiagnostics(snapshot)
+    const testedAt = new Date().toISOString()
+
+    const result: AssistantTelegramHandoffTestResult = !snapshot.enabled
+      ? {
+          ok: false,
+          status: "disabled",
+          message: "Telegram handoff is disabled.",
+          missing_fields: [],
+          tested_at: testedAt,
+          diagnostics,
+        }
+      : diagnostics.can_test
+        ? {
+            ok: true,
+            status: "dry_run_passed",
+            message:
+              "Local Telegram handoff validation passed. Live Telegram API checks run through the assistant backend test route.",
+            missing_fields: [],
+            tested_at: testedAt,
+            diagnostics,
+          }
+        : {
+            ok: false,
+            status: "missing_credentials",
+            message: `Missing required Telegram handoff configuration: ${diagnostics.missing_fields.join(", ")}`,
+            missing_fields: diagnostics.missing_fields,
+            tested_at: testedAt,
+            diagnostics,
+          }
+
+    await persistAssistantTelegramHandoffTestResult(trx, result)
+
+    return result
   })
 }
 

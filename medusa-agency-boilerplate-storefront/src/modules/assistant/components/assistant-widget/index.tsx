@@ -1,11 +1,17 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
 
 import { fetchAssistantHistory, sendAssistantMessage } from "../../lib/client"
 import { loadAssistantHistory, mergeAssistantMessages, saveAssistantHistory } from "../../lib/history"
 import { getAssistantSessionId } from "../../lib/session"
-import type { AssistantChatResponse, AssistantHistoryMessage, AssistantMessage } from "../../types"
+import type {
+  AssistantChatResponse,
+  AssistantHandoffResponse,
+  AssistantHistoryMessage,
+  AssistantHistoryResponse,
+  AssistantMessage,
+} from "../../types"
 import AssistantActionCard from "../assistant-action-card"
 import AssistantMarkdown from "../assistant-markdown"
 import AssistantProductCard from "../assistant-product-card"
@@ -22,6 +28,16 @@ const INITIAL_MESSAGE: AssistantMessage = {
   role: "assistant",
   content: "Здравствуйте! Я помогу подобрать товар, объяснить доставку или сориентироваться по магазину.",
 }
+
+const HANDOFF_POLL_INTERVAL_MS = 5000
+const HANDOFF_POLL_BACKOFF_MS = 15000
+const ACTIVE_HANDOFF_STATUSES = new Set([
+  "submitted",
+  "open",
+  "assigned",
+  "waiting_operator",
+  "waiting_customer",
+])
 
 function createMessageId(prefix: string) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
@@ -49,12 +65,22 @@ function toVisibleMessage(message: AssistantHistoryMessage): AssistantMessage | 
     content: message.content,
     products: message.products,
     actions: message.actions,
+    metadata: message.metadata,
     safety: message.safety,
+    created_at: message.created_at,
   }
 }
 
 function hasActionType(message: AssistantMessage, type: string) {
   return message.actions?.some((action) => action.type === type) === true
+}
+
+function isActiveHandoff(ticket: AssistantHistoryResponse["handoff_ticket"]) {
+  return Boolean(ticket && ACTIVE_HANDOFF_STATUSES.has(ticket.status))
+}
+
+function isTelegramOperatorMessage(message: AssistantMessage) {
+  return message.metadata?.source === "telegram_operator"
 }
 
 export default function AssistantWidget({
@@ -66,10 +92,69 @@ export default function AssistantWidget({
   const [open, setOpen] = useState(false)
   const [input, setInput] = useState("")
   const [messages, setMessages] = useState<AssistantMessage[]>([INITIAL_MESSAGE])
+  const [handoffTicket, setHandoffTicket] = useState<AssistantHistoryResponse["handoff_ticket"] | null>(null)
   const [isPending, startTransition] = useTransition()
   const messagesViewportRef = useRef<HTMLDivElement | null>(null)
   const sessionId = useMemo(() => getAssistantSessionId(), [])
   const historyScope = useMemo(() => ({ storeId, locale, countryCode }), [countryCode, locale, storeId])
+  const activeHandoffStatus = handoffTicket?.status ?? null
+  const hasActiveHandoff = Boolean(activeHandoffStatus && ACTIVE_HANDOFF_STATUSES.has(activeHandoffStatus))
+
+  const applyRemoteHistory = useCallback(
+    (history: AssistantHistoryResponse) => {
+      if (history.session_id !== sessionId) {
+        return
+      }
+
+      setHandoffTicket(history.handoff_ticket ?? null)
+
+      const remoteMessages = history.messages
+        .map(toVisibleMessage)
+        .filter((message): message is AssistantMessage => Boolean(message))
+
+      if (!remoteMessages.length) {
+        return
+      }
+
+      setMessages((current) => mergeAssistantMessages(current, remoteMessages))
+    },
+    [sessionId]
+  )
+
+  const syncHistory = useCallback(
+    async (onHistory?: (history: AssistantHistoryResponse) => void) => {
+      if (!sessionId) {
+        return null
+      }
+
+      const history = await fetchAssistantHistory({
+        session_id: sessionId,
+        store_id: storeId,
+        locale,
+        limit: 50,
+      })
+
+      if (history.session_id !== sessionId) {
+        return null
+      }
+
+      onHistory?.(history)
+      return history
+    },
+    [locale, sessionId, storeId]
+  )
+
+  const handleHandoffSubmitted = useCallback(
+    (response: AssistantHandoffResponse) => {
+      setHandoffTicket(response.ticket ?? null)
+      void syncHistory((history) => {
+        applyRemoteHistory(history)
+      }).catch(() => {
+        // The polling loop will retry shortly if the immediate refresh fails.
+      })
+    },
+    [applyRemoteHistory, syncHistory]
+  )
 
   useEffect(() => {
     const snapshot = loadAssistantHistory(historyScope, sessionId)
@@ -89,27 +174,13 @@ export default function AssistantWidget({
 
     let cancelled = false
 
-    fetchAssistantHistory({
-      session_id: sessionId,
-      store_id: storeId,
-      locale,
-      limit: 50,
+    syncHistory((history) => {
+      if (cancelled) {
+        return
+      }
+
+      applyRemoteHistory(history)
     })
-      .then((history) => {
-        if (cancelled || history.session_id !== sessionId) {
-          return
-        }
-
-        const remoteMessages = history.messages
-          .map(toVisibleMessage)
-          .filter((message): message is AssistantMessage => Boolean(message))
-
-        if (!remoteMessages.length) {
-          return
-        }
-
-        setMessages((current) => mergeAssistantMessages(current, remoteMessages))
-      })
       .catch(() => {
         // Background sync failures should not interrupt the restored local chat UI.
       })
@@ -117,7 +188,46 @@ export default function AssistantWidget({
     return () => {
       cancelled = true
     }
-  }, [historyScope, locale, sessionId, storeId])
+  }, [applyRemoteHistory, historyScope, sessionId, syncHistory])
+
+  useEffect(() => {
+    if (!open || !sessionId || !hasActiveHandoff) {
+      return
+    }
+
+    let cancelled = false
+    let timerId: number | null = null
+
+    const schedule = (delayMs: number) => {
+      timerId = window.setTimeout(() => {
+        void syncHistory((history) => {
+          if (cancelled) {
+            return
+          }
+
+          applyRemoteHistory(history)
+          if (isActiveHandoff(history.handoff_ticket)) {
+            schedule(HANDOFF_POLL_INTERVAL_MS)
+          }
+        }).catch(() => {
+          if (cancelled) {
+            return
+          }
+
+          schedule(HANDOFF_POLL_BACKOFF_MS)
+        })
+      }, delayMs)
+    }
+
+    schedule(HANDOFF_POLL_INTERVAL_MS)
+
+    return () => {
+      cancelled = true
+      if (timerId !== null) {
+        window.clearTimeout(timerId)
+      }
+    }
+  }, [applyRemoteHistory, hasActiveHandoff, open, sessionId, syncHistory])
 
   useEffect(() => {
     if (!open) {
@@ -153,6 +263,8 @@ export default function AssistantWidget({
       id: createMessageId("user"),
       role: "user",
       content: message,
+      created_at: new Date().toISOString(),
+      pending: true,
     }
 
     setMessages((current) => [...current, userMessage])
@@ -213,6 +325,7 @@ export default function AssistantWidget({
           <div ref={messagesViewportRef} className="flex-1 min-h-0 space-y-3 overflow-y-auto px-4 py-4">
             {messages.map((message) => {
               const isUser = message.role === "user"
+              const isOperatorReply = !isUser && isTelegramOperatorMessage(message)
               return (
                 <article
                   key={message.id}
@@ -220,6 +333,11 @@ export default function AssistantWidget({
                     isUser ? "ml-8 bg-ui-tag-blue-bg text-ui-fg-base" : "mr-3 bg-ui-bg-subtle text-ui-fg-base"
                   }`}
                 >
+                  {isOperatorReply && (
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-ui-fg-muted">
+                      Специалист
+                    </p>
+                  )}
                   <AssistantMarkdown content={message.content} />
                   {message.error && (
                     <p className="mt-2 text-xs text-ui-fg-error">Техническая деталь: {message.error}</p>
@@ -253,6 +371,7 @@ export default function AssistantWidget({
                             messageId={message.id}
                             storeId={storeId}
                             locale={locale}
+                            onSubmitted={handleHandoffSubmitted}
                           />
                         ))}
                     </div>

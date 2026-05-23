@@ -24,6 +24,9 @@ import {
 import { AdminAssistantReindexSchema } from "./admin/assistant/reindex/route"
 import { AdminAssistantReindexProcessSchema } from "./admin/assistant/reindex/process/route"
 import {
+  AssistantTelegramHandoffReadQuerySchema,
+  AssistantTelegramHandoffTestSchema,
+  AssistantTelegramHandoffUpdateSchema,
   AssistantSettingUpdateSchema,
   LlmProviderCreateSchema,
   LlmProviderUpdateSchema,
@@ -215,6 +218,33 @@ export default defineMiddlewares({
       matcher: "/admin/assistant/settings/providers",
       methods: ["POST"],
       middlewares: [adminAuth, validateAndTransformBody(LlmProviderCreateSchema)],
+    },
+    {
+      matcher: "/admin/assistant/settings/telegram-handoff/test",
+      methods: ["POST"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformBody(AssistantTelegramHandoffTestSchema),
+      ],
+    },
+    {
+      matcher: "/admin/assistant/settings/telegram-handoff",
+      methods: ["GET"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformQuery(AssistantTelegramHandoffReadQuerySchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/admin/assistant/settings/telegram-handoff",
+      methods: ["PATCH"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformBody(AssistantTelegramHandoffUpdateSchema),
+      ],
     },
     {
       matcher: "/admin/assistant/settings",

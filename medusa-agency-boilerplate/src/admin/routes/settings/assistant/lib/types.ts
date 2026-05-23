@@ -138,6 +138,123 @@ export type AssistantSettingUpdateInput = Partial<
 }
 
 // ---------------------------------------------------------------------------
+// Telegram handoff
+// ---------------------------------------------------------------------------
+
+export type AssistantSecretMetadata = {
+  is_configured: boolean
+  last4: string | null
+  masked: string | null
+}
+
+export type AssistantTelegramHandoffEnvironmentMode = "test" | "production"
+
+export type AssistantTelegramHandoffOperatorReplyMode =
+  | "explicit_reply_command"
+  | "all_topic_messages"
+
+export type AssistantTelegramHandoffDiagnosticsStatus =
+  | "disabled"
+  | "not_configured"
+  | "partially_configured"
+  | "ready_for_connection_test"
+
+export type AssistantTelegramHandoffLastTestStatus =
+  | "disabled"
+  | "missing_credentials"
+  | "dry_run_passed"
+  | "connection_ok"
+  | "connection_failed"
+  | "not_implemented"
+
+export type AssistantTelegramHandoffDiagnostics = {
+  status: AssistantTelegramHandoffDiagnosticsStatus
+  missing_fields: string[]
+  can_test: boolean
+}
+
+export type AssistantTelegramHandoffConfigRow = {
+  id: "singleton"
+  enabled: boolean
+  environment_mode: AssistantTelegramHandoffEnvironmentMode
+  bot_username: string | null
+  bot_token: AssistantSecretMetadata
+  support_chat_id: string | null
+  topics_required: boolean
+  webhook_url: string | null
+  webhook_secret: AssistantSecretMetadata
+  allowed_operator_ids: string[]
+  allowed_admin_ids: string[]
+  operator_reply_mode: AssistantTelegramHandoffOperatorReplyMode
+  fallback_message: string | null
+  last_test_status: AssistantTelegramHandoffLastTestStatus | null
+  last_test_error: string | null
+  last_test_at: string | null
+  created_at: string
+  updated_at: string
+  version: number
+  diagnostics: AssistantTelegramHandoffDiagnostics
+}
+
+export type AssistantTelegramHandoffUpdateInput = Partial<
+  Omit<
+    AssistantTelegramHandoffConfigRow,
+    | "id"
+    | "bot_token"
+    | "webhook_secret"
+    | "last_test_status"
+    | "last_test_error"
+    | "last_test_at"
+    | "created_at"
+    | "updated_at"
+    | "version"
+    | "diagnostics"
+  >
+> & {
+  bot_token?: string
+  webhook_secret?: string
+  expected_version?: number
+}
+
+export type AssistantTelegramHandoffTestInput = Omit<
+  AssistantTelegramHandoffUpdateInput,
+  "expected_version"
+>
+
+export type AssistantTelegramHandoffTestResult = {
+  ok: boolean
+  status: AssistantTelegramHandoffLastTestStatus
+  message: string
+  warnings: string[]
+  missing_fields: string[]
+  tested_at: string
+  diagnostics: AssistantTelegramHandoffDiagnostics
+  bot?: {
+    id?: number | null
+    username?: string | null
+    first_name?: string | null
+  } | null
+  support_chat?: {
+    id?: string | null
+    type?: string | null
+    title?: string | null
+    username?: string | null
+    is_forum?: boolean
+  } | null
+  bot_membership?: {
+    status?: string | null
+    can_manage_topics?: boolean
+    can_delete_messages?: boolean
+  } | null
+  webhook?: {
+    configured_url?: string | null
+    actual_url?: string | null
+    pending_update_count?: number
+    last_error_message?: string | null
+  } | null
+}
+
+// ---------------------------------------------------------------------------
 // API result wrapper
 // ---------------------------------------------------------------------------
 
@@ -157,6 +274,12 @@ export type ListProvidersResponse = { providers: LlmProviderRow[] }
 export type SingleProviderResponse = { provider: LlmProviderRow }
 export type TestProviderResponse = { result: LlmProviderTestResult }
 export type SingleSettingsResponse = { settings: AssistantSettingRow }
+export type SingleTelegramHandoffResponse = {
+  config: AssistantTelegramHandoffConfigRow
+}
+export type TestTelegramHandoffResponse = {
+  result: AssistantTelegramHandoffTestResult
+}
 
 export type AssistantRuntimeStatus = {
   adapter: {

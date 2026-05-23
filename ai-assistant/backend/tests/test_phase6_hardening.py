@@ -318,6 +318,31 @@ def test_admin_stats_and_reindex_routes_are_protected(client):
     assert stats.status_code == 200
     assert "stats" in stats.json()
 
+
+def test_admin_stats_accepts_server_token_fallback(client):
+    client.app.state.settings.ai_assistant_server_token = "bridge-token"
+
+    response = client.get(
+        "/api/v1/admin/stats",
+        headers={"Authorization": "Bearer bridge-token"},
+    )
+
+    assert response.status_code == 200
+    assert "stats" in response.json()
+
+
+def test_tools_routes_do_not_accept_server_token_fallback(client):
+    client.app.state.settings.ai_assistant_server_token = "bridge-token"
+
+    response = client.post(
+        "/api/v1/tools/product-live-data",
+        headers={"Authorization": "Bearer bridge-token"},
+        json={"product_ids": ["prod_123"]},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["error"]["code"] == "AUTH_REQUIRED"
+
     reindex = client.post(
         "/api/v1/admin/reindex",
         json={"scope": "products", "store_id": "default", "locale": "ru", "force": True},

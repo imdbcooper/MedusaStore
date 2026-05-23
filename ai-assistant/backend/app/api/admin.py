@@ -10,15 +10,22 @@ from app.api.dependencies import (
     get_medusa_product_ingestion_service,
     get_reindex_queue_processor,
     get_repository,
+    get_settings_provider,
+    get_telegram_handoff_service,
     get_vector_indexing_service,
 )
-from app.core.auth import require_api_token
+from app.core.auth import require_server_token_or_api_token
 from app.core.security import enforce_rate_limit, rate_limit_identity
 from app.schemas.ingestion import IngestionJobResponse
 from app.schemas.ingestion import KnowledgeDocumentCreateRequest, KnowledgeDocumentCreateResponse
 from app.services.health import DeepHealthService
 from app.services.ingestion import MarkdownIngestionService, MedusaProductIngestionService, VectorIndexingService
 from app.services.reindex_queue import ReindexQueueProcessor
+from app.services.settings_provider import SettingsFetchError, SettingsProvider
+from app.services.telegram_handoff import (
+    TelegramHandoffConnectionTestResult,
+    TelegramHandoffService,
+)
 from app.services.vector import VectorBackendUnavailable
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -69,7 +76,7 @@ async def bind_session(
     request: SessionBindRequest,
     http_request: FastAPIRequest,
     repository=Depends(get_repository),
-    _: None = Depends(require_api_token),
+    _: None = Depends(require_server_token_or_api_token),
 ) -> dict:
     enforce_rate_limit(
         http_request,
@@ -108,7 +115,7 @@ async def enqueue_reindex_intent(
     request: ReindexIntentRequest,
     http_request: FastAPIRequest,
     repository=Depends(get_repository),
-    _: None = Depends(require_api_token),
+    _: None = Depends(require_server_token_or_api_token),
 ) -> dict:
     enforce_rate_limit(http_request, scope="admin", identity=rate_limit_identity(http_request, scope="admin", store_id=request.store_id))
     intent = await repository.enqueue_reindex_intent(**request.model_dump())
@@ -121,7 +128,7 @@ async def list_reindex_intents(
     status_filter: str | None = None,
     limit: int = 50,
     repository=Depends(get_repository),
-    _: None = Depends(require_api_token),
+    _: None = Depends(require_server_token_or_api_token),
 ) -> dict:
     enforce_rate_limit(http_request, scope="admin", identity=rate_limit_identity(http_request, scope="admin"))
     intents = await repository.list_reindex_intents(status=status_filter, limit=min(max(limit, 1), 100))
@@ -134,7 +141,7 @@ async def process_reindex_queue(
     request: ReindexProcessRequest,
     http_request: FastAPIRequest,
     processor: ReindexQueueProcessor = Depends(get_reindex_queue_processor),
-    _: None = Depends(require_api_token),
+    _: None = Depends(require_server_token_or_api_token),
 ) -> dict:
     enforce_rate_limit(http_request, scope="admin", identity=rate_limit_identity(http_request, scope="admin"))
     return await processor.process_pending(limit=request.limit, retry_backoff_seconds=request.retry_backoff_seconds)
@@ -144,7 +151,7 @@ async def process_reindex_queue(
 async def admin_stats(
     http_request: FastAPIRequest,
     service: DeepHealthService = Depends(get_health_service),
-    _: None = Depends(require_api_token),
+    _: None = Depends(require_server_token_or_api_token),
 ) -> dict:
     enforce_rate_limit(http_request, scope="admin", identity=rate_limit_identity(http_request, scope="admin"))
     health = await service.check()
@@ -162,12 +169,55 @@ async def admin_stats(
     }
 
 
+@router.post(
+    "/telegram/handoff/test-connection",
+    response_model=TelegramHandoffConnectionTestResult,
+)
+async def test_telegram_handoff_connection(
+    http_request: FastAPIRequest,
+    settings_provider: SettingsProvider | None = Depends(get_settings_provider),
+    service: TelegramHandoffService = Depends(get_telegram_handoff_service),
+    _: None = Depends(require_server_token_or_api_token),
+) -> TelegramHandoffConnectionTestResult:
+    enforce_rate_limit(
+        http_request,
+        scope="admin",
+        identity=rate_limit_identity(http_request, scope="admin"),
+    )
+    if settings_provider is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": {
+                    "code": "SETTINGS_PROVIDER_UNAVAILABLE",
+                    "message": "Assistant settings provider is not configured.",
+                    "retryable": True,
+                }
+            },
+        )
+    try:
+        await settings_provider.invalidate()
+        snapshot = await settings_provider.get()
+    except (SettingsFetchError, RuntimeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": {
+                    "code": "SETTINGS_PROVIDER_UNAVAILABLE",
+                    "message": str(exc),
+                    "retryable": True,
+                }
+            },
+        ) from exc
+    return await service.test_connection(snapshot.telegram_handoff)
+
+
 @router.post("/knowledge/documents", response_model=KnowledgeDocumentCreateResponse)
 async def create_knowledge_document(
     request: KnowledgeDocumentCreateRequest,
     http_request: FastAPIRequest,
     service: MarkdownIngestionService = Depends(get_ingestion_service),
-    _: None = Depends(require_api_token),
+    _: None = Depends(require_server_token_or_api_token),
 ) -> KnowledgeDocumentCreateResponse:
     enforce_rate_limit(
         http_request,
@@ -203,7 +253,7 @@ async def admin_reindex(
     product_service: MedusaProductIngestionService = Depends(get_medusa_product_ingestion_service),
     markdown_service: MarkdownIngestionService = Depends(get_ingestion_service),
     vector_service: VectorIndexingService = Depends(get_vector_indexing_service),
-    _: None = Depends(require_api_token),
+    _: None = Depends(require_server_token_or_api_token),
 ) -> dict:
     enforce_rate_limit(
         http_request,

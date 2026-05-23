@@ -39,11 +39,27 @@ beforeAll(() => {
   GET = (require("../route") as typeof import("../route")).GET
 })
 
-type ResRecorder = { status?: number; body?: any }
+type ResRecorder = {
+  status?: number
+  body?: any
+  headers: Record<string, string>
+}
+
+function expectNoCacheHeaders(recorder: ResRecorder) {
+  expect(recorder.headers["Cache-Control"]).toBe(
+    "no-store, no-cache, must-revalidate, private"
+  )
+  expect(recorder.headers.Pragma).toBe("no-cache")
+  expect(recorder.headers.Expires).toBe("0")
+}
 
 function buildResponse(): { res: any; recorder: ResRecorder } {
-  const recorder: ResRecorder = {}
+  const recorder: ResRecorder = { headers: {} }
   const res: any = {
+    setHeader(name: string, value: string) {
+      recorder.headers[name] = value
+      return this
+    },
     status(code: number) {
       recorder.status = code
       return this
@@ -76,6 +92,32 @@ beforeEach(() => {
     active: null,
     fallback: [],
     global: { id: "singleton" },
+    telegram_handoff: {
+      id: "singleton",
+      enabled: false,
+      environment_mode: "test",
+      bot_username: null,
+      bot_token: null,
+      support_chat_id: null,
+      topics_required: true,
+      webhook_url: null,
+      webhook_secret: null,
+      allowed_operator_ids: [],
+      allowed_admin_ids: [],
+      operator_reply_mode: "explicit_reply_command",
+      fallback_message: "fallback",
+      last_test_status: null,
+      last_test_error: null,
+      last_test_at: null,
+      created_at: "2026-05-15T00:00:00.000Z",
+      updated_at: "2026-05-15T00:00:00.000Z",
+      version: 1,
+      diagnostics: {
+        status: "disabled",
+        missing_fields: [],
+        can_test: false,
+      },
+    },
   }))
 })
 
@@ -95,6 +137,7 @@ describe("GET /internal/assistant/settings/effective", () => {
     await GET(buildReq({ "x-assistant-server-token": "anything" }), res)
     expect(recorder.status).toBe(503)
     expect(recorder.body.error).toBe("encryption_not_configured")
+    expectNoCacheHeaders(recorder)
     expect(mockGetEffective).not.toHaveBeenCalled()
   })
 
@@ -111,6 +154,7 @@ describe("GET /internal/assistant/settings/effective", () => {
     await GET(buildReq({}), res)
     expect(recorder.status).toBe(401)
     expect(recorder.body.error).toBe("unauthorized")
+    expectNoCacheHeaders(recorder)
     expect(mockGetEffective).not.toHaveBeenCalled()
   })
 
@@ -147,8 +191,108 @@ describe("GET /internal/assistant/settings/effective", () => {
     const { res, recorder } = buildResponse()
     await GET(buildReq({ "x-assistant-server-token": "good-token" }), res)
     expect(recorder.status).toBe(200)
+    expectNoCacheHeaders(recorder)
     expect(recorder.body.effective.version).toBe("2026-05-15T00:00:00.000Z")
+    expect(recorder.body.effective.telegram_handoff.enabled).toBe(false)
     expect(mockGetEffective).toHaveBeenCalledWith({ __pg: true })
+  })
+
+  it("returns internal-only Telegram secrets on the authenticated runtime path", async () => {
+    process.env.AI_ASSISTANT_SERVER_TOKEN = "good-token"
+    mockGetEffective.mockImplementation(async () => ({
+      version: "2026-05-15T00:00:00.000Z",
+      active: null,
+      fallback: [],
+      global: { id: "singleton" },
+      telegram_handoff: {
+        id: "singleton",
+        enabled: true,
+        environment_mode: "test",
+        bot_username: "shop_support_bot",
+        bot_token: "123456:telegram-token",
+        support_chat_id: "-1001234567890",
+        topics_required: true,
+        webhook_url: "https://example.com/telegram/webhook",
+        webhook_secret: "runtime-webhook-secret",
+        allowed_operator_ids: [],
+        allowed_admin_ids: [],
+        operator_reply_mode: "explicit_reply_command",
+        fallback_message: "fallback",
+        last_test_status: "dry_run_passed",
+        last_test_error: null,
+        last_test_at: "2026-05-15T00:00:00.000Z",
+        created_at: "2026-05-15T00:00:00.000Z",
+        updated_at: "2026-05-15T00:00:00.000Z",
+        version: 3,
+        diagnostics: {
+          status: "ready_for_connection_test",
+          missing_fields: [],
+          can_test: true,
+        },
+      },
+    }))
+
+    const { res, recorder } = buildResponse()
+    await GET(buildReq({ "x-assistant-server-token": "good-token" }), res)
+
+    expect(recorder.status).toBe(200)
+    expect(recorder.body.effective.telegram_handoff.bot_token).toBe(
+      "123456:telegram-token"
+    )
+    expect(recorder.body.effective.telegram_handoff.webhook_secret).toBe(
+      "runtime-webhook-secret"
+    )
+  })
+
+  it("returns incomplete Telegram runtime config without failing the endpoint", async () => {
+    process.env.AI_ASSISTANT_SERVER_TOKEN = "good-token"
+    mockGetEffective.mockImplementation(async () => ({
+      version: "2026-05-15T00:00:00.000Z",
+      active: null,
+      fallback: [],
+      global: { id: "singleton" },
+      telegram_handoff: {
+        id: "singleton",
+        enabled: true,
+        environment_mode: "production",
+        bot_username: null,
+        bot_token: null,
+        support_chat_id: null,
+        topics_required: true,
+        webhook_url: null,
+        webhook_secret: null,
+        allowed_operator_ids: [],
+        allowed_admin_ids: [],
+        operator_reply_mode: "explicit_reply_command",
+        fallback_message: "fallback",
+        last_test_status: "missing_credentials",
+        last_test_error: "Missing required Telegram handoff configuration",
+        last_test_at: "2026-05-15T00:00:00.000Z",
+        created_at: "2026-05-15T00:00:00.000Z",
+        updated_at: "2026-05-15T00:00:00.000Z",
+        version: 3,
+        diagnostics: {
+          status: "partially_configured",
+          missing_fields: [
+            "bot_token",
+            "support_chat_id",
+            "webhook_url",
+            "allowed_operator_ids_or_allowed_admin_ids",
+          ],
+          can_test: false,
+        },
+      },
+    }))
+
+    const { res, recorder } = buildResponse()
+    await GET(buildReq({ "x-assistant-server-token": "good-token" }), res)
+
+    expect(recorder.status).toBe(200)
+    expect(recorder.body.effective.telegram_handoff.enabled).toBe(true)
+    expect(recorder.body.effective.telegram_handoff.bot_token).toBeNull()
+    expect(recorder.body.effective.telegram_handoff.diagnostics.status).toBe(
+      "partially_configured"
+    )
   })
 
   it("handles array-typed header value (takes first entry)", async () => {
@@ -172,5 +316,6 @@ describe("GET /internal/assistant/settings/effective", () => {
     await GET(buildReq({ "x-assistant-server-token": "good-token" }), res)
     expect(recorder.status).toBe(500)
     expect(recorder.body.error).toBe("internal_error")
+    expectNoCacheHeaders(recorder)
   })
 })

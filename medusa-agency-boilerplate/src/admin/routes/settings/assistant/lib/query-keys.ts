@@ -23,6 +23,8 @@ export const assistantKeys = {
 
   settings: () => [...assistantKeys.all, "settings"] as const,
 
+  telegramHandoff: () => [...assistantKeys.all, "telegram-handoff"] as const,
+
   runtime: () => [...assistantKeys.all, "runtime"] as const,
 
   stats: () => [...assistantKeys.all, "stats"] as const,

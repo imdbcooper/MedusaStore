@@ -20,6 +20,7 @@ from app.services.settings_provider import (
     ProviderRuntime,
     SettingsFetchError,
     SettingsProvider,
+    TelegramHandoffRuntimeSettings,
 )
 
 
@@ -60,6 +61,7 @@ def _effective_payload(
     active: Any = _UNSET,
     fallback: list[dict[str, Any]] | None = None,
     global_overrides: dict[str, Any] | None = None,
+    telegram_handoff: Any = _UNSET,
 ) -> dict[str, Any]:
     if active is _UNSET:
         active = dict(_DEFAULT_ACTIVE)
@@ -91,14 +93,47 @@ def _effective_payload(
     }
     if global_overrides:
         global_block.update(global_overrides)
-    return {
-        "effective": {
-            "version": version,
-            "active": active,
-            "fallback": fallback,
-            "global": global_block,
-        }
+    effective: dict[str, Any] = {
+        "version": version,
+        "active": active,
+        "fallback": fallback,
+        "global": global_block,
     }
+    if telegram_handoff is not _UNSET:
+        effective["telegram_handoff"] = telegram_handoff
+    return {"effective": effective}
+
+
+def _telegram_handoff_payload(
+    **overrides: Any,
+) -> dict[str, Any]:
+    payload = {
+        "id": "singleton",
+        "enabled": False,
+        "environment_mode": "test",
+        "bot_username": None,
+        "bot_token": None,
+        "support_chat_id": None,
+        "topics_required": True,
+        "webhook_url": None,
+        "webhook_secret": None,
+        "allowed_operator_ids": [],
+        "allowed_admin_ids": [],
+        "operator_reply_mode": "explicit_reply_command",
+        "fallback_message": "fallback",
+        "diagnostics": {
+            "status": "disabled",
+            "missing_fields": [],
+            "can_test": False,
+        },
+        "version": 1,
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "last_test_status": None,
+        "last_test_error": None,
+        "last_test_at": None,
+    }
+    payload.update(overrides)
+    return payload
 
 
 class _Counter:
@@ -188,6 +223,9 @@ async def test_get_first_call_performs_http_with_token_and_parses_response():
     assert snapshot.active.api_key == "sk-real-key-1234"
     assert snapshot.global_settings.system_prompt == "You are an assistant."
     assert snapshot.fallback == []
+    assert isinstance(snapshot.telegram_handoff, TelegramHandoffRuntimeSettings)
+    assert snapshot.telegram_handoff.enabled is False
+    assert snapshot.telegram_handoff.diagnostics.status == "disabled"
 
 
 @pytest.mark.asyncio
@@ -505,6 +543,140 @@ async def test_safe_repr_does_not_leak_api_key():
     assert "sk-very-secret-1234" not in rendered
     assert rendered == repr(provider_runtime)
     assert rendered.endswith("key=***1234>")
+
+
+@pytest.mark.asyncio
+async def test_missing_telegram_handoff_section_defaults_to_disabled_runtime_settings():
+    counter = _Counter()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_effective_payload())
+
+    client = _build_client(handler, counter)
+    provider = _make_provider(client)
+    try:
+        snapshot = await provider.get()
+    finally:
+        await provider.aclose()
+
+    assert isinstance(snapshot.telegram_handoff, TelegramHandoffRuntimeSettings)
+    assert snapshot.telegram_handoff.enabled is False
+    assert snapshot.telegram_handoff.bot_token is None
+    assert snapshot.telegram_handoff.webhook_secret is None
+    assert snapshot.telegram_handoff.diagnostics.status == "disabled"
+    assert snapshot.telegram_handoff.is_ready_for_connection_test is False
+
+
+@pytest.mark.asyncio
+async def test_telegram_handoff_runtime_parses_internal_secrets_when_present():
+    counter = _Counter()
+    payload = _effective_payload(
+        telegram_handoff=_telegram_handoff_payload(
+            enabled=True,
+            environment_mode="test",
+            bot_username="shop_support_bot",
+            bot_token="123456:telegram-bot-1234",
+            support_chat_id="-1001234567890",
+            topics_required=True,
+            webhook_url="https://example.com/telegram/webhook",
+            webhook_secret="webhook-secret-5678",
+            diagnostics={
+                "status": "ready_for_connection_test",
+                "missing_fields": [],
+                "can_test": True,
+            },
+            version=3,
+            last_test_status="dry_run_passed",
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    client = _build_client(handler, counter)
+    provider = _make_provider(client)
+    try:
+        snapshot = await provider.get()
+    finally:
+        await provider.aclose()
+
+    telegram = snapshot.telegram_handoff
+    assert telegram.enabled is True
+    assert telegram.bot_token == "123456:telegram-bot-1234"
+    assert telegram.webhook_secret == "webhook-secret-5678"
+    assert telegram.is_ready_for_connection_test is True
+    assert telegram.is_configured is True
+
+
+@pytest.mark.asyncio
+async def test_telegram_handoff_runtime_handles_incomplete_config_without_failing():
+    counter = _Counter()
+    payload = _effective_payload(
+        telegram_handoff=_telegram_handoff_payload(
+            enabled=True,
+            environment_mode="production",
+            diagnostics={
+                "status": "partially_configured",
+                "missing_fields": [
+                    "bot_token",
+                    "webhook_secret",
+                    "support_chat_id",
+                    "webhook_url",
+                    "allowed_operator_ids_or_allowed_admin_ids",
+                ],
+                "can_test": False,
+            },
+            version=4,
+            last_test_status="missing_credentials",
+            last_test_error="Missing required Telegram handoff configuration",
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    client = _build_client(handler, counter)
+    provider = _make_provider(client)
+    try:
+        snapshot = await provider.get()
+    finally:
+        await provider.aclose()
+
+    telegram = snapshot.telegram_handoff
+    assert telegram.enabled is True
+    assert telegram.bot_token is None
+    assert telegram.support_chat_id is None
+    assert telegram.diagnostics.status == "partially_configured"
+    assert telegram.diagnostics.can_test is False
+    assert telegram.is_ready_for_connection_test is False
+    assert telegram.is_configured is False
+    assert telegram.allowed_operator_user_ids == ()
+
+
+@pytest.mark.asyncio
+async def test_telegram_handoff_safe_repr_does_not_leak_internal_secrets():
+    telegram = TelegramHandoffRuntimeSettings(
+        enabled=True,
+        environment_mode="test",
+        bot_username="shop_support_bot",
+        bot_token="123456:telegram-bot-1234",
+        support_chat_id="-1001234567890",
+        topics_required=True,
+        webhook_url="https://example.com/telegram/webhook",
+        webhook_secret="webhook-secret-5678",
+        diagnostics={
+            "status": "ready_for_connection_test",
+            "missing_fields": [],
+            "can_test": True,
+        },
+    )
+
+    rendered = telegram.safe_repr()
+    assert "123456:telegram-bot-1234" not in rendered
+    assert "webhook-secret-5678" not in rendered
+    assert rendered == repr(telegram)
+    assert "***1234" in rendered
+    assert "***5678" in rendered
 
 
 @pytest.mark.asyncio

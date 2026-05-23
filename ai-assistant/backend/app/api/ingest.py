@@ -7,7 +7,7 @@ from app.api.dependencies import (
     get_medusa_product_ingestion_service,
     get_vector_indexing_service,
 )
-from app.core.auth import require_api_token
+from app.core.auth import require_server_token_or_api_token
 from app.core.security import enforce_rate_limit, rate_limit_identity
 from app.medusa import MedusaClientError
 from app.schemas.ingestion import (
@@ -30,7 +30,7 @@ async def sync_markdown(
     request: MarkdownSyncRequest,
     http_request: FastAPIRequest,
     service: MarkdownIngestionService = Depends(get_ingestion_service),
-    _: None = Depends(require_api_token),
+    _: None = Depends(require_server_token_or_api_token),
 ) -> MarkdownSyncResponse:
     enforce_rate_limit(http_request, scope="ingestion", identity=rate_limit_identity(http_request, scope="ingestion", store_id=request.store_id))
     try:
@@ -57,7 +57,7 @@ async def sync_medusa_products(
     request: MedusaProductsSyncRequest,
     http_request: FastAPIRequest,
     service: MedusaProductIngestionService = Depends(get_medusa_product_ingestion_service),
-    _: None = Depends(require_api_token),
+    _: None = Depends(require_server_token_or_api_token),
 ) -> MedusaProductsSyncResponse:
     enforce_rate_limit(http_request, scope="ingestion", identity=rate_limit_identity(http_request, scope="ingestion", store_id=request.store_id))
     try:
@@ -87,7 +87,7 @@ async def index_vectors(
     request: VectorIndexRequest,
     http_request: FastAPIRequest,
     service: VectorIndexingService = Depends(get_vector_indexing_service),
-    _: None = Depends(require_api_token),
+    _: None = Depends(require_server_token_or_api_token),
 ) -> IngestionJobResponse:
     enforce_rate_limit(http_request, scope="ingestion", identity=rate_limit_identity(http_request, scope="ingestion", store_id=request.store_id))
     try:
@@ -114,7 +114,7 @@ async def delete_vector_source(
     request: VectorDeleteRequest,
     http_request: FastAPIRequest,
     service: VectorIndexingService = Depends(get_vector_indexing_service),
-    _: None = Depends(require_api_token),
+    _: None = Depends(require_server_token_or_api_token),
 ) -> dict:
     enforce_rate_limit(http_request, scope="ingestion", identity=rate_limit_identity(http_request, scope="ingestion", store_id=request.store_id))
     try:
@@ -137,7 +137,7 @@ async def get_ingestion_job(
     job_id: UUID,
     http_request: FastAPIRequest,
     service: VectorIndexingService = Depends(get_vector_indexing_service),
-    _: None = Depends(require_api_token),
+    _: None = Depends(require_server_token_or_api_token),
 ) -> IngestionJobResponse:
     enforce_rate_limit(http_request, scope="ingestion", identity=rate_limit_identity(http_request, scope="ingestion"))
     job = await service.get_job(job_id)

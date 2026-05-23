@@ -5,7 +5,7 @@ import { type FormEvent, useState } from "react"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 
 import { submitAssistantHandoff } from "../../lib/client"
-import type { AssistantAction } from "../../types"
+import type { AssistantAction, AssistantHandoffResponse } from "../../types"
 
 type AssistantActionCardProps = {
   action: AssistantAction
@@ -13,6 +13,7 @@ type AssistantActionCardProps = {
   messageId?: string
   storeId?: string
   locale?: string
+  onSubmitted?: (response: AssistantHandoffResponse) => void
 }
 
 const HANDOFF_REASON_LABELS: Record<string, string> = {
@@ -81,6 +82,7 @@ export default function AssistantActionCard({
   messageId,
   storeId,
   locale,
+  onSubmitted,
 }: AssistantActionCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [name, setName] = useState("")
@@ -129,6 +131,7 @@ export default function AssistantActionCard({
         },
       })
       setSubmittedHandoffId(response.handoff_id)
+      onSubmitted?.(response)
       setExpanded(false)
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Не удалось передать запрос специалисту.")
