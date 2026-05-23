@@ -563,6 +563,10 @@ class PostgresAssistantRepository:
         telegram_topic_id: int | None = None,
         telegram_topic_title: str | None = None,
         telegram_root_message_id: int | None = None,
+        external_chat_id: str | None = None,
+        external_thread_id: str | None = None,
+        external_thread_title: str | None = None,
+        external_root_message_id: str | None = None,
         assigned_operator_id: str | None = None,
         assigned_operator_username: str | None = None,
         assigned_at=None,
@@ -570,11 +574,45 @@ class PostgresAssistantRepository:
         last_operator_message_at=None,
         last_customer_message_at=None,
         last_telegram_update_id: int | None = None,
+        last_external_event_id: str | None = None,
         failure_reason: str | None = None,
         created_at=None,
         opened_at=None,
         last_sync_at=None,
     ) -> dict[str, Any]:
+        resolved_external_chat_id = (
+            external_chat_id
+            if external_chat_id is not None
+            else str(telegram_chat_id)
+            if telegram_chat_id is not None
+            else None
+        )
+        resolved_external_thread_id = (
+            external_thread_id
+            if external_thread_id is not None
+            else str(telegram_topic_id)
+            if telegram_topic_id is not None
+            else None
+        )
+        resolved_external_thread_title = (
+            external_thread_title
+            if external_thread_title is not None
+            else telegram_topic_title
+        )
+        resolved_external_root_message_id = (
+            external_root_message_id
+            if external_root_message_id is not None
+            else str(telegram_root_message_id)
+            if telegram_root_message_id is not None
+            else None
+        )
+        resolved_last_external_event_id = (
+            last_external_event_id
+            if last_external_event_id is not None
+            else str(last_telegram_update_id)
+            if last_telegram_update_id is not None
+            else None
+        )
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -587,6 +625,10 @@ class PostgresAssistantRepository:
                     telegram_topic_id,
                     telegram_topic_title,
                     telegram_root_message_id,
+                    external_chat_id,
+                    external_thread_id,
+                    external_thread_title,
+                    external_root_message_id,
                     assigned_operator_id,
                     assigned_operator_username,
                     assigned_at,
@@ -594,6 +636,7 @@ class PostgresAssistantRepository:
                     last_operator_message_at,
                     last_customer_message_at,
                     last_telegram_update_id,
+                    last_external_event_id,
                     failure_reason,
                     created_at,
                     opened_at,
@@ -602,18 +645,27 @@ class PostgresAssistantRepository:
                   )
                 VALUES (
                   $1, $2, $3, $4, $5, $6, $7,
-                  $8, $9, $10, $11, $12, $13, $14,
-                  $15,
-                  COALESCE($16, now()),
-                  $17,
-                  COALESCE($18, now()),
+                  $8, $9, $10, $11,
+                  $12, $13, $14, $15, $16, $17,
+                  $18, $19,
+                  COALESCE($20, now()),
+                  $21,
+                  COALESCE($22, now()),
                   now()
                 )
                 ON CONFLICT (handoff_id, channel) DO UPDATE SET
                   ticket_status = CASE
                     WHEN assistant_handoff_tickets.ticket_status = 'open'
-                      AND assistant_handoff_tickets.telegram_topic_id IS NOT NULL
-                      AND assistant_handoff_tickets.telegram_root_message_id IS NOT NULL
+                      AND (
+                        (
+                          assistant_handoff_tickets.telegram_topic_id IS NOT NULL
+                          AND assistant_handoff_tickets.telegram_root_message_id IS NOT NULL
+                        )
+                        OR (
+                          assistant_handoff_tickets.external_thread_id IS NOT NULL
+                          AND assistant_handoff_tickets.external_root_message_id IS NOT NULL
+                        )
+                      )
                       AND EXCLUDED.ticket_status <> 'open'
                     THEN assistant_handoff_tickets.ticket_status
                     WHEN assistant_handoff_tickets.ticket_status = 'failed'
@@ -636,6 +688,22 @@ class PostgresAssistantRepository:
                   telegram_root_message_id = COALESCE(
                     EXCLUDED.telegram_root_message_id,
                     assistant_handoff_tickets.telegram_root_message_id
+                  ),
+                  external_chat_id = COALESCE(
+                    EXCLUDED.external_chat_id,
+                    assistant_handoff_tickets.external_chat_id
+                  ),
+                  external_thread_id = COALESCE(
+                    EXCLUDED.external_thread_id,
+                    assistant_handoff_tickets.external_thread_id
+                  ),
+                  external_thread_title = COALESCE(
+                    EXCLUDED.external_thread_title,
+                    assistant_handoff_tickets.external_thread_title
+                  ),
+                  external_root_message_id = COALESCE(
+                    EXCLUDED.external_root_message_id,
+                    assistant_handoff_tickets.external_root_message_id
                   ),
                   assigned_operator_id = COALESCE(
                     EXCLUDED.assigned_operator_id,
@@ -665,6 +733,10 @@ class PostgresAssistantRepository:
                     EXCLUDED.last_telegram_update_id,
                     assistant_handoff_tickets.last_telegram_update_id
                   ),
+                  last_external_event_id = COALESCE(
+                    EXCLUDED.last_external_event_id,
+                    assistant_handoff_tickets.last_external_event_id
+                  ),
                   failure_reason = CASE
                     WHEN EXCLUDED.ticket_status = 'open' THEN NULL
                     WHEN EXCLUDED.failure_reason IS NOT NULL THEN EXCLUDED.failure_reason
@@ -689,6 +761,10 @@ class PostgresAssistantRepository:
                 telegram_topic_id,
                 telegram_topic_title,
                 telegram_root_message_id,
+                resolved_external_chat_id,
+                resolved_external_thread_id,
+                resolved_external_thread_title,
+                resolved_external_root_message_id,
                 assigned_operator_id,
                 assigned_operator_username,
                 assigned_at,
@@ -696,6 +772,7 @@ class PostgresAssistantRepository:
                 last_operator_message_at,
                 last_customer_message_at,
                 last_telegram_update_id,
+                resolved_last_external_event_id,
                 failure_reason,
                 created_at,
                 opened_at,
@@ -709,6 +786,10 @@ class PostgresAssistantRepository:
         handoff_id: UUID,
         channel: str = "telegram",
         ticket_status: str | object = _UNSET,
+        external_chat_id: str | None | object = _UNSET,
+        external_thread_id: str | None | object = _UNSET,
+        external_thread_title: str | None | object = _UNSET,
+        external_root_message_id: str | None | object = _UNSET,
         assigned_operator_id: str | None | object = _UNSET,
         assigned_operator_username: str | None | object = _UNSET,
         assigned_at: Any | object = _UNSET,
@@ -716,6 +797,7 @@ class PostgresAssistantRepository:
         last_operator_message_at: Any | object = _UNSET,
         last_customer_message_at: Any | object = _UNSET,
         last_telegram_update_id: int | None | object = _UNSET,
+        last_external_event_id: str | None | object = _UNSET,
         failure_reason: str | None | object = _UNSET,
         last_sync_at: Any | object = _UNSET,
     ) -> dict[str, Any]:
@@ -726,6 +808,14 @@ class PostgresAssistantRepository:
         merged = dict(current)
         if ticket_status is not _UNSET:
             merged["ticket_status"] = ticket_status
+        if external_chat_id is not _UNSET:
+            merged["external_chat_id"] = external_chat_id
+        if external_thread_id is not _UNSET:
+            merged["external_thread_id"] = external_thread_id
+        if external_thread_title is not _UNSET:
+            merged["external_thread_title"] = external_thread_title
+        if external_root_message_id is not _UNSET:
+            merged["external_root_message_id"] = external_root_message_id
         if assigned_operator_id is not _UNSET:
             merged["assigned_operator_id"] = assigned_operator_id
         if assigned_operator_username is not _UNSET:
@@ -740,6 +830,13 @@ class PostgresAssistantRepository:
             merged["last_customer_message_at"] = last_customer_message_at
         if last_telegram_update_id is not _UNSET:
             merged["last_telegram_update_id"] = last_telegram_update_id
+            merged["last_external_event_id"] = (
+                str(last_telegram_update_id)
+                if last_telegram_update_id is not None
+                else None
+            )
+        if last_external_event_id is not _UNSET:
+            merged["last_external_event_id"] = last_external_event_id
         if failure_reason is not _UNSET:
             merged["failure_reason"] = failure_reason
         if last_sync_at is not _UNSET:
@@ -754,15 +851,20 @@ class PostgresAssistantRepository:
                     telegram_topic_id = $5,
                     telegram_topic_title = $6,
                     telegram_root_message_id = $7,
-                    assigned_operator_id = $8,
-                    assigned_operator_username = $9,
-                    assigned_at = $10,
-                    closed_at = $11,
-                    last_operator_message_at = $12,
-                    last_customer_message_at = $13,
-                    last_telegram_update_id = $14,
-                    failure_reason = $15,
-                    last_sync_at = $16,
+                    external_chat_id = $8,
+                    external_thread_id = $9,
+                    external_thread_title = $10,
+                    external_root_message_id = $11,
+                    assigned_operator_id = $12,
+                    assigned_operator_username = $13,
+                    assigned_at = $14,
+                    closed_at = $15,
+                    last_operator_message_at = $16,
+                    last_customer_message_at = $17,
+                    last_telegram_update_id = $18,
+                    last_external_event_id = $19,
+                    failure_reason = $20,
+                    last_sync_at = $21,
                     updated_at = now()
                 WHERE handoff_id = $1 AND channel = $2
                 RETURNING *
@@ -774,6 +876,10 @@ class PostgresAssistantRepository:
                 merged.get("telegram_topic_id"),
                 merged.get("telegram_topic_title"),
                 merged.get("telegram_root_message_id"),
+                merged.get("external_chat_id"),
+                merged.get("external_thread_id"),
+                merged.get("external_thread_title"),
+                merged.get("external_root_message_id"),
                 merged.get("assigned_operator_id"),
                 merged.get("assigned_operator_username"),
                 merged.get("assigned_at"),
@@ -781,6 +887,7 @@ class PostgresAssistantRepository:
                 merged.get("last_operator_message_at"),
                 merged.get("last_customer_message_at"),
                 merged.get("last_telegram_update_id"),
+                merged.get("last_external_event_id"),
                 merged.get("failure_reason"),
                 merged.get("last_sync_at"),
             )
@@ -808,6 +915,31 @@ class PostgresAssistantRepository:
                 channel,
                 telegram_chat_id,
                 telegram_topic_id,
+            )
+        return _normalize_handoff_ticket_row(dict(row)) if row else None
+
+    async def find_handoff_ticket_by_external_thread(
+        self,
+        *,
+        external_chat_id: str,
+        external_thread_id: str,
+        channel: str,
+    ) -> dict[str, Any] | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT t.*, h.session_id
+                FROM assistant_handoff_tickets t
+                JOIN assistant_handoffs h ON h.id = t.handoff_id
+                WHERE t.channel = $1
+                  AND t.external_chat_id = $2
+                  AND t.external_thread_id = $3
+                ORDER BY t.updated_at DESC
+                LIMIT 1
+                """,
+                channel,
+                external_chat_id,
+                external_thread_id,
             )
         return _normalize_handoff_ticket_row(dict(row)) if row else None
 
@@ -875,6 +1007,557 @@ class PostgresAssistantRepository:
                 direction,
             )
         return _normalize_handoff_message_row(dict(row)) if row else None
+
+    async def get_handoff_message_by_external_event_id(
+        self,
+        *,
+        channel: str,
+        external_event_id: str,
+    ) -> dict[str, Any] | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT *
+                FROM assistant_handoff_messages
+                WHERE channel = $1
+                  AND external_event_id = $2
+                """,
+                channel,
+                external_event_id,
+            )
+        return _normalize_handoff_message_row(dict(row)) if row else None
+
+    async def get_handoff_message_by_external_message(
+        self,
+        *,
+        channel: str,
+        external_chat_id: str,
+        external_thread_id: str | None,
+        external_message_id: str,
+        direction: str,
+    ) -> dict[str, Any] | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT *
+                FROM assistant_handoff_messages
+                WHERE channel = $1
+                  AND external_chat_id = $2
+                  AND external_thread_id IS NOT DISTINCT FROM $3
+                  AND external_message_id = $4
+                  AND direction = $5
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                channel,
+                external_chat_id,
+                external_thread_id,
+                external_message_id,
+                direction,
+            )
+        return _normalize_handoff_message_row(dict(row)) if row else None
+
+    async def reserve_external_webhook_receipt(
+        self,
+        *,
+        channel: str,
+        external_chat_id: str,
+        external_thread_id: str | None,
+        external_message_id: str | None,
+        external_event_id: str | None,
+        direction: str,
+        message_kind: str = "external_update",
+        metadata: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        receipt_id = uuid4()
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                if external_event_id is None:
+                    existing = await conn.fetchrow(
+                        """
+                        SELECT *
+                        FROM assistant_external_webhook_receipts
+                        WHERE channel = $1
+                          AND external_chat_id = $2
+                          AND external_thread_id IS NOT DISTINCT FROM $3
+                          AND external_message_id = $4
+                          AND direction = $5
+                        FOR UPDATE
+                        """,
+                        channel,
+                        external_chat_id,
+                        external_thread_id,
+                        external_message_id,
+                        direction,
+                    )
+                    if existing:
+                        existing_record = _normalize_external_webhook_receipt_row(
+                            dict(existing)
+                        )
+                        if existing_record.get("delivery_status") != "failed":
+                            return existing_record, False
+                        updated = await conn.fetchrow(
+                            """
+                            UPDATE assistant_external_webhook_receipts
+                            SET channel = $2,
+                                external_chat_id = $3,
+                                external_thread_id = $4,
+                                external_message_id = $5,
+                                external_event_id = NULL,
+                                direction = $6,
+                                delivery_status = 'processing',
+                                message_kind = $7,
+                                metadata = $8::jsonb,
+                                updated_at = now()
+                            WHERE id = $1
+                            RETURNING *
+                            """,
+                            existing_record["id"],
+                            channel,
+                            external_chat_id,
+                            external_thread_id,
+                            external_message_id,
+                            direction,
+                            message_kind,
+                            json.dumps(metadata or {}),
+                        )
+                        return _normalize_external_webhook_receipt_row(dict(updated)), True
+
+                    inserted = await conn.fetchrow(
+                        """
+                        INSERT INTO assistant_external_webhook_receipts
+                          (
+                            id,
+                            channel,
+                            external_chat_id,
+                            external_thread_id,
+                            external_message_id,
+                            external_event_id,
+                            direction,
+                            delivery_status,
+                            message_kind,
+                            metadata
+                          )
+                        VALUES (
+                          $1, $2, $3, $4, $5, NULL, $6, 'processing', $7, $8::jsonb
+                        )
+                        RETURNING *
+                        """,
+                        receipt_id,
+                        channel,
+                        external_chat_id,
+                        external_thread_id,
+                        external_message_id,
+                        direction,
+                        message_kind,
+                        json.dumps(metadata or {}),
+                    )
+                    return _normalize_external_webhook_receipt_row(dict(inserted)), True
+
+                inserted = await conn.fetchrow(
+                    """
+                    INSERT INTO assistant_external_webhook_receipts
+                      (
+                        id,
+                        channel,
+                        external_chat_id,
+                        external_thread_id,
+                        external_message_id,
+                        external_event_id,
+                        direction,
+                        delivery_status,
+                        message_kind,
+                        metadata
+                      )
+                    VALUES (
+                      $1, $2, $3, $4, $5, $6, $7, 'processing', $8, $9::jsonb
+                    )
+                    ON CONFLICT (channel, external_event_id) DO NOTHING
+                    RETURNING *
+                    """,
+                    receipt_id,
+                    channel,
+                    external_chat_id,
+                    external_thread_id,
+                    external_message_id,
+                    external_event_id,
+                    direction,
+                    message_kind,
+                    json.dumps(metadata or {}),
+                )
+                if inserted:
+                    return _normalize_external_webhook_receipt_row(dict(inserted)), True
+
+                existing = await conn.fetchrow(
+                    """
+                    SELECT *
+                    FROM assistant_external_webhook_receipts
+                    WHERE channel = $1
+                      AND external_event_id = $2
+                    FOR UPDATE
+                    """,
+                    channel,
+                    external_event_id,
+                )
+                if not existing:
+                    raise ValueError("EXTERNAL_WEBHOOK_RECEIPT_NOT_FOUND")
+                existing_record = _normalize_external_webhook_receipt_row(dict(existing))
+                if existing_record.get("delivery_status") != "failed":
+                    return existing_record, False
+
+                updated = await conn.fetchrow(
+                    """
+                    UPDATE assistant_external_webhook_receipts
+                    SET channel = $2,
+                        external_chat_id = $3,
+                        external_thread_id = $4,
+                        external_message_id = $5,
+                        external_event_id = $6,
+                        direction = $7,
+                        delivery_status = 'processing',
+                        message_kind = $8,
+                        metadata = $9::jsonb,
+                        updated_at = now()
+                    WHERE id = $1
+                    RETURNING *
+                    """,
+                    existing_record["id"],
+                    channel,
+                    external_chat_id,
+                    external_thread_id,
+                    external_message_id,
+                    external_event_id,
+                    direction,
+                    message_kind,
+                    json.dumps(metadata or {}),
+                )
+        return _normalize_external_webhook_receipt_row(dict(updated)), True
+
+    async def update_external_webhook_receipt(
+        self,
+        *,
+        external_webhook_receipt_id: UUID,
+        delivery_status: str | object = _UNSET,
+        message_kind: str | object = _UNSET,
+        metadata: dict[str, Any] | None | object = _UNSET,
+    ) -> dict[str, Any]:
+        async with self.pool.acquire() as conn:
+            existing = await conn.fetchrow(
+                """
+                SELECT *
+                FROM assistant_external_webhook_receipts
+                WHERE id = $1
+                """,
+                external_webhook_receipt_id,
+            )
+            if not existing:
+                raise ValueError("EXTERNAL_WEBHOOK_RECEIPT_NOT_FOUND")
+            merged = _normalize_external_webhook_receipt_row(dict(existing))
+            if delivery_status is not _UNSET:
+                merged["delivery_status"] = delivery_status
+            if message_kind is not _UNSET:
+                merged["message_kind"] = message_kind
+            if metadata is not _UNSET:
+                merged["metadata"] = metadata or {}
+            updated = await conn.fetchrow(
+                """
+                UPDATE assistant_external_webhook_receipts
+                SET delivery_status = $2,
+                    message_kind = $3,
+                    metadata = $4::jsonb,
+                    updated_at = now()
+                WHERE id = $1
+                RETURNING *
+                """,
+                external_webhook_receipt_id,
+                merged.get("delivery_status"),
+                merged.get("message_kind"),
+                json.dumps(merged.get("metadata") or {}),
+            )
+        return _normalize_external_webhook_receipt_row(dict(updated))
+
+    async def reserve_external_handoff_message(
+        self,
+        *,
+        handoff_id: UUID,
+        session_id: UUID,
+        channel: str,
+        external_chat_id: str,
+        external_thread_id: str | None,
+        external_message_id: str | None,
+        external_event_id: str | None,
+        direction: str,
+        message_kind: str = "external_update",
+        operator_external_user_id: str | None = None,
+        operator_username: str | None = None,
+        content: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        message_id = uuid4()
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                if external_event_id is None:
+                    existing = await conn.fetchrow(
+                        """
+                        SELECT *
+                        FROM assistant_handoff_messages
+                        WHERE channel = $1
+                          AND external_chat_id = $2
+                          AND external_thread_id IS NOT DISTINCT FROM $3
+                          AND external_message_id = $4
+                          AND direction = $5
+                        FOR UPDATE
+                        """,
+                        channel,
+                        external_chat_id,
+                        external_thread_id,
+                        external_message_id,
+                        direction,
+                    )
+                    if existing:
+                        existing_record = _normalize_handoff_message_row(dict(existing))
+                        if existing_record.get("delivery_status") != "failed":
+                            return existing_record, False
+                        updated = await conn.fetchrow(
+                            """
+                            UPDATE assistant_handoff_messages
+                            SET handoff_id = $2,
+                                session_id = $3,
+                                channel = $4,
+                                external_chat_id = $5,
+                                external_thread_id = $6,
+                                external_message_id = $7,
+                                direction = $8,
+                                delivery_status = 'processing',
+                                message_kind = $9,
+                                operator_external_user_id = $10,
+                                operator_username = $11,
+                                content = COALESCE($12, assistant_handoff_messages.content),
+                                metadata = $13::jsonb
+                            WHERE id = $1
+                            RETURNING *
+                            """,
+                            existing_record["id"],
+                            handoff_id,
+                            session_id,
+                            channel,
+                            external_chat_id,
+                            external_thread_id,
+                            external_message_id,
+                            direction,
+                            message_kind,
+                            operator_external_user_id,
+                            operator_username,
+                            content,
+                            json.dumps(metadata or {}),
+                        )
+                        return _normalize_handoff_message_row(dict(updated)), True
+
+                    inserted = await conn.fetchrow(
+                        """
+                        INSERT INTO assistant_handoff_messages
+                          (
+                            id,
+                            handoff_id,
+                            session_id,
+                            channel,
+                            external_chat_id,
+                            external_thread_id,
+                            external_message_id,
+                            external_event_id,
+                            direction,
+                            delivery_status,
+                            message_kind,
+                            operator_external_user_id,
+                            operator_username,
+                            content,
+                            metadata
+                          )
+                        VALUES (
+                          $1, $2, $3, $4, $5, $6, $7, NULL, $8, 'processing',
+                          $9, $10, $11, $12, $13::jsonb
+                        )
+                        RETURNING *
+                        """,
+                        message_id,
+                        handoff_id,
+                        session_id,
+                        channel,
+                        external_chat_id,
+                        external_thread_id,
+                        external_message_id,
+                        direction,
+                        message_kind,
+                        operator_external_user_id,
+                        operator_username,
+                        content,
+                        json.dumps(metadata or {}),
+                    )
+                    return _normalize_handoff_message_row(dict(inserted)), True
+
+                inserted = await conn.fetchrow(
+                    """
+                    INSERT INTO assistant_handoff_messages
+                      (
+                        id,
+                        handoff_id,
+                        session_id,
+                        channel,
+                        external_chat_id,
+                        external_thread_id,
+                        external_message_id,
+                        external_event_id,
+                        direction,
+                        delivery_status,
+                        message_kind,
+                        operator_external_user_id,
+                        operator_username,
+                        content,
+                        metadata
+                      )
+                    VALUES (
+                      $1, $2, $3, $4, $5, $6, $7, $8, $9, 'processing',
+                      $10, $11, $12, $13, $14::jsonb
+                    )
+                    ON CONFLICT (channel, external_event_id) DO NOTHING
+                    RETURNING *
+                    """,
+                    message_id,
+                    handoff_id,
+                    session_id,
+                    channel,
+                    external_chat_id,
+                    external_thread_id,
+                    external_message_id,
+                    external_event_id,
+                    direction,
+                    message_kind,
+                    operator_external_user_id,
+                    operator_username,
+                    content,
+                    json.dumps(metadata or {}),
+                )
+                if inserted:
+                    return _normalize_handoff_message_row(dict(inserted)), True
+
+                existing = await conn.fetchrow(
+                    """
+                    SELECT *
+                    FROM assistant_handoff_messages
+                    WHERE channel = $1
+                      AND external_event_id = $2
+                    FOR UPDATE
+                    """,
+                    channel,
+                    external_event_id,
+                )
+                if not existing:
+                    raise ValueError("HANDOFF_MESSAGE_NOT_FOUND")
+                existing_record = _normalize_handoff_message_row(dict(existing))
+                if existing_record.get("delivery_status") != "failed":
+                    return existing_record, False
+
+                updated = await conn.fetchrow(
+                    """
+                    UPDATE assistant_handoff_messages
+                    SET handoff_id = $2,
+                        session_id = $3,
+                        channel = $4,
+                        external_chat_id = $5,
+                        external_thread_id = $6,
+                        external_message_id = $7,
+                        direction = $8,
+                        delivery_status = 'processing',
+                        message_kind = $9,
+                        operator_external_user_id = $10,
+                        operator_username = $11,
+                        content = COALESCE($12, assistant_handoff_messages.content),
+                        metadata = $13::jsonb
+                    WHERE id = $1
+                    RETURNING *
+                    """,
+                    existing_record["id"],
+                    handoff_id,
+                    session_id,
+                    channel,
+                    external_chat_id,
+                    external_thread_id,
+                    external_message_id,
+                    direction,
+                    message_kind,
+                    operator_external_user_id,
+                    operator_username,
+                    content,
+                    json.dumps(metadata or {}),
+                )
+        return _normalize_handoff_message_row(dict(updated)), True
+
+    async def create_external_handoff_message(
+        self,
+        *,
+        handoff_id: UUID,
+        session_id: UUID,
+        channel: str,
+        external_chat_id: str,
+        external_thread_id: str | None,
+        external_message_id: str | None,
+        external_event_id: str | None,
+        direction: str,
+        delivery_status: str,
+        message_kind: str = "external_update",
+        assistant_message_id: UUID | None = None,
+        operator_external_user_id: str | None = None,
+        operator_username: str | None = None,
+        content: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        message_id = uuid4()
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO assistant_handoff_messages
+                  (
+                    id,
+                    handoff_id,
+                    session_id,
+                    channel,
+                    external_chat_id,
+                    external_thread_id,
+                    external_message_id,
+                    external_event_id,
+                    direction,
+                    delivery_status,
+                    message_kind,
+                    assistant_message_id,
+                    operator_external_user_id,
+                    operator_username,
+                    content,
+                    metadata
+                  )
+                VALUES (
+                  $1, $2, $3, $4, $5, $6, $7, $8, $9,
+                  $10, $11, $12, $13, $14, $15, $16::jsonb
+                )
+                RETURNING *
+                """,
+                message_id,
+                handoff_id,
+                session_id,
+                channel,
+                external_chat_id,
+                external_thread_id,
+                external_message_id,
+                external_event_id,
+                direction,
+                delivery_status,
+                message_kind,
+                assistant_message_id,
+                operator_external_user_id,
+                operator_username,
+                content,
+                json.dumps(metadata or {}),
+            )
+        return _normalize_handoff_message_row(dict(row))
 
     async def reserve_handoff_message(
         self,
@@ -1398,12 +2081,53 @@ def _normalize_handoff_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalize_handoff_ticket_row(row: dict[str, Any]) -> dict[str, Any]:
-    return dict(row)
+    normalized = dict(row)
+    if normalized.get("external_chat_id") is None and normalized.get("telegram_chat_id") is not None:
+        normalized["external_chat_id"] = str(normalized["telegram_chat_id"])
+    if normalized.get("external_thread_id") is None and normalized.get("telegram_topic_id") is not None:
+        normalized["external_thread_id"] = str(normalized["telegram_topic_id"])
+    if (
+        normalized.get("external_thread_title") is None
+        and normalized.get("telegram_topic_title") is not None
+    ):
+        normalized["external_thread_title"] = normalized["telegram_topic_title"]
+    if (
+        normalized.get("external_root_message_id") is None
+        and normalized.get("telegram_root_message_id") is not None
+    ):
+        normalized["external_root_message_id"] = str(normalized["telegram_root_message_id"])
+    if (
+        normalized.get("last_external_event_id") is None
+        and normalized.get("last_telegram_update_id") is not None
+    ):
+        normalized["last_external_event_id"] = str(normalized["last_telegram_update_id"])
+    return normalized
 
 
 def _normalize_handoff_message_row(row: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(row)
     normalized["metadata"] = _json_field_or_default(normalized.get("metadata"), {})
+    normalized["channel"] = str(normalized.get("channel") or "telegram")
+    if normalized.get("external_chat_id") is None and normalized.get("telegram_chat_id") is not None:
+        normalized["external_chat_id"] = str(normalized["telegram_chat_id"])
+    if normalized.get("external_thread_id") is None and normalized.get("telegram_topic_id") is not None:
+        normalized["external_thread_id"] = str(normalized["telegram_topic_id"])
+    if normalized.get("external_message_id") is None and normalized.get("telegram_message_id") is not None:
+        normalized["external_message_id"] = str(normalized["telegram_message_id"])
+    if normalized.get("external_event_id") is None and normalized.get("telegram_update_id") is not None:
+        normalized["external_event_id"] = str(normalized["telegram_update_id"])
+    if (
+        normalized.get("operator_external_user_id") is None
+        and normalized.get("operator_telegram_user_id") is not None
+    ):
+        normalized["operator_external_user_id"] = normalized["operator_telegram_user_id"]
+    return normalized
+
+
+def _normalize_external_webhook_receipt_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    normalized["metadata"] = _json_field_or_default(normalized.get("metadata"), {})
+    normalized["channel"] = str(normalized.get("channel") or "telegram")
     return normalized
 
 

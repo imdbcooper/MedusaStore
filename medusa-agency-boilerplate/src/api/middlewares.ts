@@ -27,6 +27,9 @@ import {
   AssistantTelegramHandoffReadQuerySchema,
   AssistantTelegramHandoffTestSchema,
   AssistantTelegramHandoffUpdateSchema,
+  AssistantVkHandoffReadQuerySchema,
+  AssistantVkHandoffTestSchema,
+  AssistantVkHandoffUpdateSchema,
   AssistantSettingUpdateSchema,
   LlmProviderCreateSchema,
   LlmProviderUpdateSchema,
@@ -244,6 +247,33 @@ export default defineMiddlewares({
       middlewares: [
         adminAuth,
         validateAndTransformBody(AssistantTelegramHandoffUpdateSchema),
+      ],
+    },
+    {
+      matcher: "/admin/assistant/settings/vk-handoff/test",
+      methods: ["POST"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformBody(AssistantVkHandoffTestSchema),
+      ],
+    },
+    {
+      matcher: "/admin/assistant/settings/vk-handoff",
+      methods: ["GET"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformQuery(AssistantVkHandoffReadQuerySchema, {
+          defaults: [],
+          isList: false,
+        }),
+      ],
+    },
+    {
+      matcher: "/admin/assistant/settings/vk-handoff",
+      methods: ["PATCH"],
+      middlewares: [
+        adminAuth,
+        validateAndTransformBody(AssistantVkHandoffUpdateSchema),
       ],
     },
     {

@@ -24,7 +24,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -100,6 +100,7 @@ class GlobalAssistantSettings(BaseModel):
     rate_limits: dict[str, int] = Field(default_factory=dict)
     usage_tracking_enabled: bool = True
     observability: dict[str, bool] = Field(default_factory=dict)
+    active_handoff_channel: Literal["telegram", "vk"] = "telegram"
     version: int = 1
 
 
@@ -264,6 +265,166 @@ class TelegramHandoffRuntimeSettings(BaseModel):
         return self.safe_repr()
 
 
+class VkHandoffDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = "disabled"
+    missing_fields: list[str] = Field(default_factory=list)
+    can_test: bool = False
+
+
+class VkHandoffRuntimeSettings(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = "singleton"
+    enabled: bool = False
+    environment_mode: str = "test"
+    group_id: str | None = None
+    support_peer_id: str | None = None
+    webhook_url: str | None = None
+    community_access_token: str | None = Field(default=None, repr=False)
+    secret_key: str | None = Field(default=None, repr=False)
+    confirmation_code: str | None = Field(default=None, repr=False)
+    allowed_operator_ids: list[str] = Field(default_factory=list)
+    allowed_admin_ids: list[str] = Field(default_factory=list)
+    operator_reply_mode: str = "explicit_ticket_command"
+    fallback_message: str | None = None
+    diagnostics: VkHandoffDiagnostics = Field(default_factory=VkHandoffDiagnostics)
+    version: int | None = None
+    updated_at: str | None = None
+    last_test_status: str | None = None
+    last_test_error: str | None = None
+    last_test_at: str | None = None
+
+    @field_validator(
+        "group_id",
+        "support_peer_id",
+        "webhook_url",
+        "community_access_token",
+        "secret_key",
+        "confirmation_code",
+        "fallback_message",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_optional_strings(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    @field_validator("allowed_operator_ids", "allowed_admin_ids", mode="before")
+    @classmethod
+    def _normalize_user_id_lists(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ValueError("must be a list")
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            candidate = str(item).strip()
+            if not candidate:
+                continue
+            if candidate not in seen:
+                seen.add(candidate)
+                normalized.append(candidate)
+        return normalized
+
+    @property
+    def has_community_access_token(self) -> bool:
+        return bool(self.community_access_token)
+
+    @property
+    def has_secret_key(self) -> bool:
+        return bool(self.secret_key)
+
+    @property
+    def has_confirmation_code(self) -> bool:
+        return bool(self.confirmation_code)
+
+    @property
+    def allowed_operator_user_ids(self) -> tuple[str, ...]:
+        return tuple(self.allowed_operator_ids)
+
+    @property
+    def allowed_admin_user_ids(self) -> tuple[str, ...]:
+        return tuple(self.allowed_admin_ids)
+
+    @property
+    def has_operator_acl(self) -> bool:
+        return bool(self.allowed_operator_ids or self.allowed_admin_ids)
+
+    @property
+    def is_ready_for_connection_test(self) -> bool:
+        if not self.enabled:
+            return False
+        if not self.group_id:
+            return False
+        if not self.support_peer_id:
+            return False
+        if not self.webhook_url:
+            return False
+        if not self.has_community_access_token:
+            return False
+        if not self.has_secret_key:
+            return False
+        if not self.has_confirmation_code:
+            return False
+        if self.environment_mode == "production" and not self.has_operator_acl:
+            return False
+        return True
+
+    @property
+    def is_configured(self) -> bool:
+        return self.is_ready_for_connection_test
+
+    @property
+    def is_ready_for_webhook(self) -> bool:
+        if not self.enabled:
+            return False
+        if not self.group_id:
+            return False
+        if not self.support_peer_id:
+            return False
+        if not self.has_community_access_token:
+            return False
+        if not self.has_secret_key:
+            return False
+        if not self.has_confirmation_code:
+            return False
+        if not self.has_operator_acl:
+            return False
+        return True
+
+    def safe_repr(self) -> str:
+        community_access_token = _mask_secret(self.community_access_token)
+        secret_key = _mask_secret(self.secret_key)
+        confirmation_code = _mask_secret(self.confirmation_code)
+        return (
+            "<VkHandoffRuntimeSettings "
+            f"enabled={self.enabled} "
+            f"environment_mode={self.environment_mode} "
+            f"group_id={self.group_id!r} "
+            f"support_peer_id={self.support_peer_id!r} "
+            f"webhook_url={self.webhook_url!r} "
+            f"community_access_token={community_access_token} "
+            f"secret_key={secret_key} "
+            f"confirmation_code={confirmation_code} "
+            f"allowed_operator_ids={self.allowed_operator_ids!r} "
+            f"allowed_admin_ids={self.allowed_admin_ids!r} "
+            f"operator_reply_mode={self.operator_reply_mode!r} "
+            f"diagnostics_status={self.diagnostics.status!r} "
+            f"ready={self.is_ready_for_connection_test}>"
+        )
+
+    def __repr__(self) -> str:  # pragma: no cover - delegation
+        return self.safe_repr()
+
+    def __str__(self) -> str:  # pragma: no cover - delegation
+        return self.safe_repr()
+
+
 class AssistantRuntimeSettings(BaseModel):
     """Snapshot of the effective assistant configuration.
 
@@ -278,10 +439,12 @@ class AssistantRuntimeSettings(BaseModel):
     version: str
     active: ProviderRuntime | None = None
     fallback: list[ProviderRuntime] = Field(default_factory=list)
+    active_handoff_channel: Literal["telegram", "vk"] = "telegram"
     global_settings: GlobalAssistantSettings
     telegram_handoff: TelegramHandoffRuntimeSettings = Field(
         default_factory=TelegramHandoffRuntimeSettings
     )
+    vk_handoff: VkHandoffRuntimeSettings = Field(default_factory=VkHandoffRuntimeSettings)
 
 
 class SettingsFetchError(RuntimeError):
@@ -555,6 +718,11 @@ class SettingsProvider:
         except ValidationError as exc:
             raise SettingsFetchError(f"Global settings payload is invalid: {exc}") from exc
 
+        active_handoff_channel = effective.get(
+            "active_handoff_channel",
+            global_settings.active_handoff_channel,
+        )
+
         telegram_raw = effective.get("telegram_handoff")
         if telegram_raw is None:
             telegram_handoff = TelegramHandoffRuntimeSettings()
@@ -571,6 +739,17 @@ class SettingsProvider:
                 raise SettingsFetchError(
                     f"Telegram handoff payload is invalid: {exc}",
                 ) from exc
+
+        vk_raw = effective.get("vk_handoff")
+        if vk_raw is None:
+            vk_handoff = VkHandoffRuntimeSettings()
+        else:
+            if not isinstance(vk_raw, dict):
+                raise SettingsFetchError("'effective.vk_handoff' must be an object or null")
+            try:
+                vk_handoff = VkHandoffRuntimeSettings.model_validate(vk_raw)
+            except ValidationError as exc:
+                raise SettingsFetchError(f"VK handoff payload is invalid: {exc}") from exc
 
         active: ProviderRuntime | None = None
         if active_raw is not None:
@@ -608,13 +787,18 @@ class SettingsProvider:
             ),
         )
 
-        return AssistantRuntimeSettings(
-            version=version,
-            active=active,
-            fallback=fallback,
-            global_settings=global_settings,
-            telegram_handoff=telegram_handoff,
-        )
+        try:
+            return AssistantRuntimeSettings(
+                version=version,
+                active=active,
+                fallback=fallback,
+                active_handoff_channel=active_handoff_channel,
+                global_settings=global_settings,
+                telegram_handoff=telegram_handoff,
+                vk_handoff=vk_handoff,
+            )
+        except ValidationError as exc:
+            raise SettingsFetchError(f"Runtime settings payload is invalid: {exc}") from exc
 
 
 __all__ = [
@@ -625,4 +809,6 @@ __all__ = [
     "SettingsProvider",
     "TelegramHandoffDiagnostics",
     "TelegramHandoffRuntimeSettings",
+    "VkHandoffDiagnostics",
+    "VkHandoffRuntimeSettings",
 ]

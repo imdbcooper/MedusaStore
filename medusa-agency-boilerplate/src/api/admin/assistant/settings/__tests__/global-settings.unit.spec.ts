@@ -95,6 +95,7 @@ const settingsRow = {
   rate_limits: {},
   usage_tracking_enabled: true,
   observability: {},
+  active_handoff_channel: "telegram" as const,
   version: 1,
   updated_by: null,
   updated_at: "2026-05-15T00:00:00.000Z",
@@ -151,6 +152,21 @@ describe("PATCH /admin/assistant/settings", () => {
     )
     expect(recorder.status).toBe(200)
     expect(recorder.body.settings.version).toBe(2)
+  })
+
+  it("forwards active_handoff_channel updates", async () => {
+    const { res } = buildResponse()
+    await PATCH(
+      buildReq({
+        validatedBody: { active_handoff_channel: "vk", expected_version: 1 },
+      }),
+      res
+    )
+    expect(mockUpdateAssistantSetting).toHaveBeenCalledWith(
+      { __pg: true },
+      { active_handoff_channel: "vk" },
+      { expectedVersion: 1, updatedBy: "usr_admin" }
+    )
   })
 
   it("omits updatedBy when actor_id is missing", async () => {

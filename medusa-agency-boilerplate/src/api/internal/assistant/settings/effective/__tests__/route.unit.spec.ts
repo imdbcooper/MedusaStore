@@ -79,6 +79,33 @@ function buildReq(headers?: Record<string, string | string[] | undefined>): any 
   }
 }
 
+const vkHandoff = {
+  id: "singleton",
+  enabled: false,
+  environment_mode: "test",
+  group_id: null,
+  support_peer_id: null,
+  webhook_url: null,
+  community_access_token: null,
+  secret_key: null,
+  confirmation_code: null,
+  allowed_operator_ids: [],
+  allowed_admin_ids: [],
+  operator_reply_mode: "explicit_ticket_command",
+  fallback_message: "fallback",
+  last_test_status: null,
+  last_test_error: null,
+  last_test_at: null,
+  created_at: "2026-05-15T00:00:00.000Z",
+  updated_at: "2026-05-15T00:00:00.000Z",
+  version: 1,
+  diagnostics: {
+    status: "disabled",
+    missing_fields: [],
+    can_test: false,
+  },
+}
+
 const ORIGINAL_TOKEN = process.env.AI_ASSISTANT_SERVER_TOKEN
 
 beforeEach(() => {
@@ -91,7 +118,8 @@ beforeEach(() => {
     version: "2026-05-15T00:00:00.000Z",
     active: null,
     fallback: [],
-    global: { id: "singleton" },
+    global: { id: "singleton", active_handoff_channel: "telegram" },
+    active_handoff_channel: "telegram",
     telegram_handoff: {
       id: "singleton",
       enabled: false,
@@ -118,6 +146,7 @@ beforeEach(() => {
         can_test: false,
       },
     },
+    vk_handoff: vkHandoff,
   }))
 })
 
@@ -193,7 +222,9 @@ describe("GET /internal/assistant/settings/effective", () => {
     expect(recorder.status).toBe(200)
     expectNoCacheHeaders(recorder)
     expect(recorder.body.effective.version).toBe("2026-05-15T00:00:00.000Z")
+    expect(recorder.body.effective.active_handoff_channel).toBe("telegram")
     expect(recorder.body.effective.telegram_handoff.enabled).toBe(false)
+    expect(recorder.body.effective.vk_handoff.enabled).toBe(false)
     expect(mockGetEffective).toHaveBeenCalledWith({ __pg: true })
   })
 
@@ -203,7 +234,8 @@ describe("GET /internal/assistant/settings/effective", () => {
       version: "2026-05-15T00:00:00.000Z",
       active: null,
       fallback: [],
-      global: { id: "singleton" },
+      global: { id: "singleton", active_handoff_channel: "telegram" },
+      active_handoff_channel: "telegram",
       telegram_handoff: {
         id: "singleton",
         enabled: true,
@@ -230,6 +262,7 @@ describe("GET /internal/assistant/settings/effective", () => {
           can_test: true,
         },
       },
+      vk_handoff: vkHandoff,
     }))
 
     const { res, recorder } = buildResponse()
@@ -250,7 +283,8 @@ describe("GET /internal/assistant/settings/effective", () => {
       version: "2026-05-15T00:00:00.000Z",
       active: null,
       fallback: [],
-      global: { id: "singleton" },
+      global: { id: "singleton", active_handoff_channel: "telegram" },
+      active_handoff_channel: "telegram",
       telegram_handoff: {
         id: "singleton",
         enabled: true,
@@ -282,6 +316,7 @@ describe("GET /internal/assistant/settings/effective", () => {
           can_test: false,
         },
       },
+      vk_handoff: vkHandoff,
     }))
 
     const { res, recorder } = buildResponse()

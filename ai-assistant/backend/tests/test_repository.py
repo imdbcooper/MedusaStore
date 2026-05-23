@@ -245,6 +245,159 @@ async def test_memory_repository_handoff_message_reservation_reuses_failed_mappi
 
 
 @pytest.mark.asyncio
+async def test_memory_repository_vk_handoff_ticket_lifecycle(repository):
+    session = await repository.ensure_session(
+        session_id=None,
+        store_id="default",
+        locale="ru",
+    )
+    handoff = await repository.create_handoff(
+        session_id=session["id"],
+        store_id="default",
+        locale="ru",
+        source="assistant_widget",
+        email="lead@example.com",
+        summary="Нужна помощь во VK",
+    )
+    external_thread_id = str(handoff["id"])
+
+    submitted = await repository.upsert_handoff_ticket(
+        handoff_id=handoff["id"],
+        channel="vk",
+        ticket_status="submitted",
+        external_chat_id="2000000007",
+        external_thread_id=external_thread_id,
+        external_thread_title="#ABC12345",
+        created_at=handoff["created_at"],
+        last_sync_at=handoff["created_at"],
+    )
+    opened = await repository.upsert_handoff_ticket(
+        handoff_id=handoff["id"],
+        channel="vk",
+        ticket_status="open",
+        external_chat_id="2000000007",
+        external_thread_id=external_thread_id,
+        external_thread_title="#ABC12345",
+        external_root_message_id="991",
+        opened_at=handoff["created_at"],
+        last_external_event_id="991",
+    )
+    loaded = await repository.get_handoff_ticket(
+        handoff_id=handoff["id"],
+        channel="vk",
+    )
+    located = await repository.find_handoff_ticket_by_external_thread(
+        channel="vk",
+        external_chat_id="2000000007",
+        external_thread_id=external_thread_id,
+    )
+
+    assert submitted["ticket_status"] == "submitted"
+    assert opened["ticket_status"] == "open"
+    assert loaded is not None
+    assert loaded["channel"] == "vk"
+    assert loaded["external_chat_id"] == "2000000007"
+    assert loaded["external_thread_id"] == external_thread_id
+    assert loaded["external_root_message_id"] == "991"
+    assert loaded["last_external_event_id"] == "991"
+    assert located is not None
+    assert located["handoff_id"] == handoff["id"]
+    assert located["session_id"] == session["id"]
+
+
+@pytest.mark.asyncio
+async def test_memory_repository_vk_handoff_message_reservation_reuses_failed_mapping(
+    repository,
+):
+    session = await repository.ensure_session(
+        session_id=None,
+        store_id="default",
+        locale="ru",
+    )
+    handoff = await repository.create_handoff(
+        session_id=session["id"],
+        store_id="default",
+        locale="ru",
+        source="assistant_widget",
+        email="lead@example.com",
+        summary="Нужна помощь во VK",
+    )
+    external_thread_id = str(handoff["id"])
+
+    reserved, is_reserved = await repository.reserve_external_handoff_message(
+        handoff_id=handoff["id"],
+        session_id=session["id"],
+        channel="vk",
+        external_chat_id="2000000007",
+        external_thread_id=external_thread_id,
+        external_message_id="555",
+        external_event_id="555",
+        direction="vk_inbound",
+        message_kind="message_processing",
+        operator_external_user_id="7001",
+        operator_username="operator_alex",
+        content="/reply ABCD1234 Привет",
+        metadata={"reason": "processing"},
+    )
+    duplicate, duplicate_reserved = await repository.reserve_external_handoff_message(
+        handoff_id=handoff["id"],
+        session_id=session["id"],
+        channel="vk",
+        external_chat_id="2000000007",
+        external_thread_id=external_thread_id,
+        external_message_id="555",
+        external_event_id="555",
+        direction="vk_inbound",
+        message_kind="message_processing",
+        operator_external_user_id="7001",
+        operator_username="operator_alex",
+        content="/reply ABCD1234 Привет",
+        metadata={"reason": "processing"},
+    )
+
+    assert is_reserved is True
+    assert reserved["delivery_status"] == "processing"
+    assert reserved["channel"] == "vk"
+    assert duplicate_reserved is False
+    assert duplicate["id"] == reserved["id"]
+
+    assistant_message_id = uuid4()
+    failed = await repository.update_handoff_message(
+        handoff_message_id=reserved["id"],
+        delivery_status="failed",
+        assistant_message_id=assistant_message_id,
+        content="Привет",
+        metadata={"reason": "unexpected_error"},
+    )
+    retried, retried_reserved = await repository.reserve_external_handoff_message(
+        handoff_id=handoff["id"],
+        session_id=session["id"],
+        channel="vk",
+        external_chat_id="2000000007",
+        external_thread_id=external_thread_id,
+        external_message_id="555",
+        external_event_id="555",
+        direction="vk_inbound",
+        message_kind="command_reply",
+        operator_external_user_id="7001",
+        operator_username="operator_alex",
+        content="Привет",
+        metadata={"reason": "processing"},
+    )
+
+    assert failed["delivery_status"] == "failed"
+    assert retried_reserved is True
+    assert retried["id"] == reserved["id"]
+    assert retried["delivery_status"] == "processing"
+    assert retried["assistant_message_id"] == assistant_message_id
+    assert retried["external_chat_id"] == "2000000007"
+    assert retried["external_thread_id"] == external_thread_id
+    assert retried["external_message_id"] == "555"
+    assert retried["external_event_id"] == "555"
+    assert len(repository.handoff_messages) == 1
+
+
+@pytest.mark.asyncio
 async def test_postgres_repository_list_messages_normalizes_json_string_columns():
     session_id = uuid4()
     rows = [
@@ -293,6 +446,9 @@ async def test_postgres_repository_list_messages_normalizes_json_string_columns(
 
 def test_postgres_schema_declares_handoff_ticket_table():
     assert "CREATE TABLE IF NOT EXISTS assistant_handoff_tickets" in SCHEMA_SQL
+    assert "CHECK (channel IN ('telegram', 'vk'))" in SCHEMA_SQL
+    assert "external_chat_id TEXT NULL" in SCHEMA_SQL
+    assert "uq_assistant_handoff_messages_external_event" in SCHEMA_SQL
     assert "idx_assistant_handoff_tickets_status_updated" in SCHEMA_SQL
 
 
@@ -366,6 +522,82 @@ async def test_postgres_repository_reserve_handoff_message_uses_atomic_insert():
     query = " ".join(str(captured["query"]).split())
     assert "ON CONFLICT (telegram_update_id) DO NOTHING" in query
     assert reserved["delivery_status"] == "processing"
+    assert is_reserved is True
+
+
+@pytest.mark.asyncio
+async def test_postgres_repository_reserve_external_handoff_message_uses_external_event_dedupe():
+    captured: dict[str, object] = {}
+    row = {
+        "id": uuid4(),
+        "handoff_id": uuid4(),
+        "session_id": uuid4(),
+        "channel": "vk",
+        "external_chat_id": "2000000007",
+        "external_thread_id": "handoff-1",
+        "external_message_id": "555",
+        "external_event_id": "555",
+        "direction": "vk_inbound",
+        "delivery_status": "processing",
+        "message_kind": "message_processing",
+        "assistant_message_id": None,
+        "operator_external_user_id": "7001",
+        "operator_username": "operator_alex",
+        "content": "/reply ABCD1234 Привет",
+        "metadata": "{}",
+    }
+
+    class FakeTransaction:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeConn:
+        def transaction(self):
+            return FakeTransaction()
+
+        async def fetchrow(self, query, *args):
+            captured["query"] = query
+            captured["args"] = args
+            return row
+
+    class FakeAcquire:
+        async def __aenter__(self):
+            return FakeConn()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakePool:
+        def acquire(self):
+            return FakeAcquire()
+
+    class FakeDatabase:
+        pool = FakePool()
+
+    repository = PostgresAssistantRepository(FakeDatabase())
+    reserved, is_reserved = await repository.reserve_external_handoff_message(
+        handoff_id=row["handoff_id"],
+        session_id=row["session_id"],
+        channel="vk",
+        external_chat_id="2000000007",
+        external_thread_id="handoff-1",
+        external_message_id="555",
+        external_event_id="555",
+        direction="vk_inbound",
+        message_kind="message_processing",
+        operator_external_user_id="7001",
+        operator_username="operator_alex",
+        content="/reply ABCD1234 Привет",
+        metadata={"reason": "processing"},
+    )
+
+    query = " ".join(str(captured["query"]).split())
+    assert "ON CONFLICT (channel, external_event_id) DO NOTHING" in query
+    assert reserved["channel"] == "vk"
+    assert reserved["external_event_id"] == "555"
     assert is_reserved is True
 
 

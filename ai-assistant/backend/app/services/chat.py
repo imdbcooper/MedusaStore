@@ -1132,12 +1132,27 @@ class ChatService:
             return None
 
         messages = await self.repository.list_messages(session_id, limit=min(max(limit, 1), 50))
+        runtime = await self._safe_get_runtime()
+        handoff_channel = runtime.active_handoff_channel if runtime is not None else "telegram"
         handoff_ticket = None
         if hasattr(self.repository, "get_latest_handoff_ticket_for_session"):
-            handoff_ticket = await self.repository.get_latest_handoff_ticket_for_session(
-                session_id=session_id,
-                channel="telegram",
-            )
+            if runtime is not None:
+                handoff_ticket = await self.repository.get_latest_handoff_ticket_for_session(
+                    session_id=session_id,
+                    channel=handoff_channel,
+                )
+            else:
+                candidates = []
+                for channel in ("telegram", "vk"):
+                    candidate = await self.repository.get_latest_handoff_ticket_for_session(
+                        session_id=session_id,
+                        channel=channel,
+                    )
+                    if candidate is not None:
+                        candidates.append(candidate)
+                if candidates:
+                    candidates.sort(key=_handoff_ticket_updated_at, reverse=True)
+                    handoff_ticket = candidates[0]
         return {
             "session_id": session_id,
             "messages": messages,
@@ -1199,7 +1214,7 @@ def _public_handoff_ticket_record(ticket: dict[str, Any] | None) -> dict[str, An
     if not ticket:
         return None
     return {
-        "channel": "telegram",
+        "channel": str(ticket.get("channel") or "telegram"),
         "status": str(ticket.get("ticket_status") or "submitted"),
         "message": None,
         "updated_at": (
@@ -1211,6 +1226,17 @@ def _public_handoff_ticket_record(ticket: dict[str, Any] | None) -> dict[str, An
             or ticket.get("created_at")
         ),
     }
+
+
+def _handoff_ticket_updated_at(ticket: dict[str, Any]) -> Any:
+    return (
+        ticket.get("last_sync_at")
+        or ticket.get("closed_at")
+        or ticket.get("assigned_at")
+        or ticket.get("opened_at")
+        or ticket.get("updated_at")
+        or ticket.get("created_at")
+    )
 
 
 def _compose_system_prompt(

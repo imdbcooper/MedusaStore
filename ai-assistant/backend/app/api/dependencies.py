@@ -8,6 +8,7 @@ from app.services.llm import LlmRouter
 from app.services.reindex_queue import ReindexQueueProcessor
 from app.services.settings_provider import SettingsProvider
 from app.services.telegram_handoff import TelegramHandoffService
+from app.services.vk_handoff import VkHandoffService
 
 
 def get_repository(request: Request):
@@ -50,6 +51,9 @@ def get_telegram_handoff_service(request: Request) -> TelegramHandoffService:
     return request.app.state.telegram_handoff_service
 
 
+def get_vk_handoff_service(request: Request) -> VkHandoffService:
+    return request.app.state.vk_handoff_service
+
+
 def get_llm_router(request: Request) -> LlmRouter | None:
     return getattr(request.app.state, "llm_router", None)
-

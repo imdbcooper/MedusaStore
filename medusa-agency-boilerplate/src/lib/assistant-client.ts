@@ -1,7 +1,10 @@
 import type { AssistantAdapterConfig } from "./config"
 import type {
+  AssistantHandoffChannel,
   AssistantTelegramHandoffDiagnostics,
   AssistantTelegramHandoffLastTestStatus,
+  AssistantVkHandoffDiagnostics,
+  AssistantVkHandoffLastTestStatus,
 } from "../modules/assistant-settings"
 
 export type FetchLike = typeof fetch
@@ -63,7 +66,7 @@ export type AssistantHistoryResponse = {
   locale: string
   customer_bound?: boolean
   handoff_ticket?: {
-    channel: "telegram"
+    channel: AssistantHandoffChannel
     status: string
     message?: string | null
     updated_at?: string | null
@@ -108,7 +111,7 @@ export type AssistantHandoffResponse = {
   source: string
   created_at?: string | null
   ticket?: {
-    channel: "telegram"
+    channel: AssistantHandoffChannel
     status: string
     message?: string | null
     updated_at?: string | null
@@ -237,6 +240,18 @@ export type AssistantTelegramHandoffConnectionTestResult = {
   bot?: Record<string, unknown> | null
   support_chat?: Record<string, unknown> | null
   bot_membership?: Record<string, unknown> | null
+  webhook?: Record<string, unknown> | null
+}
+
+export type AssistantVkHandoffConnectionTestResult = {
+  ok: boolean
+  status: AssistantVkHandoffLastTestStatus
+  message: string
+  warnings: string[]
+  missing_fields: string[]
+  tested_at: string
+  diagnostics: AssistantVkHandoffDiagnostics
+  group?: Record<string, unknown> | null
   webhook?: Record<string, unknown> | null
 }
 
@@ -377,6 +392,16 @@ export class AssistantBackendClient {
   async testTelegramHandoffConnection() {
     return this.requestJson<AssistantTelegramHandoffConnectionTestResult>(
       "/admin/telegram/handoff/test-connection",
+      {
+        method: "POST",
+        headers: this.jsonHeaders(),
+      }
+    )
+  }
+
+  async testVkHandoffConnection() {
+    return this.requestJson<AssistantVkHandoffConnectionTestResult>(
+      "/admin/vk/handoff/test-connection",
       {
         method: "POST",
         headers: this.jsonHeaders(),

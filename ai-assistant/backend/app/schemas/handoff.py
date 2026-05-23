@@ -1,6 +1,9 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
+
+HandoffChannel = Literal["telegram", "vk"]
+
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -28,7 +31,7 @@ class HandoffRequest(BaseModel):
 
 
 class HandoffTicketResponse(BaseModel):
-    channel: str = "telegram"
+    channel: HandoffChannel = "telegram"
     status: str
     message: str | None = None
     updated_at: datetime | None = None

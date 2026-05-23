@@ -21,6 +21,7 @@ from app.services.settings_provider import (
     SettingsFetchError,
     SettingsProvider,
     TelegramHandoffRuntimeSettings,
+    VkHandoffRuntimeSettings,
 )
 
 
@@ -61,7 +62,9 @@ def _effective_payload(
     active: Any = _UNSET,
     fallback: list[dict[str, Any]] | None = None,
     global_overrides: dict[str, Any] | None = None,
+    active_handoff_channel: Any = _UNSET,
     telegram_handoff: Any = _UNSET,
+    vk_handoff: Any = _UNSET,
 ) -> dict[str, Any]:
     if active is _UNSET:
         active = dict(_DEFAULT_ACTIVE)
@@ -87,6 +90,7 @@ def _effective_payload(
         "rate_limits": {"chat_per_minute": 60, "chat_per_day": 1000},
         "usage_tracking_enabled": True,
         "observability": {"sentry": False, "langsmith": False},
+        "active_handoff_channel": "telegram",
         "version": 1,
         "updated_by": None,
         "updated_at": "2026-01-01T00:00:00.000Z",
@@ -97,10 +101,17 @@ def _effective_payload(
         "version": version,
         "active": active,
         "fallback": fallback,
+        "active_handoff_channel": (
+            active_handoff_channel
+            if active_handoff_channel is not _UNSET
+            else global_block.get("active_handoff_channel", "telegram")
+        ),
         "global": global_block,
     }
     if telegram_handoff is not _UNSET:
         effective["telegram_handoff"] = telegram_handoff
+    if vk_handoff is not _UNSET:
+        effective["vk_handoff"] = vk_handoff
     return {"effective": effective}
 
 
@@ -120,6 +131,38 @@ def _telegram_handoff_payload(
         "allowed_operator_ids": [],
         "allowed_admin_ids": [],
         "operator_reply_mode": "explicit_reply_command",
+        "fallback_message": "fallback",
+        "diagnostics": {
+            "status": "disabled",
+            "missing_fields": [],
+            "can_test": False,
+        },
+        "version": 1,
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "last_test_status": None,
+        "last_test_error": None,
+        "last_test_at": None,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _vk_handoff_payload(
+    **overrides: Any,
+) -> dict[str, Any]:
+    payload = {
+        "id": "singleton",
+        "enabled": False,
+        "environment_mode": "test",
+        "group_id": None,
+        "support_peer_id": None,
+        "webhook_url": None,
+        "community_access_token": None,
+        "secret_key": None,
+        "confirmation_code": None,
+        "allowed_operator_ids": [],
+        "allowed_admin_ids": [],
+        "operator_reply_mode": "explicit_ticket_command",
         "fallback_message": "fallback",
         "diagnostics": {
             "status": "disabled",
@@ -222,10 +265,15 @@ async def test_get_first_call_performs_http_with_token_and_parses_response():
     assert snapshot.active.id == "als_active"
     assert snapshot.active.api_key == "sk-real-key-1234"
     assert snapshot.global_settings.system_prompt == "You are an assistant."
+    assert snapshot.global_settings.active_handoff_channel == "telegram"
+    assert snapshot.active_handoff_channel == "telegram"
     assert snapshot.fallback == []
     assert isinstance(snapshot.telegram_handoff, TelegramHandoffRuntimeSettings)
     assert snapshot.telegram_handoff.enabled is False
     assert snapshot.telegram_handoff.diagnostics.status == "disabled"
+    assert isinstance(snapshot.vk_handoff, VkHandoffRuntimeSettings)
+    assert snapshot.vk_handoff.enabled is False
+    assert snapshot.vk_handoff.diagnostics.status == "disabled"
 
 
 @pytest.mark.asyncio
@@ -568,6 +616,50 @@ async def test_missing_telegram_handoff_section_defaults_to_disabled_runtime_set
 
 
 @pytest.mark.asyncio
+async def test_missing_vk_handoff_section_defaults_to_disabled_runtime_settings():
+    counter = _Counter()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_effective_payload())
+
+    client = _build_client(handler, counter)
+    provider = _make_provider(client)
+    try:
+        snapshot = await provider.get()
+    finally:
+        await provider.aclose()
+
+    assert isinstance(snapshot.vk_handoff, VkHandoffRuntimeSettings)
+    assert snapshot.vk_handoff.enabled is False
+    assert snapshot.vk_handoff.group_id is None
+    assert snapshot.vk_handoff.community_access_token is None
+    assert snapshot.vk_handoff.secret_key is None
+    assert snapshot.vk_handoff.confirmation_code is None
+    assert snapshot.vk_handoff.diagnostics.status == "disabled"
+    assert snapshot.vk_handoff.is_ready_for_connection_test is False
+
+
+@pytest.mark.asyncio
+async def test_active_handoff_channel_falls_back_to_global_setting_when_root_is_missing():
+    counter = _Counter()
+    payload = _effective_payload(global_overrides={"active_handoff_channel": "vk"})
+    del payload["effective"]["active_handoff_channel"]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    client = _build_client(handler, counter)
+    provider = _make_provider(client)
+    try:
+        snapshot = await provider.get()
+    finally:
+        await provider.aclose()
+
+    assert snapshot.global_settings.active_handoff_channel == "vk"
+    assert snapshot.active_handoff_channel == "vk"
+
+
+@pytest.mark.asyncio
 async def test_telegram_handoff_runtime_parses_internal_secrets_when_present():
     counter = _Counter()
     payload = _effective_payload(
@@ -606,6 +698,51 @@ async def test_telegram_handoff_runtime_parses_internal_secrets_when_present():
     assert telegram.webhook_secret == "webhook-secret-5678"
     assert telegram.is_ready_for_connection_test is True
     assert telegram.is_configured is True
+
+
+@pytest.mark.asyncio
+async def test_vk_handoff_runtime_parses_internal_secrets_when_present():
+    counter = _Counter()
+    payload = _effective_payload(
+        global_overrides={"active_handoff_channel": "vk"},
+        active_handoff_channel="vk",
+        vk_handoff=_vk_handoff_payload(
+            enabled=True,
+            environment_mode="test",
+            group_id="123456789",
+            support_peer_id="2000000007",
+            webhook_url="https://example.com/vk/webhook",
+            community_access_token="vk-access-token-1234",
+            secret_key="vk-secret-key-5678",
+            confirmation_code="vk-confirmation-9012",
+            diagnostics={
+                "status": "ready_for_connection_test",
+                "missing_fields": [],
+                "can_test": True,
+            },
+            version=3,
+            last_test_status="dry_run_passed",
+        ),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    client = _build_client(handler, counter)
+    provider = _make_provider(client)
+    try:
+        snapshot = await provider.get()
+    finally:
+        await provider.aclose()
+
+    vk = snapshot.vk_handoff
+    assert snapshot.active_handoff_channel == "vk"
+    assert vk.enabled is True
+    assert vk.community_access_token == "vk-access-token-1234"
+    assert vk.secret_key == "vk-secret-key-5678"
+    assert vk.confirmation_code == "vk-confirmation-9012"
+    assert vk.is_ready_for_connection_test is True
+    assert vk.is_configured is True
 
 
 @pytest.mark.asyncio
@@ -654,6 +791,57 @@ async def test_telegram_handoff_runtime_handles_incomplete_config_without_failin
 
 
 @pytest.mark.asyncio
+async def test_vk_handoff_runtime_handles_incomplete_config_without_failing():
+    counter = _Counter()
+    payload = _effective_payload(
+        global_overrides={"active_handoff_channel": "vk"},
+        active_handoff_channel="vk",
+        vk_handoff=_vk_handoff_payload(
+            enabled=True,
+            environment_mode="production",
+            group_id="123456789",
+            diagnostics={
+                "status": "partially_configured",
+                "missing_fields": [
+                    "community_access_token",
+                    "secret_key",
+                    "confirmation_code",
+                    "support_peer_id",
+                    "webhook_url",
+                    "allowed_operator_ids_or_allowed_admin_ids",
+                ],
+                "can_test": False,
+            },
+            version=4,
+            last_test_status="missing_credentials",
+            last_test_error="Missing required VK handoff configuration",
+        ),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    client = _build_client(handler, counter)
+    provider = _make_provider(client)
+    try:
+        snapshot = await provider.get()
+    finally:
+        await provider.aclose()
+
+    vk = snapshot.vk_handoff
+    assert vk.enabled is True
+    assert vk.community_access_token is None
+    assert vk.secret_key is None
+    assert vk.confirmation_code is None
+    assert vk.support_peer_id is None
+    assert vk.diagnostics.status == "partially_configured"
+    assert vk.diagnostics.can_test is False
+    assert vk.is_ready_for_connection_test is False
+    assert vk.is_configured is False
+    assert vk.allowed_operator_user_ids == ()
+
+
+@pytest.mark.asyncio
 async def test_telegram_handoff_safe_repr_does_not_leak_internal_secrets():
     telegram = TelegramHandoffRuntimeSettings(
         enabled=True,
@@ -677,6 +865,34 @@ async def test_telegram_handoff_safe_repr_does_not_leak_internal_secrets():
     assert rendered == repr(telegram)
     assert "***1234" in rendered
     assert "***5678" in rendered
+
+
+@pytest.mark.asyncio
+async def test_vk_handoff_safe_repr_does_not_leak_internal_secrets():
+    vk = VkHandoffRuntimeSettings(
+        enabled=True,
+        environment_mode="test",
+        group_id="123456789",
+        support_peer_id="2000000007",
+        webhook_url="https://example.com/vk/webhook",
+        community_access_token="vk-access-token-1234",
+        secret_key="vk-secret-key-5678",
+        confirmation_code="vk-confirmation-9012",
+        diagnostics={
+            "status": "ready_for_connection_test",
+            "missing_fields": [],
+            "can_test": True,
+        },
+    )
+
+    rendered = vk.safe_repr()
+    assert "vk-access-token-1234" not in rendered
+    assert "vk-secret-key-5678" not in rendered
+    assert "vk-confirmation-9012" not in rendered
+    assert rendered == repr(vk)
+    assert "***1234" in rendered
+    assert "***5678" in rendered
+    assert "***9012" in rendered
 
 
 @pytest.mark.asyncio

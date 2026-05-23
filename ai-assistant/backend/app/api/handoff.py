@@ -7,11 +7,13 @@ from app.api.dependencies import (
     get_repository,
     get_settings_provider,
     get_telegram_handoff_service,
+    get_vk_handoff_service,
 )
 from app.core.security import enforce_rate_limit, rate_limit_identity
 from app.schemas.handoff import HandoffRequest, HandoffResponse, HandoffTicketResponse
-from app.services.settings_provider import SettingsFetchError, SettingsProvider
+from app.services.settings_provider import AssistantRuntimeSettings, SettingsFetchError, SettingsProvider
 from app.services.telegram_handoff import TelegramHandoffService
+from app.services.vk_handoff import VkHandoffService
 
 router = APIRouter(prefix="/handoff", tags=["handoff"])
 logger = logging.getLogger("assistant.handoff.api")
@@ -24,6 +26,7 @@ async def create_handoff(
     repository=Depends(get_repository),
     settings_provider: SettingsProvider | None = Depends(get_settings_provider),
     telegram_handoff_service: TelegramHandoffService = Depends(get_telegram_handoff_service),
+    vk_handoff_service: VkHandoffService = Depends(get_vk_handoff_service),
 ) -> HandoffResponse:
     identity = rate_limit_identity(
         http_request,
@@ -53,10 +56,11 @@ async def create_handoff(
         note=request.note,
         metadata=request.metadata,
     )
-    ticket = await _sync_telegram_ticket(
+    ticket = await _sync_handoff_ticket(
         repository=repository,
         settings_provider=settings_provider,
         telegram_handoff_service=telegram_handoff_service,
+        vk_handoff_service=vk_handoff_service,
         handoff_record=record,
         session=session,
     )
@@ -71,6 +75,56 @@ async def create_handoff(
         source=record.get("source") or request.source,
         created_at=record.get("created_at"),
         ticket=ticket,
+    )
+
+
+async def _sync_handoff_ticket(
+    *,
+    repository,
+    settings_provider: SettingsProvider | None,
+    telegram_handoff_service: TelegramHandoffService,
+    vk_handoff_service: VkHandoffService,
+    handoff_record: dict,
+    session: dict,
+) -> HandoffTicketResponse | None:
+    if not hasattr(repository, "upsert_handoff_ticket"):
+        return None
+
+    snapshot = None
+    snapshot_unavailable_message = None
+    if settings_provider is not None:
+        try:
+            snapshot = await settings_provider.get()
+        except (SettingsFetchError, RuntimeError) as exc:
+            logger.warning(
+                "assistant.handoff.runtime_settings_unavailable",
+                extra={"error_type": exc.__class__.__name__},
+            )
+            snapshot_unavailable_message = (
+                "Handoff was saved without delivery because runtime settings could not be refreshed."
+            )
+
+    active_channel = _active_handoff_channel(snapshot)
+    if active_channel == "vk":
+        return await _sync_vk_ticket(
+            repository=repository,
+            settings_provider=settings_provider,
+            vk_handoff_service=vk_handoff_service,
+            handoff_record=handoff_record,
+            session=session,
+            snapshot=snapshot,
+            fallback_message=snapshot_unavailable_message
+            or "Handoff was saved without VK delivery because runtime settings are unavailable.",
+        )
+    return await _sync_telegram_ticket(
+        repository=repository,
+        settings_provider=settings_provider,
+        telegram_handoff_service=telegram_handoff_service,
+        handoff_record=handoff_record,
+        session=session,
+        snapshot=snapshot,
+        fallback_message=snapshot_unavailable_message
+        or "Handoff was saved without Telegram delivery because runtime settings are unavailable.",
     )
 
 
@@ -127,6 +181,10 @@ async def _sync_telegram_ticket(
     telegram_handoff_service: TelegramHandoffService,
     handoff_record: dict,
     session: dict,
+    snapshot: AssistantRuntimeSettings | None = None,
+    fallback_message: str = (
+        "Handoff was saved without Telegram delivery because runtime settings are unavailable."
+    ),
 ) -> HandoffTicketResponse | None:
     if not hasattr(repository, "upsert_handoff_ticket"):
         return None
@@ -140,6 +198,7 @@ async def _sync_telegram_ticket(
 
     if _ticket_has_open_link(existing_ticket):
         return _public_ticket(
+            channel="telegram",
             status="open",
             message="Telegram ticket already exists for this handoff.",
             updated_at=_ticket_updated_at(existing_ticket),
@@ -156,26 +215,18 @@ async def _sync_telegram_ticket(
             last_sync_at=handoff_record.get("created_at") or datetime.now(timezone.utc),
         )
 
-    if settings_provider is None:
+    if snapshot is None and settings_provider is None:
         return _public_ticket_from_record(
-            current_ticket,
-            fallback_message=(
-                "Handoff was saved without Telegram delivery because runtime settings are unavailable."
-            ),
+            channel="telegram",
+            ticket=current_ticket,
+            fallback_message=fallback_message,
         )
 
-    try:
-        snapshot = await settings_provider.get()
-    except (SettingsFetchError, RuntimeError) as exc:
-        logger.warning(
-            "assistant.handoff.telegram_settings_unavailable",
-            extra={"error_type": exc.__class__.__name__},
-        )
+    if snapshot is None:
         return _public_ticket_from_record(
-            current_ticket,
-            fallback_message=(
-                "Handoff was saved without Telegram delivery because Telegram settings could not be refreshed."
-            ),
+            channel="telegram",
+            ticket=current_ticket,
+            fallback_message=fallback_message,
         )
 
     transcript = []
@@ -208,6 +259,99 @@ async def _sync_telegram_ticket(
         last_sync_at=dispatch.last_sync_at,
     )
     return _public_ticket(
+        channel=dispatch.channel,
+        status=dispatch.ticket_status,
+        message=dispatch.message,
+        updated_at=persisted.get("last_sync_at") or dispatch.last_sync_at,
+    )
+
+
+async def _sync_vk_ticket(
+    *,
+    repository,
+    settings_provider: SettingsProvider | None,
+    vk_handoff_service: VkHandoffService,
+    handoff_record: dict,
+    session: dict,
+    snapshot: AssistantRuntimeSettings | None = None,
+    fallback_message: str = (
+        "Handoff was saved without VK delivery because runtime settings are unavailable."
+    ),
+) -> HandoffTicketResponse | None:
+    if not hasattr(repository, "upsert_handoff_ticket"):
+        return None
+
+    existing_ticket = None
+    if hasattr(repository, "get_handoff_ticket"):
+        existing_ticket = await repository.get_handoff_ticket(
+            handoff_id=handoff_record["id"],
+            channel="vk",
+        )
+
+    if _ticket_has_open_link(existing_ticket):
+        return _public_ticket(
+            channel="vk",
+            status="open",
+            message="VK ticket already exists for this handoff.",
+            updated_at=_ticket_updated_at(existing_ticket),
+        )
+
+    current_ticket = existing_ticket
+    if current_ticket is None:
+        current_ticket = await repository.upsert_handoff_ticket(
+            handoff_id=handoff_record["id"],
+            channel="vk",
+            ticket_status="submitted",
+            created_at=handoff_record.get("created_at"),
+            last_customer_message_at=handoff_record.get("created_at"),
+            last_sync_at=handoff_record.get("created_at") or datetime.now(timezone.utc),
+        )
+
+    if snapshot is None and settings_provider is None:
+        return _public_ticket_from_record(
+            channel="vk",
+            ticket=current_ticket,
+            fallback_message=fallback_message,
+        )
+
+    if snapshot is None:
+        return _public_ticket_from_record(
+            channel="vk",
+            ticket=current_ticket,
+            fallback_message=fallback_message,
+        )
+
+    transcript = []
+    if hasattr(repository, "list_messages"):
+        transcript = await repository.list_messages(
+            handoff_record["session_id"],
+            limit=10,
+        )
+
+    dispatch = await vk_handoff_service.dispatch_handoff(
+        settings=snapshot.vk_handoff,
+        handoff=handoff_record,
+        session=session,
+        transcript=transcript,
+        existing_ticket=current_ticket,
+    )
+
+    persisted = await repository.upsert_handoff_ticket(
+        handoff_id=handoff_record["id"],
+        channel=dispatch.channel,
+        ticket_status=dispatch.ticket_status,
+        external_chat_id=dispatch.external_chat_id,
+        external_thread_id=dispatch.external_thread_id,
+        external_thread_title=dispatch.external_thread_title,
+        external_root_message_id=dispatch.external_root_message_id,
+        failure_reason=dispatch.failure_reason,
+        created_at=handoff_record.get("created_at"),
+        opened_at=dispatch.opened_at,
+        last_customer_message_at=handoff_record.get("created_at"),
+        last_sync_at=dispatch.last_sync_at,
+    )
+    return _public_ticket(
+        channel=dispatch.channel,
         status=dispatch.ticket_status,
         message=dispatch.message,
         updated_at=persisted.get("last_sync_at") or dispatch.last_sync_at,
@@ -216,12 +360,13 @@ async def _sync_telegram_ticket(
 
 def _public_ticket(
     *,
+    channel: str,
     status: str,
     message: str | None,
     updated_at,
 ) -> HandoffTicketResponse:
     return HandoffTicketResponse(
-        channel="telegram",
+        channel=channel,
         status=status,
         message=message,
         updated_at=updated_at,
@@ -229,12 +374,14 @@ def _public_ticket(
 
 
 def _public_ticket_from_record(
+    channel: str,
     ticket: dict | None,
     *,
     fallback_message: str,
 ) -> HandoffTicketResponse:
     if not ticket:
         return _public_ticket(
+            channel=channel,
             status="submitted",
             message=fallback_message,
             updated_at=None,
@@ -242,13 +389,22 @@ def _public_ticket_from_record(
 
     status = str(ticket.get("ticket_status") or "submitted")
     if status == "open":
-        message = "Telegram ticket already exists for this handoff."
+        message = (
+            "VK ticket already exists for this handoff."
+            if channel == "vk"
+            else "Telegram ticket already exists for this handoff."
+        )
     elif status == "failed":
-        message = "Handoff was saved, but Telegram ticket creation failed."
+        message = (
+            "Handoff was saved, but VK ticket creation failed."
+            if channel == "vk"
+            else "Handoff was saved, but Telegram ticket creation failed."
+        )
     else:
         message = fallback_message
 
     return _public_ticket(
+        channel=channel,
         status=status,
         message=message,
         updated_at=_ticket_updated_at(ticket),
@@ -258,10 +414,17 @@ def _public_ticket_from_record(
 def _ticket_has_open_link(ticket: dict | None) -> bool:
     if not ticket:
         return False
+    if str(ticket.get("ticket_status") or "") != "open":
+        return False
     return (
-        str(ticket.get("ticket_status") or "") == "open"
-        and ticket.get("telegram_topic_id") is not None
-        and ticket.get("telegram_root_message_id") is not None
+        (
+            ticket.get("telegram_topic_id") is not None
+            and ticket.get("telegram_root_message_id") is not None
+        )
+        or (
+            ticket.get("external_thread_id") is not None
+            and ticket.get("external_root_message_id") is not None
+        )
     )
 
 
@@ -274,3 +437,9 @@ def _ticket_updated_at(ticket: dict | None):
         or ticket.get("updated_at")
         or ticket.get("created_at")
     )
+
+
+def _active_handoff_channel(snapshot: AssistantRuntimeSettings | None) -> str:
+    if snapshot is None:
+        return "telegram"
+    return snapshot.active_handoff_channel

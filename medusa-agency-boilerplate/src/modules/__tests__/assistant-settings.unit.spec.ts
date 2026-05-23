@@ -84,6 +84,7 @@ type SettingState = {
   rate_limits: Record<string, number>
   usage_tracking_enabled: boolean
   observability: Record<string, boolean>
+  active_handoff_channel: string
   version: number
   updated_by: string | null
   updated_at: Date
@@ -116,10 +117,41 @@ type TelegramState = {
   version: number
 }
 
+type VkState = {
+  enabled: boolean
+  environment_mode: string
+  group_id: string | null
+  support_peer_id: string | null
+  webhook_url: string | null
+  community_access_token_ciphertext: Buffer | null
+  community_access_token_iv: Buffer | null
+  community_access_token_tag: Buffer | null
+  community_access_token_last4: string | null
+  secret_key_ciphertext: Buffer | null
+  secret_key_iv: Buffer | null
+  secret_key_tag: Buffer | null
+  secret_key_last4: string | null
+  confirmation_code_ciphertext: Buffer | null
+  confirmation_code_iv: Buffer | null
+  confirmation_code_tag: Buffer | null
+  confirmation_code_last4: string | null
+  allowed_operator_ids: string[]
+  allowed_admin_ids: string[]
+  operator_reply_mode: string
+  fallback_message: string | null
+  last_test_status: string | null
+  last_test_error: string | null
+  last_test_at: Date | null
+  created_at: Date
+  updated_at: Date
+  version: number
+}
+
 type DbState = {
   providers: Map<string, ProviderState>
   setting: SettingState | null
   telegram: TelegramState | null
+  vk: VkState | null
   /** Monotonic clock for `now()` so ordering by created_at/updated_at is
    *  stable inside a single test run. */
   clock: number
@@ -201,6 +233,7 @@ function projectSetting(s: SettingState): Record<string, unknown> {
     rate_limits: s.rate_limits,
     usage_tracking_enabled: s.usage_tracking_enabled,
     observability: s.observability,
+    active_handoff_channel: s.active_handoff_channel,
     version: s.version,
     updated_by: s.updated_by,
     updated_at: s.updated_at,
@@ -234,6 +267,39 @@ function projectTelegramRuntime(t: TelegramState): Record<string, unknown> {
     webhook_secret_ciphertext: t.webhook_secret_ciphertext,
     webhook_secret_iv: t.webhook_secret_iv,
     webhook_secret_tag: t.webhook_secret_tag,
+  }
+}
+
+function projectVkRuntime(v: VkState): Record<string, unknown> {
+  return {
+    id: "singleton",
+    enabled: v.enabled,
+    environment_mode: v.environment_mode,
+    group_id: v.group_id,
+    support_peer_id: v.support_peer_id,
+    webhook_url: v.webhook_url,
+    community_access_token_last4: v.community_access_token_last4,
+    secret_key_last4: v.secret_key_last4,
+    confirmation_code_last4: v.confirmation_code_last4,
+    allowed_operator_ids: v.allowed_operator_ids,
+    allowed_admin_ids: v.allowed_admin_ids,
+    operator_reply_mode: v.operator_reply_mode,
+    fallback_message: v.fallback_message,
+    last_test_status: v.last_test_status,
+    last_test_error: v.last_test_error,
+    last_test_at: v.last_test_at,
+    created_at: v.created_at,
+    updated_at: v.updated_at,
+    version: v.version,
+    community_access_token_ciphertext: v.community_access_token_ciphertext,
+    community_access_token_iv: v.community_access_token_iv,
+    community_access_token_tag: v.community_access_token_tag,
+    secret_key_ciphertext: v.secret_key_ciphertext,
+    secret_key_iv: v.secret_key_iv,
+    secret_key_tag: v.secret_key_tag,
+    confirmation_code_ciphertext: v.confirmation_code_ciphertext,
+    confirmation_code_iv: v.confirmation_code_iv,
+    confirmation_code_tag: v.confirmation_code_tag,
   }
 }
 
@@ -371,6 +437,9 @@ function applySettingColumn(
       s.updated_by =
         value === null || value === undefined ? null : String(value)
       break
+    case "active_handoff_channel":
+      s.active_handoff_channel = String(value)
+      break
     default:
       break
   }
@@ -388,7 +457,9 @@ function buildMockPg(state: DbState): PgConnectionLike {
       case "create-index-llm-fallback-priority":
       case "create-index-llm-enabled-priority":
       case "create-table-setting":
+      case "add-column-setting-active-handoff-channel":
       case "create-table-telegram-handoff":
+      case "create-table-vk-handoff":
         return { rows: [], rowCount: 0 }
 
       case "seed-singleton": {
@@ -419,6 +490,7 @@ function buildMockPg(state: DbState): PgConnectionLike {
           rate_limits: JSON.parse(rate_limits_json),
           usage_tracking_enabled: true,
           observability: JSON.parse(observability_json),
+          active_handoff_channel: "telegram",
           version: 1,
           updated_by: null,
           updated_at: nextNow(state),
@@ -448,6 +520,42 @@ function buildMockPg(state: DbState): PgConnectionLike {
           allowed_operator_ids: [],
           allowed_admin_ids: [],
           operator_reply_mode: "explicit_reply_command",
+          fallback_message,
+          last_test_status: null,
+          last_test_error: null,
+          last_test_at: null,
+          created_at: now,
+          updated_at: now,
+          version: 1,
+        }
+        return { rows: [], rowCount: 1 }
+      }
+
+      case "seed-vk-handoff-singleton": {
+        if (state.vk) return { rows: [], rowCount: 0 }
+        const [fallback_message] = bindings as [string]
+        const now = nextNow(state)
+        state.vk = {
+          enabled: false,
+          environment_mode: "test",
+          group_id: null,
+          support_peer_id: null,
+          webhook_url: null,
+          community_access_token_ciphertext: null,
+          community_access_token_iv: null,
+          community_access_token_tag: null,
+          community_access_token_last4: null,
+          secret_key_ciphertext: null,
+          secret_key_iv: null,
+          secret_key_tag: null,
+          secret_key_last4: null,
+          confirmation_code_ciphertext: null,
+          confirmation_code_iv: null,
+          confirmation_code_tag: null,
+          confirmation_code_last4: null,
+          allowed_operator_ids: [],
+          allowed_admin_ids: [],
+          operator_reply_mode: "explicit_ticket_command",
           fallback_message,
           last_test_status: null,
           last_test_error: null,
@@ -746,6 +854,13 @@ function buildMockPg(state: DbState): PgConnectionLike {
         }
       }
 
+      case "get-vk-handoff-runtime": {
+        if (!state.vk) return { rows: [] }
+        return {
+          rows: [projectVkRuntime(state.vk)] as unknown as T[],
+        }
+      }
+
       default:
         // Unknown SQL — return empty so we surface "rows missing" errors
         // from the module instead of silent test passes.
@@ -761,7 +876,13 @@ function buildMockPg(state: DbState): PgConnectionLike {
 }
 
 function buildState(): DbState {
-  return { providers: new Map(), setting: null, telegram: null, clock: 0 }
+  return {
+    providers: new Map(),
+    setting: null,
+    telegram: null,
+    vk: null,
+    clock: 0,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1210,16 +1331,24 @@ describe("getEffectiveAssistantConfig", () => {
       "sk-second-5678",
     ])
     expect(config.global.id).toBe("singleton")
+    expect(config.global.active_handoff_channel).toBe("telegram")
+    expect(config.active_handoff_channel).toBe("telegram")
     expect(config.telegram_handoff.enabled).toBe(false)
     expect(config.telegram_handoff.bot_token).toBeNull()
     expect(config.telegram_handoff.webhook_secret).toBeNull()
     expect(config.telegram_handoff.diagnostics.status).toBe("disabled")
+    expect(config.vk_handoff.enabled).toBe(false)
+    expect(config.vk_handoff.community_access_token).toBeNull()
+    expect(config.vk_handoff.secret_key).toBeNull()
+    expect(config.vk_handoff.confirmation_code).toBeNull()
+    expect(config.vk_handoff.diagnostics.status).toBe("disabled")
 
     const allTimes = [
       config.active!.updated_at,
       ...config.fallback.map((f) => f.updated_at),
       config.global.updated_at,
       config.telegram_handoff.updated_at,
+      config.vk_handoff.updated_at,
     ]
     const max = allTimes.reduce((acc, cur) => (cur > acc ? cur : acc))
     expect(config.version).toBe(max)
@@ -1354,6 +1483,7 @@ describe("getAssistantSetting / updateAssistantSetting", () => {
     expect(setting.embedding_dimension).toBe(384)
     expect(setting.streaming_enabled).toBe(true)
     expect(setting.default_locale).toBe("ru")
+    expect(setting.active_handoff_channel).toBe("telegram")
     expect(setting.tools_enabled.price_lookup).toBe(true)
     expect(setting.guardrails.prompt_injection).toBe(true)
     expect(setting.rate_limits.chat_per_minute).toBe(60)
@@ -1375,7 +1505,23 @@ describe("getAssistantSetting / updateAssistantSetting", () => {
     expect(updated.version).toBe(before.version + 1)
     expect(updated.retrieval_top_k).toBe(8)
     expect(updated.default_locale).toBe("en")
+    expect(updated.active_handoff_channel).toBe("telegram")
     expect(updated.updated_by).toBe("user_admin")
+  })
+
+  it("updates active_handoff_channel through the singleton settings row", async () => {
+    const state = buildState()
+    const pg = buildMockPg(state)
+    const before = await getAssistantSetting(pg)
+
+    const updated = await updateAssistantSetting(
+      pg,
+      { active_handoff_channel: "vk" },
+      { expectedVersion: before.version }
+    )
+
+    expect(updated.active_handoff_channel).toBe("vk")
+    expect(updated.version).toBe(before.version + 1)
   })
 
   it("throws `version_mismatch` when the expected version is stale", async () => {

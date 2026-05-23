@@ -12,6 +12,7 @@ from app.api.dependencies import (
     get_repository,
     get_settings_provider,
     get_telegram_handoff_service,
+    get_vk_handoff_service,
     get_vector_indexing_service,
 )
 from app.core.auth import require_server_token_or_api_token
@@ -27,6 +28,7 @@ from app.services.telegram_handoff import (
     TelegramHandoffService,
 )
 from app.services.vector import VectorBackendUnavailable
+from app.services.vk_handoff import VkHandoffConnectionTestResult, VkHandoffService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -210,6 +212,49 @@ async def test_telegram_handoff_connection(
             },
         ) from exc
     return await service.test_connection(snapshot.telegram_handoff)
+
+
+@router.post(
+    "/vk/handoff/test-connection",
+    response_model=VkHandoffConnectionTestResult,
+)
+async def test_vk_handoff_connection(
+    http_request: FastAPIRequest,
+    settings_provider: SettingsProvider | None = Depends(get_settings_provider),
+    service: VkHandoffService = Depends(get_vk_handoff_service),
+    _: None = Depends(require_server_token_or_api_token),
+) -> VkHandoffConnectionTestResult:
+    enforce_rate_limit(
+        http_request,
+        scope="admin",
+        identity=rate_limit_identity(http_request, scope="admin"),
+    )
+    if settings_provider is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": {
+                    "code": "SETTINGS_PROVIDER_UNAVAILABLE",
+                    "message": "Assistant settings provider is not configured.",
+                    "retryable": True,
+                }
+            },
+        )
+    try:
+        await settings_provider.invalidate()
+        snapshot = await settings_provider.get()
+    except (SettingsFetchError, RuntimeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": {
+                    "code": "SETTINGS_PROVIDER_UNAVAILABLE",
+                    "message": str(exc),
+                    "retryable": True,
+                }
+            },
+        ) from exc
+    return await service.test_connection(snapshot.vk_handoff)
 
 
 @router.post("/knowledge/documents", response_model=KnowledgeDocumentCreateResponse)

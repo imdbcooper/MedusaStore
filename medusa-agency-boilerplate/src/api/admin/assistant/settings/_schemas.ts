@@ -143,6 +143,7 @@ export const AssistantSettingUpdateSchema = z
     max_output_tokens: z.number().int().min(1).max(32_000).optional(),
     streaming_enabled: z.boolean().optional(),
     default_locale: z.string().min(2).max(10).optional(),
+    active_handoff_channel: z.enum(["telegram", "vk"]).optional(),
     allowed_models: z.array(z.string().min(1).max(120)).max(50).optional(),
     tools_enabled: z.record(z.string(), z.boolean()).optional(),
     guardrails: z.record(z.string(), z.boolean()).optional(),
@@ -259,4 +260,79 @@ export const AssistantTelegramHandoffTestSchema = z
 
 export type AssistantTelegramHandoffTestBody = z.infer<
   typeof AssistantTelegramHandoffTestSchema
+>
+
+const VkNumericUserIdSchema = z
+  .union([z.string(), z.number().int()])
+  .transform((value) => String(value).trim())
+  .refine((value) => /^\d+$/.test(value), {
+    message: "VK user ids must be numeric",
+  })
+
+const VkHandoffBaseShape = {
+  enabled: z.boolean().optional(),
+  environment_mode: z.enum(["test", "production"]).optional(),
+  group_id: z
+    .union([z.string(), z.number().int(), z.null()])
+    .transform((value) => {
+      if (value === null) return null
+      const normalized = String(value).trim()
+      return normalized.length ? normalized : null
+    })
+    .refine((value) => value === null || /^\d+$/.test(value), {
+      message: "group_id must be a VK numeric group id",
+    })
+    .optional(),
+  support_peer_id: z
+    .union([z.string(), z.number().int(), z.null()])
+    .transform((value) => {
+      if (value === null) return null
+      const normalized = String(value).trim()
+      return normalized.length ? normalized : null
+    })
+    .refine((value) => value === null || /^-?\d+$/.test(value), {
+      message: "support_peer_id must be a VK numeric peer id",
+    })
+    .optional(),
+  webhook_url: TelegramNullableWebhookUrl.optional(),
+  community_access_token: TelegramSecretInput.optional(),
+  secret_key: TelegramSecretInput.optional(),
+  confirmation_code: TelegramSecretInput.optional(),
+  allowed_operator_ids: z.array(VkNumericUserIdSchema).max(100).optional(),
+  allowed_admin_ids: z.array(VkNumericUserIdSchema).max(100).optional(),
+  operator_reply_mode: z.enum(["explicit_ticket_command"]).optional(),
+  fallback_message: TelegramNullableString(2000).optional(),
+}
+
+export const AssistantVkHandoffReadQuerySchema = z.object({}).strict()
+
+export type AssistantVkHandoffReadQuery = z.infer<
+  typeof AssistantVkHandoffReadQuerySchema
+>
+
+export const AssistantVkHandoffUpdateSchema = z
+  .object({
+    ...VkHandoffBaseShape,
+    expected_version: z.number().int().min(1).optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      Object.entries(value).some(
+        ([key, fieldValue]) =>
+          key !== "expected_version" && fieldValue !== undefined
+      ),
+    { message: "at least one field is required" }
+  )
+
+export type AssistantVkHandoffUpdateBody = z.infer<
+  typeof AssistantVkHandoffUpdateSchema
+>
+
+export const AssistantVkHandoffTestSchema = z
+  .object(VkHandoffBaseShape)
+  .strict()
+
+export type AssistantVkHandoffTestBody = z.infer<
+  typeof AssistantVkHandoffTestSchema
 >

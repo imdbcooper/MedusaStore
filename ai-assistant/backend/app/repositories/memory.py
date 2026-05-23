@@ -32,6 +32,17 @@ class InMemoryAssistantRepository:
         self.handoff_messages: dict[UUID, dict[str, Any]] = {}
         self.handoff_messages_by_update: dict[int, UUID] = {}
         self.handoff_messages_by_message: dict[tuple[str, int | None, int, str], UUID] = {}
+        self.handoff_messages_by_external_event: dict[tuple[str, str], UUID] = {}
+        self.handoff_messages_by_external_message: dict[
+            tuple[str, str, str | None, str, str],
+            UUID,
+        ] = {}
+        self.external_webhook_receipts: dict[UUID, dict[str, Any]] = {}
+        self.external_webhook_receipts_by_event: dict[tuple[str, str], UUID] = {}
+        self.external_webhook_receipts_by_message: dict[
+            tuple[str, str, str | None, str, str],
+            UUID,
+        ] = {}
         self.principal_states: dict[str, dict[str, Any]] = {}
 
     async def ensure_session(
@@ -410,7 +421,7 @@ class InMemoryAssistantRepository:
         channel: str = "telegram",
     ) -> dict[str, Any] | None:
         record = self.handoff_tickets.get((handoff_id, channel))
-        return deepcopy(record) if record else None
+        return _normalize_handoff_ticket_record(record) if record else None
 
     async def upsert_handoff_ticket(
         self,
@@ -422,6 +433,10 @@ class InMemoryAssistantRepository:
         telegram_topic_id: int | None = None,
         telegram_topic_title: str | None = None,
         telegram_root_message_id: int | None = None,
+        external_chat_id: str | None = None,
+        external_thread_id: str | None = None,
+        external_thread_title: str | None = None,
+        external_root_message_id: str | None = None,
         assigned_operator_id: str | None = None,
         assigned_operator_username: str | None = None,
         assigned_at=None,
@@ -429,6 +444,7 @@ class InMemoryAssistantRepository:
         last_operator_message_at=None,
         last_customer_message_at=None,
         last_telegram_update_id: int | None = None,
+        last_external_event_id: str | None = None,
         failure_reason: str | None = None,
         created_at=None,
         opened_at=None,
@@ -439,14 +455,55 @@ class InMemoryAssistantRepository:
         existing = self.handoff_tickets.get(key)
         existing_status = (existing or {}).get("ticket_status")
         existing_has_open_link = bool(
-            (existing or {}).get("telegram_topic_id") is not None
-            and (existing or {}).get("telegram_root_message_id") is not None
+            (
+                (existing or {}).get("telegram_topic_id") is not None
+                and (existing or {}).get("telegram_root_message_id") is not None
+            )
+            or (
+                (existing or {}).get("external_thread_id") is not None
+                and (existing or {}).get("external_root_message_id") is not None
+            )
         )
         effective_status = ticket_status
         if existing_status == "open" and existing_has_open_link and ticket_status != "open":
             effective_status = "open"
         elif existing_status == "failed" and ticket_status == "submitted":
             effective_status = "failed"
+        resolved_external_chat_id = (
+            external_chat_id
+            if external_chat_id is not None
+            else str(telegram_chat_id)
+            if telegram_chat_id is not None
+            else (existing or {}).get("external_chat_id")
+        )
+        resolved_external_thread_id = (
+            external_thread_id
+            if external_thread_id is not None
+            else str(telegram_topic_id)
+            if telegram_topic_id is not None
+            else (existing or {}).get("external_thread_id")
+        )
+        resolved_external_thread_title = (
+            external_thread_title
+            if external_thread_title is not None
+            else telegram_topic_title
+            if telegram_topic_title is not None
+            else (existing or {}).get("external_thread_title")
+        )
+        resolved_external_root_message_id = (
+            external_root_message_id
+            if external_root_message_id is not None
+            else str(telegram_root_message_id)
+            if telegram_root_message_id is not None
+            else (existing or {}).get("external_root_message_id")
+        )
+        resolved_last_external_event_id = (
+            last_external_event_id
+            if last_external_event_id is not None
+            else str(last_telegram_update_id)
+            if last_telegram_update_id is not None
+            else (existing or {}).get("last_external_event_id")
+        )
         record = {
             "handoff_id": handoff_id,
             "channel": channel,
@@ -463,6 +520,10 @@ class InMemoryAssistantRepository:
             "telegram_root_message_id": telegram_root_message_id
             if telegram_root_message_id is not None
             else (existing or {}).get("telegram_root_message_id"),
+            "external_chat_id": resolved_external_chat_id,
+            "external_thread_id": resolved_external_thread_id,
+            "external_thread_title": resolved_external_thread_title,
+            "external_root_message_id": resolved_external_root_message_id,
             "assigned_operator_id": assigned_operator_id
             if assigned_operator_id is not None
             else (existing or {}).get("assigned_operator_id"),
@@ -484,6 +545,7 @@ class InMemoryAssistantRepository:
             "last_telegram_update_id": last_telegram_update_id
             if last_telegram_update_id is not None
             else (existing or {}).get("last_telegram_update_id"),
+            "last_external_event_id": resolved_last_external_event_id,
             "failure_reason": (
                 None
                 if effective_status == "open"
@@ -500,7 +562,7 @@ class InMemoryAssistantRepository:
             "updated_at": now,
         }
         self.handoff_tickets[key] = record
-        return deepcopy(record)
+        return _normalize_handoff_ticket_record(record)
 
     async def update_handoff_ticket(
         self,
@@ -508,6 +570,10 @@ class InMemoryAssistantRepository:
         handoff_id: UUID,
         channel: str = "telegram",
         ticket_status: str | object = _UNSET,
+        external_chat_id: str | None | object = _UNSET,
+        external_thread_id: str | None | object = _UNSET,
+        external_thread_title: str | None | object = _UNSET,
+        external_root_message_id: str | None | object = _UNSET,
         assigned_operator_id: str | None | object = _UNSET,
         assigned_operator_username: str | None | object = _UNSET,
         assigned_at: Any | object = _UNSET,
@@ -515,6 +581,7 @@ class InMemoryAssistantRepository:
         last_operator_message_at: Any | object = _UNSET,
         last_customer_message_at: Any | object = _UNSET,
         last_telegram_update_id: int | None | object = _UNSET,
+        last_external_event_id: str | None | object = _UNSET,
         failure_reason: str | None | object = _UNSET,
         last_sync_at: Any | object = _UNSET,
     ) -> dict[str, Any]:
@@ -525,6 +592,14 @@ class InMemoryAssistantRepository:
         updated = dict(record)
         if ticket_status is not _UNSET:
             updated["ticket_status"] = ticket_status
+        if external_chat_id is not _UNSET:
+            updated["external_chat_id"] = external_chat_id
+        if external_thread_id is not _UNSET:
+            updated["external_thread_id"] = external_thread_id
+        if external_thread_title is not _UNSET:
+            updated["external_thread_title"] = external_thread_title
+        if external_root_message_id is not _UNSET:
+            updated["external_root_message_id"] = external_root_message_id
         if assigned_operator_id is not _UNSET:
             updated["assigned_operator_id"] = assigned_operator_id
         if assigned_operator_username is not _UNSET:
@@ -539,13 +614,20 @@ class InMemoryAssistantRepository:
             updated["last_customer_message_at"] = last_customer_message_at
         if last_telegram_update_id is not _UNSET:
             updated["last_telegram_update_id"] = last_telegram_update_id
+            updated["last_external_event_id"] = (
+                str(last_telegram_update_id)
+                if last_telegram_update_id is not None
+                else None
+            )
+        if last_external_event_id is not _UNSET:
+            updated["last_external_event_id"] = last_external_event_id
         if failure_reason is not _UNSET:
             updated["failure_reason"] = failure_reason
         if last_sync_at is not _UNSET:
             updated["last_sync_at"] = last_sync_at
         updated["updated_at"] = datetime.now(timezone.utc)
         self.handoff_tickets[key] = updated
-        return deepcopy(updated)
+        return _normalize_handoff_ticket_record(updated)
 
     async def find_handoff_ticket_by_telegram_thread(
         self,
@@ -576,7 +658,39 @@ class InMemoryAssistantRepository:
             or item.get("created_at"),
             reverse=True,
         )
-        return deepcopy(matches[0])
+        return _normalize_handoff_ticket_record(matches[0])
+
+    async def find_handoff_ticket_by_external_thread(
+        self,
+        *,
+        external_chat_id: str,
+        external_thread_id: str,
+        channel: str,
+    ) -> dict[str, Any] | None:
+        matches: list[dict[str, Any]] = []
+        for (ticket_handoff_id, ticket_channel), ticket in self.handoff_tickets.items():
+            if ticket_channel != channel:
+                continue
+            normalized = _normalize_handoff_ticket_record(ticket)
+            if normalized.get("external_chat_id") != external_chat_id:
+                continue
+            if normalized.get("external_thread_id") != external_thread_id:
+                continue
+            matches.append(
+                {
+                    **normalized,
+                    "session_id": (self.handoffs.get(ticket_handoff_id) or {}).get("session_id"),
+                }
+            )
+        if not matches:
+            return None
+        matches.sort(
+            key=lambda item: item.get("updated_at")
+            or item.get("last_sync_at")
+            or item.get("created_at"),
+            reverse=True,
+        )
+        return _normalize_handoff_ticket_record(matches[0])
 
     async def get_latest_handoff_ticket_for_session(
         self,
@@ -600,7 +714,7 @@ class InMemoryAssistantRepository:
             or item.get("created_at"),
             reverse=True,
         )
-        return deepcopy(matches[0])
+        return _normalize_handoff_ticket_record(matches[0])
 
     async def get_handoff_message_by_update_id(
         self,
@@ -610,7 +724,7 @@ class InMemoryAssistantRepository:
         record_id = self.handoff_messages_by_update.get(telegram_update_id)
         if not record_id:
             return None
-        return deepcopy(self.handoff_messages.get(record_id))
+        return _normalize_handoff_message_record(self.handoff_messages.get(record_id))
 
     async def get_handoff_message_by_message(
         self,
@@ -624,7 +738,171 @@ class InMemoryAssistantRepository:
         record_id = self.handoff_messages_by_message.get(key)
         if not record_id:
             return None
-        return deepcopy(self.handoff_messages.get(record_id))
+        return _normalize_handoff_message_record(self.handoff_messages.get(record_id))
+
+    async def get_handoff_message_by_external_event_id(
+        self,
+        *,
+        channel: str,
+        external_event_id: str,
+    ) -> dict[str, Any] | None:
+        record_id = self.handoff_messages_by_external_event.get((channel, external_event_id))
+        if not record_id:
+            return None
+        return _normalize_handoff_message_record(self.handoff_messages.get(record_id))
+
+    async def get_handoff_message_by_external_message(
+        self,
+        *,
+        channel: str,
+        external_chat_id: str,
+        external_thread_id: str | None,
+        external_message_id: str,
+        direction: str,
+    ) -> dict[str, Any] | None:
+        key = (
+            channel,
+            external_chat_id,
+            external_thread_id,
+            external_message_id,
+            direction,
+        )
+        record_id = self.handoff_messages_by_external_message.get(key)
+        if not record_id:
+            return None
+        return _normalize_handoff_message_record(self.handoff_messages.get(record_id))
+
+    async def reserve_external_webhook_receipt(
+        self,
+        *,
+        channel: str,
+        external_chat_id: str,
+        external_thread_id: str | None,
+        external_message_id: str | None,
+        external_event_id: str | None,
+        direction: str,
+        message_kind: str = "external_update",
+        metadata: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        if external_event_id is not None:
+            record_id = self.external_webhook_receipts_by_event.get(
+                (channel, external_event_id)
+            )
+            if record_id:
+                existing = self.external_webhook_receipts.get(record_id)
+                if existing is None:
+                    raise ValueError("EXTERNAL_WEBHOOK_RECEIPT_NOT_FOUND")
+                if existing.get("delivery_status") != "failed":
+                    return _normalize_external_webhook_receipt_record(existing), False
+                existing.update(
+                    {
+                        "channel": channel,
+                        "external_chat_id": external_chat_id,
+                        "external_thread_id": external_thread_id,
+                        "external_message_id": external_message_id,
+                        "external_event_id": external_event_id,
+                        "direction": direction,
+                        "delivery_status": "processing",
+                        "message_kind": message_kind,
+                        "metadata": deepcopy(metadata or {}),
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                )
+                if external_message_id is not None:
+                    key = (
+                        channel,
+                        external_chat_id,
+                        external_thread_id,
+                        external_message_id,
+                        direction,
+                    )
+                    self.external_webhook_receipts_by_message[key] = record_id
+                return _normalize_external_webhook_receipt_record(existing), True
+
+        if external_message_id is not None:
+            key = (
+                channel,
+                external_chat_id,
+                external_thread_id,
+                external_message_id,
+                direction,
+            )
+            record_id = self.external_webhook_receipts_by_message.get(key)
+            if record_id:
+                existing = self.external_webhook_receipts.get(record_id)
+                if existing is None:
+                    raise ValueError("EXTERNAL_WEBHOOK_RECEIPT_NOT_FOUND")
+                if existing.get("delivery_status") != "failed":
+                    return _normalize_external_webhook_receipt_record(existing), False
+                existing.update(
+                    {
+                        "channel": channel,
+                        "external_chat_id": external_chat_id,
+                        "external_thread_id": external_thread_id,
+                        "external_message_id": external_message_id,
+                        "external_event_id": external_event_id,
+                        "direction": direction,
+                        "delivery_status": "processing",
+                        "message_kind": message_kind,
+                        "metadata": deepcopy(metadata or {}),
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                )
+                if external_event_id is not None:
+                    self.external_webhook_receipts_by_event[(channel, external_event_id)] = (
+                        record_id
+                    )
+                return _normalize_external_webhook_receipt_record(existing), True
+
+        now = datetime.now(timezone.utc)
+        record_id = uuid4()
+        record = {
+            "id": record_id,
+            "channel": channel,
+            "external_chat_id": external_chat_id,
+            "external_thread_id": external_thread_id,
+            "external_message_id": external_message_id,
+            "external_event_id": external_event_id,
+            "direction": direction,
+            "delivery_status": "processing",
+            "message_kind": message_kind,
+            "metadata": deepcopy(metadata or {}),
+            "created_at": now,
+            "updated_at": now,
+        }
+        self.external_webhook_receipts[record_id] = record
+        if external_event_id is not None:
+            self.external_webhook_receipts_by_event[(channel, external_event_id)] = record_id
+        if external_message_id is not None:
+            key = (
+                channel,
+                external_chat_id,
+                external_thread_id,
+                external_message_id,
+                direction,
+            )
+            self.external_webhook_receipts_by_message[key] = record_id
+        return _normalize_external_webhook_receipt_record(record), True
+
+    async def update_external_webhook_receipt(
+        self,
+        *,
+        external_webhook_receipt_id: UUID,
+        delivery_status: str | object = _UNSET,
+        message_kind: str | object = _UNSET,
+        metadata: dict[str, Any] | None | object = _UNSET,
+    ) -> dict[str, Any]:
+        record = self.external_webhook_receipts.get(external_webhook_receipt_id)
+        if record is None:
+            raise ValueError("EXTERNAL_WEBHOOK_RECEIPT_NOT_FOUND")
+        if delivery_status is not _UNSET:
+            record["delivery_status"] = delivery_status
+        if message_kind is not _UNSET:
+            record["message_kind"] = message_kind
+        if metadata is not _UNSET:
+            record["metadata"] = deepcopy(metadata or {})
+        record["updated_at"] = datetime.now(timezone.utc)
+        return _normalize_external_webhook_receipt_record(record)
 
     async def reserve_handoff_message(
         self,
@@ -649,11 +927,12 @@ class InMemoryAssistantRepository:
                 if existing is None:
                     raise ValueError("HANDOFF_MESSAGE_NOT_FOUND")
                 if existing.get("delivery_status") != "failed":
-                    return deepcopy(existing), False
+                    return _normalize_handoff_message_record(existing), False
                 existing.update(
                     {
                         "handoff_id": handoff_id,
                         "session_id": session_id,
+                        "channel": "telegram",
                         "telegram_chat_id": telegram_chat_id,
                         "telegram_topic_id": telegram_topic_id,
                         "telegram_message_id": telegram_message_id,
@@ -661,10 +940,27 @@ class InMemoryAssistantRepository:
                         "delivery_status": "processing",
                         "message_kind": message_kind,
                         "operator_telegram_user_id": operator_telegram_user_id,
+                        "operator_external_user_id": operator_telegram_user_id,
                         "operator_username": operator_username,
                         "content": content
                         if content is not None
                         else existing.get("content"),
+                        "external_chat_id": telegram_chat_id,
+                        "external_thread_id": (
+                            str(telegram_topic_id)
+                            if telegram_topic_id is not None
+                            else None
+                        ),
+                        "external_message_id": (
+                            str(telegram_message_id)
+                            if telegram_message_id is not None
+                            else None
+                        ),
+                        "external_event_id": (
+                            str(telegram_update_id)
+                            if telegram_update_id is not None
+                            else None
+                        ),
                         "metadata": deepcopy(metadata or {}),
                     }
                 )
@@ -676,7 +972,18 @@ class InMemoryAssistantRepository:
                         direction,
                     )
                     self.handoff_messages_by_message[key] = record_id
-                return deepcopy(existing), True
+                if telegram_update_id is not None:
+                    self.handoff_messages_by_external_event[("telegram", str(telegram_update_id))] = record_id
+                if telegram_message_id is not None:
+                    external_key = (
+                        "telegram",
+                        telegram_chat_id,
+                        str(telegram_topic_id) if telegram_topic_id is not None else None,
+                        str(telegram_message_id),
+                        direction,
+                    )
+                    self.handoff_messages_by_external_message[external_key] = record_id
+                return _normalize_handoff_message_record(existing), True
 
         created = await self.create_handoff_message(
             handoff_id=handoff_id,
@@ -690,6 +997,122 @@ class InMemoryAssistantRepository:
             message_kind=message_kind,
             assistant_message_id=None,
             operator_telegram_user_id=operator_telegram_user_id,
+            operator_username=operator_username,
+            content=content,
+            metadata=metadata,
+        )
+        return created, True
+
+    async def reserve_external_handoff_message(
+        self,
+        *,
+        handoff_id: UUID,
+        session_id: UUID,
+        channel: str,
+        external_chat_id: str,
+        external_thread_id: str | None,
+        external_message_id: str | None,
+        external_event_id: str | None,
+        direction: str,
+        message_kind: str = "external_update",
+        operator_external_user_id: str | None = None,
+        operator_username: str | None = None,
+        content: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        if external_event_id is not None:
+            record_id = self.handoff_messages_by_external_event.get(
+                (channel, external_event_id)
+            )
+            if record_id:
+                existing = self.handoff_messages.get(record_id)
+                if existing is None:
+                    raise ValueError("HANDOFF_MESSAGE_NOT_FOUND")
+                if existing.get("delivery_status") != "failed":
+                    return _normalize_handoff_message_record(existing), False
+                existing.update(
+                    {
+                        "handoff_id": handoff_id,
+                        "session_id": session_id,
+                        "channel": channel,
+                        "direction": direction,
+                        "delivery_status": "processing",
+                        "message_kind": message_kind,
+                        "operator_external_user_id": operator_external_user_id,
+                        "operator_username": operator_username,
+                        "content": content
+                        if content is not None
+                        else existing.get("content"),
+                        "external_chat_id": external_chat_id,
+                        "external_thread_id": external_thread_id,
+                        "external_message_id": external_message_id,
+                        "external_event_id": external_event_id,
+                        "metadata": deepcopy(metadata or {}),
+                    }
+                )
+                if external_message_id is not None:
+                    key = (
+                        channel,
+                        external_chat_id,
+                        external_thread_id,
+                        external_message_id,
+                        direction,
+                    )
+                    self.handoff_messages_by_external_message[key] = record_id
+                return _normalize_handoff_message_record(existing), True
+
+        if external_message_id is not None:
+            existing_by_message = await self.get_handoff_message_by_external_message(
+                channel=channel,
+                external_chat_id=external_chat_id,
+                external_thread_id=external_thread_id,
+                external_message_id=external_message_id,
+                direction=direction,
+            )
+            if existing_by_message is not None:
+                if existing_by_message.get("delivery_status") != "failed":
+                    return existing_by_message, False
+                record_id = existing_by_message["id"]
+                existing = self.handoff_messages.get(record_id)
+                if existing is None:
+                    raise ValueError("HANDOFF_MESSAGE_NOT_FOUND")
+                existing.update(
+                    {
+                        "handoff_id": handoff_id,
+                        "session_id": session_id,
+                        "channel": channel,
+                        "direction": direction,
+                        "delivery_status": "processing",
+                        "message_kind": message_kind,
+                        "operator_external_user_id": operator_external_user_id,
+                        "operator_username": operator_username,
+                        "content": content
+                        if content is not None
+                        else existing.get("content"),
+                        "external_chat_id": external_chat_id,
+                        "external_thread_id": external_thread_id,
+                        "external_message_id": external_message_id,
+                        "external_event_id": external_event_id,
+                        "metadata": deepcopy(metadata or {}),
+                    }
+                )
+                if external_event_id is not None:
+                    self.handoff_messages_by_external_event[(channel, external_event_id)] = record_id
+                return _normalize_handoff_message_record(existing), True
+
+        created = await self.create_external_handoff_message(
+            handoff_id=handoff_id,
+            session_id=session_id,
+            channel=channel,
+            external_chat_id=external_chat_id,
+            external_thread_id=external_thread_id,
+            external_message_id=external_message_id,
+            external_event_id=external_event_id,
+            direction=direction,
+            delivery_status="processing",
+            message_kind=message_kind,
+            assistant_message_id=None,
+            operator_external_user_id=operator_external_user_id,
             operator_username=operator_username,
             content=content,
             metadata=metadata,
@@ -719,15 +1142,27 @@ class InMemoryAssistantRepository:
             "id": record_id,
             "handoff_id": handoff_id,
             "session_id": session_id,
+            "channel": "telegram",
             "telegram_chat_id": telegram_chat_id,
             "telegram_topic_id": telegram_topic_id,
             "telegram_message_id": telegram_message_id,
             "telegram_update_id": telegram_update_id,
+            "external_chat_id": telegram_chat_id,
+            "external_thread_id": (
+                str(telegram_topic_id) if telegram_topic_id is not None else None
+            ),
+            "external_message_id": (
+                str(telegram_message_id) if telegram_message_id is not None else None
+            ),
+            "external_event_id": (
+                str(telegram_update_id) if telegram_update_id is not None else None
+            ),
             "direction": direction,
             "delivery_status": delivery_status,
             "message_kind": message_kind,
             "assistant_message_id": assistant_message_id,
             "operator_telegram_user_id": operator_telegram_user_id,
+            "operator_external_user_id": operator_telegram_user_id,
             "operator_username": operator_username,
             "content": content,
             "metadata": metadata or {},
@@ -736,10 +1171,77 @@ class InMemoryAssistantRepository:
         self.handoff_messages[record_id] = record
         if telegram_update_id is not None:
             self.handoff_messages_by_update[telegram_update_id] = record_id
+            self.handoff_messages_by_external_event[("telegram", str(telegram_update_id))] = record_id
         if telegram_message_id is not None:
             key = (telegram_chat_id, telegram_topic_id, telegram_message_id, direction)
             self.handoff_messages_by_message[key] = record_id
-        return deepcopy(record)
+            external_key = (
+                "telegram",
+                telegram_chat_id,
+                str(telegram_topic_id) if telegram_topic_id is not None else None,
+                str(telegram_message_id),
+                direction,
+            )
+            self.handoff_messages_by_external_message[external_key] = record_id
+        return _normalize_handoff_message_record(record)
+
+    async def create_external_handoff_message(
+        self,
+        *,
+        handoff_id: UUID,
+        session_id: UUID,
+        channel: str,
+        external_chat_id: str,
+        external_thread_id: str | None,
+        external_message_id: str | None,
+        external_event_id: str | None,
+        direction: str,
+        delivery_status: str,
+        message_kind: str = "external_update",
+        assistant_message_id: UUID | None = None,
+        operator_external_user_id: str | None = None,
+        operator_username: str | None = None,
+        content: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        record_id = uuid4()
+        record = {
+            "id": record_id,
+            "handoff_id": handoff_id,
+            "session_id": session_id,
+            "channel": channel,
+            "telegram_chat_id": None,
+            "telegram_topic_id": None,
+            "telegram_message_id": None,
+            "telegram_update_id": None,
+            "external_chat_id": external_chat_id,
+            "external_thread_id": external_thread_id,
+            "external_message_id": external_message_id,
+            "external_event_id": external_event_id,
+            "direction": direction,
+            "delivery_status": delivery_status,
+            "message_kind": message_kind,
+            "assistant_message_id": assistant_message_id,
+            "operator_telegram_user_id": None,
+            "operator_external_user_id": operator_external_user_id,
+            "operator_username": operator_username,
+            "content": content,
+            "metadata": metadata or {},
+            "created_at": datetime.now(timezone.utc),
+        }
+        self.handoff_messages[record_id] = record
+        if external_event_id is not None:
+            self.handoff_messages_by_external_event[(channel, external_event_id)] = record_id
+        if external_message_id is not None:
+            key = (
+                channel,
+                external_chat_id,
+                external_thread_id,
+                external_message_id,
+                direction,
+            )
+            self.handoff_messages_by_external_message[key] = record_id
+        return _normalize_handoff_message_record(record)
 
     async def update_handoff_message(
         self,
@@ -764,7 +1266,7 @@ class InMemoryAssistantRepository:
             record["content"] = content
         if metadata is not _UNSET:
             record["metadata"] = deepcopy(metadata or {})
-        return deepcopy(record)
+        return _normalize_handoff_message_record(record)
 
     async def enqueue_reindex_intent(
         self,
@@ -930,3 +1432,62 @@ def normalize_search_terms(value: str) -> list[str]:
         if term.endswith("а") and len(term) > 4:
             terms.append(term[:-1])
     return terms
+
+
+def _normalize_handoff_ticket_record(record: dict[str, Any] | None) -> dict[str, Any] | None:
+    if record is None:
+        return None
+    normalized = deepcopy(record)
+    if normalized.get("external_chat_id") is None and normalized.get("telegram_chat_id") is not None:
+        normalized["external_chat_id"] = str(normalized["telegram_chat_id"])
+    if normalized.get("external_thread_id") is None and normalized.get("telegram_topic_id") is not None:
+        normalized["external_thread_id"] = str(normalized["telegram_topic_id"])
+    if (
+        normalized.get("external_thread_title") is None
+        and normalized.get("telegram_topic_title") is not None
+    ):
+        normalized["external_thread_title"] = normalized["telegram_topic_title"]
+    if (
+        normalized.get("external_root_message_id") is None
+        and normalized.get("telegram_root_message_id") is not None
+    ):
+        normalized["external_root_message_id"] = str(normalized["telegram_root_message_id"])
+    if (
+        normalized.get("last_external_event_id") is None
+        and normalized.get("last_telegram_update_id") is not None
+    ):
+        normalized["last_external_event_id"] = str(normalized["last_telegram_update_id"])
+    return normalized
+
+
+def _normalize_handoff_message_record(record: dict[str, Any] | None) -> dict[str, Any] | None:
+    if record is None:
+        return None
+    normalized = deepcopy(record)
+    normalized["channel"] = str(normalized.get("channel") or "telegram")
+    if normalized.get("external_chat_id") is None and normalized.get("telegram_chat_id") is not None:
+        normalized["external_chat_id"] = str(normalized["telegram_chat_id"])
+    if normalized.get("external_thread_id") is None and normalized.get("telegram_topic_id") is not None:
+        normalized["external_thread_id"] = str(normalized["telegram_topic_id"])
+    if normalized.get("external_message_id") is None and normalized.get("telegram_message_id") is not None:
+        normalized["external_message_id"] = str(normalized["telegram_message_id"])
+    if normalized.get("external_event_id") is None and normalized.get("telegram_update_id") is not None:
+        normalized["external_event_id"] = str(normalized["telegram_update_id"])
+    if (
+        normalized.get("operator_external_user_id") is None
+        and normalized.get("operator_telegram_user_id") is not None
+    ):
+        normalized["operator_external_user_id"] = normalized["operator_telegram_user_id"]
+    normalized["metadata"] = deepcopy(normalized.get("metadata") or {})
+    return normalized
+
+
+def _normalize_external_webhook_receipt_record(
+    record: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if record is None:
+        return None
+    normalized = deepcopy(record)
+    normalized["channel"] = str(normalized.get("channel") or "telegram")
+    normalized["metadata"] = deepcopy(normalized.get("metadata") or {})
+    return normalized

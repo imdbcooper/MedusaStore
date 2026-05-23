@@ -127,6 +127,7 @@ export type AssistantSettingRow = {
   rate_limits: Record<string, number>
   usage_tracking_enabled: boolean
   observability: Record<string, boolean>
+  active_handoff_channel: AssistantHandoffChannel
   version: number
   updated_by: string | null
   updated_at: string
@@ -136,6 +137,8 @@ export type AssistantSettingUpdateInput = Partial<
   Omit<AssistantSettingRow, "id" | "version" | "updated_at">
 >
 
+export type AssistantHandoffChannel = "telegram" | "vk"
+
 export type EffectiveAssistantConfig = {
   /** ISO max(updated_at) across the active provider, fallback chain and the
    *  global singleton and Telegram handoff runtime config — clients can use it
@@ -144,7 +147,9 @@ export type EffectiveAssistantConfig = {
   active: LlmProviderRuntime | null
   fallback: LlmProviderRuntime[]
   global: AssistantSettingRow
+  active_handoff_channel: AssistantHandoffChannel
   telegram_handoff: AssistantTelegramHandoffRuntimeConfig
+  vk_handoff: AssistantVkHandoffRuntimeConfig
 }
 
 export type AssistantSecretMetadata = {
@@ -238,6 +243,92 @@ export type AssistantTelegramHandoffTestResult = {
   diagnostics: AssistantTelegramHandoffDiagnostics
 }
 
+export type AssistantVkHandoffEnvironmentMode = "test" | "production"
+
+export type AssistantVkHandoffOperatorReplyMode = "explicit_ticket_command"
+
+export type AssistantVkHandoffDiagnosticsStatus =
+  | "disabled"
+  | "not_configured"
+  | "partially_configured"
+  | "ready_for_connection_test"
+
+export type AssistantVkHandoffLastTestStatus =
+  | "disabled"
+  | "missing_credentials"
+  | "dry_run_passed"
+  | "connection_ok"
+  | "connection_failed"
+  | "not_implemented"
+
+export type AssistantVkHandoffDiagnostics = {
+  status: AssistantVkHandoffDiagnosticsStatus
+  missing_fields: string[]
+  can_test: boolean
+}
+
+export type AssistantVkHandoffConfigRow = {
+  id: "singleton"
+  enabled: boolean
+  environment_mode: AssistantVkHandoffEnvironmentMode
+  group_id: string | null
+  support_peer_id: string | null
+  webhook_url: string | null
+  community_access_token: AssistantSecretMetadata
+  secret_key: AssistantSecretMetadata
+  confirmation_code: AssistantSecretMetadata
+  allowed_operator_ids: string[]
+  allowed_admin_ids: string[]
+  operator_reply_mode: AssistantVkHandoffOperatorReplyMode
+  fallback_message: string | null
+  last_test_status: AssistantVkHandoffLastTestStatus | null
+  last_test_error: string | null
+  last_test_at: string | null
+  created_at: string
+  updated_at: string
+  version: number
+  diagnostics: AssistantVkHandoffDiagnostics
+}
+
+export type AssistantVkHandoffRuntimeConfig = Omit<
+  AssistantVkHandoffConfigRow,
+  "community_access_token" | "secret_key" | "confirmation_code"
+> & {
+  community_access_token: string | null
+  secret_key: string | null
+  confirmation_code: string | null
+}
+
+export type AssistantVkHandoffUpdateInput = Partial<
+  Omit<
+    AssistantVkHandoffConfigRow,
+    | "id"
+    | "community_access_token"
+    | "secret_key"
+    | "confirmation_code"
+    | "last_test_status"
+    | "last_test_error"
+    | "last_test_at"
+    | "created_at"
+    | "updated_at"
+    | "version"
+    | "diagnostics"
+  >
+> & {
+  community_access_token?: string
+  secret_key?: string
+  confirmation_code?: string
+}
+
+export type AssistantVkHandoffTestResult = {
+  ok: boolean
+  status: AssistantVkHandoffLastTestStatus
+  message: string
+  missing_fields: string[]
+  tested_at: string
+  diagnostics: AssistantVkHandoffDiagnostics
+}
+
 export type LlmProviderTestResult = {
   ok: boolean
   latency_ms: number
@@ -320,6 +411,9 @@ const DEFAULT_OBSERVABILITY: Record<string, boolean> = {
 
 const DEFAULT_TELEGRAM_HANDOFF_FALLBACK_MESSAGE =
   "Telegram handoff временно недоступен. Пожалуйста, попробуйте позже или свяжитесь с магазином другим удобным способом."
+
+const DEFAULT_VK_HANDOFF_FALLBACK_MESSAGE =
+  "VK handoff временно недоступен. Пожалуйста, попробуйте позже или свяжитесь с магазином другим удобным способом."
 
 // ---------------------------------------------------------------------------
 // Internal helpers — type coercions
@@ -490,13 +584,38 @@ type RawTelegramHandoffRow = Record<string, unknown> & {
   webhook_secret_tag?: unknown
 }
 
+type RawVkHandoffRow = Record<string, unknown> & {
+  community_access_token_ciphertext?: unknown
+  community_access_token_iv?: unknown
+  community_access_token_tag?: unknown
+  secret_key_ciphertext?: unknown
+  secret_key_iv?: unknown
+  secret_key_tag?: unknown
+  confirmation_code_ciphertext?: unknown
+  confirmation_code_iv?: unknown
+  confirmation_code_tag?: unknown
+}
+
 const RETRIEVAL_MODES = ["markdown", "vector", "lightrag", "auto"] as const
+const HANDOFF_CHANNELS = ["telegram", "vk"] as const
 const TELEGRAM_HANDOFF_ENVIRONMENT_MODES = ["test", "production"] as const
 const TELEGRAM_HANDOFF_OPERATOR_REPLY_MODES = [
   "explicit_reply_command",
   "all_topic_messages",
 ] as const
 const TELEGRAM_HANDOFF_LAST_TEST_STATUSES = [
+  "disabled",
+  "missing_credentials",
+  "dry_run_passed",
+  "connection_ok",
+  "connection_failed",
+  "not_implemented",
+] as const
+const VK_HANDOFF_ENVIRONMENT_MODES = ["test", "production"] as const
+const VK_HANDOFF_OPERATOR_REPLY_MODES = [
+  "explicit_ticket_command",
+] as const
+const VK_HANDOFF_LAST_TEST_STATUSES = [
   "disabled",
   "missing_credentials",
   "dry_run_passed",
@@ -511,6 +630,15 @@ function isRetrievalMode(
   return (
     typeof value === "string" &&
     (RETRIEVAL_MODES as readonly string[]).includes(value)
+  )
+}
+
+function isHandoffChannel(
+  value: unknown
+): value is AssistantHandoffChannel {
+  return (
+    typeof value === "string" &&
+    (HANDOFF_CHANNELS as readonly string[]).includes(value)
   )
 }
 
@@ -538,6 +666,33 @@ function isTelegramHandoffLastTestStatus(
   return (
     typeof value === "string" &&
     (TELEGRAM_HANDOFF_LAST_TEST_STATUSES as readonly string[]).includes(value)
+  )
+}
+
+function isVkHandoffEnvironmentMode(
+  value: unknown
+): value is AssistantVkHandoffEnvironmentMode {
+  return (
+    typeof value === "string" &&
+    (VK_HANDOFF_ENVIRONMENT_MODES as readonly string[]).includes(value)
+  )
+}
+
+function isVkHandoffOperatorReplyMode(
+  value: unknown
+): value is AssistantVkHandoffOperatorReplyMode {
+  return (
+    typeof value === "string" &&
+    (VK_HANDOFF_OPERATOR_REPLY_MODES as readonly string[]).includes(value)
+  )
+}
+
+function isVkHandoffLastTestStatus(
+  value: unknown
+): value is AssistantVkHandoffLastTestStatus {
+  return (
+    typeof value === "string" &&
+    (VK_HANDOFF_LAST_TEST_STATUSES as readonly string[]).includes(value)
   )
 }
 
@@ -613,6 +768,86 @@ function evaluateTelegramHandoffDiagnostics(
     snapshot.webhook_secret_configured,
     Boolean(snapshot.support_chat_id),
     Boolean(snapshot.webhook_url),
+    hasOperatorsOrAdmins,
+  ].filter(Boolean).length
+
+  return {
+    status:
+      configuredSignals === 0 ? "not_configured" : "partially_configured",
+    missing_fields,
+    can_test: false,
+  }
+}
+
+type VkHandoffDiagnosticsSnapshot = {
+  enabled: boolean
+  environment_mode: AssistantVkHandoffEnvironmentMode
+  group_id: string | null
+  support_peer_id: string | null
+  webhook_url: string | null
+  community_access_token_configured: boolean
+  secret_key_configured: boolean
+  confirmation_code_configured: boolean
+  allowed_operator_ids: string[]
+  allowed_admin_ids: string[]
+}
+
+function evaluateVkHandoffDiagnostics(
+  snapshot: VkHandoffDiagnosticsSnapshot
+): AssistantVkHandoffDiagnostics {
+  if (!snapshot.enabled) {
+    return {
+      status: "disabled",
+      missing_fields: [],
+      can_test: false,
+    }
+  }
+
+  const missing_fields: string[] = []
+  const hasOperatorsOrAdmins =
+    snapshot.allowed_operator_ids.length > 0 ||
+    snapshot.allowed_admin_ids.length > 0
+
+  if (!snapshot.group_id) {
+    missing_fields.push("group_id")
+  }
+  if (!snapshot.support_peer_id) {
+    missing_fields.push("support_peer_id")
+  }
+  if (!snapshot.webhook_url) {
+    missing_fields.push("webhook_url")
+  }
+  if (!snapshot.community_access_token_configured) {
+    missing_fields.push("community_access_token")
+  }
+  if (!snapshot.secret_key_configured) {
+    missing_fields.push("secret_key")
+  }
+  if (!snapshot.confirmation_code_configured) {
+    missing_fields.push("confirmation_code")
+  }
+  if (
+    !hasOperatorsOrAdmins &&
+    snapshot.environment_mode === "production"
+  ) {
+    missing_fields.push("allowed_operator_ids_or_allowed_admin_ids")
+  }
+
+  if (missing_fields.length === 0) {
+    return {
+      status: "ready_for_connection_test",
+      missing_fields,
+      can_test: true,
+    }
+  }
+
+  const configuredSignals = [
+    Boolean(snapshot.group_id),
+    Boolean(snapshot.support_peer_id),
+    Boolean(snapshot.webhook_url),
+    snapshot.community_access_token_configured,
+    snapshot.secret_key_configured,
+    snapshot.confirmation_code_configured,
     hasOperatorsOrAdmins,
   ].filter(Boolean).length
 
@@ -720,10 +955,72 @@ function toAssistantTelegramHandoffConfigRow(
   }
 }
 
+function toAssistantVkHandoffConfigRow(
+  raw: RawVkHandoffRow
+): AssistantVkHandoffConfigRow {
+  const community_access_token = toAssistantSecretMetadata(
+    raw.community_access_token_last4
+  )
+  const secret_key = toAssistantSecretMetadata(raw.secret_key_last4)
+  const confirmation_code = toAssistantSecretMetadata(
+    raw.confirmation_code_last4
+  )
+  const environment_mode = isVkHandoffEnvironmentMode(raw.environment_mode)
+    ? raw.environment_mode
+    : "test"
+  const allowed_operator_ids = asJsonArrayOfStrings(raw.allowed_operator_ids)
+  const allowed_admin_ids = asJsonArrayOfStrings(raw.allowed_admin_ids)
+  const diagnostics = evaluateVkHandoffDiagnostics({
+    enabled: asBoolean(raw.enabled, false),
+    environment_mode,
+    group_id: asTrimmedStringOrNull(raw.group_id),
+    support_peer_id: asTrimmedStringOrNull(raw.support_peer_id),
+    webhook_url: asTrimmedStringOrNull(raw.webhook_url),
+    community_access_token_configured:
+      community_access_token.is_configured,
+    secret_key_configured: secret_key.is_configured,
+    confirmation_code_configured: confirmation_code.is_configured,
+    allowed_operator_ids,
+    allowed_admin_ids,
+  })
+
+  return {
+    id: "singleton",
+    enabled: asBoolean(raw.enabled, false),
+    environment_mode,
+    group_id: asTrimmedStringOrNull(raw.group_id),
+    support_peer_id: asTrimmedStringOrNull(raw.support_peer_id),
+    webhook_url: asTrimmedStringOrNull(raw.webhook_url),
+    community_access_token,
+    secret_key,
+    confirmation_code,
+    allowed_operator_ids,
+    allowed_admin_ids,
+    operator_reply_mode: isVkHandoffOperatorReplyMode(raw.operator_reply_mode)
+      ? raw.operator_reply_mode
+      : "explicit_ticket_command",
+    fallback_message:
+      typeof raw.fallback_message === "string" ? raw.fallback_message : null,
+    last_test_status: isVkHandoffLastTestStatus(raw.last_test_status)
+      ? raw.last_test_status
+      : null,
+    last_test_error:
+      typeof raw.last_test_error === "string" && raw.last_test_error.length
+        ? raw.last_test_error
+        : null,
+    last_test_at: asIsoDate(raw.last_test_at),
+    created_at: asIsoDate(raw.created_at) || new Date(0).toISOString(),
+    updated_at: asIsoDate(raw.updated_at) || new Date(0).toISOString(),
+    version: asInteger(raw.version, 1),
+    diagnostics,
+  }
+}
+
 function decryptOptionalSecret(parts: {
   ciphertext: unknown
   iv: unknown
   tag: unknown
+  scope: string
   label: string
 }): string | null {
   const hasCiphertext =
@@ -745,7 +1042,7 @@ function decryptOptionalSecret(parts: {
     const reason = error instanceof Error ? error.message : "unknown"
     throw new AssistantSettingsError(
       "encryption_failure",
-      `Failed to decrypt Telegram ${parts.label}: ${reason}`
+      `Failed to decrypt ${parts.scope} ${parts.label}: ${reason}`
     )
   }
 }
@@ -760,13 +1057,45 @@ function toAssistantTelegramHandoffRuntimeConfig(
       ciphertext: raw.bot_token_ciphertext,
       iv: raw.bot_token_iv,
       tag: raw.bot_token_tag,
+      scope: "Telegram",
       label: "bot_token",
     }),
     webhook_secret: decryptOptionalSecret({
       ciphertext: raw.webhook_secret_ciphertext,
       iv: raw.webhook_secret_iv,
       tag: raw.webhook_secret_tag,
+      scope: "Telegram",
       label: "webhook_secret",
+    }),
+  }
+}
+
+function toAssistantVkHandoffRuntimeConfig(
+  raw: RawVkHandoffRow
+): AssistantVkHandoffRuntimeConfig {
+  const base = toAssistantVkHandoffConfigRow(raw)
+  return {
+    ...base,
+    community_access_token: decryptOptionalSecret({
+      ciphertext: raw.community_access_token_ciphertext,
+      iv: raw.community_access_token_iv,
+      tag: raw.community_access_token_tag,
+      scope: "VK",
+      label: "community_access_token",
+    }),
+    secret_key: decryptOptionalSecret({
+      ciphertext: raw.secret_key_ciphertext,
+      iv: raw.secret_key_iv,
+      tag: raw.secret_key_tag,
+      scope: "VK",
+      label: "secret_key",
+    }),
+    confirmation_code: decryptOptionalSecret({
+      ciphertext: raw.confirmation_code_ciphertext,
+      iv: raw.confirmation_code_iv,
+      tag: raw.confirmation_code_tag,
+      scope: "VK",
+      label: "confirmation_code",
     }),
   }
 }
@@ -827,6 +1156,9 @@ function toAssistantSettingRow(
     rate_limits: asJsonObject(raw.rate_limits) as Record<string, number>,
     usage_tracking_enabled: asBoolean(raw.usage_tracking_enabled, true),
     observability: asJsonObject(raw.observability) as Record<string, boolean>,
+    active_handoff_channel: isHandoffChannel(raw.active_handoff_channel)
+      ? raw.active_handoff_channel
+      : "telegram",
     version: asInteger(raw.version, 1),
     updated_by:
       typeof raw.updated_by === "string" && raw.updated_by.length
@@ -941,8 +1273,23 @@ type NormalizedAssistantTelegramHandoffUpdateInput = {
   fallback_message?: string | null
 }
 
+type NormalizedAssistantVkHandoffUpdateInput = {
+  enabled?: boolean
+  environment_mode?: AssistantVkHandoffEnvironmentMode
+  group_id?: string | null
+  support_peer_id?: string | null
+  webhook_url?: string | null
+  community_access_token?: string
+  secret_key?: string
+  confirmation_code?: string
+  allowed_operator_ids?: string[]
+  allowed_admin_ids?: string[]
+  operator_reply_mode?: AssistantVkHandoffOperatorReplyMode
+  fallback_message?: string | null
+}
+
 function normalizeOptionalSecretInput(
-  field: "bot_token" | "webhook_secret",
+  field: string,
   value: unknown
 ): string | undefined {
   if (value === undefined || value === null) {
@@ -1250,6 +1597,312 @@ function assertTelegramHandoffEnabledState(
   }
 }
 
+function normalizeVkIdList(
+  field:
+    | "allowed_operator_ids"
+    | "allowed_admin_ids",
+  value: unknown
+): string[] {
+  if (!Array.isArray(value)) {
+    throw new AssistantSettingsError(
+      "validation",
+      `${field} must be an array`
+    )
+  }
+  if (value.length > 100) {
+    throw new AssistantSettingsError(
+      "validation",
+      `${field} cannot contain more than 100 entries`
+    )
+  }
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const entry of value) {
+    const normalized =
+      typeof entry === "string"
+        ? entry.trim()
+        : typeof entry === "number" && Number.isFinite(entry)
+          ? String(Math.trunc(entry))
+          : ""
+    if (!/^\d+$/.test(normalized)) {
+      throw new AssistantSettingsError(
+        "validation",
+        `${field} must contain VK numeric user ids`
+      )
+    }
+    if (!seen.has(normalized)) {
+      seen.add(normalized)
+      out.push(normalized)
+    }
+  }
+  return out
+}
+
+function normalizeAssistantVkHandoffInput(
+  input: AssistantVkHandoffUpdateInput
+): NormalizedAssistantVkHandoffUpdateInput {
+  const normalized: NormalizedAssistantVkHandoffUpdateInput = {}
+
+  if (input.enabled !== undefined) {
+    if (typeof input.enabled !== "boolean") {
+      throw new AssistantSettingsError(
+        "validation",
+        "enabled must be a boolean"
+      )
+    }
+    normalized.enabled = input.enabled
+  }
+
+  if (input.environment_mode !== undefined) {
+    if (!isVkHandoffEnvironmentMode(input.environment_mode)) {
+      throw new AssistantSettingsError(
+        "validation",
+        `environment_mode must be one of ${VK_HANDOFF_ENVIRONMENT_MODES.join(", ")}`
+      )
+    }
+    normalized.environment_mode = input.environment_mode
+  }
+
+  if (input.group_id !== undefined) {
+    if (input.group_id === null) {
+      normalized.group_id = null
+    } else {
+      const value = asTrimmedStringOrNull(input.group_id)
+      if (!value) {
+        normalized.group_id = null
+      } else if (!/^\d+$/.test(value)) {
+        throw new AssistantSettingsError(
+          "validation",
+          "group_id must be a VK numeric group id"
+        )
+      } else if (value.length > 32) {
+        throw new AssistantSettingsError(
+          "validation",
+          "group_id is too long"
+        )
+      } else {
+        normalized.group_id = value
+      }
+    }
+  }
+
+  if (input.support_peer_id !== undefined) {
+    if (input.support_peer_id === null) {
+      normalized.support_peer_id = null
+    } else {
+      const value = asTrimmedStringOrNull(input.support_peer_id)
+      if (!value) {
+        normalized.support_peer_id = null
+      } else if (!/^-?\d+$/.test(value)) {
+        throw new AssistantSettingsError(
+          "validation",
+          "support_peer_id must be a VK numeric peer id"
+        )
+      } else if (value.length > 32) {
+        throw new AssistantSettingsError(
+          "validation",
+          "support_peer_id is too long"
+        )
+      } else {
+        normalized.support_peer_id = value
+      }
+    }
+  }
+
+  if (input.webhook_url !== undefined) {
+    if (input.webhook_url === null) {
+      normalized.webhook_url = null
+    } else if (typeof input.webhook_url === "string") {
+      const value = input.webhook_url.trim()
+      if (!value) {
+        normalized.webhook_url = null
+      } else {
+        let parsed: URL
+        try {
+          parsed = new URL(value)
+        } catch {
+          throw new AssistantSettingsError(
+            "validation",
+            "webhook_url must be a valid URL"
+          )
+        }
+        if (!/^https?:$/i.test(parsed.protocol)) {
+          throw new AssistantSettingsError(
+            "validation",
+            "webhook_url must start with http:// or https://"
+          )
+        }
+        if (value.length > 512) {
+          throw new AssistantSettingsError(
+            "validation",
+            "webhook_url must be 512 characters or fewer"
+          )
+        }
+        normalized.webhook_url = value
+      }
+    } else {
+      throw new AssistantSettingsError(
+        "validation",
+        "webhook_url must be a string or null"
+      )
+    }
+  }
+
+  const communityAccessToken = normalizeOptionalSecretInput(
+    "community_access_token",
+    input.community_access_token
+  )
+  if (communityAccessToken !== undefined) {
+    normalized.community_access_token = communityAccessToken
+  }
+
+  const secretKey = normalizeOptionalSecretInput(
+    "secret_key",
+    input.secret_key
+  )
+  if (secretKey !== undefined) {
+    normalized.secret_key = secretKey
+  }
+
+  const confirmationCode = normalizeOptionalSecretInput(
+    "confirmation_code",
+    input.confirmation_code
+  )
+  if (confirmationCode !== undefined) {
+    normalized.confirmation_code = confirmationCode
+  }
+
+  if (input.allowed_operator_ids !== undefined) {
+    normalized.allowed_operator_ids = normalizeVkIdList(
+      "allowed_operator_ids",
+      input.allowed_operator_ids
+    )
+  }
+
+  if (input.allowed_admin_ids !== undefined) {
+    normalized.allowed_admin_ids = normalizeVkIdList(
+      "allowed_admin_ids",
+      input.allowed_admin_ids
+    )
+  }
+
+  if (input.operator_reply_mode !== undefined) {
+    if (!isVkHandoffOperatorReplyMode(input.operator_reply_mode)) {
+      throw new AssistantSettingsError(
+        "validation",
+        `operator_reply_mode must be one of ${VK_HANDOFF_OPERATOR_REPLY_MODES.join(", ")}`
+      )
+    }
+    normalized.operator_reply_mode = input.operator_reply_mode
+  }
+
+  if (input.fallback_message !== undefined) {
+    if (input.fallback_message === null) {
+      normalized.fallback_message = null
+    } else if (typeof input.fallback_message === "string") {
+      const value = input.fallback_message.trim()
+      if (value.length > 2000) {
+        throw new AssistantSettingsError(
+          "validation",
+          "fallback_message must be 2000 characters or fewer"
+        )
+      }
+      normalized.fallback_message = value.length ? value : null
+    } else {
+      throw new AssistantSettingsError(
+        "validation",
+        "fallback_message must be a string or null"
+      )
+    }
+  }
+
+  return normalized
+}
+
+function resolveVkHandoffDiagnosticsSnapshot(
+  current: AssistantVkHandoffConfigRow,
+  input: NormalizedAssistantVkHandoffUpdateInput = {}
+): VkHandoffDiagnosticsSnapshot {
+  return {
+    enabled: input.enabled ?? current.enabled,
+    environment_mode: input.environment_mode ?? current.environment_mode,
+    group_id: input.group_id !== undefined ? input.group_id : current.group_id,
+    support_peer_id:
+      input.support_peer_id !== undefined
+        ? input.support_peer_id
+        : current.support_peer_id,
+    webhook_url:
+      input.webhook_url !== undefined ? input.webhook_url : current.webhook_url,
+    community_access_token_configured:
+      input.community_access_token !== undefined
+        ? true
+        : current.community_access_token.is_configured,
+    secret_key_configured:
+      input.secret_key !== undefined ? true : current.secret_key.is_configured,
+    confirmation_code_configured:
+      input.confirmation_code !== undefined
+        ? true
+        : current.confirmation_code.is_configured,
+    allowed_operator_ids:
+      input.allowed_operator_ids ?? current.allowed_operator_ids,
+    allowed_admin_ids: input.allowed_admin_ids ?? current.allowed_admin_ids,
+  }
+}
+
+function assertVkHandoffEnabledState(
+  snapshot: VkHandoffDiagnosticsSnapshot
+): void {
+  if (!snapshot.enabled) {
+    return
+  }
+  if (!snapshot.group_id) {
+    throw new AssistantSettingsError(
+      "validation",
+      "group_id is required when VK handoff is enabled"
+    )
+  }
+  if (!snapshot.support_peer_id) {
+    throw new AssistantSettingsError(
+      "validation",
+      "support_peer_id is required when VK handoff is enabled"
+    )
+  }
+  if (!snapshot.webhook_url) {
+    throw new AssistantSettingsError(
+      "validation",
+      "webhook_url is required when VK handoff is enabled"
+    )
+  }
+  if (!snapshot.community_access_token_configured) {
+    throw new AssistantSettingsError(
+      "validation",
+      "community_access_token is required when VK handoff is enabled"
+    )
+  }
+  if (!snapshot.secret_key_configured) {
+    throw new AssistantSettingsError(
+      "validation",
+      "secret_key is required when VK handoff is enabled"
+    )
+  }
+  if (!snapshot.confirmation_code_configured) {
+    throw new AssistantSettingsError(
+      "validation",
+      "confirmation_code is required when VK handoff is enabled"
+    )
+  }
+  if (
+    snapshot.environment_mode === "production" &&
+    snapshot.allowed_operator_ids.length === 0 &&
+    snapshot.allowed_admin_ids.length === 0
+  ) {
+    throw new AssistantSettingsError(
+      "validation",
+      "At least one operator or admin id is required when VK handoff is enabled in production mode"
+    )
+  }
+}
+
 // ---------------------------------------------------------------------------
 // ID generation
 // ---------------------------------------------------------------------------
@@ -1348,10 +2001,18 @@ export async function ensureAssistantSettingsTables(
       rate_limits jsonb not null,
       usage_tracking_enabled boolean not null,
       observability jsonb not null,
+      active_handoff_channel text not null default 'telegram'
+        check (active_handoff_channel in ('telegram', 'vk')),
       version integer not null default 1,
       updated_by text null,
       updated_at timestamptz not null default now()
     )
+  `)
+
+  await pg.raw(`
+    -- @assistant:add-column-setting-active-handoff-channel
+    alter table assistant_setting
+      add column if not exists active_handoff_channel text not null default 'telegram'
   `)
 
   await pg.raw(
@@ -1363,7 +2024,7 @@ export async function ensureAssistantSettingsTables(
         max_history_messages, max_input_chars, max_output_tokens,
         streaming_enabled, default_locale, allowed_models,
         tools_enabled, guardrails, rate_limits,
-        usage_tracking_enabled, observability,
+        usage_tracking_enabled, observability, active_handoff_channel,
         version, updated_at
       ) values (
         'singleton', ?, 'auto', 5, 0.000,
@@ -1371,7 +2032,7 @@ export async function ensureAssistantSettingsTables(
         10, 4000, 1024,
         true, 'ru', '[]'::jsonb,
         ?::jsonb, ?::jsonb, ?::jsonb,
-        true, ?::jsonb,
+        true, ?::jsonb, 'telegram',
         1, now()
       )
       on conflict (id) do nothing
@@ -1454,6 +2115,73 @@ export async function ensureAssistantSettingsTables(
       on conflict (id) do nothing
     `,
     [DEFAULT_TELEGRAM_HANDOFF_FALLBACK_MESSAGE]
+  )
+
+  await pg.raw(`
+    -- @assistant:create-table-vk-handoff
+    create table if not exists assistant_vk_handoff_config (
+      id text primary key check (id = 'singleton'),
+      enabled boolean not null default false,
+      environment_mode text not null default 'test'
+        check (environment_mode in ('test', 'production')),
+      group_id text null,
+      support_peer_id text null,
+      webhook_url text null,
+      community_access_token_ciphertext bytea null,
+      community_access_token_iv bytea null,
+      community_access_token_tag bytea null,
+      community_access_token_last4 text null,
+      secret_key_ciphertext bytea null,
+      secret_key_iv bytea null,
+      secret_key_tag bytea null,
+      secret_key_last4 text null,
+      confirmation_code_ciphertext bytea null,
+      confirmation_code_iv bytea null,
+      confirmation_code_tag bytea null,
+      confirmation_code_last4 text null,
+      allowed_operator_ids jsonb not null default '[]'::jsonb,
+      allowed_admin_ids jsonb not null default '[]'::jsonb,
+      operator_reply_mode text not null default 'explicit_ticket_command'
+        check (operator_reply_mode in ('explicit_ticket_command')),
+      fallback_message text null,
+      last_test_status text null,
+      last_test_error text null,
+      last_test_at timestamptz null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      version integer not null default 1
+    )
+  `)
+
+  await pg.raw(
+    `
+      -- @assistant:seed-vk-handoff-singleton
+      insert into assistant_vk_handoff_config (
+        id,
+        enabled,
+        environment_mode,
+        allowed_operator_ids,
+        allowed_admin_ids,
+        operator_reply_mode,
+        fallback_message,
+        created_at,
+        updated_at,
+        version
+      ) values (
+        'singleton',
+        false,
+        'test',
+        '[]'::jsonb,
+        '[]'::jsonb,
+        'explicit_ticket_command',
+        ?,
+        now(),
+        now(),
+        1
+      )
+      on conflict (id) do nothing
+    `,
+    [DEFAULT_VK_HANDOFF_FALLBACK_MESSAGE]
   )
 }
 
@@ -2075,6 +2803,22 @@ export async function getEffectiveAssistantConfig(
       telegramRows[0]
     )
 
+    const vkResult = await trx.raw<RawVkHandoffRow>(`
+      -- @assistant:get-vk-handoff-runtime
+      select ${VK_HANDOFF_RUNTIME_COLUMNS}
+      from assistant_vk_handoff_config
+      where id = 'singleton'
+      limit 1
+    `)
+    const vkRows = getRawRows<RawVkHandoffRow>(vkResult)
+    if (!vkRows.length) {
+      throw new AssistantSettingsError(
+        "not_found",
+        "assistant_vk_handoff_config singleton row is missing"
+      )
+    }
+    const vk_handoff = toAssistantVkHandoffRuntimeConfig(vkRows[0])
+
     const candidates: string[] = []
     if (active?.updated_at) candidates.push(active.updated_at)
     for (const f of fallback) {
@@ -2082,12 +2826,21 @@ export async function getEffectiveAssistantConfig(
     }
     if (global.updated_at) candidates.push(global.updated_at)
     if (telegram_handoff.updated_at) candidates.push(telegram_handoff.updated_at)
+    if (vk_handoff.updated_at) candidates.push(vk_handoff.updated_at)
     const version =
       candidates.length === 0
         ? new Date(0).toISOString()
         : candidates.reduce((acc, cur) => (cur > acc ? cur : acc))
 
-    return { version, active, fallback, global, telegram_handoff }
+    return {
+      version,
+      active,
+      fallback,
+      global,
+      active_handoff_channel: global.active_handoff_channel,
+      telegram_handoff,
+      vk_handoff,
+    }
   })
 }
 
@@ -2279,6 +3032,7 @@ const ASSISTANT_SETTING_SCALAR_COLUMNS = [
   "streaming_enabled",
   "default_locale",
   "usage_tracking_enabled",
+  "active_handoff_channel",
 ] as const
 
 const ASSISTANT_SETTING_JSON_COLUMNS = [
@@ -2305,6 +3059,15 @@ export async function updateAssistantSetting(
     throw new AssistantSettingsError(
       "validation",
       `retrieval_mode must be one of ${RETRIEVAL_MODES.join(", ")}`
+    )
+  }
+  if (
+    input.active_handoff_channel !== undefined &&
+    !isHandoffChannel(input.active_handoff_channel)
+  ) {
+    throw new AssistantSettingsError(
+      "validation",
+      `active_handoff_channel must be one of ${HANDOFF_CHANNELS.join(", ")}`
     )
   }
 
@@ -2420,6 +3183,41 @@ const TELEGRAM_HANDOFF_RUNTIME_COLUMNS = `
   webhook_secret_ciphertext,
   webhook_secret_iv,
   webhook_secret_tag
+`
+
+const VK_HANDOFF_PUBLIC_COLUMNS = `
+  id,
+  enabled,
+  environment_mode,
+  group_id,
+  support_peer_id,
+  webhook_url,
+  community_access_token_last4,
+  secret_key_last4,
+  confirmation_code_last4,
+  allowed_operator_ids,
+  allowed_admin_ids,
+  operator_reply_mode,
+  fallback_message,
+  last_test_status,
+  last_test_error,
+  last_test_at,
+  created_at,
+  updated_at,
+  version
+`
+
+const VK_HANDOFF_RUNTIME_COLUMNS = `
+  ${VK_HANDOFF_PUBLIC_COLUMNS},
+  community_access_token_ciphertext,
+  community_access_token_iv,
+  community_access_token_tag,
+  secret_key_ciphertext,
+  secret_key_iv,
+  secret_key_tag,
+  confirmation_code_ciphertext,
+  confirmation_code_iv,
+  confirmation_code_tag
 `
 
 export async function getAssistantTelegramHandoffConfig(
@@ -2731,6 +3529,337 @@ export async function testAssistantTelegramHandoffConfig(
           }
 
     await persistAssistantTelegramHandoffTestResult(trx, result)
+
+    return result
+  })
+}
+
+export async function getAssistantVkHandoffConfig(
+  pg: PgConnectionLike
+): Promise<AssistantVkHandoffConfigRow> {
+  await ensureAssistantSettingsTables(pg)
+  const result = await pg.raw<RawVkHandoffRow>(
+    `
+      -- @assistant:get-vk-handoff
+      select ${VK_HANDOFF_PUBLIC_COLUMNS}
+      from assistant_vk_handoff_config
+      where id = 'singleton'
+      limit 1
+    `
+  )
+  const rows = getRawRows<RawVkHandoffRow>(result)
+  if (!rows.length) {
+    throw new AssistantSettingsError(
+      "not_found",
+      "assistant_vk_handoff_config singleton row is missing"
+    )
+  }
+  return toAssistantVkHandoffConfigRow(rows[0])
+}
+
+export async function getAssistantVkHandoffRuntimeConfig(
+  pg: PgConnectionLike
+): Promise<AssistantVkHandoffRuntimeConfig> {
+  await ensureAssistantSettingsTables(pg)
+  const result = await pg.raw<RawVkHandoffRow>(
+    `
+      -- @assistant:get-vk-handoff-runtime
+      select ${VK_HANDOFF_RUNTIME_COLUMNS}
+      from assistant_vk_handoff_config
+      where id = 'singleton'
+      limit 1
+    `
+  )
+  const rows = getRawRows<RawVkHandoffRow>(result)
+  if (!rows.length) {
+    throw new AssistantSettingsError(
+      "not_found",
+      "assistant_vk_handoff_config singleton row is missing"
+    )
+  }
+  return toAssistantVkHandoffRuntimeConfig(rows[0])
+}
+
+export async function updateAssistantVkHandoffConfig(
+  pg: PgConnectionLike,
+  input: AssistantVkHandoffUpdateInput,
+  opts?: { expectedVersion?: number }
+): Promise<AssistantVkHandoffConfigRow> {
+  await ensureAssistantSettingsTables(pg)
+  const normalized = normalizeAssistantVkHandoffInput(input)
+
+  return await pg.transaction(async (trx) => {
+    const currentResult = await trx.raw<RawVkHandoffRow>(
+      `
+        -- @assistant:lock-vk-handoff
+        select ${VK_HANDOFF_PUBLIC_COLUMNS}
+        from assistant_vk_handoff_config
+        where id = 'singleton'
+        for update
+      `
+    )
+    const currentRows = getRawRows<RawVkHandoffRow>(currentResult)
+    if (!currentRows.length) {
+      throw new AssistantSettingsError(
+        "not_found",
+        "assistant_vk_handoff_config singleton row is missing"
+      )
+    }
+    const current = toAssistantVkHandoffConfigRow(currentRows[0])
+
+    if (
+      opts?.expectedVersion !== undefined &&
+      current.version !== opts.expectedVersion
+    ) {
+      throw new AssistantSettingsError(
+        "version_mismatch",
+        `Expected version ${opts.expectedVersion}, got ${current.version}`
+      )
+    }
+
+    const snapshot = resolveVkHandoffDiagnosticsSnapshot(current, normalized)
+    assertVkHandoffEnabledState(snapshot)
+
+    const sets: string[] = []
+    const bindings: unknown[] = []
+
+    if (normalized.enabled !== undefined) {
+      sets.push("enabled = ?")
+      bindings.push(normalized.enabled)
+    }
+    if (normalized.environment_mode !== undefined) {
+      sets.push("environment_mode = ?")
+      bindings.push(normalized.environment_mode)
+    }
+    if (normalized.group_id !== undefined) {
+      sets.push("group_id = ?")
+      bindings.push(normalized.group_id)
+    }
+    if (normalized.support_peer_id !== undefined) {
+      sets.push("support_peer_id = ?")
+      bindings.push(normalized.support_peer_id)
+    }
+    if (normalized.webhook_url !== undefined) {
+      sets.push("webhook_url = ?")
+      bindings.push(normalized.webhook_url)
+    }
+    if (normalized.allowed_operator_ids !== undefined) {
+      sets.push("allowed_operator_ids = ?::jsonb")
+      bindings.push(JSON.stringify(normalized.allowed_operator_ids))
+    }
+    if (normalized.allowed_admin_ids !== undefined) {
+      sets.push("allowed_admin_ids = ?::jsonb")
+      bindings.push(JSON.stringify(normalized.allowed_admin_ids))
+    }
+    if (normalized.operator_reply_mode !== undefined) {
+      sets.push("operator_reply_mode = ?")
+      bindings.push(normalized.operator_reply_mode)
+    }
+    if (normalized.fallback_message !== undefined) {
+      sets.push("fallback_message = ?")
+      bindings.push(normalized.fallback_message)
+    }
+
+    if (normalized.community_access_token !== undefined) {
+      if (!isEncryptionConfigured()) {
+        throw new AssistantSettingsError(
+          "encryption_not_configured",
+          "ASSISTANT_SETTINGS_ENCRYPTION_KEY is not configured; cannot store VK community_access_token"
+        )
+      }
+      let encrypted: EncryptedSecret
+      try {
+        encrypted = encryptSecret(normalized.community_access_token)
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "unknown"
+        throw new AssistantSettingsError(
+          "encryption_failure",
+          `Failed to encrypt VK community_access_token: ${reason}`
+        )
+      }
+      sets.push("community_access_token_ciphertext = ?")
+      bindings.push(encrypted.ciphertext)
+      sets.push("community_access_token_iv = ?")
+      bindings.push(encrypted.iv)
+      sets.push("community_access_token_tag = ?")
+      bindings.push(encrypted.tag)
+      sets.push("community_access_token_last4 = ?")
+      bindings.push(encrypted.last4)
+    }
+
+    if (normalized.secret_key !== undefined) {
+      if (!isEncryptionConfigured()) {
+        throw new AssistantSettingsError(
+          "encryption_not_configured",
+          "ASSISTANT_SETTINGS_ENCRYPTION_KEY is not configured; cannot store VK secret_key"
+        )
+      }
+      let encrypted: EncryptedSecret
+      try {
+        encrypted = encryptSecret(normalized.secret_key)
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "unknown"
+        throw new AssistantSettingsError(
+          "encryption_failure",
+          `Failed to encrypt VK secret_key: ${reason}`
+        )
+      }
+      sets.push("secret_key_ciphertext = ?")
+      bindings.push(encrypted.ciphertext)
+      sets.push("secret_key_iv = ?")
+      bindings.push(encrypted.iv)
+      sets.push("secret_key_tag = ?")
+      bindings.push(encrypted.tag)
+      sets.push("secret_key_last4 = ?")
+      bindings.push(encrypted.last4)
+    }
+
+    if (normalized.confirmation_code !== undefined) {
+      if (!isEncryptionConfigured()) {
+        throw new AssistantSettingsError(
+          "encryption_not_configured",
+          "ASSISTANT_SETTINGS_ENCRYPTION_KEY is not configured; cannot store VK confirmation_code"
+        )
+      }
+      let encrypted: EncryptedSecret
+      try {
+        encrypted = encryptSecret(normalized.confirmation_code)
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "unknown"
+        throw new AssistantSettingsError(
+          "encryption_failure",
+          `Failed to encrypt VK confirmation_code: ${reason}`
+        )
+      }
+      sets.push("confirmation_code_ciphertext = ?")
+      bindings.push(encrypted.ciphertext)
+      sets.push("confirmation_code_iv = ?")
+      bindings.push(encrypted.iv)
+      sets.push("confirmation_code_tag = ?")
+      bindings.push(encrypted.tag)
+      sets.push("confirmation_code_last4 = ?")
+      bindings.push(encrypted.last4)
+    }
+
+    if (sets.length === 0) {
+      return current
+    }
+
+    sets.push("version = version + 1")
+    sets.push("updated_at = now()")
+
+    const updateResult = await trx.raw<RawVkHandoffRow>(
+      `
+        -- @assistant:update-vk-handoff
+        update assistant_vk_handoff_config
+        set ${sets.join(", ")}
+        where id = 'singleton'
+        returning ${VK_HANDOFF_PUBLIC_COLUMNS}
+      `,
+      bindings
+    )
+    const updatedRows = getRawRows<RawVkHandoffRow>(updateResult)
+    if (!updatedRows.length) {
+      throw new AssistantSettingsError(
+        "not_found",
+        "assistant_vk_handoff_config singleton disappeared during update"
+      )
+    }
+    return toAssistantVkHandoffConfigRow(updatedRows[0])
+  })
+}
+
+async function persistAssistantVkHandoffTestResult(
+  executor: Pick<PgConnectionLike, "raw"> | Pick<PgTransactionLike, "raw">,
+  result: AssistantVkHandoffTestResult
+): Promise<void> {
+  const updateResult = await executor.raw(
+    `
+      -- @assistant:update-vk-handoff-test-result
+      update assistant_vk_handoff_config
+      set
+        last_test_status = ?,
+        last_test_error = ?,
+        last_test_at = ?::timestamptz,
+        updated_at = now()
+      where id = 'singleton'
+    `,
+    [result.status, result.ok ? null : result.message, result.tested_at]
+  )
+  if ((updateResult.rowCount ?? 0) === 0) {
+    throw new AssistantSettingsError(
+      "not_found",
+      "assistant_vk_handoff_config singleton row is missing"
+    )
+  }
+}
+
+export async function recordAssistantVkHandoffTestResult(
+  pg: PgConnectionLike,
+  result: AssistantVkHandoffTestResult
+): Promise<void> {
+  await ensureAssistantSettingsTables(pg)
+  await persistAssistantVkHandoffTestResult(pg, result)
+}
+
+export async function testAssistantVkHandoffConfig(
+  pg: PgConnectionLike,
+  input: AssistantVkHandoffUpdateInput = {}
+): Promise<AssistantVkHandoffTestResult> {
+  await ensureAssistantSettingsTables(pg)
+  const normalized = normalizeAssistantVkHandoffInput(input)
+
+  return await pg.transaction(async (trx) => {
+    const currentResult = await trx.raw<RawVkHandoffRow>(
+      `
+        -- @assistant:lock-vk-handoff
+        select ${VK_HANDOFF_PUBLIC_COLUMNS}
+        from assistant_vk_handoff_config
+        where id = 'singleton'
+        for update
+      `
+    )
+    const currentRows = getRawRows<RawVkHandoffRow>(currentResult)
+    if (!currentRows.length) {
+      throw new AssistantSettingsError(
+        "not_found",
+        "assistant_vk_handoff_config singleton row is missing"
+      )
+    }
+    const current = toAssistantVkHandoffConfigRow(currentRows[0])
+    const snapshot = resolveVkHandoffDiagnosticsSnapshot(current, normalized)
+    const diagnostics = evaluateVkHandoffDiagnostics(snapshot)
+    const testedAt = new Date().toISOString()
+
+    const result: AssistantVkHandoffTestResult = !snapshot.enabled
+      ? {
+          ok: false,
+          status: "disabled",
+          message: "VK handoff is disabled.",
+          missing_fields: [],
+          tested_at: testedAt,
+          diagnostics,
+        }
+      : diagnostics.can_test
+        ? {
+            ok: true,
+            status: "dry_run_passed",
+            message:
+              "Local VK handoff validation passed. Live VK API checks run through the assistant backend test route.",
+            missing_fields: [],
+            tested_at: testedAt,
+            diagnostics,
+          }
+        : {
+            ok: false,
+            status: "missing_credentials",
+            message: `Missing required VK handoff configuration: ${diagnostics.missing_fields.join(", ")}`,
+            missing_fields: diagnostics.missing_fields,
+            tested_at: testedAt,
+            diagnostics,
+          }
+
+    await persistAssistantVkHandoffTestResult(trx, result)
 
     return result
   })
